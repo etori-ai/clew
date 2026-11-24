@@ -485,7 +485,13 @@ test.describe('what an item is done with', () => {
     await expect(page).toHaveURL(
       `/items/entity-servicedesk-order-anna?from=${encodeURIComponent(`/boarding/${ANNA}`)}`,
     );
-    await expect(page.getByRole('main').getByText('Beställningen är lagd hos IT-servicedesken.')).toBeVisible();
+    // The item's status says what was done and who confirmed it (D126 item 13: its title has no full stop).
+    await expect(
+      page.getByRole('main').getByText('Beställningen är lagd hos IT-servicedesken', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('main').getByText('Bekräftat av IT-servicedesken i dag 09:00.', { exact: true }),
+    ).toBeVisible();
     await expectNoAxeViolations(page);
     // Back leaves the work item for the plan as it was; the plan holds the item, never the order: it is not ticked by it.
     await page.goBack();

@@ -88,7 +88,7 @@ export function AdminSectionsList() {
   const area = useRef<HTMLDivElement>(null);
   const animatedLayout = useAnimatedLayout({ containerRef: area });
   return (
-    <PageFrame title="Administration" label="Administration">
+    <PageFrame ask={{ none: 'administration' }} title="Administration" label="Administration">
       <VStack ref={area}>
         <List density="spacious" aria-label="Administration" animatedLayout={animatedLayout}>
           {sections.map(r => (
@@ -163,6 +163,7 @@ export function AdminFrame({
       : null;
   return (
     <PageFrame
+      ask={{ none: 'administration' }}
       back={back}
       trail={
         typeof thing?.place === 'string' ? (
@@ -186,6 +187,10 @@ export function AdminFrame({
         ) : undefined
       }
       label={label}
+      // A section's column may hold nothing that takes the focus (a table of plain cells, its list on a phone), so
+      // wherever it scrolls under a pinned head it is a tab stop of its own (2.1.1). The section scrolls as one page
+      // (D130 item 8 as amended 2026-11-21), so that is only when the frame is told to pin.
+      scrollTabStop
       start={mobile ? undefined : <SectionsPanel current={section} />}
     >
       {children}

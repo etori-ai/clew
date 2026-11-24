@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ClewObject } from '@clew/contracts';
+import type { ClewObject, OpenThing } from '@clew/contracts';
 import {
   AreaGlyph,
   Button,
@@ -125,9 +125,12 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
 /**
  * Where the box sits (D126 item 4: the assistant has two homes): `landing` is the box on Ny fråga, under the greeting,
  * which starts a conversation; `conversation` is the box docked under a conversation's transcript, which continues it.
- * Hem has one line that starts a conversation with its question (`HemQuestion`); no other page has a box.
+ * Hem has one line that starts a conversation with its question (`HemQuestion`). `pane` is the box beside a page (D141
+ * rules 3 and 10): the plain one, with no `@`, drawer, model, dictation or verbs, which belong to the conversation's
+ * page; flat and at Astryx's own density (the product owner, 2026-11-18: the compact one put its text too close to its
+ * border). It is not a conversation's own box, so "Lägg till i samtalet" is not offered for it.
  */
-export type ComposerPlace = 'landing' | 'conversation';
+export type ComposerPlace = 'landing' | 'conversation' | 'pane';
 /**
  * The box (D31, D34; boards NyFraga and Samtal): Astryx's ChatComposer, in the page flow on Ny fråga and docked by
  * ChatLayout in a conversation. It only ever goes to Clew: another system's assistant is talked to in the panel beside a
@@ -139,12 +142,25 @@ export type ComposerPlace = 'landing' | 'conversation';
 export function Composer({
   place,
   about,
+  thing,
   placeholder: aboutPlaceholder,
+  name,
+  stoppable = true,
 }: {
   place: ComposerPlace;
   about?: ChipRef[] | undefined;
+  /** The person, the unit or the record beside the transcript, which goes with every question as what stands open (D136). */
+  thing?: OpenThing | undefined;
   /** What the empty box says in a conversation about someone ("Fråga om Johan"); else whom it writes to. */
   placeholder?: string | undefined;
+  /** The box's name beside a page, where it is not what the empty box says (the frame's pane, `paneBoxName`). */
+  name?: string | undefined;
+  /**
+   * A turn asked here can be stopped (D36): while one runs the send button is Stoppa and the field stays open. The box
+   * of another system's assistant's panel (D128) cannot call a question back once it has left Clew: it rests until the
+   * answer is in, with no Stoppa.
+   */
+  stoppable?: boolean | undefined;
 }) {
   const talk = useConversation();
   // While a conversation's own box is on the page, "Lägg till i samtalet" is offered: no other page has a box.
@@ -199,11 +215,14 @@ export function Composer({
       },
     };
   }, [talk.rememberObject, markOf]);
-  // Whom the box writes to, as the boards say it; Ny fråga's says what the box is for.
+  // Whom the box writes to, as the boards say it; Ny fråga's says what the box is for; beside a page, what it asks about.
   const placeholder =
     place === 'conversation'
       ? (aboutPlaceholder ?? 'Skriv till assistenten')
-      : 'Fråga något eller be assistenten göra det åt dig';
+      : place === 'pane'
+        ? (aboutPlaceholder ?? 'Fråga assistenten')
+        : 'Fråga något eller be assistenten göra det åt dig';
+  const pane = place === 'pane';
   const plain = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
   const announced = useAddedAnnouncement(talk.chips);
   // While an answer is on its way the send button is Stoppa and the field stays open, so the person can write the next
@@ -213,15 +232,15 @@ export function Composer({
     <ChatComposer
       value={talk.value}
       onChange={talk.setValue}
-      onSubmit={text => void talk.submit(text, from, about)}
-      isDisabled={talk.busy && !talk.pending}
+      onSubmit={text => void talk.submit(text, from, about, thing)}
+      isDisabled={talk.busy && (!stoppable || !talk.pending)}
       /* While a turn runs the send button is Stop (D126 item 5); a suggestion waiting for the person's answer is no turn to stop. */
-      isStopShown={!!talk.pending && !talk.pending.offer}
+      isStopShown={stoppable && !!talk.pending && !talk.pending.offer}
       onStop={talk.stop}
-      density="compact"
+      {...(pane ? { elevation: 'none' as const } : { density: 'compact' as const })}
       placeholder={placeholder}
       drawer={
-        talk.chips.length > 0 ? (
+        !pane && talk.chips.length > 0 ? (
           <Drawer count={talk.chips.length} label="Objekt i samtalet">
             {talk.chips.map(c => (
               <Chip
@@ -238,38 +257,41 @@ export function Composer({
       input={
         <ChatComposerInput
           handleRef={talk.input}
-          label={place === 'conversation' ? 'Svara i samtalet' : 'Vad vill du göra'}
+          // Beside a page the box is named by what it asks about: as its empty field says it, or by the name given.
+          label={place === 'conversation' ? 'Svara i samtalet' : pane ? (name ?? placeholder) : 'Vad vill du göra'}
           maxRows={place === 'landing' ? 4 : 3}
           hasHistory={false}
-          triggers={[trigger]}
+          {...(pane ? {} : { triggers: [trigger] })}
           placeholder={placeholder}
           onKeyDown={e => {
-            if (talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault();
+            if (stoppable && talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault();
           }}
         />
       }
       footerActions={
-        <HStack gap={1} wrap="wrap">
-          {/* The verbs about a card the person added with "Lägg till i samtalet", the one chip with nothing typed. */}
-          {talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
-            <HStack gap={1} wrap="wrap" role="group" aria-label="Om ärendet">
-              {talk.verbs.map(v => (
-                <Verb
-                  key={v.id}
-                  size="sm"
-                  variant="ghost"
-                  label={v.label}
-                  isDisabled={talk.busy}
-                  onClick={() => talk.ask(v.label, from, about)}
-                />
-              ))}
-            </HStack>
-          )}
-          <ModelMenu isDisabled={talk.busy} />
-          <VisuallyHidden role="status">{announced}</VisuallyHidden>
-        </HStack>
+        pane ? undefined : (
+          <HStack gap={1} wrap="wrap">
+            {/* The verbs about a card the person added with "Lägg till i samtalet", the one chip with nothing typed. */}
+            {talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
+              <HStack gap={1} wrap="wrap" role="group" aria-label="Om ärendet">
+                {talk.verbs.map(v => (
+                  <Verb
+                    key={v.id}
+                    size="sm"
+                    variant="ghost"
+                    label={v.label}
+                    isDisabled={talk.busy}
+                    onClick={() => talk.ask(v.label, from, about, thing)}
+                  />
+                ))}
+              </HStack>
+            )}
+            <ModelMenu isDisabled={talk.busy} />
+            <VisuallyHidden role="status">{announced}</VisuallyHidden>
+          </HStack>
+        )
       }
-      sendActions={<Dictation onResult={text => talk.setValue((talk.value + ' ' + text).trim())} />}
+      sendActions={pane ? undefined : <Dictation onResult={text => talk.setValue((talk.value + ' ' + text).trim())} />}
       {...(talk.error ? { status: { type: 'error' as const, message: talk.error } } : {})}
     />
   );

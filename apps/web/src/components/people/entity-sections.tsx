@@ -4,7 +4,6 @@ import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query
 import {
   openRef,
   viewRows,
-  type EntityAction,
   type EntityCard,
   type EntityDetail,
   type EntityKind,
@@ -25,7 +24,6 @@ import {
   ListItem,
   MetadataList,
   MetadataListItem,
-  MoreMenu,
   Section,
   Skeleton,
   Text,
@@ -34,7 +32,7 @@ import {
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { entitySectionQuery, threadsQuery, viewQuery } from '../../queries';
-import { actionMenuItems, useEntityAction } from '../../entity-actions';
+import { actionMenuItems, useEntityAction, type ActionSubject, type SubjectAction } from '../../entity-actions';
 import { useMarks } from '../../marks';
 import { pageOnly } from '../../panel-address';
 import { sourceWayHref, wayBack } from '../../person-address';
@@ -505,62 +503,58 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
 }
 
 /**
- * The opened person's or unit's actions under its name (D126 rule 1, board Person), every one of them: the first as the
- * primary button, the second as a secondary one, "Fråga assistenten" (`ask`) as a ghost after them, and the rest under "Fler
- * åtgärder", grouped by the system they act in, as the row menu on Personal is (artboard A3). On a phone one button,
- * "Åtgärder", the width of the column, holds them all, with "Fråga assistenten" under it. A propose opens the action dialog,
- * and nothing is created before its last button; an execute opens its work item with the decision over it
- * (`entity-actions.ts`). A source's refusal is said aloud and stands under the buttons until the next action. They hold
- * what can be done about the entity, never a choice of where Clew shows it, and never a way into a source's page, which
- * is a link in its section.
+ * The opened person's, unit's or record's actions at the end of its title's line (D126 rule 1 as amended 2026-11-21,
+ * board Person; D137 item 2 for a record), every one of them in one menu, "Åtgärder", grouped by the system each acts in,
+ * as the row menu on Personal is (artboard A3). No action is a button of its own: which system's action stood first was
+ * only the order the server listed them in, and no connector is given a place by position. The menu is the same at
+ * every width and with one action as with ten; on a phone its button is the width of the column. The page adds nothing
+ * of its own beside it: the reader's settings open from the person on the band alone (D39, amended 2026-11-23). None
+ * of them asks the assistant: the frame's "Fråga AI" does, after the menu on the title's line (D138 item 1). Every one
+ * opens the action dialog, and nothing is created before its last button, after which its work item opens
+ * (`entity-actions.ts`); a dialog that closes gives the focus back to the menu's button. A source's refusal is said
+ * aloud and stands under the menu until the next action. They hold what can be done about the thing, never a choice of
+ * where Clew shows it, and never a way into a source's page, which is a link in its section.
  */
-export function EntityActions({ detail, mobile, ask }: { detail: EntityDetail; mobile: boolean; ask?: ReactNode }) {
+export function EntityActions({
+  subject,
+  actions,
+  mobile,
+}: {
+  subject: ActionSubject;
+  actions: readonly SubjectAction[];
+  mobile: boolean;
+}) {
   const { start, error, dialog } = useEntityAction();
-  const { kind, key, name } = detail.entity;
-  const actions = detail.actions;
-  const run = (a: EntityAction) => start(a, { kind, key, name });
+  const { name } = subject;
   const refusal = error ? <Text as="p">{error}</Text> : null;
-  if (mobile)
-    return (
-      <VStack gap={2}>
-        {actions.length > 0 && (
-          <DropdownMenu
-            renderTrigger={trigger => (
-              <Button
-                {...trigger}
-                variant="secondary"
-                label="Åtgärder"
-                aria-label={`Åtgärder för ${name}`}
-                width="100%"
-              />
-            )}
-            presentation="adaptive"
-            items={actionMenuItems(actions, run)}
-          />
-        )}
-        {ask && <HStack>{ask}</HStack>}
-        {refusal}
-        {dialog}
-      </VStack>
-    );
-  const [first, second] = actions;
-  const rest = actions.slice(2);
-  // One shape with or without a refusal, so the button that was pressed keeps the focus when the refusal appears.
+  // Nothing to act on: no empty group under the name.
+  if (!actions.length && !refusal) return dialog;
+  const menu = actions.length > 0 && (
+    <DropdownMenu
+      renderTrigger={trigger => (
+        <Button
+          {...trigger}
+          variant="secondary"
+          label="Åtgärder"
+          aria-label={`Åtgärder för ${name}`}
+          {...(mobile ? { width: '100%' } : {})}
+        />
+      )}
+      alignment={mobile ? 'start' : 'end'}
+      presentation="adaptive"
+      items={actionMenuItems(actions, a => start(a, subject))}
+    />
+  );
+  // One shape with or without a refusal, so the menu's button keeps the focus when the refusal appears.
   return (
-    <VStack gap={2} hAlign="end">
-      <HStack gap={2} wrap="wrap" vAlign="center">
-        {first && <Button variant="primary" label={first.title} onClick={() => run(first)} />}
-        {second && <Button variant="secondary" label={second.title} onClick={() => run(second)} />}
-        {ask}
-        {rest.length > 0 && (
-          <MoreMenu
-            label={`Fler åtgärder för ${name}`}
-            alignment="end"
-            presentation="adaptive"
-            items={actionMenuItems(rest, run)}
-          />
-        )}
-      </HStack>
+    <VStack gap={2} {...(mobile ? {} : { hAlign: 'end' as const })}>
+      {mobile ? (
+        menu
+      ) : (
+        <HStack gap={2} wrap="wrap" vAlign="center">
+          {menu}
+        </HStack>
+      )}
       {refusal}
       {dialog}
     </VStack>

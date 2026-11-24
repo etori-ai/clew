@@ -22,6 +22,8 @@ export interface CardPlace {
   marked?: boolean;
   /** Beside a conversation: what stands before ✕ in the item's header (`NamedMenu`). */
   tools?: ReactNode;
+  /** In Att göra's reading pane: the conversation with the assistant and its box, a part of its own under the read. */
+  under?: ReactNode;
 }
 
 /**
@@ -43,7 +45,13 @@ export const cardBody = (thread: Thread, place: CardPlace) =>
   ) : place.place === 'answer' ? (
     // In an answer the item is one discrete thing among the turn's words (Astryx: a Card is a discrete item).
     <Card key={thread.id} padding={4}>
-      <WorkItem thread={thread} place="answer" headingLevel={place.level} onChange={place.onChange} />
+      <WorkItem
+        thread={thread}
+        place="answer"
+        headingLevel={place.level}
+        onChange={place.onChange}
+        {...(place.tools ? { tools: place.tools } : {})}
+      />
     </Card>
   ) : (
     <WorkItem
@@ -56,5 +64,6 @@ export const cardBody = (thread: Thread, place: CardPlace) =>
       {...(place.ask ? { ask: place.ask } : {})}
       {...(place.marked ? { marked: true } : {})}
       {...(place.tools ? { tools: place.tools } : {})}
+      {...(place.under ? { under: place.under } : {})}
     />
   );

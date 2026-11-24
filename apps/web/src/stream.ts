@@ -13,9 +13,17 @@ export interface Groups {
   waiting: Thread[];
   snoozed: Thread[];
   handledToday: Thread[];
-  /** The person's own conversations, newest first. */
+  /**
+   * The person's own conversations as Ny fråga lists its latest, newest first: without one asked beside a page
+   * that has not been opened as a conversation (D141 rule 6), so ten questions beside ten meetings do not push every
+   * longer conversation out.
+   */
   questions: Thread[];
+  /** Every conversation of the person's, newest first, as Alla samtal lists them and the search finds them (D138 item 10). */
+  allQuestions: Thread[];
 }
+/** A conversation asked beside a page and not yet opened as a conversation (D141 rule 6): not among Ny fråga's latest. */
+export const onlyBeside = (t: Pick<Thread, 'askedBeside'>): boolean => !!t.askedBeside && !t.askedBeside.openedAt;
 const byDeadline = (a: Thread, b: Thread) =>
   (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.createdAt.localeCompare(b.createdAt);
 export function groupThreads(
@@ -30,6 +38,7 @@ export function groupThreads(
   const open = threads.filter(t => (t.state === 'open' || unresolvedExecution(t) || lingers(t)) && t.kind === 'pushed');
   const needsYou = open.filter(t => (!t.waitingOn || lingers(t)) && !isSnoozed(t, now) && inScope(t)).sort(byDeadline);
   const krav = needsYou.filter(t => cardKind(t) === 'krav');
+  const questions = threads.filter(t => t.kind === 'question').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return {
     nu: krav.filter(t => streamGroup(t, today) === 'nu'),
     senare: krav.filter(t => streamGroup(t, today) !== 'nu'),
@@ -45,7 +54,8 @@ export function groupThreads(
         t.handledAt &&
         t.handledAt.slice(0, 10) === now.slice(0, 10),
     ),
-    questions: threads.filter(t => t.kind === 'question').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    questions: questions.filter(t => !onlyBeside(t)),
+    allQuestions: questions,
   };
 }
 

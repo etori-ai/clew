@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**138 in force**: 98 accepted and 40 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**145 in force**: 98 accepted and 47 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -65,6 +65,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) | 2026-11-13 | provisional |  |
 | [D127 · A read can say its rows are a read about people, asked for everyone, and then has one place](D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md) | 2026-11-14 | provisional |  |
 | [D129 · The connector protocol is 1, and changes in place until the first release](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) | 2026-11-18 | accepted |  |
+| [D137 · An action says which record it is about, and the assistant fills in the actions of what stands open](D137-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md) | 2026-11-19 | provisional | [D138](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) |
 
 ## Identity
 
@@ -165,9 +166,14 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D116 · A panel is a peek at one thing; a list is a page, and every view has an address](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) | 2026-11-12 | provisional | [D124](README.md), [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) |
 | [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
 | [D124 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) | 2026-11-13 | provisional |  |
-| [D126 · One page per thing, and one Astryx template per page type](D126-one-page-per-thing-one-astryx-template-per-page-type.md) | 2026-11-14 | provisional |  |
+| [D126 · One page per thing, and one Astryx template per page type](D126-one-page-per-thing-one-astryx-template-per-page-type.md) | 2026-11-14 | provisional | [D140](D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md), [D141](D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) |
 | [D128 · Another system's assistant is talked to beside the conversation, and the box only ever goes to Clew](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) | 2026-11-16 | provisional |  |
 | [D130 · Clew's look and layout are the startsidan prototype's, built with Astryx](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md) | 2026-11-18 | provisional |  |
+| [D138 · The corner's "Fråga AI" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) | 2026-11-19 | provisional |  |
+| [D139 · A card with nothing to decide says what holds, and the person can say that the next step is taken](D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md) | 2026-11-20 | provisional |  |
+| [D140 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in](D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) | 2026-11-18 | provisional |  |
+| [D141 · The assistant is asked beside every page, through one button and one pane that the page frame provides](D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) | 2026-11-18 | provisional |  |
+| [D142 · An item reviewed row by row has one page, which is its review, and a row's button names the next press](D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md) | 2026-11-21 | provisional |  |
 
 ## Assistant
 
@@ -175,6 +181,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 |---|---|---|---|
 | [D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it](D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md) | 2026-11-13 | provisional |  |
 | [D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) | 2026-11-14 | provisional | [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md), [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) |
+| [D136 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed](D136-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md) | 2026-11-19 | provisional |  |
 
 ## Proposed, not decided
 

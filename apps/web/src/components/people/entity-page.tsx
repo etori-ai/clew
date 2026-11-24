@@ -2,7 +2,7 @@ import { useId, type ReactNode, type Ref } from 'react';
 import { useNavigate } from 'react-router';
 import { Heading, HStack, StackItem, Tab, TabList, TabMenu, Text, VStack, useMediaQuery } from '@clew/ui';
 import { mobileQuery } from '../../media';
-import { PageFrame } from '../shell/page-frame';
+import { PageFrame, type PageAsk } from '../shell/page-frame';
 
 /**
  * A thing's page for a person, a unit or a plan (D126 rule 1, board Person, the `work-item-detail` composition the work
@@ -11,7 +11,9 @@ import { PageFrame } from '../shell/page-frame';
  * the thing's tabs where it has them, each a link with its own address (D126 rule 9). The column holds the tab's
  * sections one under the other, each with its heading, a wide step apart; the facts are a 340 px end panel, a
  * named complementary region, and above the read at 1024 px and below, as on the work item's page. Nothing opens over
- * or beside the page (rule 3). On a short screen nothing is pinned and the page scrolls as one (1.4.10).
+ * or beside the page (rule 3). The page scrolls as one, and its tab row stays at the top of the window (D130 item 8
+ * as amended 2026-11-21); beside the assistant's pane it keeps its header, and on a short screen nothing is pinned
+ * or sticks (1.4.10).
  */
 
 /** One of a thing's tabs (D126 rule 9): its value, its name, its address and what it carries beside its name. */
@@ -111,6 +113,7 @@ export interface PageSectionEntry {
 }
 
 export function EntityPage({
+  ask,
   back,
   place,
   crumbs,
@@ -126,6 +129,8 @@ export function EntityPage({
   headingRef,
   meta,
 }: {
+  /** What the assistant's pane, opened by the corner's "Fråga AI", is about: the person, the unit or the plan (D136). */
+  ask: PageAsk;
   /** The way back, named; none for an address that names no page Clew can name. */
   back: { label: string; href: string } | null;
   /** Where the entity stands, after the way back on the trail's line ("Bergsåkers skola"). */
@@ -137,7 +142,7 @@ export function EntityPage({
   title: string;
   /** The line under the name: a person's title and unit, "Enhet" for a unit. */
   subtitle?: ReactNode;
-  /** The actions about the entity and "Fråga assistenten". */
+  /** The actions about the entity; none of them asks the assistant (D138 item 1). */
   actions?: ReactNode;
   /** The thing's tabs (`TabList`), under its name, at the foot of the header. */
   tabs?: ReactNode;
@@ -168,6 +173,7 @@ export function EntityPage({
   // at the end of the name's line, the tabs, the read in the column and the facts in the end panel.
   return (
     <PageFrame
+      ask={ask}
       back={back}
       trail={
         crumbs || place ? (

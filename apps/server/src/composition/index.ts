@@ -1,7 +1,7 @@
 import {
   acceptsEmptyInput,
   answerCards,
-  workItems,
+  personThreads,
   bundledIds,
   holdingsReader,
   internalIds,
@@ -31,7 +31,7 @@ import { memoryModelHealth } from '../assistant/adapters/memory';
 import { modelUsecases } from '../assistant/usecases/models';
 import type { KeySealer } from '../assistant/ports';
 import { assistantUsecases } from '../assistant';
-import { personKey } from '../modules/entities/domain';
+import { followedUnits, personKey, unitRelation } from '../modules/entities/domain';
 import { staff } from './people';
 import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres';
 import { createScheduler } from '../scheduler/usecases';
@@ -297,10 +297,11 @@ holdingsPort.admitted = async (connectorId, personIds) => {
 };
 holdingsPort.reaches = (connectorId, organisationId) =>
   organisationInAudiences(organisationId, copyAudiences(connectorId));
-// A person's work items as a read (`clew.work`): what the stream's read boundary lets them see today. A capability's
-// actor does not carry the version of the person's authority, which an item from a source is checked against, so the
-// person is read again with their current grant, as for an answer's card below.
-workItems.list = async (actor, now) => {
+// A person's own threads for the reads over them (`clew.work`, `clew.conversations`): what the stream's read boundary
+// lets them see today, their own and nobody else's. A capability's actor does not carry the version of the person's
+// authority, which an item from a source is checked against, so the person is read again with their current grant, as
+// for an answer's card below.
+personThreads.list = async (actor, now) => {
   const persona = await systemContext(actor.id, 'system:work-list');
   return persona ? threadAccess(store, registry).list(persona, now) : [];
 };
@@ -358,9 +359,21 @@ export const assistant = assistantUsecases({
   // The people the asker manages (D115): Personal's list, read on every turn; only people who can be asked about (D97).
   people: async persona =>
     (await staff.reach(persona)).managed.flatMap(unit =>
-      // By Clew's key, the person's id (D122), as the cards about them name them; only someone who can be asked about.
-      unit.people.flatMap(p => (personKey(p) ? [{ key: p.id, name: p.name, unit: unit.unitLabel }] : [])),
+      // By Clew's key, the person's id (D122), as the cards about them and their page name them, with the user name a
+      // read that takes a person is given (D117); only someone who can be asked about.
+      unit.people.flatMap(p => {
+        const userName = personKey(p);
+        return userName ? [{ key: p.id, userName, name: p.name, unit: unit.unitLabel }] : [];
+      }),
     ),
+  // The units the asker manages or follows up (D117, D136 item 5): the units of the entity list a manager leads or
+  // follows up below, by the rule the unit's page and the registry ask (`unitRelation`); never one they are only on.
+  units: async persona => {
+    const reach = await staff.reach(persona);
+    return followedUnits(reach)
+      .filter(u => unitRelation(reach, u.unitId) !== 'member')
+      .map(u => ({ id: u.unitId, name: u.unitLabel }));
+  },
   start: (persona, capability, input, context) => threads.startCard(persona, capability, input, context),
 });
 /** The models' health probe (D8), started by main.ts beside the server: once at boot, then every minute. */

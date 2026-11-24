@@ -166,6 +166,8 @@
       "capabilities": [
         "servicedesk.requests",
         "servicedesk.request",
+        "servicedesk.comment",
+        "servicedesk.commentEffect",
         "servicedesk.order",
         "servicedesk.orderEffect",
         "servicedesk.lookup",
@@ -1528,7 +1530,7 @@
       "number": 126,
       "path": "docs/decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md",
       "title": "D126 · One page per thing, and one Astryx template per page type",
-      "status": "provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation)",
+      "status": "provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation; item 4 amended by [D140](D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) on 2026-11-18: a page whose answer is drawn on the page itself may hold the assistant's box in its pane, Kalender first; and by [D141](D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) the same day: the assistant is asked beside every page, which replaces the item's last sentence when built)",
       "date": "2026-11-14",
       "area": "ui"
     },
@@ -1612,6 +1614,69 @@
       "status": "provisional (Oliver Borgström, 2026-11-20; accepted once a real directory has pushed people with more than one assignment and one connector that was not written for Clew answers for each of them)",
       "date": "2026-11-20",
       "area": "identity, integrations"
+    },
+    {
+      "key": "D136-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew",
+      "number": 136,
+      "path": "docs/decisions/D136-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md",
+      "title": "D136 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed",
+      "status": "provisional (the product owner chose its three open points on 2026-11-19: on a person's page the assistant is told who the person is; what another system shows about a person or a unit stays closed for now; a conversation asked beside a person's page is deleted when the person is erased. Built the same day: a work item, the review, a record, a person, a unit and a plan ask through the frame's button and pane, the browser names the thing and the server resolves it on every turn, and `subject-erase` deletes the conversations asked beside a person. Tried on the development stack with its local model: beside a report's page \"hon\" was read as that person, her competences were read with her user name and the open work about her was named by title; beside a plan's page the plan was read and its overdue items named; beside a service desk request, whose read the assistant may not make, the pane said so. Nothing outside the repository has tested it, and no manual screen-reader pass is made. Numbered D131 until the merge of `main` on 2026-11-20, where `main` had taken the number)",
+      "date": "2026-11-19",
+      "area": "assistant, ui, identity"
+    },
+    {
+      "key": "D137-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open",
+      "number": 137,
+      "path": "docs/decisions/D137-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md",
+      "title": "D137 · An action says which record it is about, and the assistant fills in the actions of what stands open",
+      "status": "provisional (the product owner chose its open points on 2026-11-19: the action says what it is about, a record's actions are shown on the record's page only, and it is built first for one example of a connector and then for Kalender. The server half is built (2026-11-19): the declaration with its rules in the loader, the reference, the preview and the check; the registry's index; the routes that list a record's actions and start or decide one; the assistant's draft about a record; and one example in the service desk fixture. The web half is built (2026-11-20), in the look that landed on `main`: the record's page draws its actions, and the assistant's draft about a record is the filled-in row of [D138](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) item 8. Nothing outside the repository has tested it. Numbered D132 until the merge of `main` on 2026-11-20, where `main` had taken the number)",
+      "date": "2026-11-19",
+      "area": "integrations, assistant, ui"
+    },
+    {
+      "key": "D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column",
+      "number": 138,
+      "path": "docs/decisions/D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md",
+      "title": "D138 · The corner's \"Fråga AI\" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is",
+      "status": "provisional (the product owner chose it on 2026-11-19 from the canvas \"Clew",
+      "date": "2026-11-19",
+      "area": "ui, product, assistant"
+    },
+    {
+      "key": "D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken",
+      "number": 139,
+      "path": "docs/decisions/D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md",
+      "title": "D139 · A card with nothing to decide says what holds, and the person can say that the next step is taken",
+      "status": "provisional (the product owner chose it on 2026-11-20 from the canvas \"Clew",
+      "date": "2026-11-20",
+      "area": "ui, product, integrations"
+    },
+    {
+      "key": "D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page",
+      "number": 140,
+      "path": "docs/decisions/D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md",
+      "title": "D140 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in",
+      "status": "provisional (the product owner chose it on 2026-11-18 from the third row of the canvas \"Clew",
+      "date": "2026-11-18",
+      "area": "ui, product"
+    },
+    {
+      "key": "D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame",
+      "number": 141,
+      "path": "docs/decisions/D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md",
+      "title": "D141 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
+      "status": "provisional, amended by [D138](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) (2026-11-19, in the look of `main`: the corner's \"Fråga AI\" replaces rule 1's button at the end of the title's line, the pane is a card at the end of the shell's column instead of rules 2 and 11's end slot, the rail's latest of rule 6 are gone with the rail, and on Start rule 9's answer stands under the line; rules 3 to 8 and 10 and the conditions stand) (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas \"Clew",
+      "date": "2026-11-18",
+      "area": "ui, product"
+    },
+    {
+      "key": "D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press",
+      "number": 142,
+      "path": "docs/decisions/D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md",
+      "title": "D142 · An item reviewed row by row has one page, which is its review, and a row's button names the next press",
+      "status": "provisional (the product owner chose it on 2026-11-21 from the canvas \"Clew",
+      "date": "2026-11-21",
+      "area": "ui, product"
     }
   ],
   "documents": [
@@ -2466,10 +2531,54 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D136-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md",
+      "title": "D136 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D137-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md",
+      "title": "D137 · An action says which record it is about, and the assistant fills in the actions of what stands open",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md",
+      "title": "D138 · The corner's \"Fråga AI\" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md",
+      "title": "D139 · A card with nothing to decide says what holds, and the person can say that the next step is taken",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D14-clew-stands-alone-eneo-enhances.md",
       "title": "D14 · Clew stands alone; Eneo enhances it through an optional module",
       "category": "decision-history",
       "headings": []
+    },
+    {
+      "path": "docs/decisions/D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md",
+      "title": "D140 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md",
+      "title": "D141 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md",
+      "title": "D142 · An item reviewed row by row has one page, which is its review, and a row's button names the next press",
+      "category": "decision-history",
+      "headings": [
+        "As built"
+      ]
     },
     {
       "path": "docs/decisions/D15-postgres-scheduler-now-temporal-later.md",
@@ -3442,6 +3551,7 @@
         "Manifest semantics",
         "Reads the installation makes",
         "Reads and actions about an entity",
+        "Actions about a record",
         "What a write asks, and what it says it will do",
         "Document and semantic views",
         "Scan observations",
@@ -3576,6 +3686,7 @@
         "Initial page loading",
         "Clew's pages under the band",
         "The conversation and the thing beside it",
+        "The assistant beside a page",
         "Adding to the box",
         "Hem under the box",
         "Alla verktyg and a tool's page",
@@ -4704,6 +4815,24 @@
         "What the critique found",
         "The proposal, as the canvas draws it",
         "What this would change, and what is open"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-18-where-the-assistant-is-asked.md",
+      "title": "Where the assistant is asked",
+      "category": "review-history",
+      "headings": [
+        "1. The question, and why it keeps being reopened",
+        "2. The history",
+        "3. The inventory",
+        "4. The general assistant and files",
+        "5. The options",
+        "6. The options weighed",
+        "7. The protocol half",
+        "8. How four other products place their assistant",
+        "9. Recommendation",
+        "10. Questions only the owner can answer",
+        "Appendix: the facts, with where they were read"
       ]
     },
     {

@@ -113,12 +113,17 @@ test.describe('the action dialog on a work item', () => {
       actionId: 'book',
       values: { when: '2026-11-05T12:15:00.000Z', place: 'Bergsåkers skola, rum 12' },
     });
-    // The receipt on the work item, each row read back, Ångra with the minutes left, and the decision under Händelser.
+    // The receipt on the work item: the status under the title says what was done and who confirmed it (D126 item 13:
+    // a status's title has no full stop), each row read back, Ångra with the minutes left, and the decision under
+    // Händelser.
     const item = page.locator('#card-omtanke');
-    await expect(item.getByText('Samtalet är registrerat i personalsystemet.')).toBeVisible();
+    await expect(item.getByText('Samtalet är registrerat i personalsystemet', { exact: true })).toBeVisible();
+    await expect(item.getByText('Bekräftat av Personalsystemet i dag 09:00.', { exact: true })).toBeVisible();
     await expect(item.getByRole('list', { name: 'Kvitto, rad för rad' })).toContainText(
       'registrerat i personalsystemet, torsdag 5 november kl. 13:15, Bergsåkers skola, rum 12',
     );
+    // Händelser is folded wherever an item is drawn (the product owner, 2026-11-16): unfolded, it holds the decision.
+    await item.getByRole('button', { name: /^Händelser/ }).click();
     await expect(item.getByRole('list', { name: 'Händelser, de senaste först' })).toContainText(
       'beslutade: Boka samtalet',
     );
@@ -126,7 +131,8 @@ test.describe('the action dialog on a work item', () => {
     // Ångra while the source allows it: the item is open again with its button, which asks again.
     await item.getByRole('button', { name: 'Ångra · 10 min kvar' }).click();
     await expect(item.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
-    await expect(item.getByText('Samtalet är registrerat i personalsystemet.')).toHaveCount(0);
+    await expect(item.getByText('Samtalet är registrerat i personalsystemet', { exact: true })).toHaveCount(0);
+    await expect(item.getByRole('list', { name: 'Kvitto, rad för rad' })).toHaveCount(0);
   });
 
   test('by keyboard alone: a time chosen with the arrows, the values kept when Esc closes it, and nothing sent', async ({
@@ -341,7 +347,12 @@ test.describe('the action dialog on a work item', () => {
     await dialog.getByRole('button', { name: 'Godkänn', exact: true }).click();
     await expect.poll(() => sent.length).toBe(1);
     expect(sent[0]).toEqual({ actionId: 'decide', values: { comment: 'Trevlig jul!' } });
-    await expect(page.locator('#card-ledighet').getByText('Ansökan är godkänd.')).toBeVisible();
+    // The status under the title (no full stop, D126 item 13), and the one row the source read back.
+    const item = page.locator('#card-ledighet');
+    await expect(item.getByText('Ansökan är godkänd', { exact: true })).toBeVisible();
+    await expect(item.getByRole('list', { name: 'Kvitto, rad för rad' })).toContainText(
+      'godkänd i personalsystemet, medarbetaren meddelad',
+    );
   });
 
   test('Godkänn without a comment: the button, then Godkänn in the dialog', async ({ page, api: _ }) => {
@@ -446,8 +457,8 @@ test.describe('an action about a person or a unit that asks', () => {
     await page.setViewportSize(WIDE);
     const here = `/people/johan?section=${PRESENCE_LENS}&from=%2Fstaff`;
     await open(page, here);
-    // Every action about the person is in the page's header (D126 rule 1): the third and on under Fler åtgärder.
-    const more = page.getByRole('main').getByRole('button', { name: 'Fler åtgärder för Johan Byström' });
+    // Every action about the person is in the one menu at the end of the title's line (D126 rule 1 as amended 2026-11-21).
+    const more = page.getByRole('main').getByRole('button', { name: 'Åtgärder för Johan Byström', exact: true });
     await more.click();
     await page.getByRole('menuitem', { name: 'Boka omtankesamtal' }).click();
     const dialog = dialogOf(page, 'Boka omtankesamtal');
@@ -743,10 +754,14 @@ test.describe('an action on a work item whose system does not answer', () => {
         : t,
     );
     await open(page, '/todo?item=omtanke');
+    // The item says it as its status (D126 item 13): the title, then since when the system is silent and what that
+    // means for what was sent.
+    await expect(pane(page).getByText('Ditt beslut är sparat', { exact: true })).toBeVisible();
     await expect(
-      pane(page).getByText('Ditt beslut är sparat. Det du skickar köas och läses tillbaka när systemet svarar.', {
-        exact: true,
-      }),
+      pane(page).getByText(
+        'Personalsystemet svarar inte sedan 06:00. Det du skickar köas och läses tillbaka när systemet svarar.',
+        { exact: true },
+      ),
     ).toBeVisible();
     await expectNoAxeViolations(page);
   });

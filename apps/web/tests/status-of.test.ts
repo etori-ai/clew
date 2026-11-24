@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { SUBJECT_CHANGED, type ExecutionSummary, type Receipt, type Thread } from '@clew/contracts';
 import { executionKind, executionStatus } from '../src/execution-status';
-import { receiptRowsInOrder, statusOf, type StatusContext } from '../src/status-of';
+import { nothingToDecide, receiptRowsInOrder, statusOf, summaryNotice, type StatusContext } from '../src/status-of';
 
 /**
  * One status vocabulary (D126 item 13): what the app already knows about a work item, as one of eight states with a
@@ -65,6 +65,135 @@ describe('a plain to-do has no notice: its title and its buttons say what is exp
   test('a stopped reminder is said on the row', () => {
     const timers: Thread['timers'] = [{ kind: 'reminder', dueAt: NOW, state: 'blocked' }];
     expect(statusOf(thread({ timers }), ctx()).detail).toBe('påminnelsen stoppad');
+  });
+});
+
+describe('a to-do with nothing to decide says what holds in a notice, in the source’s words', () => {
+  const read = { id: 'open', label: 'Visa mina kompetenser', capability: 'competence.holdings', kind: 'read' } as const;
+  const expired = (values: Partial<Thread> = {}) =>
+    thread({
+      title: 'Delegering läkemedel gick ut 8 oktober',
+      trigger: { reason: 'Har gått ut', source: 'Kompetens', at: NOW },
+      summary:
+        'Intyget gäller inte längre. Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.',
+      deadline: '2026-10-08',
+      actions: [{ ...read, role: 'primary' }],
+      ...values,
+    });
+  test('every action is a read: the summary’s first sentence is the title, the rest the description, and no move', () => {
+    const s = statusOf(expired(), ctx());
+    expect(s).toMatchObject({ kind: 'needs-you', noDecision: true, rest: [], review: false });
+    expect(s.notice).toEqual({
+      title: 'Intyget gäller inte längre',
+      description:
+        'Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.',
+    });
+    // The row says the source's reason where another item says when its answer is due: no answer is late here.
+    expect(s.detail).toBe('har gått ut');
+    const long = 'Intyget gick ut för mer än en månad sedan';
+    expect(
+      statusOf(expired({ trigger: { reason: long, source: 'Kompetens', at: NOW } }), ctx()).detail,
+    ).toBeUndefined();
+    // With a decision to make the row says the day as before.
+    const approve = { id: 'a', label: 'Förnya', capability: 'x.renew', kind: 'execute', role: 'primary' } as const;
+    expect(statusOf(expired({ actions: [approve] }), ctx()).detail).toBe('försenad');
+  });
+  test('several reads are still nothing to decide; one sentence is a title alone; no summary is no notice', () => {
+    const more = { ...read, id: 'more', label: 'Visa kraven', role: 'secondary' } as const;
+    const two = statusOf(
+      expired({ actions: [{ ...read, role: 'primary' }, more], summary: 'Kravet gäller alla.' }),
+      ctx(),
+    );
+    expect(two).toMatchObject({ noDecision: true, notice: { title: 'Kravet gäller alla' } });
+    expect(two.notice?.description).toBeUndefined();
+    expect(statusOf(expired({ summary: ' ' }), ctx())).toMatchObject({ noDecision: true, notice: null });
+  });
+  test('a decision to make, a proposal, or no action at all is a plain to-do as before', () => {
+    const approve = {
+      id: 'a',
+      label: 'Attestera',
+      capability: 'finance.approve',
+      kind: 'execute',
+      role: 'primary',
+    } as const;
+    const propose = {
+      id: 'p',
+      label: 'Föreslå tid',
+      capability: 'calendar.propose',
+      kind: 'propose',
+      role: 'primary',
+    } as const;
+    for (const actions of [[approve, { ...read, role: 'secondary' as const }], [propose], []])
+      expect(statusOf(expired({ actions }), ctx())).toMatchObject({ noDecision: false, notice: null });
+    const proposals = [{ id: 'p1' }] as unknown as Thread['proposals'];
+    expect(statusOf(expired({ proposals }), ctx())).toMatchObject({ noDecision: false, notice: null });
+  });
+  test('waiting, set aside, decided or closed, it is not: the state’s own notice stands', () => {
+    const cases: Partial<Thread>[] = [
+      { waitingOn: 'din chef' },
+      { snoozedUntil: '2026-11-17T05:00:00.000Z' },
+      { receipt: receipt(['done']) },
+      { execution: execution('pending') },
+      { state: 'handled', handledAt: NOW },
+      { state: 'dismissed', handledAt: NOW },
+    ];
+    for (const values of cases) {
+      expect(nothingToDecide(expired(values), NOW)).toBe(false);
+      expect(statusOf(expired(values), ctx()).noDecision).toBe(false);
+    }
+    expect(statusOf(expired({ waitingOn: 'din chef' }), ctx()).notice?.title).toBe('Väntar på din chef');
+    // A time to come back that has passed is awake, as everywhere else.
+    expect(nothingToDecide(expired({ snoozedUntil: '2026-11-16T05:00:00.000Z' }), NOW)).toBe(true);
+  });
+  const OFFER = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
+  test('the source’s offer to say the next step is taken (D139): the filled button here, a row under ⋯ on a to-do with a decision', () => {
+    const s = statusOf(expired({ handOn: OFFER }), ctx());
+    expect(s).toMatchObject({ noDecision: true, handOn: 'Jag har bett min chef', rest: [] });
+    expect(s.notice?.move).toBeUndefined();
+    const approve = { id: 'a', label: 'Förnya', capability: 'x.renew', kind: 'execute', role: 'primary' } as const;
+    const decide = statusOf(expired({ handOn: OFFER, actions: [approve] }), ctx());
+    expect(decide).toMatchObject({ noDecision: false, notice: null, handOn: 'Jag har bett min chef' });
+    expect(decide.rest).toEqual([{ kind: 'hand-on', label: 'Jag har bett min chef', offer: false }]);
+    // Without the offer there is none, and once decided or waiting it cannot be said.
+    expect(statusOf(expired(), ctx()).handOn).toBeUndefined();
+    for (const values of [
+      { waitingOn: 'din chef' },
+      { receipt: receipt(['done']) },
+      { execution: execution('pending') },
+    ])
+      expect(statusOf(expired({ handOn: OFFER, ...values }), ctx()).handOn).toBeUndefined();
+  });
+  test('once said, the item waits on whom the source named: when the person said it, Påminn mig, and the way back under ⋯', () => {
+    const handedOn = { to: 'din chef', at: '2026-11-16T07:40:00.000Z' };
+    const s = statusOf(expired({ handOn: OFFER, waitingOn: 'din chef', handedOn }), ctx());
+    expect(s).toMatchObject({ kind: 'waiting', noDecision: false });
+    expect(s.notice).toEqual({
+      title: 'Väntar på din chef',
+      description: 'Du sa ”Jag har bett min chef” när 07:40.',
+      move: { kind: 'remind', label: 'Påminn mig', offer: true },
+    });
+    expect(s.rest).toEqual([{ kind: 'hand-back', label: 'Det blev inte gjort', offer: true }]);
+    // With the person's own reminder, both are said; an offer the source has taken away leaves plain words.
+    const timers: Thread['timers'] = [{ kind: 'reminder', dueAt: '2026-11-17T09:00:00.000Z', state: 'scheduled' }];
+    expect(
+      statusOf(expired({ handOn: OFFER, waitingOn: 'din chef', handedOn, timers }), ctx()).notice?.description,
+    ).toMatch(/^Du sa ”Jag har bett min chef” när 07:40\. Påminner dig /);
+    expect(statusOf(expired({ waitingOn: 'din chef', handedOn }), ctx()).notice?.description).toBe(
+      'Du lämnade ärendet vidare när 07:40.',
+    );
+    // An item that waits because its source says so has no way back of the person's.
+    expect(statusOf(expired({ waitingOn: 'din chef' }), ctx()).rest).toEqual([]);
+  });
+  test('a sentence ends before a capital letter, so an abbreviation or a time does not end one', () => {
+    expect(summaryNotice('Ansökan kom kl. 16.40 i går. Läs den i personalsystemet.')).toEqual({
+      title: 'Ansökan kom kl. 16.40 i går',
+      description: 'Läs den i personalsystemet.',
+    });
+    expect(summaryNotice('Två rader\n\n  väntar!  Se listan.')).toEqual({
+      title: 'Två rader väntar!',
+      description: 'Se listan.',
+    });
+    expect(summaryNotice('')).toBeNull();
   });
 });
 

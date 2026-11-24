@@ -6,6 +6,7 @@ export declare const requestRefPattern: string;
 export declare const STATES: readonly string[];
 export declare const CATALOGUE: ReadonlyArray<{ value: string; label: string }>;
 export declare const REQUEST_TITLE: string;
+export declare const COMMENT_MAX: number;
 export declare const executeResult: unknown;
 /** The manifest, typed as far as a reader of its views needs; the protocol's `ConnectorManifest` is the full shape. */
 export declare const manifest: {

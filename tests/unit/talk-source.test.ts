@@ -237,14 +237,16 @@ describe('the talks profile', () => {
     expect(refused).toEqual([]);
   });
 
-  test('no read of the domain is ever a model tool, with or without the composites', () => {
+  test('of the domain only the built-in round may be a model tool, with or without the composites', () => {
     const { registry } = world([
       talkSystem(TALKS_CONNECTOR, 'Clew', { kind: 'core' }),
       talkSystem('appraisals', 'Samtalssystemet'),
     ]);
     const names = () => registry.tools(hillevi).map(t => t.name);
     expect(names()).toEqual(expect.arrayContaining(['talks.other', 'appraisals.other']));
-    expect(names()).not.toContain('talks.talks');
+    // The built-in module's round is opened (D122 item 3, D141 rule 4) and governed as any read: here it says model.
+    expect(names()).toContain('talks.talks');
+    // Every system's action points, another system's round and the composites never are (D96 item 6).
     expect(names()).not.toContain('talks.commitments');
     expect(names()).not.toContain('appraisals.talks');
     expect(names()).not.toContain('appraisals.commitments');
@@ -258,5 +260,8 @@ describe('the talks profile', () => {
     expect(names()).toContain('clew.other');
     expect(names()).not.toContain('clew.talks');
     expect(names()).not.toContain('clew.commitments');
+    // The exception is the built-in module's alone: a system that is not Clew's own under the same id gets none of it.
+    const other = world([talkSystem(TALKS_CONNECTOR, 'Samtalssystemet', { kind: 'passthrough' })]).registry;
+    expect(other.tools(hillevi).map(t => t.name)).toEqual(['talks.other']);
   });
 });

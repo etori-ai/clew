@@ -42,6 +42,13 @@ export const PENDING_MENU: SiteMenu = {
  * a query: a page frame is also drawn before the session is known (`FirstLoad`), outside the query client.
  */
 export const SiteName = createContext<string>(SITE_NAME);
+/**
+ * The page the row "Mina sidor" marks as the current one: its name there ("Att göra") and whether the address is that
+ * page's own (`/calendar` for Kalender, whose title is the week). Null where the row marks none or a tool of the
+ * "Verktyg" menu. The page frame reads it: a page that is the row's own page opens with no trail, since the row right
+ * above already says where the person is (D130 item 17 as amended 2026-11-21).
+ */
+export const RowPage = createContext<{ label: string; own: boolean } | null>(null);
 /** Hem among Clew's own pages, where no header connector lists a Start of its own (D130). */
 export const START_PAGE = { id: START_PAGE_ID, label: 'Start', href: '/' } as const;
 /** The width the header's rows and every page's column are bounded to (D130: the reference bounds both to 1280 px). */
@@ -137,6 +144,11 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const pages = shared ? nav.pages : [START_PAGE, ...nav.pages];
   // With a connector Start is a place of the band, not a page of the row, so nothing of the row is marked on Hem.
   const currentPage = nav.current;
+  const marked = pages.find(p => p.id === currentPage && !('more' in p && p.more));
+  const rowPage = useMemo(
+    () => (marked ? { label: marked.label, own: marked.href.split('?')[0] === location.pathname } : null),
+    [marked?.label, marked?.href, location.pathname],
+  );
   const here = window.location.origin + location.pathname + location.search;
   const selected = selectedItem(menu, here);
   // The band's theme (D88) is the installation's (D98), built once per saved theme.
@@ -267,7 +279,9 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
       >
         {/* The floating way to the assistant (D130 item 14) stands over the page, where the page leaves it room. */}
         <WithAssistantCorner>
-          <SiteName.Provider value={menu.site.name}>{children}</SiteName.Provider>
+          <SiteName.Provider value={menu.site.name}>
+            <RowPage.Provider value={rowPage}>{children}</RowPage.Provider>
+          </SiteName.Provider>
         </WithAssistantCorner>
       </AppShell>
       {nav.overlay}

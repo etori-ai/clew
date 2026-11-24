@@ -144,14 +144,21 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
-  test('the page asks with Fråga assistenten at the end of its title line, not a box at its foot, and nothing offers Lägg till i samtalet', async ({
+  test('the page asks through the corner’s Fråga AI, not a button on its title line or a box at its foot, the page stays when it is pressed, and nothing offers Lägg till i samtalet', async ({
     page,
     api,
   }) => {
     api.menu = menuRows;
     await open(page, directory);
-    await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toBeVisible();
+    // The corner's button (D138 items 1 and 3): the door to the assistant's pane beside the page, which stays
+    // (`ask-pane.spec.ts`). The page draws no way to ask of its own.
+    const ask = page.getByRole('button', { name: 'Fråga AI', exact: true });
+    await expect(ask).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     await expect(page.getByRole('combobox', { name: 'Vad vill du göra' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
+    await ask.click();
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?ask=1$/);
     await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
   });
 

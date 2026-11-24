@@ -5,12 +5,12 @@
 // The desk knows a person by their user name (`actor.userName`, the directory's, D68), the same key Clew asks about a
 // person with (D97). Who may be asked about is Clew's (D117): an order, its effect, the summary and the equipment answer
 // only a key the verified request vouches for as the caller themself or a manager's direct report. What the person made
-// is theirs alone: the list and one request answer the caller's own and nobody else's, and a manager reading the summary
-// about a report counts only what someone else ordered on the report's behalf. A caller without a user name is refused,
-// never answered as someone who has nothing.
+// is theirs alone: the list, one request and a comment on one (D137) answer the caller's own and nobody else's, and a
+// manager reading the summary about a report counts only what someone else ordered on the report's behalf. A caller
+// without a user name is refused, never answered as someone who has nothing.
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
-import { manifest, ADMITS, CATALOGUE, CONNECTOR, KEYS_MAX, SOURCE, STATES } from './manifest.mjs';
+import { manifest, ADMITS, CATALOGUE, COMMENT_MAX, CONNECTOR, KEYS_MAX, SOURCE, STATES } from './manifest.mjs';
 import { shortDate } from './fixture.mjs';
 import { equipmentRow, fixtureDesk, isOpen, numberOf, requestDetail, requestRow } from './desk.mjs';
 import { memoryState } from './state.mjs';
@@ -125,6 +125,29 @@ export function createConnector({
       ],
     };
   };
+  /**
+   * Checks a comment as the desk takes it (D137): on a request the caller made, which anyone else is told does not
+   * exist, with text within bounds. Answers the request's number and the text as the desk keeps it.
+   */
+  async function commentOf(actor, input) {
+    if (!me(actor)) throw new Invalid(UNKNOWN_CALLER);
+    const number = numberOf(input.ref);
+    if (!number) throw new Invalid('Ogiltig referens.');
+    const found = await source.getRequest(number);
+    if (!found || fold(found.Data.Requester) !== fold(me(actor))) throw new NotFound();
+    const text = typeof input.text === 'string' ? input.text.trim() : '';
+    if (!text) throw new Invalid('Kommentar behöver fyllas i.');
+    if (text.length > COMMENT_MAX) throw new Invalid(`Kommentar: högst ${COMMENT_MAX} tecken.`);
+    return { found, number, text };
+  }
+  /** What a comment answers, and what its read-back answers again: the request by number and type, the comment added. */
+  const commentReceipt = serviceCase => {
+    const row = requestRow(serviceCase);
+    return {
+      headline: 'Kommentaren är tillagd i IT-servicedesken.',
+      rows: [{ ref: row.ref, label: row.label, outcome: 'done', detail: 'din kommentar' }],
+    };
+  };
   const stateOrder = row => STATES.indexOf(row.state);
 
   const reads = {
@@ -161,14 +184,32 @@ export function createConnector({
       ].filter(Boolean);
       return { rows: [{ label: `${entry.Subject} beställs`, detail: details.join(', ') }] };
     },
+    // What servicedesk.comment will do with the same input (D112), checked as the comment checks it and written nowhere.
+    'servicedesk.commentEffect': async (actor, input) => {
+      const { found } = await commentOf(actor, input);
+      const row = requestRow(found);
+      return {
+        rows: [
+          {
+            label: `Din kommentar läggs till på ${row.label}`,
+            detail: `${found.Data.ResponsibleGroup} ser den i ärendet`,
+          },
+        ],
+      };
+    },
     // The read-back (D45): the operation log, and when the answer was lost before it was logged, the desk itself, which
-    // filed the order under the operation id.
+    // filed the order, or added the comment, under the operation id.
     'servicedesk.lookup': async (actor, input) => {
       const op = state.get('op:' + input.operationId);
       if (op) return op.person === actorKey(actor) ? { found: true, result: op.result } : { found: false };
       const filed = await source.findByReference(input.operationId);
-      if (!filed || !me(actor) || fold(filed.Data.Requester) !== fold(me(actor))) return { found: false };
-      return { found: true, result: orderReceipt(filed) };
+      if (filed)
+        return me(actor) && fold(filed.Data.Requester) === fold(me(actor))
+          ? { found: true, result: orderReceipt(filed) }
+          : { found: false };
+      const commented = await source.findCommentByReference(input.operationId);
+      if (!commented || !me(actor) || fold(commented.comment.Author) !== fold(me(actor))) return { found: false };
+      return { found: true, result: commentReceipt(commented.serviceCase) };
     },
     // About a person (D97): one row per key Clew vouched for that the desk knows, with what is registered to them and the
     // orders for them not yet delivered. A person reading about themself counts every such order; anyone else (their
@@ -209,6 +250,26 @@ export function createConnector({
 
   // Each write is one filing in the desk. The fault `conflict` is the desk answering that it took nothing.
   const writes = {
+    // A comment on the caller's own request (D137), added once per operation id as an order is filed once.
+    'servicedesk.comment': async (actor, input, _relations, operationId, digest) => {
+      const { number, text } = await commentOf(actor, input);
+      if (fault === 'conflict')
+        return {
+          headline: 'IT-servicedesken tog inte emot kommentaren.',
+          rows: [{ ref: input.ref, label: 'Kommentar', outcome: 'failed', detail: 'försök igen' }],
+        };
+      const filed = await source.addComment({
+        number,
+        author: me(actor),
+        text,
+        ...(operationId ? { reference: operationId, digest } : {}),
+      });
+      // A comment the desk added under this operation id before must be this caller's with this input.
+      const kept = operationId && filed.Data.Comments.find(c => c.Reference === operationId);
+      if (kept && (fold(kept.Author) !== fold(me(actor)) || kept.ReferenceDigest !== digest))
+        throw new Conflict(SAME_ID);
+      return commentReceipt(filed);
+    },
     'servicedesk.order': async (actor, input, relations, operationId, digest) => {
       const { note } = orderOf(actor, input, relations);
       if (fault === 'conflict')

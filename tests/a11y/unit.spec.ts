@@ -177,8 +177,11 @@ test.describe('the unit as a page', () => {
     units.actions = [unitAction];
     await units.route(page, api);
     await open(page, `${school}?from=%2F`);
-    const button = page.getByRole('main').getByRole('button', { name: unitAction.title, exact: true });
-    await button.click();
+    // The unit's actions are the one menu "Åtgärder" (D126 rule 1 as amended 2026-11-21), also when there is one.
+    const main = page.getByRole('main');
+    await expect(main.getByRole('button', { name: unitAction.title, exact: true })).toHaveCount(0);
+    await main.getByRole('button', { name: `Åtgärder för ${ENTITY_UNIT.label}`, exact: true }).click();
+    await page.getByRole('menuitem', { name: unitAction.title }).click();
     const dialog = page.getByRole('dialog', { name: unitAction.title });
     await expect(dialog).toBeVisible();
     expect(api.entityStarts).toEqual([]);

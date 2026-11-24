@@ -16,7 +16,7 @@ import type {
   RotateSecretInput,
   View,
 } from '@clew/contracts';
-import { ENTITY_COLUMNS_MAX } from '@clew/contracts';
+import { ENTITY_COLUMNS_MAX, aboutEntity, type EntityAbout, type RecordAbout } from '@clew/contracts';
 import {
   deniedGovernance,
   menuRowOf,
@@ -167,11 +167,12 @@ export function connectorUsecases(deps: AdminDeps) {
    * or list; undefined when the capability is not such a read. Asked of the live capability first, as the menu row is.
    */
   const aboutRead = (row: ConnectorRecord, name: string, m = manifestOf(row)) => {
-    const c: { kind: string; about?: { entity: EntityKind }; view?: View } | undefined =
+    const c: { kind: string; about?: EntityAbout | RecordAbout; view?: View } | undefined =
       registry.connector(row.id)?.capabilities.find(x => x.name === name) ?? m?.capabilities.find(x => x.name === name);
     const view = c?.view;
-    if (c?.kind !== 'read' || !c.about || (view?.kind !== 'table' && view?.kind !== 'list')) return undefined;
-    return { entity: c.about.entity, fields: view.fields };
+    const about = aboutEntity(c?.about);
+    if (c?.kind !== 'read' || !about || (view?.kind !== 'table' && view?.kind !== 'list')) return undefined;
+    return { entity: about.entity, fields: view.fields };
   };
   /** The column a row shows for one capability (D97 item 4): the stored field while it is still in the view. */
   const columnOf = (row: ConnectorRecord, name: string, capabilities = row.capabilities, m = manifestOf(row)) => {
@@ -248,7 +249,8 @@ export function connectorUsecases(deps: AdminDeps) {
           row.capabilities[c.name]?.model !== false &&
           row.capabilities[c.name]?.enabled !== false,
         menu: (r => (r ? { ...r, on: row.capabilities[c.name]?.menu === true } : null))(menuRow(row, c.name, m)),
-        ...(c.about ? { about: c.about.entity } : {}),
+        // The entity it is about (D97); an action about a record (D137) is placed on the record's page, not here.
+        ...(aboutEntity(c.about) ? { about: aboutEntity(c.about)!.entity } : {}),
         ...(about =>
           about
             ? {

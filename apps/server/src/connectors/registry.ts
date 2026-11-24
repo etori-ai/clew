@@ -15,15 +15,19 @@ import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
 import { clock } from '../composition/ambient';
 import { userCapabilities } from '../modules/people/capabilities';
-import { userReads } from '../composition/people';
+import { staff, userReads } from '../composition/people';
+import { reportCapabilities } from '../modules/entities/capabilities';
+import { reportUsecases } from '../modules/entities/usecases';
 import { searchConnector, type AnswerCards } from '../modules/search/connector';
 import { searchUsecases } from '../modules/search/usecases';
-import { errandCapabilities } from '../modules/errands/capabilities';
+import { ERRANDS_CAPABILITY, errandCapabilities } from '../modules/errands/capabilities';
 import { errandUsecases } from '../modules/errands/usecases';
-import { requestCapabilities } from '../modules/requests/capabilities';
+import { REQUESTS_CAPABILITY, requestCapabilities } from '../modules/requests/capabilities';
 import { requestUsecases } from '../modules/requests/usecases';
 import { newsCapabilities } from '../modules/news/capabilities';
 import { workCapabilities } from '../modules/work/capabilities';
+import { conversationCapabilities } from '../modules/conversations/capabilities';
+import { toolCatalogueCapabilities } from '../modules/tool-catalogue/capabilities';
 import { newsUsecases } from '../modules/news/usecases';
 import { talksConnector } from '../modules/talks/capabilities';
 import { talkSeamCapabilities } from '../modules/talk-seam/capabilities';
@@ -60,8 +64,16 @@ const search = searchUsecases({
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
 export const answerCards: AnswerCards = {};
 // Clew's core only (D61): every other system, the development fixtures included, is a connector row (D21, D23).
-// Users are core entities, not installed systems. Their read capabilities share dispatch only (D62).
-const internal = [userCapabilities(userReads)];
+// Users are core entities, not installed systems. Their read capabilities share dispatch only (D62). The reader's
+// people as Personal lists them (`people.reports`, D141 rule 4) is the entities module's read, joined here under the
+// same id, since the rule of who is on that list is that module's.
+const people = userCapabilities(userReads);
+const internal = [
+  {
+    ...people,
+    capabilities: [...people.capabilities, ...reportCapabilities(reportUsecases({ directory: staff })).capabilities],
+  },
+];
 /** The combined errand list (D35 item 4, D89) lists its case systems from the registry the same way. */
 const errands = errandUsecases({ sources: actor => registry.errandSources(actor) });
 /** The combined request list (D123), what a person ordered or reported, lists its service desks from the registry the same way. */
@@ -82,17 +94,29 @@ const talkSeam = talkSeamUsecases({
 /**
  * Clew's own connector is assembled here, the only file that names connectors: the composite search owns the id and the
  * question area, the errand list adds its read and its area, the request list its read and its area, the news list its
- * read, the talks seam its two reads. The modules never import each other (D20).
+ * read, Att göra, Alla samtal and Alla verktyg one read each, the talks seam its two reads. The modules never import
+ * each other (D20).
  */
 const core = searchConnector(search, answerCards);
 /**
- * A person's work items as a read (`clew.work`): the stream owns the items and is built over this registry, so the
- * composition root fills this slot with the stream's own read boundary, as it fills `answerCards`.
+ * A person's own threads, for the reads over them: their work items (`clew.work`) and their conversations
+ * (`clew.conversations`). The stream owns the threads and is built over this registry, so the composition root fills
+ * this slot with the stream's own read boundary, as it fills `answerCards`.
  */
-export const workItems: { list?: (actor: Parameters<Registry['visible']>[0], now: string) => Promise<Thread[]> } = {};
-const workPart = workCapabilities({
-  list: async (actor, now) => (await workItems.list?.(actor, now)) ?? [],
-  clock,
+export const personThreads: { list?: (actor: Parameters<Registry['visible']>[0], now: string) => Promise<Thread[]> } =
+  {};
+const threadsOf = async (actor: Parameters<Registry['visible']>[0], now: string) =>
+  (await personThreads.list?.(actor, now)) ?? [];
+const workPart = workCapabilities({ list: threadsOf, clock });
+const conversationPart = conversationCapabilities({ list: threadsOf, clock });
+/**
+ * Clew's own lists that Alla verktyg shows whether or not an administrator placed them in the menu (D126 rule 8), as
+ * the page's `toolsOf` adds them: each one the person may call.
+ */
+const OWN_LISTS = [ERRANDS_CAPABILITY, REQUESTS_CAPABILITY];
+const toolPart = toolCatalogueCapabilities({
+  menu: actor => registry.menu(actor),
+  own: actor => OWN_LISTS.flatMap(name => registry.allowed(actor, name) ?? []),
 });
 const errandPart = errandCapabilities(errands, actor => registry.errandSources(actor).length > 0);
 const requestPart = requestCapabilities(requests, actor => registry.requestSources(actor).length > 0);
@@ -107,6 +131,8 @@ const clewConnector = {
     ...requestPart.capabilities,
     ...newsPart.capabilities,
     ...workPart.capabilities,
+    ...conversationPart.capabilities,
+    ...toolPart.capabilities,
     ...talkPart.capabilities,
   ],
 };

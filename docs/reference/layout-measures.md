@@ -27,7 +27,8 @@ Spacing is written in Astryx's steps (`gap={6}` is 24 px).
 | What | Measure | Set in |
 |---|---|---|
 | The shell's column | 1280 px at most, centred, 32 px at each side; the header's rows stand on the same lines | `SHELL_WIDTH` in `shell.tsx`, `PageFrame` |
-| Over a title: the trail or the way back | 12 px to the title | `PageFrame` |
+| Over a title: the trail or the way back | 12 px to the title. A page of the row "Mina sidor" itself has neither: the row marks it (D130 item 17 as amended 2026-11-21) | `PageFrame`, `RowPage` in `shell.tsx` |
+| Tabs on a title's line | Att göra's piles, 24 px after the title, from 1025 px of window; under the title below that and on a phone (D130 item 19 as amended 2026-11-21) | `PageFrame` (`tabsOnLine`) |
 | Page title | 32 px, 800; 24 px below `md` | `theme.ts` |
 | Facts line under a title | 17 px in the secondary colour, 8 px under the title | `PageFrame` |
 | Between cards that stand together | 20 px: a board's blocks and columns, key figures in their row | `CARD_GAP` in `measures.tsx` |
@@ -47,6 +48,9 @@ Spacing is written in Astryx's steps (`gap={6}` is 24 px).
 | The assistant's button | 46 px high with 24 px at each side, a pill, in the ask pill and in the corner | `theme.ts` (`variant:ai` with `size:lg`) |
 | Focus news | 32 px inset, the headline 30 px | `focus-news.tsx` |
 | Closing line | 12 px; 40 px under a board's last card, a rule over it | `PageFrame` |
+| What scrolls | A board and a read with facts, sections or tabs (a work item, a record, a person, a unit, a plan, Administration) scroll as one page under the shell's header; a fixed work surface (Kalender, Att göra with its reading pane, a conversation, the review) and every page beside the assistant's pane keep their header while their column scrolls; a short screen pins nothing (D130 item 8 as amended 2026-11-21) | `PageFrame` (`asOne`, `pin`) |
+| A sticking tab row | On a page that scrolls as one, the tabs alone stay at the top of the window: 8 px over them and 12 px under, the ground's colour behind, and 64 px of `scroll-padding-top` on the shell's column so the keyboard's focus stops under the row (2.4.11). The one sticky written by hand, D130 "Astryx gaps"; not on a short screen | `PageFrame` (`STUCK_TABS`, `STUCK_ROOM`) |
+| The assistant's pane | A card at the end of the shell's column, 400 px wide (the person's grip: 360 px to half the column, at most 720), 20 px from the page's card or 32 px from a board's cards; beside the page from 1180 px of window, a drawer below | `PageFrame` (`aside`), `paneBesideQuery` in `media.ts` |
 
 ## Checking a page
 

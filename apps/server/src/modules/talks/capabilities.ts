@@ -34,10 +34,15 @@ import type { RoundHeading, TalkNotice, TalkUsecases } from './usecases';
 /**
  * The talks module as Clew's built-in connector (D96 items 7 to 9): it answers the talks profile, `talks.talks` and
  * `talks.commitments`, while an administrator keeps it enabled, and declares the area whose figure is the share of
- * talks held. No read is a model tool, and neither view declares a `ref`, so no row can be added to a conversation as
- * a chip (item 6): the text of an action point is free text about a person. Writes are use cases behind Clew's own
- * routes, never capabilities, so nothing here is an action in a person's menu. Two reads say what their rows are about
- * (D97): `talks.person` and `talks.unit`. The connector's scan asks for the cards that hang on a talk's booking (D133).
+ * talks held. One read is offered to the model (D122 item 3, D141 rule 4): the open round, `talks.talks`, which says
+ * where each of the reader's reports stands and holds no text of a talk or an action point. The rest stay closed, each
+ * for its reason: `talks.commitments`, since the text of an action point is free text about a person (D96 item 6; the
+ * registry holds every system's action points from the model whatever a read declares); `talks.person` and
+ * `talks.unit`, the two reads that say what their rows are about (D97), which the loader holds from the model (D97
+ * item 7): the model reads the round row by row from `talks.talks` instead. Neither view declares a `ref`, so no row
+ * can be added to a conversation as a chip. Writes are use cases behind Clew's own routes, never capabilities, so
+ * nothing here is an action in a person's menu. The module logs no read, so the assistant's read of the round is
+ * logged nowhere either (D122 item 6). The connector's scan asks for the cards that hang on a talk's booking (D133).
  * The use cases come built from composition (D25).
  */
 export const TALKS_SOURCE = 'Utvecklingssamtal';
@@ -255,8 +260,10 @@ export function talksConnector(
     name: TALKS_CONNECTOR + '.talks',
     kind: 'read',
     title: 'Utvecklingssamtal',
-    model: false,
-    description: 'Den öppna omgången av utvecklingssamtal och var varje person du är chef för står.',
+    // Offered to the model (D122 item 3): where each report stands, nothing a talk or an action point says.
+    model: true,
+    description:
+      'Den öppna omgången av utvecklingssamtal och var varje medarbetare du är chef för står i den: namnet, om samtalet saknas, är bokat eller är hållet, när det är bokat eller hölls, och hur många åtgärdspunkter med medarbetaren som är öppna. Inget om vad som sades eller vad åtgärdspunkterna gäller. Tar ingen indata. Svarar med inga rader när ingen omgång är öppen. Varje rad har medarbetarens användarnamn.',
     input: TalksInputSchema,
     output: TalksOutputSchema,
     view: talksView,
@@ -267,6 +274,8 @@ export function talksConnector(
     name: TALKS_CONNECTOR + '.commitments',
     kind: 'read',
     title: 'Mina åtgärdspunkter',
+    // Closed to the model (D96 item 6): an action point's text is free text about a person. The registry holds every
+    // system's action points from the model whatever this says.
     model: false,
     description: 'Åtgärdspunkter från utvecklingssamtal: dina egna, eller en persons du är chef för.',
     input: CommitmentsInputSchema,
@@ -282,6 +291,7 @@ export function talksConnector(
     name: TALKS_CONNECTOR + '.person',
     kind: 'read',
     title: 'Utvecklingssamtal',
+    // A read about an entity: never a tool (D97 item 7, held by the loader). The model reads `talks.talks` instead.
     model: false,
     description:
       'Var varje person du är chef för står i den öppna omgången av utvecklingssamtal: saknas, bokat eller hållet, och hur många åtgärdspunkter som är öppna och försenade.',
@@ -316,6 +326,7 @@ export function talksConnector(
     name: TALKS_CONNECTOR + '.unit',
     kind: 'read',
     title: 'Utvecklingssamtal',
+    // A read about an entity: never a tool (D97 item 7, held by the loader).
     model: false,
     description: 'Hur många på varje enhet du är chef för som har haft sitt utvecklingssamtal i den öppna omgången.',
     input: KeysSchema,

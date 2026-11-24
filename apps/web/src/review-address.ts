@@ -1,14 +1,14 @@
 /**
- * The review of a work item's rows one at a time (D70 item 2) is a page of its own since 2026-11-12 (D73, amended under
- * the product owner's rule that a task a person works through is a page with its own address): `/items/<threadId>/review`,
- * the work item's page with `review` after it. `step` is the step (1-based, the rows in the item's order and the last
- * step Skicka; the first step leaves it out), rewritten in place as the person moves, so Back leaves the review; `from`
- * is the page the work item was shown on, for the way back, as the item's own page keeps it (`itemPageHref`): a path
- * inside Clew with its own search, never a `from` of its own.
+ * The review of a work item's rows one at a time (D70 item 2) is the work item's own page (D142): `/items/<threadId>`,
+ * with no page of its own beside it. `step` is the step (1-based, the rows in the item's order and, until it is sent,
+ * a last step Skicka), rewritten in place as the person moves, so Back leaves the item; an address that names no step
+ * opens where the person's next press is (`ReviewedItem`). `from` is the page the work item was shown on, for the way
+ * back (`itemPageHref`): a path inside Clew with its own search, never a `from` of its own.
  *
- * Two addresses from before lead here, in their own place in the history: `?review=<threadId>&step=<n>` on any page
- * (the review as an overlay over that page, 2026-11-07 to 2026-11-12), with that page as `from`, and
- * `/cards/<threadId>/review?step=<n>` (the review's first page, 2026-11-07), with the item's own page as the way back.
+ * Three addresses from before lead here, in their own place in the history: `/items/<threadId>/review?step=<n>` (the
+ * review as a page beside the item's, 2026-11-12 to 2026-11-21), `?review=<threadId>&step=<n>` on any page (the review
+ * as an overlay over that page, 2026-11-07 to 2026-11-12), with that page as `from`, and
+ * `/cards/<threadId>/review?step=<n>` (the review's first page, 2026-11-07).
  */
 export const REVIEW_PARAM = 'review';
 export const STEP_PARAM = 'step';
@@ -32,7 +32,7 @@ const wayBack = (path: string | null | undefined): string | null => {
   q.delete('from');
   return address(path.slice(0, at), q);
 };
-const reviewPath = (threadId: string) => `/items/${encodeURIComponent(threadId)}/review`;
+const reviewPath = (threadId: string) => `/items/${encodeURIComponent(threadId)}`;
 /** The review's address with `step` as given (1-based, as the address holds it), or none for the first step. */
 const reviewAt = (threadId: string, from: string | null | undefined, step: string | null) => {
   const q = new URLSearchParams();
@@ -62,6 +62,18 @@ export function withStep(pathname: string, search: URLSearchParams | string, ste
   const q = new URLSearchParams(search);
   if (step > 0) q.set(STEP_PARAM, String(step + 1));
   else q.delete(STEP_PARAM);
+  return address(pathname, q);
+}
+/** Whether the address names a step at all; one that names none opens where the person's next press is. */
+export const namesStep = (search: URLSearchParams): boolean => search.has(STEP_PARAM);
+/** `/items/<threadId>/review`, the review's page until 2026-11-21: the item's page, the step and the way back kept. */
+export function formerReviewPage(threadId: string, search: URLSearchParams | string): string {
+  return address(reviewPath(threadId), new URLSearchParams(search));
+}
+/** The same page at a step (0-based) the address names outright, the first too: a step the person chose is kept. */
+export function atStep(pathname: string, search: URLSearchParams | string, step: number): string {
+  const q = new URLSearchParams(search);
+  q.set(STEP_PARAM, String(step + 1));
   return address(pathname, q);
 }
 /** The step the address names, 0-based, among `steps`; null when it names none of them. */

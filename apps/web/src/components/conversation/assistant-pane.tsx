@@ -4,16 +4,8 @@ import { handoversOf, type ThreadMessage } from '@clew/contracts';
 import { useNavigate } from 'react-router';
 import {
   AreaChip,
-  Badge,
-  Button,
-  ChatComposer,
-  ChatComposerInput,
   ChatLayout,
   type ChatComposerInputHandle,
-  ChatMessage,
-  ChatMessageBubble,
-  ChatMessageList,
-  ChatMessageMetadata,
   Divider,
   DropdownMenu,
   DropdownMenuGroup,
@@ -25,11 +17,9 @@ import {
   Icon,
   IconButton,
   Link,
-  Markdown,
   Skeleton,
   StackItem,
   Text,
-  Timestamp,
   VStack,
   VisuallyHidden,
   XMarkIcon,
@@ -38,8 +28,15 @@ import { handoverAssistantsQuery } from '../../queries';
 import { useMarks } from '../../marks';
 import { sideMessages } from '../../conversation-about';
 import { DOT } from '../../dot';
-import { useConversation } from './conversation-context';
-import { AssistantMark, StreamingAnswer, keepLines } from './conversation';
+import { Composer } from './composer';
+import {
+  ConversationContext,
+  INERT_CONVERSATION,
+  useConversation,
+  type ConversationState,
+  type PendingTurn,
+} from './conversation-context';
+import { AssistantMark, Transcript } from './conversation';
 
 /**
  * The way to any assistant of another system from a conversation, in the page's header and always there: the ones this
@@ -114,6 +111,12 @@ export function AssistantsMenu({ open, hrefFor }: { open: string | null; hrefFor
  * goes to that system, unchanged and alone (D125 item 4). Nothing goes from here to Clew: an assistant does not hand a
  * question back, and a question for Clew is typed in Clew's box. The whole assistant, with its files
  * and its own history, is in its own system: the header links there.
+ *
+ * Under the header the exchange and its box are the conversation's own parts (D141, "One component"): `Transcript` in
+ * the panel's room and the plain box of a pane, read from a second provider of the conversation context whose state is
+ * this assistant's side of the conversation. Its messages are that assistant's exchange, its turn on the way is the
+ * panel's question, and its box sends to that assistant alone; the one way from it to Clew's own turn is "Låt
+ * assistenten svara" under a question Clew held.
  */
 export function AssistantPane({
   assistant,
@@ -132,7 +135,7 @@ export function AssistantPane({
   const listed = useQuery(handoverAssistantsQuery).data;
   const [value, setValue] = useState('');
   // Opening the panel is the person turning to this assistant: its box takes the focus, as a dialog's first field does.
-  const field = useRef<ChatComposerInputHandle>(null);
+  const field = useRef<ChatComposerInputHandle | null>(null);
   // Also once the conversation is read from its address, since the page gives the focus to Clew's box when it has, and
   // once the assistant is known: until the list of assistants is read the panel has no field to focus, and a person
   // who then typed would be writing to Clew.
@@ -142,12 +145,6 @@ export function AssistantPane({
     const frame = requestAnimationFrame(() => field.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [assistant, conversationId, known]);
-  // A question Clew held on its way out waits for the person's choice: the safe answer takes the focus (D125 item 13).
-  const stay = useRef<HTMLButtonElement>(null);
-  const isHeld = talk.aside?.assistant === assistant && !!talk.aside.held;
-  useEffect(() => {
-    if (isHeld) stay.current?.focus();
-  }, [isHeld]);
   const kept = handoversOf(talk.conversation?.handover).find(h => h.assistant === assistant);
   const found = listed?.find(a => a.id === assistant);
   const who = kept
@@ -180,70 +177,45 @@ export function AssistantPane({
       </VStack>
     );
   const all = talk.conversation?.messages ?? [];
-  const messages = sideMessages(all, assistant);
-  const pending = talk.aside?.assistant === assistant ? talk.aside : null;
-  const busy = talk.busy || (!!pending && !pending.held);
-  const time = (at: string, footer?: string) => (
-    <ChatMessageMetadata
-      timestamp={<Timestamp value={at} format="time" hasTooltip={false} />}
-      {...(footer ? { footer } : {})}
-    />
-  );
-  const asked = (key: string, body: string, at: string, footer?: string) => (
-    <ChatMessage key={key} sender="user" name={<VisuallyHidden>Du</VisuallyHidden>}>
-      <ChatMessageBubble variant="filled" metadata={time(at, footer)}>
-        {body}
-      </ChatMessageBubble>
-    </ChatMessage>
-  );
-  const theirs = <VisuallyHidden>{who.name}</VisuallyHidden>;
-  const answered = (m: ThreadMessage, i: number) => {
-    const meta = m.meta?.handover;
-    // No answer: the system did not answer, or the assistant wrote nothing; said in Clew's words, never in its name.
-    if (meta?.failed || meta?.declined)
-      return (
-        <ChatMessage key={`side-${i}`} sender="assistant" name={<VisuallyHidden>Assistenten</VisuallyHidden>}>
-          <ChatMessageBubble variant="ghost" width="100%" metadata={time(m.createdAt)}>
-            <VStack gap={3}>
-              <HStack gap={1} vAlign="center">
-                <Icon icon="warning" size="sm" color="warning" />
-                <Text>{m.body || `${who.name} svarade inte på frågan.`}</Text>
-              </HStack>
-            </VStack>
-          </ChatMessageBubble>
-        </ChatMessage>
-      );
-    const cites = meta?.cites ?? [];
-    return (
-      <ChatMessage key={`side-${i}`} sender="assistant" name={theirs}>
-        <ChatMessageBubble variant="ghost" width="100%" metadata={time(m.createdAt)}>
-          <VStack gap={3}>
-            <Markdown density="compact" headingLevelStart={3}>
-              {keepLines(m.body)}
-            </Markdown>
-            {cites.length > 0 && (
-              <HStack gap={2} wrap="wrap">
-                <Text type="supporting">{cites.length === 1 ? 'Källa' : 'Källor'}</Text>
-                {cites.map((c, n) =>
-                  c.link ? (
-                    <Link key={n} href={c.link} target="_blank" rel="noreferrer">
-                      {c.label}
-                    </Link>
-                  ) : (
-                    <Text key={n} type="supporting">
-                      {c.label}
-                    </Text>
-                  ),
-                )}
-              </HStack>
-            )}
-            {meta?.cut && <Text type="supporting">Svaret var längre än det som visas här.</Text>}
-          </VStack>
-        </ChatMessageBubble>
-      </ChatMessage>
-    );
+  const handed = { id: assistant, name: who.name, source: who.source };
+  const turn = talk.aside?.assistant === assistant ? talk.aside : null;
+  // The panel's question on its way, as the transcript draws a turn: to this assistant, or held by Clew before it left
+  // (D125 item 13), which is drawn as Clew's choice with the safe answer first and taking the focus.
+  const pending: PendingTurn | null = turn && {
+    text: turn.text,
+    at: turn.at,
+    chips: [],
+    steps: [],
+    answer: turn.answer,
+    ...(turn.held ? { offer: handed, held: turn.held } : { handed }),
   };
-  const n = messages.length;
+  const exchange: ConversationState = {
+    ...INERT_CONVERSATION,
+    conversation: talk.conversation && {
+      ...talk.conversation,
+      messages: sideMessages(all, assistant).map(asWrittenNow),
+    },
+    pending,
+    // The box rests while this assistant's turn or Clew's runs: each waits for the other (D128).
+    busy: talk.busy || (!!turn && !turn.held),
+    error: talk.asideError,
+    value,
+    setValue,
+    input: field,
+    // What is typed goes to this assistant unchanged and alone (D125 item 4); one that could not be sent comes back.
+    submit: async raw => {
+      setValue('');
+      if (!(await talk.askAside(handed, raw))) setValue(v => v || raw);
+    },
+    focus: () => field.current?.focus(),
+    // The two answers to a question Clew held: Clew answers it, or it is sent anyway, as the person's own choice.
+    declineOffer: () => {
+      if (turn) talk.askClew(turn.text);
+    },
+    acceptOffer: () => {
+      if (turn) void talk.askAside(handed, turn.text, true);
+    },
+  };
   return (
     <VStack gap={0} height="100%" onKeyDown={onKeyDown}>
       <HStack hAlign="between" vAlign="center" gap={3} padding={4}>
@@ -281,98 +253,31 @@ export function AssistantPane({
       {/* The exchange takes what the head leaves, so the box stays docked at the panel's foot. */}
       <StackItem size="fill">
         <VStack height="100%">
-          <ChatLayout
-            composer={
-              <ChatComposer
-                density="compact"
-                value={value}
-                onChange={setValue}
-                isDisabled={busy}
-                input={
-                  <ChatComposerInput
-                    handleRef={field}
-                    label={`Skriv till ${who.name} i ${who.source}`}
-                    maxRows={3}
-                    hasHistory={false}
-                    placeholder={`Skriv till ${who.name} i ${who.source}`}
-                  />
-                }
-                onSubmit={text => {
-                  const sent = text;
-                  setValue('');
-                  void talk.askAside(who, sent).then(ok => {
-                    if (!ok) setValue(v => v || sent);
-                  });
-                }}
-                {...(talk.asideError ? { status: { type: 'error' as const, message: talk.asideError } } : {})}
-              />
-            }
-          >
-            <ChatMessageList density="compact" align="bottom" isStreaming={!!pending && !pending.held}>
-              {[
-                ...messages.map((m, i) =>
-                  m.role === 'user'
-                    ? asked(
-                        `side-${i}`,
-                        m.body,
-                        m.createdAt,
-                        m.meta?.handed?.side ? undefined : 'Från samtalet med assistenten',
-                      )
-                    : answered(m, i),
-                ),
-                ...(pending
-                  ? [
-                      asked(`side-${n}`, pending.text, pending.at),
-                      <ChatMessage
-                        key={`side-${n + 1}`}
-                        sender="assistant"
-                        name={pending.held ? <VisuallyHidden>Assistenten</VisuallyHidden> : theirs}
-                      >
-                        <ChatMessageBubble variant="ghost" width="100%">
-                          {pending.held ? (
-                            <VStack gap={3}>
-                              <HStack gap={2} vAlign="center" wrap="wrap">
-                                <Badge
-                                  variant="warning"
-                                  icon={<Icon icon="warning" size="sm" />}
-                                  label="Inte skickad"
-                                />
-                                <Text>
-                                  {`Frågan ser ut att gälla ${pending.held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Skickar du den hamnar den i ${who.source}.`}
-                                </Text>
-                              </HStack>
-                              <HStack gap={2} wrap="wrap">
-                                <Button
-                                  ref={stay}
-                                  size="sm"
-                                  variant="primary"
-                                  label="Låt assistenten svara"
-                                  onClick={() => talk.askClew(pending.text)}
-                                />
-                                <Button
-                                  size="sm"
-                                  label={`Skicka till ${who.name} ändå`}
-                                  onClick={() => void talk.askAside(who, pending.text, true)}
-                                />
-                              </HStack>
-                            </VStack>
-                          ) : pending.answer ? (
-                            <StreamingAnswer text={keepLines(pending.answer)} />
-                          ) : (
-                            <VStack gap={2}>
-                              <Skeleton width={220} height={14} />
-                              <Skeleton width={150} height={14} index={1} />
-                            </VStack>
-                          )}
-                        </ChatMessageBubble>
-                      </ChatMessage>,
-                    ]
-                  : []),
-              ]}
-            </ChatMessageList>
-          </ChatLayout>
+          <ConversationContext.Provider value={exchange}>
+            <ChatLayout
+              composer={
+                <Composer place="pane" placeholder={`Skriv till ${who.name} i ${who.source}`} stoppable={false} />
+              }
+            >
+              <Transcript room="aside" renderCard={() => null} onOpenView={() => undefined} />
+            </ChatLayout>
+          </ConversationContext.Provider>
         </VStack>
       </StackItem>
     </VStack>
   );
+}
+
+/**
+ * An answer an assistant declined without a word, as it was kept before 2026-11-16 (`handover.declined`, no body), as
+ * the server writes one now (D128 item 7): not answered, said in Clew's words.
+ */
+function asWrittenNow(m: ThreadMessage): ThreadMessage {
+  const handover = m.meta?.handover;
+  if (!handover?.declined) return m;
+  return {
+    ...m,
+    body: m.body || `${handover.name} svarade inte på frågan.`,
+    meta: { ...m.meta, handover: { ...handover, failed: true } },
+  };
 }

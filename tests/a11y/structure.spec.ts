@@ -43,13 +43,14 @@ test.describe('2.4.2 page titled', () => {
 
 test.describe('1.3.1 and 2.4.6 structure', () => {
   // The shared header is every page's banner (D130): its heading row, named by the site, and under the band Clew's own
-  // pages, "Mina sidor". A page of its own says where it stands ("Du är här"), and Att göra adds its piles. The header's
-  // landmarks with a connector are header.spec.ts's.
+  // pages, "Mina sidor". A page of that row has no trail of its own (D130 item 17 as amended 2026-11-21): the row marks
+  // it (`aria-current`), and its title and the document's say it again. Att göra adds its piles. The header's landmarks
+  // with a connector are header.spec.ts's.
   for (const [path, navigations] of [
     ['/', ['Startsidan', 'Mina sidor']],
-    ['/todo', ['Startsidan', 'Mina sidor', 'Du är här', 'Urval']],
-    ['/todo?tab=done', ['Startsidan', 'Mina sidor', 'Du är här', 'Urval']],
-    ['/calendar', ['Startsidan', 'Mina sidor', 'Du är här']],
+    ['/todo', ['Startsidan', 'Mina sidor', 'Urval']],
+    ['/todo?tab=done', ['Startsidan', 'Mina sidor', 'Urval']],
+    ['/calendar', ['Startsidan', 'Mina sidor']],
   ] as const)
     test(`${path} has one h1, one main, one banner, and every navigation landmark named`, async ({ page, api: _ }) => {
       await open(page, path);
@@ -62,6 +63,9 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
       ).toEqual(navigations);
       await expect(pagesNav(page)).toHaveCount(1);
       await expect(banner.getByRole('link', { name: 'Startsidan' })).toHaveAttribute('href', '/');
+      // Where the person is (2.4.8): the row marks exactly one page, and the page's title is that page's name.
+      await expect(pagesNav(page).locator('[aria-current="page"]')).toHaveCount(1);
+      await expect(page.getByRole('main').getByRole('navigation', { name: 'Du är här' })).toHaveCount(0);
     });
 
   test('Clew’s pages are one navigation landmark of places (D50, D130), in the drawer on a phone', async ({
@@ -210,7 +214,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     page,
     api: _,
   }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await composer(page).fill('attestera en faktura');
     await composer(page).press('Enter');
     const card = page.getByRole('article', { name: 'Ärende: Attestera 3 fakturor, 48 200 kr' });
@@ -270,7 +274,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
 
 test.describe('3.1.2 language of parts', () => {
   test('the conversation names its speakers in Swedish', async ({ page, api: _ }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     const input = composer(page);
     await input.fill('Vem är på plats?');
     await input.press('Enter');
@@ -299,7 +303,7 @@ test.describe('D26 questions answered from documents', () => {
     page,
     api: _,
   }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     const input = composer(page);
     await input.fill('Brukaren har ramlat, vad gör jag?');
     await input.press('Enter');
@@ -343,9 +347,11 @@ test.describe('D26 questions answered from documents', () => {
       'target',
       '_blank',
     );
-    // A passage goes into a conversation only beside a conversation's own box (D112 item 7); the page has "Fråga assistenten".
+    // A passage goes into a conversation only beside a conversation's own box (D112 item 7); the page's way to the
+    // assistant is the corner's "Fråga AI" (D138 item 1).
     await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
-    await expect(panel.getByRole('button', { name: 'Fråga assistenten' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Fråga AI', exact: true })).toBeVisible();
     await expect(rows.nth(2)).toContainText('2 år sedan');
     await expect(rows.nth(2).getByRole('link', { name: 'Öppna' })).toHaveCount(0);
     await expect(panel.getByText(/^SharePoint svarade inte\./)).toBeVisible();

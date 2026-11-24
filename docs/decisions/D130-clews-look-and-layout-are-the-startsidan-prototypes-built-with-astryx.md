@@ -63,6 +63,19 @@ it, nothing opens over a page. The comparison this rests on is
    a pane, so a title does not move when a pane opens. Hem and a register of cards scroll as one page under the
    shell's header, as the prototype's pages do, and nothing of them stays behind; a page with panels keeps its title
    while its column scrolls. A phone keeps the page as the window.
+   **Amended 2026-11-21 (the product owner): a thing's page scrolls as one, and its tab row sticks.** Shown a
+   person's page and then a work item's page in a window about 1000 px high, where the pinned way back, title,
+   buttons and tabs left about 600 px for the content ("the content window gets quite small, height-wise"; "I am
+   still seeing this page like this"), and asked for pages without tabs to scroll as one and pages with tabs to
+   scroll as one with the tab row sticking, by one hand-written sticky recorded here, the owner answered: "yes do
+   step 1, and allow the exception". So a page whose content is a read with facts or sections beside it (a work
+   item, a record, a person, a unit, a plan, Administration) scrolls as one page under the shell's header, as a
+   board does: its title and buttons scroll away and its panels scroll with it. Where such a page or a board has
+   tabs (a person, a unit, a plan, Personal, Att göra's queue), the tab row alone stays at the top of the window
+   once the title has scrolled past it. A fixed work surface keeps what it pins: Kalender's grid, Att göra with
+   its reading pane, a conversation, the review with its footer, and every page while the assistant's pane stands
+   beside it. A short screen pins nothing, as before (1.4.10). The sticking row is the exception recorded under
+   "Astryx gaps" below.
 9. **A key figure** is drawn as the prototype draws one, on Hem (`lage.tsx`) and on the unit's page (`FigureTile`):
    the label in small capitals with an arrow when the tile leads somewhere, the value large in its tone's colour, and
    a line with the tone's word and the comparison. No badge, outline or tint.
@@ -113,8 +126,25 @@ it, nothing opens over a page. The comparison this rests on is
     are still what an administrator chose from the sources (D62), and a value without a tone is still ordinary text.
 17. **A place of its own opens with a trail**: the site's name and the page, Astryx's `Breadcrumbs`, over the title.
     A page reached from another keeps its named way back (D116).
+    **Amended 2026-11-21 (the product owner): a page of the row "Mina sidor" has no trail.** Shown Att göra with an
+    item picked in a window about 1000 px high, where the trail, the title, the counts line and the tabs took about
+    250 px over the list and the reading pane, the owner said: "There is quite some wasted space in the top section
+    of tha pge here, leaving very little to the chat and content". Offered four changes (no trail on a row's own
+    page, no counts line that repeats the tabs, the tabs on the title's line while an item is picked, and the box
+    under the item one line high until used), and warned that the trail and the facts line are the prototype's look,
+    which the people testing it know, the owner answered: "yes all". So a page that is itself a page of the row
+    (Att göra, Kalender, Personal, Läget, Samtal, and Administration's own list on a phone) opens with its title: the
+    row right above marks it (`aria-current`), and its title and the document's title name it. The shell says which
+    page that is (`RowPage`: the row's current page, at its own address or under its own name); no page says it of
+    itself. A page under them (an Administration section, a tool, Alla verktyg) keeps its trail, and a page reached
+    from another its way back.
 18. **A page's facts line is running text** under its title, 17 px in the softer ink with the prototype's air around
     the title; Hem's day line stays the small line it is.
+    **Amended 2026-11-21 (the product owner, "yes all", as under item 17): no facts line that repeats the page's
+    tabs.** Att göra's "6 behöver dig · 3 väntar på andra" is gone: its tabs say both numbers. The others were read
+    and stay, since none repeats its tabs or title: Kalender's (its controls, or the system that does not answer),
+    Personal's (how many people on which units), Läget's ("3 enheter"), Samtal's ("12 samtal") and Alla verktyg's
+    (how many tools, or how many of them the filter leaves).
 
 19. **Att göra is the prototype's Mina aktiviteter.** Over the list the piles as key figures: what needs the person,
     how much of it is overdue, what waits on others and what is done, each leading to its pile, a plain count in the
@@ -123,6 +153,17 @@ it, nothing opens over a page. The comparison this rests on is
     Beside the reading pane the figures are not drawn and the list stands in the frame's card without one of its own.
     The piles are still tabs and a row still opens beside the list (D112); the prototype stacks its piles as cards of
     rows with "Öppna".
+    **Amended 2026-11-21 (the product owner, "yes all", as under item 17): the piles stand on the title's line.**
+    From 1025 px of window the tabs stand right after "Att göra" on its line (`PageFrame`'s `tabsOnLine`), with and
+    without an item picked, so the header is one row and does not move when an item is picked; they stand after the
+    title and not at the line's end, so they also stay when "Fråga AI" leaves the line. At 1024 px and below and on
+    a phone they keep their own row under the title, where they stick while the queue scrolls (item 8); on the
+    title's line they scroll away with the title. With the trail and the counts line gone the header is 108 px
+    lower at 1440 px: the picked item's read has 452 px of a 1000 px window and 172 px of a 720 px one. The fourth
+    change, the box under a picked item one line high until it is used, is not built: Astryx's `ChatComposer` always
+    draws its input over a footer row with the send button, and has no prop for its rows or its least height
+    (`density="compact"` takes 12 px off and was the density the owner turned down on 2026-11-18); it waits for a
+    decision on what to draw there instead.
 
 20. **Läget and Samtal are registers of the same kind.** On Läget what to take up and each group of units is a card
     with its heading inside and, for a group, how many units it has, the table inside the card's inset with the
@@ -151,6 +192,21 @@ dig.
   holds the rule that moves it off the control the keyboard is on (it reads where the focus is when the focus
   moves). This is the exception `CLAUDE.md` asks a decision to record before anything custom is written; nothing
   else is positioned by hand.
+- Astryx has no sticky on its layout primitives (recorded 2026-11-21, Astryx 0.7.16). `Layout` pins a
+  `LayoutHeader` from the start and cannot let a title scroll away and then hold the row under it; `LayoutContent`
+  and `LayoutPanel` only document `isScrollable={false}` "for auto-height layouts where sticky positioning needs to
+  work with parent containers", and `ScrollableArea` only `stickyContainment`: the sticking element is the
+  caller's. Astryx's own `course-detail` page template says so ("no sticky prop on Astryx layout primitives —
+  #2613") and writes `position: sticky` in an inline `style` on a `VStack`, as its
+  `ScrollableAreaStickyGroupHeaders` block does in StyleX. The product owner allowed the same by hand on
+  2026-11-21 ("yes do step 1, and allow the exception"), for item 8's tab row and nothing else: one inline `style`
+  on one Astryx `VStack` around the page's tabs, in `PageFrame` alone
+  (`apps/web/src/components/shell/page-frame.tsx`, `STUCK_TABS`), with Astryx's tokens only (`position: sticky`,
+  the top edge, a layer over the page's content and the ground's colour behind the row), and with it the
+  scroller's `scroll-padding-top` of the row's height in tokens, set from the same file, so that a control the
+  keyboard reaches is never hidden under the row (2.4.11). No stylesheet, no observer and no media query come
+  with it; the facts' panel and the assistant's pane are not made to stick. It goes the day Astryx ships a sticky
+  for a row in a scrolling `Layout`.
 
 **Why.** Oliver Borgström asked on 2026-11-18 for the same look and layout as the startsidan prototype, and whether
 to build Clew's own components for it. Composing Clew's components from Astryx's keeps the rule that makes Clew one
@@ -166,6 +222,7 @@ of [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) a
 in [D46](D46-astryx-neutral-is-the-default-theme.md); "typography, motion, radii" staying Astryx's in
 [D38](D38-municipal-branding-uses-astryx-themes.md), for typography and radii.
 
+**Amended 2026-11-21 by [D142](D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md).** Item 13: the button at the end of a row of "Behöver dig" names the person's next press ("Granska 3", the item's one decision, else "Öppna"); on a row whose button runs, the title is the link to the item's page.
 **Amended 2026-11-23: what a phone changes.** The reference is drawn for a wide window; the review of the phone view
 ([review](../reviews/2026-11-23-the-mobile-view.md)) found four places where following it there worked against the
 person, and the product owner asked for them to be put right.

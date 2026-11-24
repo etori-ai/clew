@@ -245,6 +245,11 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 1000
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
           }
         },
         "required": [
@@ -293,11 +298,189 @@
             "label": "Senast från servicedesken"
           },
           {
+            "key": "text",
+            "label": "Din senaste kommentar"
+          },
+          {
             "key": "link",
             "label": "Öppna i IT-servicedesken",
             "format": "link"
           }
         ]
+      }
+    },
+    {
+      "name": "servicedesk.comment",
+      "kind": "execute",
+      "title": "Lägg till en kommentar",
+      "description": "Lägger till din kommentar på beställningen eller felanmälan i IT-servicedesken, där handläggarna ser den. Bara på det du själv har beställt eller felanmält.",
+      "model": false,
+      "scope": {},
+      "about": {
+        "record": "servicedesk.request",
+        "params": {
+          "ref": "ref"
+        }
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "servicedesk.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^request:servicedesk:SD-[0-9]{4,12}$",
+            "maxLength": 200,
+            "description": "Beställningen eller felanmälan."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Kommentaren till servicedesken."
+          }
+        },
+        "required": [
+          "ref",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "asks": [
+        {
+          "kind": "long-text",
+          "property": "text",
+          "label": "Kommentar",
+          "required": true
+        }
+      ],
+      "effect": "servicedesk.commentEffect"
+    },
+    {
+      "name": "servicedesk.commentEffect",
+      "kind": "read",
+      "title": "Det här händer när kommentaren läggs till",
+      "description": "Vad en kommentar gör i IT-servicedesken, utan att något skrivs.",
+      "model": false,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^request:servicedesk:SD-[0-9]{4,12}$",
+            "maxLength": 200,
+            "description": "Beställningen eller felanmälan."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Kommentaren till servicedesken."
+          }
+        },
+        "required": [
+          "ref",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "detail": {
+                  "type": "string",
+                  "maxLength": 400
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              },
+              "required": [
+                "label"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
       }
     },
     {

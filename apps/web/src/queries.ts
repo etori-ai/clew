@@ -1,6 +1,8 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import type {
   AskValues,
+  AssistantReachInput,
+  AvailabilityInput,
   BoardingStartBody,
   CompetenceMatrixInput,
   CompetenceSearchBody,
@@ -13,6 +15,7 @@ import { api } from './api';
 import { LOGGED_READ, isLoggedView } from './logged-reads';
 import { keys } from './query-keys';
 import { unlessRefused } from './query-policy';
+import { recordInputJson } from './record-actions';
 
 /**
  * Every read the browser makes, as query options (D33): the key from `query-keys.ts`, the call from `api.ts`, and the
@@ -75,6 +78,17 @@ export const entitySectionQuery = (kind: EntityKind, key: string, capability: st
     retry: false,
   });
 /**
+ * The actions about one record that the reader may take (D137): on the record's page under its title, and for an
+ * assistant's draft about it. Not retried: a read the reader may not make, or a record they cannot read, answers 404,
+ * and then there are no actions to draw.
+ */
+export const recordActionsQuery = (read: string, input: Record<string, unknown>) =>
+  queryOptions({
+    queryKey: keys.records.actions(read, recordInputJson(input)),
+    queryFn: () => api.records.actions(read, input),
+    retry: false,
+  });
+/**
  * Utvecklingssamtal (D96): the round, and action points. `null` means the person has no talks system (the capability is
  * refused, not offered): nothing to show and no error. Any other failure stays an error the page shows with Försök igen.
  * Not retried, as the staff and errand reads are not.
@@ -118,6 +132,16 @@ export const assistantQuery = queryOptions({
   queryFn: () => api.assistantStatus(),
   retry: false,
 });
+/**
+ * What the assistant may fill in for what stands open (D138 item 7), said in the pane before anything is asked: an extra
+ * of the pane, never retried and never its error. `thing` is the thing as stable JSON, its part of the key.
+ */
+export const assistantReachQuery = (input: AssistantReachInput, thing: string | null) =>
+  queryOptions({
+    queryKey: keys.assistantReach(input.beside ?? null, thing),
+    queryFn: async () => (await api.assistantReach(input)).prepares,
+    retry: false,
+  });
 /** The assistants of other systems the person may hand a conversation to: asked of every source, so kept a while. */
 export const handoverAssistantsQuery = queryOptions({
   queryKey: keys.handoverAssistants,
@@ -133,6 +157,18 @@ export const membersQuery = queryOptions({
   staleTime: 5 * 60_000,
 });
 export const roomsQuery = queryOptions({ queryKey: keys.rooms, queryFn: () => api.rooms(), staleTime: 5 * 60_000 });
+/**
+ * Who is free at the time a booking form holds (Kalender's "Ny bokning"): read by itself as the time, the guests or the
+ * room change, and kept only briefly, since other people's calendars move.
+ */
+export const availabilityQuery = (input: AvailabilityInput | null) =>
+  queryOptions({
+    queryKey: keys.availability(input),
+    queryFn: () => api.availability(input!),
+    enabled: input !== null,
+    staleTime: 30_000,
+    retry: false,
+  });
 /** The picker's rows (D29), read once a minute for the whole page so every card shows the same times. */
 export const snoozePresetsQuery = queryOptions({
   queryKey: keys.snoozePresets,

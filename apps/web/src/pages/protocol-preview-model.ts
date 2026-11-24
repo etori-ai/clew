@@ -7,7 +7,7 @@ import { ApiError } from '../api-error';
  * (`packages/connectors/src/preview.ts`, schema `ManifestPreviewSchema`); the web app does not depend on the connector
  * package, so the fields the page reads are restated here, and a change there is a change here.
  */
-export type PreviewPlace = 'lens' | 'mark' | 'section' | 'menu';
+export type PreviewPlace = 'lens' | 'mark' | 'section' | 'menu' | 'record';
 export interface PreviewCapability {
   name: string;
   kind: 'read' | 'propose' | 'execute';
@@ -29,10 +29,10 @@ export interface PreviewCapability {
   path?: PreviewPath;
 }
 /** Where a person can start a write, the steps of the one path it draws, and who fills its input (D112 item 11). */
-export type PathStart = 'work-item' | 'entity' | 'question-box' | 'conversation' | 'fact';
+export type PathStart = 'work-item' | 'entity' | 'record' | 'question-box' | 'conversation' | 'fact';
 export type PathStep = 'fill-in' | 'effect' | 'confirm' | 'review' | 'receipt';
 export type PathState = 'declared' | 'not-declared' | 'on-the-work-item' | 'always' | 'never';
-export type InputFiller = 'rows' | 'entity' | 'person' | 'fact' | 'work-item' | 'source';
+export type InputFiller = 'rows' | 'entity' | 'record' | 'person' | 'fact' | 'work-item' | 'source';
 export interface PreviewPath {
   starts: Array<{ place: PathStart; state: 'declared' | 'not-declared' | 'never'; declares: string }>;
   steps: Array<{ step: PathStep; state: PathState; declares: string }>;
@@ -103,6 +103,8 @@ const PLACE_WORDS: Record<PreviewPlace | 'tool', string> = {
   mark: 'row mark',
   section: 'section',
   menu: 'menu',
+  // An action about a record (D137): on the page of the record it is about.
+  record: "record's page",
   tool: 'model tool',
 };
 const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -187,6 +189,11 @@ export const START_WORDS: Record<PathStart, { where: string; draws: string }> = 
     where: 'On a person or a unit',
     draws: "A button in your section of their page, and the row's menu on Personal",
   },
+  // An action about a record of one of the connector's own reads (D137): on that record's page, and nowhere else.
+  record: {
+    where: 'On a record of one of your reads',
+    draws: "A button under the record's title on its page, and the dialog when it asks",
+  },
   'question-box': { where: 'Typing in the question box', draws: 'A suggestion under “Menar du”' },
   conversation: { where: 'In a conversation', draws: 'The assistant drafts a work item; the person decides on it' },
   fact: { where: 'After something happened elsewhere', draws: 'A step of a job, decided on its work item' },
@@ -243,6 +250,7 @@ export function stateWords(
 const FILLERS: Record<InputFiller, string> = {
   rows: 'The selected rows of the work item',
   entity: 'The key of the person or unit',
+  record: "The record's own input, from the page it stands on",
   person: 'The person, in the dialog',
   fact: 'The fact the step answers',
   'work-item': "The action's own input on the draft",

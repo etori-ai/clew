@@ -12,6 +12,7 @@ import {
   silentOf,
   silentText,
   sourcesRead,
+  staffReads,
   valueCounts,
   type Answer,
 } from '../src/pages/staff-model';
@@ -243,5 +244,49 @@ describe('the whole row and the row in one value (D97)', () => {
         groupFields(g).map(f => f.key),
       ),
     ).toEqual([['x'], ['t', 'c']]);
+  });
+});
+
+describe('what Medarbetare shows, as the reads the assistant could make for it (D141 rule 4)', () => {
+  const field: ViewField = { key: 'state', label: 'Samtal' };
+  const view: View = { kind: 'list', title: 'state', fields: [field] };
+  const lens = (capability: string, source: string, overviews?: string[], own = false): EntitySource => ({
+    capability,
+    connector: capability.split('.')[0]!,
+    source,
+    title: source === 'Utvecklingssamtal' ? 'Utvecklingssamtal' : 'Frånvaro',
+    view,
+    ...(overviews ? { overviews } : {}),
+    ...(own ? { own: true as const } : {}),
+  });
+  test('the people, then each column through its lens’s overviews; a column with none is a read the assistant cannot make', () => {
+    const talks = lens('talks.person', 'Utvecklingssamtal', ['talks.talks'], true);
+    const presence = lens('hr.presence', 'Personalsystemet');
+    const reads = staffReads({
+      lenses: [talks, presence],
+      columns: [
+        { capability: 'talks.person', source: 'Utvecklingssamtal', title: 'Utvecklingssamtal', field, own: true },
+        { capability: 'hr.presence', source: 'Personalsystemet', title: 'Frånvaro', field },
+        // A column whose read is no lens: the list carries no overview for it.
+        { capability: 'qlik.person', source: 'Qlik', title: 'Sjukfrånvaro', field },
+      ],
+    });
+    expect(reads).toEqual([
+      { capability: 'people.reports', own: true, label: 'Medarbetare' },
+      {
+        capability: 'talks.talks',
+        source: 'Utvecklingssamtal',
+        own: true,
+        label: 'Utvecklingssamtal',
+        about: 'talks.person',
+      },
+      { capability: null, source: 'Personalsystemet', own: false, label: 'Frånvaro', about: 'hr.presence' },
+      { capability: null, source: 'Qlik', own: false, label: 'Sjukfrånvaro', about: 'qlik.person' },
+    ]);
+  });
+  test('with no columns, the people alone', () => {
+    expect(staffReads({ lenses: [], columns: [] })).toEqual([
+      { capability: 'people.reports', own: true, label: 'Medarbetare' },
+    ]);
   });
 });

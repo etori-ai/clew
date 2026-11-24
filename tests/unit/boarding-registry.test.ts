@@ -26,9 +26,11 @@ import { applyAllRows, syncBundledRows, type ReconcileDeps } from '../../apps/se
 import { memoryBoardingStore } from '../../apps/server/src/modules/boarding/adapters/memory';
 import {
   PersonBoardingOutputSchema,
+  ReportsBoardingOutputSchema,
   boardingConnector,
   personBoardingView,
   planView,
+  reportsBoardingView,
 } from '../../apps/server/src/modules/boarding/capabilities';
 import type { Report, Staff } from '../../apps/server/src/modules/boarding/model';
 import { boardingUsecases } from '../../apps/server/src/modules/boarding/usecases';
@@ -221,12 +223,18 @@ describe('the boarding wiring (D124)', () => {
     expect((await w.connectors.read(BOARDING_CONNECTOR))!.state).toBe('enabled');
   });
 
-  test('it passes the registry’s validation, its reads are no model tools, and their views are drawable', async () => {
+  test('it passes the registry’s validation, the read about a person is no model tool, and their views are drawable', async () => {
     const w = await switchedOn();
-    expect(w.registry.tools(actorOf(hillevi))).toEqual([]);
+    // The list of every report and one plan are offered (D122 item 3, D141 rule 4); the read about a person never is.
+    expect(
+      w.registry
+        .tools(actorOf(hillevi))
+        .map(t => t.name)
+        .sort(),
+    ).toEqual(['boarding.plan', 'boarding.plans']);
     const reads = w.registry.connector(BOARDING_CONNECTOR)!.capabilities;
     for (const c of reads) expect(viewProblem(c, reads)).toBeUndefined();
-    expect(reads.map(c => c.view)).toEqual([planView, personBoardingView]);
+    expect(reads.map(c => c.view)).toEqual([planView, personBoardingView, reportsBoardingView]);
     const found = w.registry.find('boarding.person')!.capability;
     expect(found.about).toEqual({ entity: 'person', page: { title: 'Öppna planen', href: '/boarding/{id}' } });
     expect(found.person).toEqual({ admits: ['managed'] });
@@ -277,6 +285,59 @@ describe('the boarding wiring (D124)', () => {
     await expect(w.registry.run(actorOf(anna), 'boarding.plan', { plan: id })).rejects.toThrow(
       'Planen finns inte, eller så kan du inte se den.',
     );
+  });
+
+  test('`boarding.plans` answers every report of the reader’s with a plan or a missing one, as `boarding.person` words them, and nobody else’s (D141 rule 4)', async () => {
+    const w = await switchedOn();
+    const plans = async (p: AuthenticatedContext) =>
+      (await w.registry.run(actorOf(p), 'boarding.plans', {})) as { rows: Array<Record<string, unknown>> };
+    const before = await plans(hillevi);
+    expect(checkContract(ReportsBoardingOutputSchema, before)).toBe(true);
+    // Anna has neither a plan nor a start, so she has no row, as on the lens.
+    expect(before.rows).toEqual([
+      {
+        name: 'Vilma Strand',
+        userName: 'vilma.strand',
+        status: 'Plan saknas',
+        event: 'Introduktion',
+        day: 'Börjar 4 dec',
+      },
+    ]);
+    const { id } = await w.boarding.startPlan(hillevi, {
+      personId: 'p-vilma',
+      event: 'introduction',
+      anchorOn: '2026-12-04',
+    });
+    const after = await plans(hillevi);
+    const byKey = (await w.registry.run(actorOf(hillevi), 'boarding.person', { keys: ['vilma.strand'] })) as {
+      rows: Array<Record<string, unknown>>;
+    };
+    // The same row as the read by key answers, with the name and the user name in place of the key.
+    const { key, ...words } = byKey.rows[0]!;
+    expect(after.rows).toEqual([{ name: 'Vilma Strand', userName: key, ...words }]);
+    expect(after.rows[0]!.plan).toBe(id);
+    // Someone with no reports gets no row, Vilma not even her own plan: it is the manager's list.
+    expect((await plans(anna)).rows).toEqual([]);
+    expect((await plans(vilma)).rows).toEqual([]);
+    // Offered to the model, and the browser is told so; `boarding.person` is neither.
+    const views = w.registry.views(actorOf(hillevi));
+    expect(
+      views
+        .filter(v => v.assistant)
+        .map(v => v.capability)
+        .sort(),
+    ).toEqual(['boarding.plan', 'boarding.plans']);
+    expect(views.find(v => v.capability === 'boarding.person')).not.toHaveProperty('assistant');
+    // An administrator can keep it from the model; the page's read still answers.
+    w.registry.govern(BOARDING_CONNECTOR, {
+      ...w.registry.governance(BOARDING_CONNECTOR),
+      capabilities: { 'boarding.plans': { model: false } },
+    });
+    expect(w.registry.tools(actorOf(hillevi)).map(t => t.name)).toEqual(['boarding.plan']);
+    expect(w.registry.views(actorOf(hillevi)).find(v => v.capability === 'boarding.plans')).not.toHaveProperty(
+      'assistant',
+    );
+    expect((await plans(hillevi)).rows).toHaveLength(1);
   });
 
   test('the scan suggests the introduction with nobody named where the assistant reads, as a complete observation', async () => {

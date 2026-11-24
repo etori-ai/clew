@@ -163,19 +163,36 @@ export interface ModelResolver {
 }
 /**
  * A person the asker manages (D94, D99), as the people module lists them on Personal: Clew's key for them (their id,
- * which card rows and the index from entity to cards name them by, D122), their name and the unit they are on. Only
- * people who can be asked about (active, with a user name, D97) are listed, each once.
+ * which card rows, the index from entity to cards and a person's page name them by, D122), the user name a read that
+ * takes a person is given (the source's key, D96 talks item 8, which the registry resolves as the asker's report or
+ * refuses, D117), their name and the unit they are on. Only people who can be asked about (active, with a user name,
+ * D97) are listed, each once.
  */
 export interface ManagedPerson {
   key: string;
+  userName: string;
   name: string;
   unit: string;
+}
+/** A unit the asker manages or follows up (D117), as Läget lists it for them: its id and its name. */
+export interface FollowedUnit {
+  id: string;
+  name: string;
 }
 export interface AssistantDeps {
   store: ThreadStore;
   registry: Pick<
     Registry,
-    'tools' | 'areas' | 'list' | 'find' | 'allowed' | 'visible' | 'capabilitiesFor' | 'connector'
+    | 'tools'
+    | 'areas'
+    | 'list'
+    | 'find'
+    | 'allowed'
+    | 'visible'
+    | 'capabilitiesFor'
+    | 'connector'
+    | 'recordActions'
+    | 'validate'
   >;
   /**
    * Run a read through the registry as the person, on the assistant's behalf: every call the assistant makes says so
@@ -200,6 +217,11 @@ export interface AssistantDeps {
    * else. Absent, or empty for someone who manages nobody, and no name is resolved.
    */
   people?: (persona: AuthenticatedContext) => Promise<ManagedPerson[]>;
+  /**
+   * The units the asker manages or follows up (D117), read when a unit's page stands open beside the question (D136
+   * item 5): only such a unit is told to the model, by its name and id. Absent, and no unit is told.
+   */
+  units?: (persona: AuthenticatedContext) => Promise<FollowedUnit[]>;
   /**
    * The assistants of other systems (the assistants profile), reached through the registry as the person: `list` the
    * ones they may ask now, and `ask` one of them, which yields its answer as it is written and ends with one `done`, or

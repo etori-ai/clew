@@ -183,6 +183,7 @@ The [testing and deployment guide](testing-and-deployment.md) covers this from a
 | Documents and semantic views | Records need original PDF/DOCX/XLSX/images, composed facts, measurements, charts or history | [Document and semantic views](document-and-semantic-views.md) |
 | Model tools | The read/proposal is suitable for model use under the person's access | [Make your reads work in the chat](#10-make-your-reads-work-in-the-chat), [capability surfaces](../architecture/capability-surfaces.md) |
 | Scans and figures | The source can report outstanding occurrences or a meaningful area figure | [Actions](actions-and-receipts.md), [protocol](../reference/connector-protocol.md) |
+| A card nothing is pressed on | The work is done outside Clew and the card ends when the source says so; the person may need to say that they have asked someone (`handOn`) | [A card with nothing to decide](actions-and-receipts.md#a-card-with-nothing-to-decide) |
 | Writes and undo | Source permissions, preconditions, evidence and recovery are established | [Actions and receipts](actions-and-receipts.md) |
 | Callbacks and jobs | A read needs another source, or one task needs changes/follow-up in several systems | [Working across connectors](../architecture/working-across-connectors.md) |
 | The news profile | Your system publishes news the person reads (an intranet, a newsroom): the newest show as "Nyheter" on Hem and all of them as "Alla nyheter" | A read `<id>.news` taking `{}` and answering `NewsOutput` (`ref`, `title`, `sender`, `publishedAt`, optional `link`; nothing else) in the [protocol](../reference/connector-protocol.md#related-profiles); a row with `link` leaves Clew, a row without opens the read your view's `open` names (`<id>.newsItem`). Clew joins every source as `clew.news`; a source that fails contributes nothing. The fixture [connectors/communication](../../connectors/communication/README.md) |
@@ -302,6 +303,16 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://appra
 **Place it.** Registration places nothing. An administrator offers the read as a lens and chooses a column on the connector's page under Administration › Anslutna system, in "På Personal och andra listor".
 
 Not available: a read about an entity is never offered to the model, the entity kinds are `person` and `unit` only, and a page inside Clew where the person writes (`about.page`) is for Clew's own domains.
+
+**An action about one of your own records.** A propose or an execute may instead be about one record of one of your reads, a request, an invoice, a booking ([D137](../decisions/D137-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md)): `about: { record, params }`. `record` names a read of your manifest whose view draws one record (`record`, `detail`, `text` or `document`, never a `table` or `list`), and `params` maps the action's input properties to that read's input properties, the way a view's `open.params` does for a row. The service-desk fixture's `servicedesk.comment` ([manifest](../../connectors/servicedesk/manifest.mjs)) is "Lägg till en kommentar" on a request the person made:
+
+```js
+about: { record: 'servicedesk.request', params: { ref: 'ref' } },
+asks: [{ kind: 'long-text', property: 'text', label: 'Kommentar', required: true }],
+effect: 'servicedesk.commentEffect',
+```
+
+Clew draws its button under the title of the request's page, for a person who may call it and who can read that request: Clew makes your read with the page's input, as the person, before it lists the action and again before it starts it, so a record your system does not answer them for has no actions. A list's rows get no menu. Clew fills `ref` from the page, asks for the text and runs the action as an action about a person runs: a propose becomes the person's work item, an execute runs after their decision, through the execution ledger. The action is never a model tool; the assistant may fill in the text for the request that stands open beside it, and the person sends it. Your input requires nothing but what `params` fills and what you ask, no ask names a property `params` fills, and you still check, as on every call, that the person may act on the record the input names: the fixture answers a comment on someone else's request as not found.
 
 ## 9. Ask the person, and say what a write will do
 

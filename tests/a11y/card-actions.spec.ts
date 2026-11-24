@@ -397,14 +397,24 @@ test.describe('a booking', () => {
 test.describe('the calendar on a phone', () => {
   test.use({ viewport: phone });
 
-  test('leaves the screen to the calendar: a head of two rows, with proposals waiting too', async ({
+  // The head in the one page frame (D126, D130): where the page stands, the title's line, and two rows of controls,
+  // where in time with how it is shown and what can be done. The title no longer shares a line with what can be done
+  // (with the frame's 24 px inset the two need 339 of 327 px), so the head is one text line and the title's line
+  // taller than the 165 px this case once allowed. What it keeps is that nothing adds a row: "Fråga AI" is its mark
+  // alone at the end of the title's line, and each pair of controls shares its row, with proposals waiting too.
+  test('leaves the screen to the calendar: the title’s line with Fråga AI on it and two rows of controls, with proposals waiting too', async ({
     page,
     api: _,
   }) => {
     await open(page, '/calendar');
-    await expect(page.getByRole('button', { name: 'Förra veckan' })).toBeVisible();
-    // D74, amended 2026-11-23: the title on a line of its own, then the controls as two rows, the steps with the view
-    // menu and Förslag with Ny bokning. `touch.spec.ts` holds the same at a finger's 44 px.
+    const main = page.getByRole('main');
+    const title = (await page.getByRole('heading', { level: 1, name: 'Vecka 45' }).boundingBox())!;
+    const door = (await main.getByRole('button', { name: 'Fråga AI' }).boundingBox())!;
+    expect(door.y, 'Fråga AI is on the title’s line').toBeLessThan(title.y + title.height);
+    expect(door.y + door.height).toBeGreaterThan(title.y);
+    expect(door.x, 'and ends it').toBeGreaterThan(title.x + title.width);
+    // D74, amended 2026-11-23: under the title's line the controls are two rows, the steps with the view menu and
+    // Förslag with Ny bokning. `touch.spec.ts` holds the same at a finger's 44 px.
     const controls = [
       page.getByRole('group', { name: /^Byt / }),
       page.getByRole('button', { name: /^Vy: / }),
@@ -414,9 +424,10 @@ test.describe('the calendar on a phone', () => {
     for (const control of controls) await expect(control).toBeVisible();
     const tops = await Promise.all(controls.map(async control => Math.round((await control.boundingBox())!.y)));
     expect([...new Set(tops)]).toHaveLength(2);
-    // Measured from the shell's bar, whose height is not the calendar's. The 165 px from the top of the screen that
-    // stood here was written before the page frame's inset and trail (D126, D130), which with the title are 144 px
-    // before any control; this case had failed on `main` since. Under a mouse the two rows are 28 px controls.
+    expect(Math.min(...tops), 'the controls stand under the title’s line').toBeGreaterThanOrEqual(
+      Math.round(door.y + door.height),
+    );
+    // Measured from the shell's bar, whose height is not the calendar's. Under a mouse the two rows are 28 px controls.
     const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
     const bar = await page.getByRole('banner').boundingBox();
     expect(list!.y - (bar!.y + bar!.height)).toBeLessThan(230);

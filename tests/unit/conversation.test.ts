@@ -16,11 +16,18 @@ import { memoryObligations, memoryProposalStore } from '../../apps/server/src/mo
 import { calendarUsecases } from '../../apps/server/src/modules/calendar/usecases/samtal';
 import { assistantUsecases, TurnStopped } from '../../apps/server/src/assistant';
 import { speaksOf } from '../../apps/server/src/assistant/people';
+import { CONVERSATIONS_ERASED, subjectErasure } from '../../apps/server/src/threads/usecases/subjects';
 import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
 import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
 import type { ManagedPerson } from '../../apps/server/src/assistant/ports';
 import { DRAFT_TOOL, draftableActions, draftTool } from '../../apps/server/src/assistant/drafts';
+import {
+  PREPARE_CANCEL_TOOL,
+  PREPARE_MOVE_TOOL,
+  prepareCancelTool,
+  prepareMoveTool,
+} from '../../apps/server/src/assistant/prepared';
 import { parseManifest, remoteConnector } from '../../packages/connectors/src/remote';
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
 import {
@@ -57,7 +64,10 @@ const members = ['Anna Lindqvist', 'Erik Sandström'].map(name => {
   const first = name.split(' ')[0]!.toLowerCase();
   return { personId: first, ref: 'memory:account:' + first, email: first + '@clew.test', name };
 });
-/** The people Hillevi manages (D115), by the user names the HR fixture knows them by; an employee manages nobody. */
+/**
+ * The people Hillevi manages (D115), by the user names the HR fixture knows them by; an employee manages nobody. In this
+ * world a person's id is their user name (D122).
+ */
 const directory: ManagedPerson[] = [
   ['anna', 'Anna Lindqvist'],
   ['erik', 'Erik Sandström'],
@@ -66,7 +76,7 @@ const directory: ManagedPerson[] = [
   ['per', 'Per Lindahl'],
   ['karin', 'Karin Lindqvist'],
   ['lena', 'Lena Öhman'],
-].map(([key, name]) => ({ key: key!, name: name!, unit: 'Skönsmons skola' }));
+].map(([key, name]) => ({ key: key!, userName: key!, name: name!, unit: 'Skönsmons skola' }));
 function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) {
   const registry = new Registry();
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
@@ -1051,6 +1061,381 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
     });
     expect(heard).toEqual([{ actionId: 'book', values: { when: '2026-11-16T08:00:00Z' } }]);
   });
+  /**
+   * Before anything is asked the pane says what the assistant may fill in for what stands open (D138 item 7): the
+   * server answers from the rules the turn offers its draft tool by, so the two never disagree, and it writes nothing.
+   */
+  test('the pane is told the open item’s actions the turn would offer to fill in, and nothing else (D138 item 7)', async () => {
+    const offered: unknown[] = [];
+    const generate: ModelGenerate = async ({ tools }) => {
+      const draft = tools['clew__draftAction'] as { inputSchema: { jsonSchema: any } } | undefined;
+      offered.push(draft?.inputSchema.jsonSchema.properties.action.enum ?? null);
+      return { text: 'Inget att fylla i.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    const card = await rehab(w);
+    const beside = 'thread:' + card.id;
+    const written = w.store.audit.length;
+    expect(await w.assistant.reach(hillevi, { beside })).toEqual({ prepares: [{ title: 'Boka samtalet' }] });
+    expect(w.store.audit).toHaveLength(written);
+    expect((await w.threads.listThreadsFor(hillevi)).some(t => t.kind === 'question')).toBe(false);
+    // The turn asked with the same item open offers the same action, by its id.
+    await w.assistant.converse(hillevi, {
+      text: 'Boka samtalet på torsdag eftermiddag',
+      chips: [{ ref: beside, kind: 'thread', label: card.title }],
+      beside,
+    });
+    expect(offered).toEqual([['book']]);
+    // Nothing for a list, a person or a unit, nor for a work item that is not there.
+    for (const input of [
+      {},
+      { beside: 'capability:hr.staff' },
+      { thing: { kind: 'person' as const, id: 'anna' } },
+      { thing: { kind: 'unit' as const, id: 'unit-skola' } },
+      { beside: 'thread:gone' },
+    ])
+      expect(await w.assistant.reach(hillevi, input)).toEqual({ prepares: [] });
+  });
+  test('a person who may not see the item, a model that does not answer and no model at all are told nothing, never refused', async () => {
+    const w = world({ generate: async () => ({ text: 'Svar.', toolCalls: [] }) });
+    const card = await rehab(w);
+    const beside = 'thread:' + card.id;
+    // Hillevi's item is not Hassan's: the same as an item that is not there.
+    expect(await w.assistant.reach(hassan, { beside })).toEqual({ prepares: [] });
+    // A model marked down is not asked, and the turn would offer nothing.
+    w.health.mark('llm', false, T0);
+    expect(await w.assistant.reach(hillevi, { beside })).toEqual({ prepares: [] });
+    w.health.mark('llm', true, T0);
+    expect(await w.assistant.reach(hillevi, { beside })).toEqual({ prepares: [{ title: 'Boka samtalet' }] });
+    // Without a model the router answers, which fills nothing in.
+    const none = world();
+    const theirs = await rehab(none);
+    expect(await none.assistant.reach(hillevi, { beside: 'thread:' + theirs.id })).toEqual({ prepares: [] });
+  });
+});
+
+/**
+ * A prepared decision (the product owner, 2026-11-18): the meeting that stands open beside the conversation may be given a
+ * new time, or be put up for cancellation, by the assistant, checked as the calendar's decision checks it and not sent.
+ * The answer carries it, the conversation keeps it and the turn's audit row says which kind about which meeting, never
+ * the time or the title. The calendar is left as it was: the person saves with the page's own form, or answers its own
+ * "Ställ in mötet?". The tools are offered only for a meeting the person may change, and only when it stands open beside
+ * the conversation; the model is told what the person can do with the meeting themselves either way.
+ */
+describe('the assistant prepares a move or a cancellation of the open meeting, the person decides', () => {
+  type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
+  const TOOL = 'clew__prepareMove';
+  const CANCEL = 'clew__prepareCancel';
+  const OWN =
+    'Det är personens eget möte: personen kan själv flytta det med "Flytta …" och ställa in det med "Ställ in …" där mötet visas, utan något annat program.';
+  const NOTE = 'Tiden står i formuläret hos personen. Inget är sparat; personen sparar själv.';
+  const ASKED = 'Frågan "Ställ in mötet?" visas nu för personen. Inget är inställt förrän personen har svarat på den.';
+  const NOBODY_ELSE = 'Om deltagarna är lediga då vet du inte: deras kalendrar läses inte här.';
+  const APT = { start: localInstant('2026-11-04T10:00'), end: localInstant('2026-11-04T11:00') };
+  const chip = (uid: string, title: string) => ({ ref: 'event:' + uid, kind: 'event' as const, label: title });
+  /** Meetings beside the seeded APT: another of Hillevi's own the next day, and four she cannot move from Clew. */
+  function seeded(w: ReturnType<typeof world>) {
+    const at = (day: string, from: string, to: string) => ({
+      start: localInstant(`${day}T${from}`),
+      end: localInstant(`${day}T${to}`),
+    });
+    w.cal.events.push(
+      occurrence({ uid: 'lunch', title: 'Lunch med rektor', ...at('2026-11-05', '12:30', '13:30') }, account),
+      occurrence(
+        {
+          uid: 'theirs',
+          title: 'Ledningsgrupp',
+          ...at('2026-11-05', '09:00', '10:00'),
+          organizer: 'chefen@clew.test',
+          organizerName: 'Chefen',
+        },
+        account,
+      ),
+      occurrence({ uid: 'locked', title: 'Skolråd', ...at('2026-11-05', '15:00', '16:00'), canCancel: false }, account),
+      occurrence(
+        { uid: 'weekly', title: 'Veckomöte', ...at('2026-11-06', '08:00', '09:00'), recurring: true },
+        account,
+      ),
+      occurrence({ uid: 'day', title: 'Studiedag', start: '2026-11-06', end: '2026-11-07', allDay: true }, account),
+    );
+  }
+  /** A model that prepares what `plan` says, in order, when it is offered the tools. */
+  function scripted(plan: ('move' | 'cancel')[] = ['move']) {
+    const offered: string[][] = [];
+    const prompts: string[] = [];
+    const answers: unknown[] = [];
+    const generate: ModelGenerate = async ({ tools, system }) => {
+      offered.push(Object.keys(tools));
+      prompts.push(system);
+      const move = tools[TOOL] as Callable | undefined,
+        cancel = tools[CANCEL] as Callable | undefined;
+      if (!move || !cancel) return { text: 'Det mötet kan jag inte flytta eller ställa in åt dig.', toolCalls: [] };
+      const toolCalls: { capability: string; input: Record<string, unknown>; output: unknown }[] = [];
+      const call = async (tool: Callable, capability: string, input: Record<string, unknown>) => {
+        const output = await tool.execute(input, {});
+        answers.push(output);
+        toolCalls.push({ capability, input, output });
+      };
+      for (const step of plan)
+        if (step === 'cancel') await call(cancel, 'clew.prepareCancel', {});
+        else {
+          // Half an hour later overlaps only the meeting itself, which is not counted against it.
+          await call(move, 'clew.prepareMove', { start: '2026-11-04T10:30', end: '2026-11-04T11:30' });
+          // A later call in the same turn replaces the earlier one: Thursday afternoon, where lunch runs over.
+          await call(move, 'clew.prepareMove', { start: '2026-11-05T13:00', end: '2026-11-05T14:00' });
+        }
+      return {
+        text:
+          plan.at(-1) === 'cancel'
+            ? 'Du får frågan om att ställa in mötet och svarar själv; inget är inställt.'
+            : 'Jag föreslår torsdag 13.00–14.00. Spara i formuläret när du är nöjd; mötet är inte flyttat.',
+        toolCalls,
+      };
+    };
+    return { generate, offered, prompts, answers };
+  }
+
+  test('a new time for the open meeting is kept in the conversation with its audit row, and the calendar is untouched', async () => {
+    const model = scripted();
+    const w = world({ generate: model.generate });
+    seeded(w);
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Flytta mötet till torsdag eftermiddag',
+      chips: [chip('apt', 'APT')],
+      beside: 'event:apt',
+    });
+    expect(model.offered[0]).toEqual(expect.arrayContaining([TOOL, CANCEL]));
+    // The model is told what the person can do with the open meeting themselves, and how to prepare either.
+    expect(model.prompts[0]).toContain('Mötet "APT"');
+    expect(model.prompts[0]).toContain(`10:00–11:00 i kalendern. ${OWN}`);
+    expect(model.prompts[0]).toContain('clew__prepareMove');
+    expect(model.prompts[0]).toContain('clew__prepareCancel');
+    expect(model.prompts[0]).toContain(
+      'Säg aldrig att det måste göras direkt i kalendern eller i ett annat program, och skriv aldrig att mötet är flyttat eller inställt.',
+    );
+    expect(model.answers).toEqual([
+      { prepared: true, note: `${NOTE} Personen har inget annat i kalendern då. ${NOBODY_ELSE}` },
+      { prepared: true, note: `${NOTE} Personen har redan ett annat möte i kalendern då; säg det. ${NOBODY_ELSE}` },
+    ]);
+    const prepared = {
+      kind: 'calendar.move' as const,
+      event: { id: 'apt', title: 'APT', ...APT },
+      start: '2026-11-05T12:00:00.000Z',
+      end: '2026-11-05T13:00:00.000Z',
+    };
+    expect(turn).toMatchObject({ shape: 'forslag', assistant: 'model', prepared });
+    expect(turn.draft).toBeUndefined();
+    // The conversation keeps the last prepared decision; the tool's calls are not the answer's reads.
+    const answer = turn.thread.messages.at(-1)!;
+    expect(answer.meta?.prepared).toEqual(prepared);
+    expect(answer.meta?.toolCalls).toBeUndefined();
+    expect(answer.meta?.reads).toBeUndefined();
+    expect(answer.meta?.source).toBe('Assistenten');
+    // One audit row for the turn: which kind about which meeting. Never the time, the title or the text.
+    expect(w.store.audit.map(e => e.action)).toEqual(['conversation.asked']);
+    const row = w.store.audit.at(-1)!;
+    expect(row).toMatchObject({
+      action: 'conversation.asked',
+      subject: 'thread:' + turn.conversationId,
+      details: { tools: [], chips: ['event:apt'], prepared: { kind: 'calendar.move', event: 'apt' } },
+    });
+    for (const content of ['APT', '2026-11-05T12:00', 'torsdag 13.00', 'Lunch med rektor'])
+      expect(JSON.stringify(row)).not.toContain(content);
+    // Nothing was written to the calendar: the meeting is where it was, at the revision the page holds.
+    expect(w.cal.events.find(e => e.uid === 'apt')).toMatchObject({ ...APT, revision: 'r1' });
+
+    // A follow-up with the meeting only added, not open beside the conversation: nothing to prepare, and the earlier
+    // prepared decision is not told to the model as something it read.
+    await w.assistant.converse(hillevi, {
+      text: 'Och om det inte går?',
+      conversationId: turn.conversationId,
+      chips: [chip('apt', 'APT')],
+    });
+    expect(model.offered.at(-1)).not.toContain(TOOL);
+    expect(model.offered.at(-1)).not.toContain(CANCEL);
+    expect(model.prompts.at(-1)).not.toContain('clew__prepare');
+    expect(model.prompts.at(-1)).not.toContain('Lästes för tidigare svar');
+    // What the person can do with the meeting is still said where it was added.
+    expect(model.prompts.at(-1)).toContain(OWN);
+  });
+
+  test('a cancellation of the open meeting is asked of the person, kept with its audit row, and nothing is cancelled', async () => {
+    const model = scripted(['cancel']);
+    const w = world({ generate: model.generate });
+    seeded(w);
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Jag vill ställa in det',
+      chips: [chip('apt', 'APT')],
+      beside: 'event:apt',
+    });
+    expect(model.answers).toEqual([{ prepared: true, note: ASKED }]);
+    const prepared = { kind: 'calendar.cancel' as const, event: { id: 'apt', title: 'APT', ...APT } };
+    expect(turn).toMatchObject({ shape: 'forslag', assistant: 'model', prepared });
+    expect(turn.prepared).toEqual(prepared);
+    const answer = turn.thread.messages.at(-1)!;
+    expect(answer.meta?.prepared).toEqual(prepared);
+    expect(answer.meta?.toolCalls).toBeUndefined();
+    expect(answer.meta?.reads).toBeUndefined();
+    expect(w.store.audit.map(e => e.action)).toEqual(['conversation.asked']);
+    const row = w.store.audit.at(-1)!;
+    expect(row).toMatchObject({
+      action: 'conversation.asked',
+      subject: 'thread:' + turn.conversationId,
+      details: { tools: [], chips: ['event:apt'], prepared: { kind: 'calendar.cancel', event: 'apt' } },
+    });
+    for (const content of ['APT', 'ställa in mötet och svarar']) expect(JSON.stringify(row)).not.toContain(content);
+    // Nothing was cancelled: the meeting stands in the calendar as it was.
+    expect(w.cal.cancelled).toEqual([]);
+    expect(w.cal.events.find(e => e.uid === 'apt')).toMatchObject({ ...APT, revision: 'r1' });
+  });
+
+  test('the last prepared decision of a turn is its answer’s, whichever kind', async () => {
+    const model = scripted(['move', 'cancel']);
+    const w = world({ generate: model.generate });
+    seeded(w);
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Flytta det, nej förresten, ställ in det',
+      chips: [chip('apt', 'APT')],
+      beside: 'event:apt',
+    });
+    expect(model.answers).toHaveLength(3);
+    const prepared = { kind: 'calendar.cancel' as const, event: { id: 'apt', title: 'APT', ...APT } };
+    expect(turn.prepared).toEqual(prepared);
+    expect(turn.thread.messages.at(-1)!.meta?.prepared).toEqual(prepared);
+    expect(w.store.audit.at(-1)!.details).toMatchObject({ prepared: { kind: 'calendar.cancel', event: 'apt' } });
+  });
+
+  test('a meeting the person may not change from Clew is said to be so, and nothing is offered', async () => {
+    const reasons: Record<string, string> = {
+      theirs: 'Bara organisatören kan flytta eller ställa in mötet.',
+      locked: 'Mötet går inte att flytta eller ställa in härifrån.',
+      weekly: 'Ett återkommande möte går inte att flytta eller ställa in härifrån.',
+      day: 'En heldag går inte att flytta eller ställa in härifrån.',
+    };
+    for (const [uid, reason] of Object.entries(reasons)) {
+      const model = scripted();
+      const w = world({ generate: model.generate });
+      seeded(w);
+      const turn = await w.assistant.converse(hillevi, {
+        text: 'Flytta mötet till fredag',
+        chips: [chip(uid, uid)],
+        beside: 'event:' + uid,
+      });
+      expect(model.offered[0]).not.toContain(TOOL);
+      expect(model.offered[0]).not.toContain(CANCEL);
+      expect(model.prompts[0]).not.toContain('clew__prepare');
+      expect(model.prompts[0]).toContain(reason);
+      expect(model.prompts[0]).not.toContain(OWN);
+      expect(turn.prepared).toBeUndefined();
+      expect(turn.thread.messages.at(-1)!.meta?.prepared).toBeUndefined();
+      expect(w.store.audit.at(-1)!.details).not.toHaveProperty('prepared');
+    }
+  });
+
+  test('without the meeting open beside the conversation there is nothing to prepare', async () => {
+    const model = scripted();
+    const w = world({ generate: model.generate });
+    seeded(w);
+    // Nothing added, the meeting added but not open, and something else open beside the conversation.
+    await w.assistant.converse(hillevi, { text: 'Flytta APT till torsdag' });
+    await w.assistant.converse(hillevi, { text: 'Flytta APT till torsdag', chips: [chip('apt', 'APT')] });
+    await w.assistant.converse(hillevi, {
+      text: 'Flytta APT till torsdag',
+      chips: [chip('apt', 'APT'), chip('lunch', 'Lunch med rektor')],
+      beside: 'event:someone-elses',
+    });
+    expect(model.offered).toHaveLength(3);
+    for (const tools of model.offered) {
+      expect(tools).not.toContain(TOOL);
+      expect(tools).not.toContain(CANCEL);
+    }
+    expect(model.answers).toEqual([]);
+  });
+
+  test('the tool checks the new time as the decision does, and hears only a time that passes', async () => {
+    const w = world();
+    seeded(w);
+    const { view } = await w.calendar.listWeek(hillevi, '2026-11-02', 14);
+    const event = (uid: string) => view.find(e => e.id === uid)!;
+    const heard: unknown[] = [];
+    const tool = prepareMoveTool({ event: event('apt'), now: T0, prepared: p => heard.push(p) });
+    expect(tool.name).toBe(PREPARE_MOVE_TOOL);
+    const FORM = 'Skriv tiderna i svensk tid som ÅÅÅÅ-MM-DDTHH:MM, till exempel 2026-11-19T13:00.';
+    const refused: [unknown, string][] = [
+      [{ start: '2026-11-05T14:00', end: '2026-11-05T13:00' }, 'Sluttiden måste vara efter starttiden.'],
+      [{ start: '2026-11-05T13:00', end: '2026-11-05T13:00' }, 'Sluttiden måste vara efter starttiden.'],
+      [{ start: '2026-11-05T23:00', end: '2026-11-06T01:00' }, 'Mötet ska börja och sluta samma dag.'],
+      [{ start: '2026-11-04T07:30', end: '2026-11-04T08:30' }, 'Tiden har redan passerat.'],
+      [{ start: '2026-11-04T10:00', end: '2026-11-04T11:00' }, 'Mötet ligger redan på den tiden.'],
+      [{ start: 'torsdag 13.00', end: 'torsdag 14.00' }, FORM],
+      [{ start: '2026-11-05', end: '2026-11-05' }, FORM],
+      [{ start: '2026-02-30T10:00', end: '2026-02-30T11:00' }, FORM],
+      // A clock time Stockholm skips when the clocks go forward is refused, never shifted.
+      [{ start: '2027-03-28T02:30', end: '2027-03-28T03:30' }, FORM],
+      [{ start: 1_700_000_000_000, end: '2026-11-05T14:00' }, FORM],
+      [{ end: '2026-11-05T14:00' }, FORM],
+    ];
+    for (const [input, error] of refused)
+      expect(await tool.execute(input as Record<string, unknown>)).toEqual({ error });
+    expect(heard).toEqual([]);
+    // A meeting the person may not change is refused by both tools themselves too, whatever the time.
+    for (const uid of ['theirs', 'locked', 'weekly', 'day']) {
+      const other = prepareMoveTool({ event: event(uid), now: T0, prepared: p => heard.push(p) });
+      expect(await other.execute({ start: '2026-11-09T09:00', end: '2026-11-09T10:00' })).toHaveProperty('error');
+      const cancel = prepareCancelTool({ event: event(uid), prepared: p => heard.push(p) });
+      expect(cancel.name).toBe(PREPARE_CANCEL_TOOL);
+      expect(await cancel.execute({})).toHaveProperty('error');
+    }
+    expect(heard).toEqual([]);
+    // A meeting that ends at midnight ends on its own day; an instant with its offset is taken as it is.
+    expect(await tool.execute({ start: '2026-11-05T23:00', end: '2026-11-06T00:00' })).toEqual({
+      prepared: true,
+      note: `${NOTE} ${NOBODY_ELSE}`,
+    });
+    expect(await tool.execute({ start: '2026-11-05T13:00:00+01:00', end: '2026-11-05 14:00' })).toMatchObject({
+      prepared: true,
+    });
+    expect(heard).toEqual([
+      expect.objectContaining({ start: '2026-11-05T22:00:00.000Z', end: '2026-11-05T23:00:00.000Z' }),
+      expect.objectContaining({ start: '2026-11-05T12:00:00.000Z', end: '2026-11-05T13:00:00.000Z' }),
+    ]);
+    // A cancellation of the person's own meeting takes nothing and is heard with the meeting as it stands.
+    const cancelled: unknown[] = [];
+    expect(await prepareCancelTool({ event: event('apt'), prepared: p => cancelled.push(p) }).execute({})).toEqual({
+      prepared: true,
+      note: ASKED,
+    });
+    expect(cancelled).toEqual([{ kind: 'calendar.cancel', event: { id: 'apt', title: 'APT', ...APT } }]);
+  });
+
+  test('the pane is told the two decisions for an open meeting the person may change, by the rule the turn uses (D138 item 7)', async () => {
+    const model = scripted([]);
+    const w = world({ generate: model.generate });
+    seeded(w);
+    expect(await w.assistant.reach(hillevi, { beside: 'event:apt' })).toEqual({
+      prepares: [{ title: 'Flytta mötet' }, { title: 'Ställ in mötet' }],
+    });
+    // Someone else's meeting, one that cannot be changed from Clew, a recurring one, a whole day, and one not in her
+    // calendar: nothing, and no error.
+    for (const uid of ['theirs', 'locked', 'weekly', 'day', 'someone-elses'])
+      expect({ uid, reach: await w.assistant.reach(hillevi, { beside: 'event:' + uid }) }).toEqual({
+        uid,
+        reach: { prepares: [] },
+      });
+    // The turn with the same meeting open offers the two tools for the one and neither for the other.
+    for (const uid of ['apt', 'theirs'])
+      await w.assistant.converse(hillevi, {
+        text: 'Flytta mötet till fredag',
+        chips: [chip(uid, uid)],
+        beside: 'event:' + uid,
+      });
+    expect(model.offered[0]).toEqual(expect.arrayContaining([TOOL, CANCEL]));
+    expect(model.offered[1]).not.toContain(TOOL);
+    expect(model.offered[1]).not.toContain(CANCEL);
+    // The reach changed nothing in the calendar and kept nothing of its own.
+    expect(w.cal.cancelled).toEqual([]);
+    expect(w.store.audit.map(e => e.action)).toEqual(['conversation.asked', 'conversation.asked']);
+  });
 });
 
 /**
@@ -1059,7 +1444,7 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
  * person added to the box stays under "Du tittar på". The turn's audit row names the chips as before.
  */
 describe('the thing open beside the transcript is told to the model as that', () => {
-  const OPEN = 'Öppet i rutan bredvid samtalet just nu';
+  const OPEN = 'Öppet bredvid samtalet just nu';
   const ADDED = 'Du tittar på (det personen lagt till i samtalet):';
   async function asked(input: { beside?: string; both?: boolean }) {
     const prompts: string[] = [];
@@ -1093,7 +1478,7 @@ describe('the thing open beside the transcript is told to the model as that', ()
     expect(turn.assistant).toBe('model');
     expect(system).toContain(
       OPEN +
-        ' (skriver personen "det öppna ärendet", "kortet", "vyn", "rutan bredvid", "sidopanelen" eller "det här" är det detta som menas):',
+        ' (skriver personen "sidan", "personen", "medarbetaren", "enheten", "den öppna posten", "det öppna ärendet", "kortet", "vyn", "rutan bredvid", "sidopanelen" eller "det här" är det detta som menas):',
     );
     expect(under(system, OPEN)).toContain(`Ärende "${invoices.title}"`);
     expect(system).not.toContain(ADDED);
@@ -1738,5 +2123,252 @@ describe('the assistant starts a work item from a propose, the person sends it',
     expect(turn.draft).toBeUndefined();
     expect(turn.forslag).toBeUndefined();
     expect(JSON.stringify(heard)).toContain('anmälare');
+  });
+});
+describe('a question asked beside a page (D141 rule 6)', () => {
+  const page = { subject: 'tool:finance.invoices', label: 'Fakturor att attestera' };
+  test('a first question with the page starts a conversation kept as asked beside it, and its audit row says so and no more', async () => {
+    const w = world();
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor', page });
+    expect(turn.thread.askedBeside).toEqual({ ...page, openedAt: null });
+    expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === turn.conversationId)!.askedBeside).toEqual({
+      ...page,
+      openedAt: null,
+    });
+    expect(w.store.audit.at(-1)).toMatchObject({
+      actor: 'person:hillevi',
+      action: 'conversation.asked',
+      subject: 'thread:' + turn.conversationId,
+      details: { askedBeside: true },
+    });
+    // That it was asked beside a page, never which page or its words (D91).
+    const row = JSON.stringify(w.store.audit.at(-1));
+    expect(row).not.toContain(page.subject);
+    expect(row).not.toContain(page.label);
+  });
+  test('a later question with a page says nothing on a conversation that exists, whether it was asked beside one or not', async () => {
+    const w = world();
+    const beside = await w.assistant.converse(hillevi, { text: 'visa fakturor', page });
+    const plain = await w.assistant.converse(hillevi, { text: 'visa fakturor' });
+    w.advance(60_000);
+    const other = { subject: 'calendar:week', label: 'Veckan' };
+    const again = await w.assistant.converse(hillevi, {
+      text: 'xyzzy plugh',
+      conversationId: beside.conversationId,
+      page: other,
+    });
+    expect(again.thread.askedBeside).toEqual({ ...page, openedAt: null });
+    const still = await w.assistant.converse(hillevi, {
+      text: 'xyzzy plugh',
+      conversationId: plain.conversationId,
+      page: other,
+    });
+    expect('askedBeside' in still.thread).toBe(false);
+    const replied = w.store.audit.filter(e => e.action === 'conversation.replied');
+    expect(replied).toHaveLength(2);
+    for (const e of replied) expect(e.details).not.toHaveProperty('askedBeside');
+  });
+  test('a question without a page starts a conversation without it, as before', async () => {
+    const w = world();
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor' });
+    expect('askedBeside' in turn.thread).toBe(false);
+    expect(w.store.audit.at(-1)!.details).not.toHaveProperty('askedBeside');
+  });
+  test('opening it marks the time once with one audit row; again, it changes nothing and writes nothing', async () => {
+    const w = world();
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor', page });
+    w.advance(60_000);
+    const openedAt = new Date(Date.parse(T0) + 60_000).toISOString();
+    const opened = await w.assistant.markOpened(hillevi, turn.conversationId);
+    expect(opened!.askedBeside).toEqual({ ...page, openedAt });
+    // What was said and when is untouched: opening does not reorder the rail.
+    expect(opened!.updatedAt).toBe(turn.thread.updatedAt);
+    expect(opened!.messages).toEqual(turn.thread.messages);
+    expect(audit(w.store, turn.conversationId)).toEqual(['conversation.asked', 'conversation.opened']);
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'person:hillevi',
+      action: 'conversation.opened',
+      subject: 'thread:' + turn.conversationId,
+      at: openedAt,
+    });
+    w.advance(60_000);
+    const again = await w.assistant.markOpened(hillevi, turn.conversationId);
+    expect(again).toEqual(opened);
+    expect(audit(w.store, turn.conversationId)).toEqual(['conversation.asked', 'conversation.opened']);
+    expect((await w.threads.threadFor(hillevi, turn.conversationId))!.askedBeside!.openedAt).toBe(openedAt);
+  });
+  test('a conversation not asked beside a page is answered as it stands, and nothing is written', async () => {
+    const w = world();
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor' });
+    const before = w.store.audit.length;
+    const answered = await w.assistant.markOpened(hillevi, turn.conversationId);
+    expect(answered).toEqual(turn.thread);
+    expect('askedBeside' in answered!).toBe(false);
+    expect(w.store.audit).toHaveLength(before);
+  });
+  test("another person's conversation, an unknown one and a work item are refused, and nothing is written", async () => {
+    const w = world();
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor', page });
+    await w.threads.ensureThreads(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.kind === 'pushed')!;
+    const before = w.store.audit.length;
+    expect(await w.assistant.markOpened(hassan, turn.conversationId)).toBeUndefined();
+    expect(await w.assistant.markOpened(hillevi, 'nope')).toBeUndefined();
+    expect(await w.assistant.markOpened(hillevi, card.id)).toBeUndefined();
+    expect(w.store.audit).toHaveLength(before);
+    expect((await w.threads.threadFor(hillevi, turn.conversationId))!.askedBeside!.openedAt).toBeNull();
+  });
+});
+
+/**
+ * What stands open on a person's page is told to the model by Clew (D136 items 1 to 4): one of the asker's people as a
+ * person the conversation names, the asker's own page as theirs, anyone else's as nothing. The page names the person by
+ * Clew's id alone; the server resolves it as the asker on every turn, and a conversation asked beside the page keeps it,
+ * so a later turn is about the person wherever it is continued. Erasing the person deletes those conversations (item 8).
+ */
+describe('a person whose page stands open (D136)', () => {
+  const OPEN = 'Öppet bredvid samtalet just nu';
+  const ANNA =
+    'Sidan om medarbetaren Anna Lindqvist på Skönsmons skola, användarnamn anna, som personen är chef för. Öppna ärenden om medarbetaren under Behöver dig: Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Avfärda).';
+  /** What a source holds about Anna's health, as the rehab card's summary and row say it: never handed to the model. */
+  const HEALTH = ['Namnet visas i personalsystemet', 'korta perioder sedan', 'Sjuk ·', '"periods"', 'hr:emp:1001'];
+  const annasPage = {
+    page: { subject: 'person:anna', label: 'Anna Lindqvist' },
+    thing: { kind: 'person' as const, id: 'anna' },
+  };
+  /** A model the test plays that reads nothing and keeps what it is told and offered. */
+  function listening() {
+    const systems: string[] = [];
+    const offered: string[][] = [];
+    const generate: ModelGenerate = async ({ system, tools }) => {
+      systems.push(system);
+      offered.push(Object.keys(tools));
+      return { text: 'Boka omtankesamtalet med knappen i ärendet.', toolCalls: [] };
+    };
+    return { generate, systems, offered };
+  }
+  async function rehab(w: ReturnType<typeof world>) {
+    await w.threads.ensureThreads(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'hr:rehab:hr:emp:1001')!;
+  }
+
+  test('one of the asker’s people: who she is and her work, and every card about her by title alone from the first turn', async () => {
+    const m = listening();
+    const w = world({ generate: m.generate });
+    const card = await rehab(w);
+    // The question names nobody; the card it points at is about her, so it is handed as her work is.
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Vad ska jag tänka på inför samtalet?',
+      chips: [{ ref: 'thread:' + card.id, kind: 'thread', label: card.title }],
+      ...annasPage,
+    });
+    const [system] = m.systems;
+    expect(system).toContain(OPEN + ' (skriver personen "sidan", "personen", "medarbetaren"');
+    expect(system).toContain('\n- ' + ANNA);
+    expect(system).toContain(
+      'Du tittar på (det personen lagt till i samtalet):\n- Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu:',
+    );
+    for (const marker of HEALTH) expect(system).not.toContain(marker);
+    // The rules say where she is told, and she is among those the lookup resolves.
+    expect(system).toContain(
+      '- Vem det är står under "Medarbetare som personen nämnde" eller, för medarbetaren vars sida står öppen, under "Öppet bredvid samtalet". Står det inte där, slå upp namnet som personen skrev det med verktyget clew__findPerson.',
+    );
+    expect(m.offered[0]).toContain('clew__findPerson');
+    // The conversation keeps which person, by id alone; the audit row says a person stood open, never who.
+    expect(turn.thread.askedBeside).toEqual({ ...annasPage.page, openedAt: null, thing: annasPage.thing });
+    const row = w.store.audit.at(-1)!;
+    expect(row).toMatchObject({ action: 'conversation.asked', details: { askedBeside: true, thing: 'person' } });
+    expect(JSON.stringify(row)).not.toContain('Anna');
+    expect(JSON.stringify(row)).not.toContain('"anna"');
+  });
+
+  test('her one work item is the one the model may draft on and is drawn when the answer speaks of it; a later turn without the page is still about her', async () => {
+    const m = listening();
+    const w = world({ generate: m.generate });
+    const card = await rehab(w);
+    const first = await w.assistant.converse(hillevi, { text: 'Kan du fylla i det till torsdag?', ...annasPage });
+    expect(m.offered[0]).toContain('clew__draftAction');
+    expect(first.thread.messages.at(-1)!.meta!.cards).toEqual([card.id]);
+    w.advance(60_000);
+    // The conversation's page sends no thing: the conversation kept it.
+    await w.assistant.converse(hillevi, { text: 'Och vad gör jag sedan?', conversationId: first.conversationId });
+    expect(m.systems[1]).toContain('\n- ' + ANNA);
+    for (const marker of HEALTH) expect(m.systems[1]).not.toContain(marker);
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.replied', details: { thing: 'person' } });
+  });
+
+  test('the asker’s own page is theirs; anyone else’s page names nobody, as does any page for someone who manages nobody', async () => {
+    const m = listening();
+    const w = world({ generate: m.generate });
+    await rehab(w);
+    await w.assistant.converse(hillevi, {
+      text: 'Vad har jag kvar att göra?',
+      thing: { kind: 'person', id: 'hillevi' },
+    });
+    expect(m.systems[0]).toContain(`${OPEN} (skriver personen "sidan"`);
+    expect(m.systems[0]).toContain(
+      '\n- Personens egen sida. Gäller frågan sidan, gäller den personen själv: läs med verktygen utan att ange någon medarbetare, så svarar de för personen.',
+    );
+    expect(m.systems[0]).not.toContain('Sidan om medarbetaren');
+    // Someone she does not manage, an id of nobody, and her report's page asked from an employee who manages nobody.
+    for (const [who, id] of [
+      [hillevi, 'olle'],
+      [hillevi, 'nobody'],
+      [hassan, 'anna'],
+    ] as const) {
+      const before = m.systems.length;
+      const turn = await w.assistant.converse(who, { text: 'Vad behöver jag veta?', thing: { kind: 'person', id } });
+      expect(turn.assistant).toBe('model');
+      expect(m.systems).toHaveLength(before + 1);
+      const system = m.systems.at(-1)!;
+      expect(system).not.toContain(OPEN);
+      expect(system).not.toContain('Anna Lindqvist');
+      expect(system).not.toContain('användarnamn');
+      expect(system).not.toContain(id);
+    }
+  });
+
+  test('erasing her deletes every conversation asked beside her page, whoever asked; the rest stay, and one audit row counts them', async () => {
+    const w = world();
+    const beside = (who: AuthenticatedContext, id: string) =>
+      w.assistant.converse(who, {
+        text: 'visa fakturor',
+        page: { subject: 'person:' + id, label: id },
+        thing: { kind: 'person', id },
+      });
+    const mine = await beside(hillevi, 'anna');
+    const theirs = await beside(hassan, 'anna');
+    const erik = await beside(hillevi, 'erik');
+    const plain = await w.assistant.converse(hillevi, { text: 'visa fakturor' });
+    const erasure = subjectErasure({
+      store: w.store,
+      clock: () => new Date(T0),
+      // Anna has been deactivated by the source; everyone else is active.
+      people: { enabled: async id => id !== 'anna' },
+    });
+    expect(await erasure.eraseSubject('operator:cli', { entity: 'person', key: 'anna' })).toMatchObject({
+      conversations: 2,
+      messages: 4,
+    });
+    const left = w.store.dump().map(r => r.thread.id);
+    expect(left).not.toContain(mine.conversationId);
+    expect(left).not.toContain(theirs.conversationId);
+    expect(left).toEqual(expect.arrayContaining([erik.conversationId, plain.conversationId]));
+    expect(await w.threads.threadFor(hassan, theirs.conversationId)).toBeUndefined();
+    expect(w.store.audit.filter(e => e.action === CONVERSATIONS_ERASED)).toEqual([
+      {
+        actor: 'operator:cli',
+        action: CONVERSATIONS_ERASED,
+        subject: 'person:anna',
+        at: T0,
+        details: { conversations: 2, messages: 4 },
+      },
+    ]);
+    // Erik's is his own: erasing Anna again finds nothing, and says so with zero counts.
+    expect(await erasure.eraseSubject('operator:cli', { entity: 'person', key: 'anna' })).toMatchObject({
+      conversations: 0,
+      messages: 0,
+    });
+    expect(w.store.dump().map(r => r.thread.id)).toEqual(expect.arrayContaining([erik.conversationId]));
   });
 });

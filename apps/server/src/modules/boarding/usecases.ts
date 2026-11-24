@@ -174,6 +174,51 @@ export function boardingUsecases(deps: BoardingDeps) {
     for (const r of s.reports) if (r.id !== persona.id && r.enabled && !reports.has(r.id)) reports.set(r.id, r);
     return { manages: s.manages, reports, tree: s.tree };
   }
+  /**
+   * Where each report asked about stands, one row per key in the order asked: their open plan (the one started last of
+   * two) with its progress and what waits for the reader, or, with no plan, a start within the suggestion window that no
+   * introduction covers. A report with neither has no row.
+   */
+  async function standingsOf(
+    persona: AuthenticatedContext,
+    asked: ReadonlyMap<string, Report>,
+  ): Promise<PersonStanding[]> {
+    if (!asked.size) return [];
+    const day = currentDay();
+    return deps.store.transaction(async tx => {
+      const plans = await tx.plansAbout([...asked.values()].map(r => r.id));
+      const open = plans.filter(p => p.closedAt === null);
+      const items = await tx.items(open.map(p => p.id));
+      return [...asked].flatMap(([key, report]): PersonStanding[] => {
+        const plan = open
+          .filter(p => p.personId === report.id)
+          .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+        if (plan) {
+          const own = items.filter(i => i.planId === plan.id);
+          const { done, total } = progress(own);
+          return [
+            {
+              key,
+              personId: report.id,
+              plan: {
+                id: plan.id,
+                event: plan.event,
+                anchorOn: plan.anchorOn,
+                done,
+                total,
+                waiting: own.filter(i => i.doneAt === null && waitsFor(i, persona.id, true)).length,
+                state: planState(plan, own, day),
+              },
+            },
+          ];
+        }
+        const start = upcomingStart(report, day);
+        if (start && !plans.some(p => p.personId === report.id && covers(p, start)))
+          return [{ key, personId: report.id, missingFrom: start }];
+        return [];
+      });
+    });
+  }
   /** A report of the persona's, or the refusal: a non-manager, someone else's report, the persona's own manager. */
   async function reportOf(persona: AuthenticatedContext, personId: string) {
     const s = await staffing(persona);
@@ -780,41 +825,23 @@ export function boardingUsecases(deps: BoardingDeps) {
         const r = [...reports.values()].find(x => sameUserName(x.userName, key));
         if (r && ![...asked.values()].includes(r)) asked.set(key, r);
       }
-      if (!asked.size) return [];
-      const day = currentDay();
-      return deps.store.transaction(async tx => {
-        const plans = await tx.plansAbout([...asked.values()].map(r => r.id));
-        const open = plans.filter(p => p.closedAt === null);
-        const items = await tx.items(open.map(p => p.id));
-        return [...asked].flatMap(([key, report]): PersonStanding[] => {
-          const plan = open
-            .filter(p => p.personId === report.id)
-            .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
-          if (plan) {
-            const own = items.filter(i => i.planId === plan.id);
-            const { done, total } = progress(own);
-            return [
-              {
-                key,
-                personId: report.id,
-                plan: {
-                  id: plan.id,
-                  event: plan.event,
-                  anchorOn: plan.anchorOn,
-                  done,
-                  total,
-                  waiting: own.filter(i => i.doneAt === null && waitsFor(i, persona.id, true)).length,
-                  state: planState(plan, own, day),
-                },
-              },
-            ];
-          }
-          const start = upcomingStart(report, day);
-          if (start && !plans.some(p => p.personId === report.id && covers(p, start)))
-            return [{ key, personId: report.id, missingFrom: start }];
-          return [];
-        });
-      });
+      return standingsOf(persona, asked);
+    },
+
+    /**
+     * Where every report of the persona's stands (`boarding.plans`, D141 rule 4): the rows `aboutPeople` answers when it
+     * is asked about each report with a user name, keyed by that name, with the report's name, by name in Swedish order.
+     * A report with neither a plan nor a start to plan for has no row; someone with no reports has none. Reads, so no
+     * audit row.
+     */
+    async reportStandings(persona: AuthenticatedContext): Promise<Array<PersonStanding & { name: string }>> {
+      const { reports } = await staffing(persona);
+      const asked = new Map<string, Report>();
+      for (const r of [...reports.values()].sort(
+        (a, b) => a.name.localeCompare(b.name, 'sv') || a.id.localeCompare(b.id),
+      ))
+        if (r.userName !== null && ![...asked.keys()].some(k => sameUserName(k, r.userName!))) asked.set(r.userName, r);
+      return (await standingsOf(persona, asked)).map(s => ({ ...s, name: reports.get(s.personId)!.name }));
     },
 
     /**

@@ -12,6 +12,7 @@ import {
   fieldTone,
   markFields,
   menuEligible,
+  modelReading,
   placesOf,
   viewProblem,
   type Actor,
@@ -1629,13 +1630,15 @@ describe('the built-in connector', () => {
       }),
     );
 
-  test('it passes the registry validation, its reads are no model tools, and the profile views open without input', () => {
+  test('it passes the registry validation, only the round is a model tool, and the profile views open without input', () => {
     const connector = talksConnector(talks, async () => boss);
     expect(() => registry()).not.toThrow();
     expect(connector).toMatchObject({ id: 'talks', kind: 'core', source: 'Utvecklingssamtal' });
     const reads = connector.capabilities;
+    // The round is opened to the model (D122 item 3, D141 rule 4); the action points never (D96 item 6), nor the reads
+    // about an entity (D97 item 7).
     expect(reads.map(c => [c.name, c.kind, c.model])).toEqual([
-      ['talks.talks', 'read', false],
+      ['talks.talks', 'read', true],
       ['talks.commitments', 'read', false],
       ['talks.person', 'read', false],
       ['talks.unit', 'read', false],
@@ -1680,7 +1683,17 @@ describe('the built-in connector', () => {
       'ok',
     ]);
     expect(placesOf(connector.capabilities.find(c => c.name === 'talks.unit')!)).toEqual(['lens', 'mark', 'section']);
-    expect(registry().tools(actor(boss))).toEqual([]);
+    // Of the domain the round alone is a tool, for a manager; never the reads about a person or a unit.
+    expect(
+      registry()
+        .tools(actor(boss))
+        .map(t => t.name),
+    ).toEqual(['talks.talks']);
+    expect(
+      registry()
+        .tools(actor(asAnna))
+        .map(t => t.name),
+    ).toEqual([]);
     // Where the whole row is drawn (a lens, a section) it is two cells, "Samtal" with its time and "Åtgärdspunkter" with
     // the late ones; the next talk is the row in one value, for a column or a one-line summary (D97, artboards A2 and B).
     const fields = personTalksView.kind === 'list' ? personTalksView.fields : [];
@@ -1808,6 +1821,27 @@ describe('the built-in connector', () => {
     expect(checkContract(CommitmentsOutputSchema, about)).toBe(true);
     await expect(r.run(actor(asAnna), 'talks.talks', {})).rejects.toThrow('Du saknar behörighet för åtgärden.');
   });
+
+  test('the round is the assistant’s to read for a manager (D122 item 3, D141 rule 4): where each report stands, never what an action point says', async () => {
+    const r = registry();
+    await open();
+    await talks.addCommitment(boss, 'anna', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' });
+    const round = await r.run(actor(boss), 'talks.talks', {});
+    const read = JSON.stringify(modelReading(talksView, 'Utvecklingssamtal', round));
+    // Each of the manager's people with the state in words and the user name another read takes; nothing of the text,
+    // no ref and no link.
+    expect(read).toContain('Anna Andersson');
+    expect(read).toContain('anna.a');
+    expect(read).not.toContain('Läsa boken');
+    expect(read).not.toContain('talk:');
+    // A manager of another unit reads his own people alone; an employee is refused, and offered nothing of the domain.
+    const others = await r.run<{ rows: Array<{ userName: string }> }>(actor(other), 'talks.talks', {});
+    expect(others.rows.some(row => row.userName === 'anna.a')).toBe(false);
+    await expect(r.run(actor(asAnna), 'talks.talks', {})).rejects.toThrow('Du saknar behörighet för åtgärden.');
+    expect(r.views(actor(boss)).find(v => v.capability === 'talks.talks')?.assistant).toBe(true);
+    expect(r.views(actor(asAnna)).some(v => v.assistant)).toBe(false);
+  });
+
   test('the scan asks for a card when a meeting was moved or is gone, for the manager whose booking it is; it names nobody and goes when the difference is settled (D133)', async () => {
     const r = registry();
     const scan = async (p: AuthenticatedContext) => r.scanOne(actor(p), 'talks');

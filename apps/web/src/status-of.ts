@@ -2,7 +2,9 @@ import { SUBJECT_CHANGED, cardKind, isSnoozed, snoozeWhen, type ReceiptRow, type
 import type { StatusKind } from '@clew/ui/status-words';
 import { executionKind } from './execution-status';
 import { canUndoReceipt } from './receipt-state';
-import { dueOf } from './work-items';
+import { asksNoAnswer, dueOf, nothingToDecide, reasonMark } from './work-items';
+
+export { nothingToDecide } from './work-items';
 
 /**
  * A work item's state in the one vocabulary (D126 item 13), from what the item already holds: its decision's execution
@@ -16,8 +18,19 @@ import { dueOf } from './work-items';
  * one the item has always offered for that state (check the status, decide again, see the review, undo, remind, take
  * it up, reopen). A move is the person's (`offer: false`, a filled button) or an offer (`offer: true`, a secondary one).
  * A move the state also allows but the notice does not carry is in `rest`, for the item's ⋯ menu.
+ *
+ * A to-do with nothing to decide (`nothingToDecide`: every action it offers is a read) has no button that says what is
+ * expected, so its notice does: the source's own summary, its first sentence as the title and the rest as the
+ * description, with no move. The source says there what holds, what the person can do outside Clew and how the item
+ * ends.
+ *
+ * Where the source offers it (`Thread.handOn`, D139), the person can say that the next step, someone else's, is taken:
+ * `handOn` is that button's words, filled on an item with nothing to decide and a row under ⋯ on any other plain to-do.
+ * Once said (`Thread.handedOn`) the item waits on whom the source named: the notice says so and when the person said
+ * it, "Påminn mig" is its offer as on any item that waits, and "Det blev inte gjort" under ⋯ takes it back.
  */
-export type StatusMoveKind = 'check' | 'decide' | 'review' | 'undo' | 'remind' | 'take-up' | 'reopen';
+export type StatusMoveKind =
+  'check' | 'decide' | 'review' | 'undo' | 'remind' | 'take-up' | 'reopen' | 'hand-on' | 'hand-back';
 export interface StatusMoveWords {
   kind: StatusMoveKind;
   label: string;
@@ -34,6 +47,21 @@ export interface ItemStatus {
   detail?: string;
   /** The notice under the title, or null for a plain to-do. */
   notice: StatusNoticeWords | null;
+  /**
+   * The item is the person's and there is nothing of theirs to decide on it (`nothingToDecide`): no button is filled,
+   * the two ways out stand beside its read, and nothing on it says an answer is late.
+   */
+  noDecision: boolean;
+  /**
+   * The item asks for no answer wherever it stands (`asksNoAnswer`: also while it waits on someone the person said
+   * they asked, is set aside, or is closed): its day is "Sista dag", never "Svara senast", and no badge says it is late.
+   */
+  noAnswer: boolean;
+  /**
+   * The words of the source's offer to hand the item on (D139) while it can be taken: on a plain to-do, with or without
+   * a decision. On an item with nothing to decide it is the one filled button; otherwise it is in `rest` too.
+   */
+  handOn?: string;
   /** The moves the state allows besides the notice's one, for the ⋯ menu. */
   rest: StatusMoveWords[];
   /**
@@ -66,12 +94,31 @@ const bare = (s: string) => s.trim().replace(/\.$/, '');
 const CHECK: StatusMoveWords = { kind: 'check', label: 'Kontrollera status', offer: false };
 const REVIEW: StatusMoveWords = { kind: 'review', label: 'Visa granskning', offer: false };
 const REMIND: StatusMoveWords = { kind: 'remind', label: 'Påminn mig', offer: true };
+const HAND_BACK: StatusMoveWords = { kind: 'hand-back', label: 'Det blev inte gjort', offer: true };
 type Moved = Pick<ItemStatus, 'notice' | 'rest'>;
 /** The notice with its first move, and the moves it leaves to the menu. */
 const withMoves = (notice: Omit<StatusNoticeWords, 'move'>, moves: (StatusMoveWords | undefined)[]): Moved => {
   const [move, ...rest] = moves.filter((m): m is StatusMoveWords => !!m);
   return { notice: { ...notice, ...(move ? { move } : {}) }, rest };
 };
+
+/**
+ * Whether the person can say now that the next step is someone else's and taken (D139), as the server checks it: the
+ * source offers it, the item is open and waits on nobody, and nothing on it is decided or on its way.
+ */
+export const canHandOn = (thread: Thread): boolean =>
+  !!thread.handOn && thread.state === 'open' && !thread.waitingOn && !thread.receipt && !thread.execution;
+/**
+ * The source's summary as a notice's words: its first sentence is the title, without its full stop, and the rest the
+ * description. A sentence ends at a full stop, a question mark or an exclamation mark before a capital letter, so "kl.
+ * 16" and "t.ex. i dag" do not end one. Null when the source said nothing.
+ */
+export function summaryNotice(summary: string): StatusNoticeWords | null {
+  const text = summary.replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  const parts = /^(.*?[.!?])\s+(?=\p{Lu})(.+)$/u.exec(text);
+  return parts ? { title: bare(parts[1]!), description: parts[2]! } : { title: bare(text) };
+}
 
 /** A receipt row's state: read back, in doubt, refused; a row that was never sent has none ("Inte skickad"). */
 export function outcomeStatus(outcome: ReceiptRow['outcome']): StatusKind | null {
@@ -287,6 +334,11 @@ function receiptNotice(thread: Thread, ctx: StatusContext): Moved & { kind: Stat
 /** The row's detail for a plain to-do: when it is due ("i dag", "försenad", "vecka 48"), else what kind of item it is. */
 function todoDetail(thread: Thread, ctx: StatusContext): string | undefined {
   if (thread.timers?.some(t => t.state === 'blocked')) return 'påminnelsen stoppad';
+  // Nothing to decide: no answer is late, so the row says the source's reason where it is short enough, else nothing.
+  if (nothingToDecide(thread, ctx.now)) {
+    const reason = reasonMark(thread, ctx.today);
+    return reason ? lower(reason.label) : undefined;
+  }
   const due = dueOf(thread, ctx.today);
   if (due) return lower(due.label);
   const kind = cardKind(thread);
@@ -294,7 +346,10 @@ function todoDetail(thread: Thread, ctx: StatusContext): string | undefined {
 }
 
 /** The state, its row's detail and its notice, before the review's link is placed. */
-function stateOf(thread: Thread, ctx: StatusContext): Omit<ItemStatus, 'review'> {
+function stateOf(
+  thread: Thread,
+  ctx: StatusContext,
+): Omit<ItemStatus, 'review' | 'noDecision' | 'noAnswer' | 'handOn'> {
   const source = thread.trigger.source;
   const c = counts(thread);
   const executed = executionKind(thread.execution);
@@ -361,22 +416,36 @@ function stateOf(thread: Thread, ctx: StatusContext): Omit<ItemStatus, 'review'>
   // It waits on someone else (D17, D49): whom, when the person's own reminder is, and "Påminn mig" as the offer.
   if (thread.waitingOn) {
     const reminder = thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
+    // The person handed it on themselves (D139): when they said so, in the words they pressed, and the way back.
+    const handed = thread.handedOn;
+    const said = handed
+      ? thread.handOn
+        ? `Du sa ”${thread.handOn.label}” ${ctx.when(handed.at)}.`
+        : `Du lämnade ärendet vidare ${ctx.when(handed.at)}.`
+      : null;
+    const reminds =
+      reminder && !thread.waitingOn.startsWith('påminnelsen ')
+        ? `Påminner dig ${snoozeWhen(reminder.dueAt, ctx.now)}.`
+        : null;
+    const description = [said, reminds].filter(Boolean).join(' ');
     return {
       kind: 'waiting',
-      ...withMoves(
-        {
-          title: `Väntar på ${thread.waitingOn}`,
-          ...(reminder && !thread.waitingOn.startsWith('påminnelsen ')
-            ? { description: `Påminner dig ${snoozeWhen(reminder.dueAt, ctx.now)}.` }
-            : {}),
-        },
-        [REMIND],
-      ),
+      ...withMoves({ title: `Väntar på ${thread.waitingOn}`, ...(description ? { description } : {}) }, [
+        REMIND,
+        handed ? HAND_BACK : undefined,
+      ]),
     };
   }
   const detail = todoDetail(thread, ctx);
   const undo = thread.receipt ? undoMove(thread, ctx) : undefined;
-  return { kind: 'needs-you', ...(detail ? { detail } : {}), notice: null, rest: undo ? [undo] : [] };
+  // Nothing to decide: the source's summary says what holds and how the item ends, where a button would have.
+  const nothing = nothingToDecide(thread, ctx.now);
+  const notice = nothing ? summaryNotice(thread.summary) : null;
+  // The source's offer to hand the item on (D139): the filled button of an item with nothing to decide, else under ⋯.
+  const hand: StatusMoveWords | undefined =
+    !nothing && canHandOn(thread) ? { kind: 'hand-on', label: thread.handOn!.label, offer: false } : undefined;
+  const rest = [undo, hand].filter((m): m is StatusMoveWords => !!m);
+  return { kind: 'needs-you', ...(detail ? { detail } : {}), notice, rest };
 }
 
 export function statusOf(thread: Thread, ctx: StatusContext): ItemStatus {
@@ -384,5 +453,15 @@ export function statusOf(thread: Thread, ctx: StatusContext): ItemStatus {
   // Once decided, the review that was sent can be read again; the notice may already lead there.
   const decided = !!thread.receipt || !!executionKind(thread.execution) || thread.state !== 'open';
   const review = !!ctx.reviewed && decided && state.notice?.move?.kind !== 'review';
-  return { ...state, rest: state.rest.filter(m => m.kind !== 'review'), review };
+  const noDecision = nothingToDecide(thread, ctx.now);
+  const plain = state.kind === 'needs-you' && state.notice === null;
+  const handOn = (noDecision || plain) && canHandOn(thread) ? thread.handOn!.label : undefined;
+  return {
+    ...state,
+    rest: state.rest.filter(m => m.kind !== 'review'),
+    review,
+    noDecision,
+    noAnswer: asksNoAnswer(thread),
+    ...(handOn ? { handOn } : {}),
+  };
 }

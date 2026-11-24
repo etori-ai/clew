@@ -787,8 +787,57 @@ export const handedConversation = (
     followUps: [],
   };
 };
-export const conversation = (source: Thread[], text: string, conversationId = 'konversation'): ConversationResponse => {
+export const conversation = (
+  source: Thread[],
+  text: string,
+  conversationId = 'konversation',
+  /** What stood open where the question was asked (`ConversationInput.beside`). */
+  beside?: string,
+): ConversationResponse => {
   const previous = source.find(t => t.id === conversationId)?.messages ?? [];
+  // Asked to move or cancel a meeting that stands open on Kalender, the assistant prepares the decision and saves nothing
+  // (`Prepared`, 2026-11-18): the meeting open in the pane if it is the person's own in the week on screen, else the
+  // week's first own one; a move to Thursday 13:00–13:30 the same week. The answer and the saved message both carry it.
+  if (/flytta|ställ in/i.test(text) && beside?.startsWith('event:')) {
+    const week = events('2026-11-02').filter(e => e.mine && e.canCancel && !e.recurring && !e.allDay);
+    const event = week.find(e => 'event:' + e.id === beside) ?? week[0]!;
+    const meeting = { id: event.id, title: event.title, start: event.start, end: event.end };
+    const cancel = /ställ in/i.test(text);
+    const prepared: NonNullable<ConversationResponse['prepared']> = cancel
+      ? { kind: 'calendar.cancel', event: meeting }
+      : { kind: 'calendar.move', event: meeting, start: '2026-11-05T12:00:00.000Z', end: '2026-11-05T12:30:00.000Z' };
+    const body = cancel
+      ? 'Mötet kan ställas in. Svara på frågan om du vill ställa in det; inget är inställt än.'
+      : 'Torsdag 13:00–13:30 är ledigt för dig, Mona Berg och Per Lindahl. Spara om tiden passar, eller dra blocket.';
+    const reply = thread({
+      id: conversationId,
+      title: text.slice(0, 80),
+      kind: 'question',
+      connector: 'clew',
+      area: 'fragor',
+      messages: [
+        ...previous,
+        { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW },
+        {
+          id: `a${previous.length}`,
+          role: 'assistant',
+          body,
+          createdAt: NOW,
+          meta: { source: 'Kalendern', assistant: 'model', prepared },
+        },
+      ],
+    });
+    return {
+      conversationId,
+      thread: reply,
+      shape: 'svar',
+      assistant: 'model',
+      answer: { body, source: 'Kalendern', at: NOW },
+      prepared,
+      clewActions: [],
+      followUps: [],
+    };
+  }
   // A question about a routine is answered from documents (D26): numbered steps, citations, the sources as a view.
   if (/ramlat/i.test(text)) {
     const body =
@@ -2122,6 +2171,29 @@ export const NOTICE_TEXT = [
   'Varje dos signeras direkt efter att den har getts. En dos som inte kunde ges rapporteras till ansvarig sjuksköterska under samma pass.',
   'I den fullständiga rutinen finns checklistor och kontaktuppgifter. Bekräfta att du har tagit del av rutinen.',
 ];
+/**
+ * A work item with nothing to decide (`nothingToDecide` in the web's `status-of.ts`): its only action is a read, as a
+ * source's check raises one for a certificate that has run out. Its summary says what holds, what the person can do
+ * outside Clew and how the item ends; its day is the certificate's last, a month before the frozen day.
+ */
+/** The source's offer on such a card to say that the manager has been asked (D139). */
+export const ASKED_MANAGER = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
+export const CERTIFICATE_TITLE = 'Delegering läkemedel gick ut 8 oktober';
+export const expiredCertificate = (over: Partial<Thread> = {}): Thread =>
+  thread({
+    id: 'intyg',
+    title: CERTIFICATE_TITLE,
+    connector: 'hr',
+    area: 'personal',
+    deadline: '2026-10-08',
+    trigger: { reason: 'Har gått ut', source: 'Personalsystemet', at: NOW },
+    summary:
+      'Intyget gäller inte längre. Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.',
+    actions: [
+      { id: 'open', label: 'Visa mina kompetenser', capability: 'competence.holdings', kind: 'read', role: 'primary' },
+    ],
+    ...over,
+  });
 export const NOTICE_REASON = 'Publicerat av Vård och omsorg 2026-11-03 06:30 · läskvitto krävs';
 export function asNotice(base: Thread, id = base.id, over: Partial<Thread> = {}): Thread {
   const ref = `communication:notice:${id}`;

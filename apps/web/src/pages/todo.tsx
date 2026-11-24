@@ -14,6 +14,7 @@ import { isSnoozed, sameSubject, streamGroup, type Area, type SessionUser, type 
 import {
   Badge,
   BoardCard,
+  Divider,
   DropdownMenu,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -42,6 +43,7 @@ import {
   Text,
   TextInput,
   Token,
+  percent,
   useAnnounce,
   useMediaQuery,
   useResizable,
@@ -63,7 +65,7 @@ import {
   fromClewItself,
   itemPageHref,
   needsYouOf,
-  openDeadline,
+  isOverdue,
   rowFacts,
   sourcesNotice,
   tabOf,
@@ -87,10 +89,15 @@ import { statusOf, type ItemStatus } from '../status-of';
 import { reviewedAction } from '../components/work/card';
 import { LinkRow } from '../components/work/work-row';
 import { ReceiptNotice, receiptMessage } from '../components/work/receipt-notice';
-import { itemSubject } from '../components/views/view-read';
-import { AskClew } from '../components/conversation/thing-panel';
-import type { ThingSubject } from '../components/conversation/conversation-context';
-import { PageFrame } from '../components/shell/page-frame';
+import {
+  PageTalk,
+  itemPageSubject,
+  pageSubject,
+  usePageConversation,
+} from '../components/conversation/page-conversation';
+import { useModelConfigured } from '../components/conversation/conversation-context';
+import { asksBeside } from '../panel-address';
+import { PageFrame, narrowPageQuery } from '../components/shell/page-frame';
 import { workUnit } from '../user-units';
 
 const EMPTY_THREADS: Thread[] = [];
@@ -112,6 +119,15 @@ const SINGLE_SURFACE_BELOW = 900;
 const PANE_MIN = 440;
 const LIST_MIN = 300;
 const PANE_SHARE = 0.55;
+/**
+ * The conversation with the assistant under an item in the reading pane (D141 rule 5; the product owner, 2026-11-19: two
+ * parts, as Kalender's pane has them): a part of its own at the pane's foot, its height the person's to drag with
+ * Astryx's grip, never more than this share of the pane's height, so the head and the read keep the larger part, and
+ * never lower than its box and a line or two over it need.
+ */
+const TALK = 260;
+const TALK_MIN = 200;
+const TALK_SHARE = 45;
 /**
  * The longest name of a system, in characters, whose menu button leaves the filter's field room to type in beside it
  * on a phone: beside "Alla system" the field is 131 px at 375 px at touch size (measured 2026-11-23), and 15 px less
@@ -174,7 +190,9 @@ function aboutOf(thread: Thread): string | null {
  * is the current one (`aria-current`) with Astryx's row status in its gutter. The pane is the item at its narrow width
  * (`WorkItem`): the source line, its title as the link to its page and the buttons under it that never scroll away, then
  * the facts, "Varför ser jag detta?" and "Händelser". Where the pane does not fit beside the list (the template measures
- * the page's own box) there is no pane: a row leads to the item's page.
+ * the page's own box) there is no pane: a row leads to the item's page. With no item open, the corner's "Fråga AI"
+ * opens the assistant's pane beside the queue (D141, D138), about the pile; an item opened takes the end slot
+ * and the address lets go of the assistant's pane (`todoHref`), so closing the item leaves the queue as it was.
  *
  * The responsive contract (D130 item 19, amended 2026-11-23), each line with what enforces it:
  *   from 900 px of column   the table, and the reading pane beside it once a row is chosen   (`single`, measured)
@@ -188,6 +206,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const mobile = useMediaQuery(mobileQuery);
   const tight = useMediaQuery(tightQuery);
   const short = useMediaQuery(shortQuery);
+  const narrowPage = useMediaQuery(narrowPageQuery);
   const client = useQueryClient();
   const navigate = useNavigate();
   const [search] = useSearchParams();
@@ -299,10 +318,18 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   useLayoutEffect(() => {
     if (known && single && itemId) navigate(itemPageHref(itemId, href({ item: null })), { replace: true });
   }, [known, single, itemId]);
+  // An item in the reading pane has the end slot (D141 rule 5). An address that also holds the assistant's pane (typed,
+  // or kept from before) shows the item, and lets go of the pane in its place, so closing the item does not open it.
+  const reading = !single && !!itemId;
+  const asking = asksBeside(search);
+  useLayoutEffect(() => {
+    if (reading && asking) navigate(href({ item: itemId }), { replace: true });
+  }, [reading, asking]);
 
   // The focus follows what the pane shows (2.4.3): the item's heading when one is chosen, the row that opened it when
   // it closes, or the row after it when the item left the pile with its own button (Avfärda, Inte nu).
   const paneRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const shown = useRef<string | null>(null);
   const after = useRef<string | null>(null);
   changedRef.current = (thread: Thread) => {
@@ -371,9 +398,11 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   // A source with a last successful read can contribute its saved work even during a failed refetch.
   const countsKnown = !!threadsQ.data && !threadsQ.data.sources?.some(s => !s.lastSuccess);
   const count = (t: TodoTab) => piles[t].filter(inArea).length;
-  // The counts line under the title (board Att göra): what needs the person and what waits on others; what is done is
-  // not a call to look.
-  const countsLine = countsKnown ? `${count('needs-you')} behöver dig · ${count('waiting')} väntar på andra` : null;
+  // No counts line under the title (D130 item 19 as amended 2026-11-21): the tabs say how many need the person and how
+  // many wait on others. Where the window is wide the tabs stand on the title's line, with or without an item picked,
+  // so the header is one row and does not move when an item is picked; at 1024 px and below, and on a phone, they keep
+  // their own row under the title.
+  const tabsOnLine = !mobile && !narrowPage;
   // On a phone the strip has the short words (board PhoneInbox: "Väntar"), so the three with their counts fit 320 px
   // under the text-spacing overrides (1.4.12).
   const tabBadge = (t: TodoTab) => {
@@ -432,15 +461,20 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     </HStack>
   );
 
-  // "Fråga assistenten" about the pile (D126 rule 5): a list is no thing beside the conversation, so it goes as one chip, the
-  // read of Att göra (`clew.work`). A reference, not a copy of the rows: Clew reads the pile as it is when it answers,
-  // however many items it holds (a chip per card took the first eight and dropped the rest).
-  const queueSubject: ThingSubject = {
-    key: `todo:${tab}`,
-    label: 'ärendena',
-    chips: [{ ref: 'capability:clew.work', kind: 'capability' as const, label: 'Att göra' }],
-    search: '',
-  };
+  // The assistant's pane about the pile (D141 rule 4): a list is no thing beside the conversation, so it goes
+  // as one chip, the read of Att göra (`clew.work`). A reference, not a copy of the rows: Clew reads the pile as it is
+  // when it answers, however many items it holds (a chip per card took the first eight and dropped the rest). While an
+  // item stands in the reading pane the page's own pane has the end slot (rule 5) and there is no subject: the box stands
+  // under the item, and the corner's "Fråga AI" is not drawn (D138 item 5).
+  const queueSubject = reading
+    ? null
+    : pageSubject({
+        key: `todo:${tab}`,
+        title: `Att göra · ${tabTitle[tab]}`,
+        reads: [{ capability: 'clew.work', own: true, label: 'Att göra' }],
+        views: areasQ.data?.views,
+        named: 'ärendena',
+      });
 
   const empty: Record<TodoTab, string> = {
     'needs-you': 'Inget behöver dig just nu.',
@@ -576,7 +610,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   // Beside its reading pane the list stands in the frame's card and draws none of its own.
   const beside = !!itemId && !single;
   // Due today and overdue share a badge colour. Only an open item due before the Stockholm day is overdue.
-  const overdue = piles['needs-you'].filter(t => inArea(t) && (openDeadline(t, todayDate)?.days ?? 0) < 0).length;
+  const overdue = piles['needs-you'].filter(t => inArea(t) && isOverdue(t, todayDate)).length;
   /**
    * The piles as key figures over the list (D130 item 19), as the reference opens Mina aktiviteter: what needs the
    * person, how much of it is overdue, what waits on others and what is done, each leading to its pile. Not drawn
@@ -712,6 +746,53 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     e.stopPropagation();
     close();
   };
+  // The conversation about the item in the pane (D141 rules 5 and 6), held here so it stays while the item is read:
+  // the person's latest conversation about the item is found again, and the next question continues it. Only where the
+  // pane holds a work item and there is a model to ask; a calendar proposal keeps its own card (D27).
+  const model = useModelConfigured();
+  const talkAbout = model && reading && item && !item.proposals.length ? itemPageSubject(item) : null;
+  const talk = usePageConversation(talkAbout);
+  const talkRegion = useResizable({
+    direction: 'vertical',
+    defaultSize: TALK,
+    minSize: TALK_MIN,
+    maxSize: percent(TALK_SHARE, { min: pixel(TALK_MIN) }),
+    // The share is of the pane, not of the window (Astryx resolves a percentage against the viewport without this): of
+    // the panel itself, which has the pane's whole height from its first frame. What it holds does not, while the item
+    // is on its way, and a share of that would clamp the height to its floor and keep it.
+    containerRef: panelRef,
+    autoSaveId: 'clew:todo-talk',
+  });
+  /**
+   * The conversation and its box, the pane's second part (board AskAttGora's box at the pane's foot). Before anything
+   * is asked it is the box alone, as low as the box, under a rule (D138 item 2): there is nothing in it to make room
+   * for. With the conversation comes its height, the person's to drag with Astryx's grip, which draws the line between
+   * the read and it and takes the arrow keys. On a short screen the pane is one flow (1.4.10), so the conversation keeps
+   * its least height under the read and has no grip. The box keeps its place in the tree from one state to the other.
+   */
+  const asked = !!(talk.state.conversation || talk.state.pending);
+  const talkPart = !talkAbout ? undefined : short ? (
+    <VStack height={asked ? TALK_MIN : undefined} paddingBlockStart={6}>
+      <PageTalk talk={talk} />
+    </VStack>
+  ) : (
+    <>
+      {asked ? (
+        <ResizeHandle
+          direction="vertical"
+          isReversed
+          hasDivider
+          resizable={talkRegion.props}
+          label="Ändra samtalets höjd"
+        />
+      ) : (
+        <Divider />
+      )}
+      <VStack height={asked ? talkRegion.size : undefined} padding={6} paddingBlockStart={asked ? 4 : 0}>
+        <PageTalk talk={talk} />
+      </VStack>
+    </>
+  );
   /** What the pane says when the item is not there: still on its way, unreadable, or gone. */
   const missing = threadsQ.isError ? (
     <Text as="p" role="alert">
@@ -736,7 +817,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
    * The item beside the list (board Att göra): the work item at its narrow width, its ✕ in its own title row. A
    * calendar proposal keeps its own card (D27) with ✕ above it, as does an item that is not there.
    */
-  const reading =
+  const readingPane =
     item && !item.proposals.length ? (
       <VStack ref={paneRef} height={short ? undefined : '100%'} onKeyDown={escape}>
         {cardBody(item, {
@@ -744,7 +825,8 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           level: 2,
           onChange,
           onClose: close,
-          ask: <AskClew subject={itemSubject(item)} />,
+          // The assistant is asked in the box under the item, so the item has no button for it here.
+          ...(talkPart ? { under: talkPart } : {}),
         })}
       </VStack>
     ) : (
@@ -759,14 +841,14 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       {/* The one page frame (D126): the title, its counts, the filters and the piles in the header, and the queue and
           its reading pane side by side inside the same column, the list in a card as Hem's lists are. */}
       <PageFrame
+        ask={{ subject: queueSubject }}
         layoutRef={surfaceRef}
         cards
         title="Att göra"
         titleId="att-gora"
-        meta={countsLine ?? undefined}
-        actions={<AskClew subject={queueSubject} />}
+        tabsOnLine={tabsOnLine}
         tabs={
-          <TabList hasDivider={false} isFullBleed value={tab} onChange={() => {}} aria-label="Urval">
+          <TabList hasDivider={false} isFullBleed={!tabsOnLine} value={tab} onChange={() => {}} aria-label="Urval">
             {todoTabs.map(t => {
               const badge = tabBadge(t);
               return (
@@ -783,7 +865,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
         }
         label={tabTitle[tab]}
         end={
-          single || !itemId ? undefined : (
+          !reading ? undefined : (
             <>
               {/* The handle comes before the pane, whose inline-start edge it drags; `hasDivider` is the handle's. */}
               <ResizeHandle
@@ -795,13 +877,14 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
                 label="Ändra bredden på ärendet"
               />
               <LayoutPanel
+                ref={panelRef}
                 resizable={pane.props}
                 padding={0}
                 isScrollable={short || !item || !!item.proposals.length}
                 role="complementary"
                 label="Valt ärende"
               >
-                {reading}
+                {readingPane}
               </LayoutPanel>
             </>
           )

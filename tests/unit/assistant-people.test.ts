@@ -7,7 +7,7 @@ import { asksForFigures, asksWhatToDo } from '../../apps/server/src/assistant/fi
  * a single name only when written as one, several matches named back, and the router's figure rule kept to questions
  * about the figures.
  */
-const person = (key: string, name: string): ManagedPerson => ({ key, name, unit: 'Skönsmons skola' });
+const person = (key: string, name: string): ManagedPerson => ({ key, userName: key, name, unit: 'Skönsmons skola' });
 const people = [
   person('anna', 'Anna Lindqvist'),
   person('karin', 'Karin Lindqvist'),

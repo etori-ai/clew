@@ -198,7 +198,9 @@ export function useNav({
       auxiliaryData: { href: toolHref(e.capability), detail: e.source, group: 'Verktyg' },
     }));
     const items: SearchableItem<Found>[] = [
-      ...g.questions.map(t => ({
+      // Every conversation is found, also one asked beside a page and never opened as a conversation (D141 rule 6 on
+      // the branch, D138 item 10).
+      ...g.allQuestions.map(t => ({
         id: 'samtal:' + t.id,
         label: t.title,
         auxiliaryData: { href: `/conversations/${t.id}`, detail: '', group: 'Samtal' },

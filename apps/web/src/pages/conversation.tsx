@@ -1,7 +1,7 @@
-import { useCallback, useLayoutEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Thread, ViewRef } from '@clew/contracts';
+import type { OpenThing, Thread, ViewRef } from '@clew/contracts';
 import {
   AreaMark,
   Button,
@@ -29,11 +29,12 @@ import {
   type AgendaItem,
 } from '@clew/ui';
 import { areasQuery, entityDetailQuery, entityListQuery, threadQuery, threadsQuery } from '../queries';
+import { api } from '../api';
 import { errorMessage } from '../query-policy';
 import { keys } from '../query-keys';
 import { applyThread } from '../thread-cache';
 import { withCard, withoutPanel } from '../panel-address';
-import { lensTabHref, openedAsPage, opensAsPage, viewOpenHref, viewPageHref } from '../view-address';
+import { addressInput, lensTabHref, openedAsPage, opensAsPage, viewOpenHref, viewPageHref } from '../view-address';
 import { itemPageHref } from '../work-items';
 import { personPageHref, unitPageHref } from '../person-address';
 import { useMarks } from '../marks';
@@ -63,6 +64,7 @@ import { useView } from '../components/views/view-read';
 import { BriefSkeleton } from '../components/work/brief';
 import { EventDialog } from '../components/calendar/event-dialog';
 import { PageFrame, type EntryStyle } from '../components/shell/page-frame';
+import { recordThing } from '../components/conversation/page-conversation';
 import { EntityPane } from './entity-pane';
 
 /**
@@ -143,6 +145,11 @@ export interface About {
   chips: ChipRef[];
   /** A person or a unit: said under the first question, and a person's first name in the empty box. */
   entity?: { kind: EntitySubjectKind; name: string | null };
+  /**
+   * The person, the unit or the record the address puts beside the transcript, as the thing that stands open (D136
+   * item 1): it goes with every question here, as the same thing does from its page's pane. A work item goes as its chip.
+   */
+  thing?: OpenThing;
   /** The pane beside the transcript, and its landmark's name; absent for what has no pane. */
   pane?: { label: string; body: ReactNode; scrolls: boolean };
 }
@@ -171,6 +178,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   const marks = useMarks();
   // An entry opened from a day beside the conversation (D32): the calendar's own dialog, over the page.
   const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
+  useOpenedHere(pathname);
   /** ✕, or Esc in the pane: the thing leaves the address, the conversation stays, and the box has the focus. */
   const closePane = useCallback(() => {
     navigate(addressEntity(search) ? withoutSubject(pathname, search) : withoutPanel(pathname, search));
@@ -235,6 +243,13 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   const cardInPane = beside && !aside && !!about.pane;
   // A person or a unit is said under the first question, so the transcript reads alone later.
   const firstLine = about.entity?.name ? aboutWords(about.entity.name) : undefined;
+  // An item opens beside the transcript, in the place of an assistant's exchange if one stands there: one panel holds
+  // one thing.
+  const besideHref = (id: string) => {
+    const q = new URLSearchParams(search);
+    q.delete(ASSISTANT_PARAM);
+    return withCard(pathname, q, id);
+  };
   const transcript = (
     <Transcript
       about={about.chips}
@@ -244,7 +259,27 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       // was drawn, a row says so and brings it back.
       renderCard={t =>
         besideCard !== t.id ? (
-          cardBody(t, { place: 'answer', level: 2, compact: mobile, onChange })
+          cardBody(t, {
+            place: 'answer',
+            level: 2,
+            compact: mobile,
+            onChange,
+            // The mirror of "Visa här" (the product owner, 2026-11-20): where the pane fits, the item drawn in an
+            // answer says how it is put beside the transcript.
+            ...(beside
+              ? {
+                  tools: (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      label="Visa bredvid"
+                      aria-label={`Visa bredvid: ${t.title}`}
+                      href={besideHref(t.id)}
+                    />
+                  ),
+                }
+              : {}),
+          })
         ) : cardInPane ? (
           <ShownBeside onShowHere={() => showHere(t.id)} />
         ) : null
@@ -252,13 +287,8 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       viewHref={viewHref}
       asideHref={id => assistantHref(pathname, search, id)}
       asideOpen={asideId}
-      // A row of several items opens its item beside the transcript, in the place of an assistant's exchange if one
-      // stands there: one panel holds one thing.
-      cardHref={id => {
-        const q = new URLSearchParams(search);
-        q.delete(ASSISTANT_PARAM);
-        return withCard(pathname, q, id);
-      }}
+      // A row of several items opens its item beside the transcript.
+      cardHref={besideHref}
     />
   );
   // Opened from its address, a conversation is read before it is drawn: its shape meanwhile, never an empty page. On
@@ -292,6 +322,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       // With the thing in the pane, the question says it stands open beside the transcript: the assistant reads "det
       // öppna ärendet" as it. Where no pane is drawn it goes along as before, as what the conversation is about.
       about={paneShown ? about.chips.map(c => ({ ...c, beside: true as const })) : about.chips}
+      thing={about.thing}
       placeholder={
         about.entity?.kind === 'person' && about.entity.name ? askPersonPlaceholder(about.entity.name) : undefined
       }
@@ -328,7 +359,15 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   if (short)
     return (
       <>
-        <PageFrame entry={entry} title={heading} titleId="samtal" meta={meta} actions={assistants} label="Samtalet">
+        <PageFrame
+          ask={{ none: 'assistant' }}
+          entry={entry}
+          title={heading}
+          titleId="samtal"
+          meta={meta}
+          actions={assistants}
+          label="Samtalet"
+        >
           {aside ?? (
             <VStack gap={4}>
               {body}
@@ -342,6 +381,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   return (
     <>
       <PageFrame
+        ask={{ none: 'assistant' }}
         entry={entry}
         title={heading}
         titleId="samtal"
@@ -394,6 +434,29 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       {dialog}
     </>
   );
+}
+
+/**
+ * A conversation asked beside a page is opened as a conversation when its page shows it (D141 rule 6): the page says so
+ * once, and the answer goes into the cache (D33), so the rail lists it among the latest from then on. Only for one not
+ * marked yet; a failure is left alone, and the next visit says it again.
+ */
+function useOpenedHere(pathname: string) {
+  const client = useQueryClient();
+  const id = /^\/conversations\/([^/]+)$/.exec(pathname)?.[1];
+  const shownId = id && id !== 'new' ? decodeURIComponent(id) : null;
+  const listed = useQuery(threadsQuery).data?.threads.find(t => t.id === shownId);
+  const single = useQuery({ ...threadQuery(shownId ?? ''), enabled: !!shownId && !listed }).data;
+  const shown = listed ?? single;
+  const said = useRef(new Set<string>());
+  useEffect(() => {
+    if (!shown?.askedBeside || shown.askedBeside.openedAt || said.current.has(shown.id)) return;
+    said.current.add(shown.id);
+    api
+      .conversationOpened(shown.id)
+      .then(thread => applyThread(client, thread))
+      .catch(() => said.current.delete(shown.id));
+  }, [shown, client]);
 }
 
 /** What the address says the conversation is about, and the pane that draws it. */
@@ -542,12 +605,16 @@ function useAbout({
         )}
       </VStack>
     );
+    // One record (not a read whose rows are a page, which leads to its page) is the thing that stands open, with the
+    // input the address draws it with (D136 item 1).
+    const record = rows ? undefined : recordThing(open, addressInput(q.get('open-input')));
     return {
       subject: true,
       name: title,
       href,
       chips: [{ ref: 'capability:' + open, kind: 'capability', label: title }],
       ...(rows ? {} : { pane: { label: title, body, scrolls: true } }),
+      ...(record ? { thing: record } : {}),
     };
   }
   if (entity) {
@@ -561,6 +628,8 @@ function useAbout({
       href: page(entity.key, { ...(entity.tab ? { section: entity.tab } : {}), from: here }),
       chips: [],
       entity: { kind: entity.kind, name },
+      // The person or the unit by Clew's id, as their page's pane tells it (D136 item 1).
+      thing: { kind: entity.kind, id: entity.key },
       pane: {
         label: name ?? (entity.kind === 'person' ? 'Personen' : 'Enheten'),
         body: (

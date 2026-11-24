@@ -74,8 +74,12 @@ async function originals(page: Page, api: MockApi) {
     correct: (input: unknown) => registry.run(actor, 'finance.correct', input),
   };
 }
-/** The invoices' review as a page, with Att göra's pane as its way back (D73, amended 2026-11-12). */
-const REVIEW = '/items/fakturor/review?from=%2Ftodo%3Fitem%3Dfakturor';
+/** The invoices' own page, which is their review (D142), with Att göra's pane as its way back. */
+const REVIEW = '/items/fakturor?from=%2Ftodo%3Fitem%3Dfakturor';
+/** The item's title, which is the page's heading before the decision is sent and after it. */
+const INVOICES = /^Attestera 3 fakturor/;
+/** The rows as the steps under the title (below five rows): each a button named with its row, Skicka last. */
+const stepsOf = (page: Page) => page.getByRole('main').getByRole('list', { name: 'Rader', exact: true });
 /** One thing's own page (D126 rule 1), as a row's name in a register or an answer's link leads to it. */
 const viewHref = (capability: string, ref?: string) =>
   `/tools/${capability}?${ref ? 'input=' + encodeURIComponent(JSON.stringify({ ref })) + '&' : ''}title=Underlag`;
@@ -100,25 +104,40 @@ test.describe('the shared document and semantic catalogue', () => {
         rows: card.items.map(i => ({ ref: i.ref, label: i.label, outcome: 'done', detail: 'Attesterad.' })),
       };
       await open(page, '/todo?tab=done');
-      // The row opens its work item beside Klart, or as its page where the pane does not fit (D126 rule 2), and the
-      // item's way to the review is the review's page, with where the item was shown as its way back (D73).
+      // The row opens its work item beside Klart, where "Visa granskning" leads to the item's page, or straight to the
+      // item's page where the pane does not fit (D126 rule 2). That page is the review, read (D142), with where the
+      // item was shown as its way back.
       const pane = viewport === desktop;
-      const shown = pane ? '/todo?tab=done&item=fakturor' : '/items/fakturor';
-      await page.locator('#work-fakturor').getByRole('link').click();
-      await page.getByRole('link', { name: 'Visa granskning', exact: true }).click();
-      await expect(page).toHaveURL(`/items/fakturor/review?from=${encodeURIComponent(shown)}`);
-      await expect(page.getByRole('heading', { level: 1, name: 'Visa 3 rader' })).toBeVisible();
+      const shown = pane ? '/todo?tab=done&item=fakturor' : '/todo?tab=done';
+      const row = page.locator('#work-fakturor').getByRole('link');
+      await row.click();
+      if (pane) await page.getByRole('link', { name: 'Visa granskning', exact: true }).click();
+      await expect(page).toHaveURL(`/items/fakturor?from=${encodeURIComponent(shown)}`);
+      // The decision is sent: the focus is on the item's title, and nothing decides.
+      await expect(page.getByRole('heading', { level: 1, name: INVOICES })).toBeFocused();
       const review = page.getByRole('main');
       await expect(review.getByRole('status', { name: 'Sida 1 av 2' })).toBeVisible();
       await expect(review.getByRole('button', { name: /^Attestera|^Lämna kvar|^Spara rättelse/ })).toHaveCount(0);
-      await review.getByRole('button', { name: 'Nästa', exact: true }).click();
-      await expect(review.getByRole('heading', { name: 'Skolgrossisten · 7 200 kr' })).toBeVisible();
+      await expect(review.getByRole('button', { name: /Tillbaka till ärendet|Visa kvittot/ })).toHaveCount(0);
+      await expect(review).toContainText('Underlaget visar källans nuvarande version.');
+      // Another row is read from its step where the steps are drawn as controls; the row the page opens at otherwise.
+      if (pane) {
+        await stepsOf(page)
+          .getByRole('button', { name: /Skolgrossisten · 7 200 kr/ })
+          .click();
+        await expect(review.getByRole('heading', { name: 'Skolgrossisten · 7 200 kr' })).toBeVisible();
+        await expect(review.getByRole('heading', { name: /Underlag från/ })).toBeFocused();
+      } else await expect(review.getByRole('heading', { name: 'Skolgrossisten · 11 200 kr' })).toBeVisible();
       expect(await reflowProblems(page, review)).toEqual([]);
       await expectNoAxeViolations(page);
-      await review.getByRole('button', { name: 'Tillbaka till ärendet' }).click();
-      // Back to where the item was shown: Klart as it was with the item beside it, or the item's page as it was.
-      await expect(page).toHaveURL(pane ? shown : '/items/fakturor?from=%2Ftodo%3Ftab%3Ddone');
-      await expect(page.getByRole('link', { name: 'Visa granskning', exact: true })).toBeFocused();
+      // The page's own way back names where the item was shown: Klart as it was with the item beside it, or the queue.
+      await review.getByRole('link', { name: 'Att göra', exact: true }).click();
+      await expect(page).toHaveURL(shown);
+      // The focus returns to a link that leads to the page that was left (2.4.3): in the pane, where the item's name
+      // and "Visa granskning" both do (which of the two is `review.spec.ts`'s to say), or the row in the queue.
+      if (pane)
+        await expect(page.locator(`a[href="/items/fakturor?from=${encodeURIComponent(shown)}"]:focus`)).toHaveCount(1);
+      else await expect(row).toBeFocused();
     });
   for (const viewport of [desktop, narrow])
     test(`a completed review stays viewable; a rejected row can be corrected and opened as a fresh retry at ${viewport.width}px`, async ({
@@ -174,20 +193,16 @@ test.describe('the shared document and semantic catalogue', () => {
         api.threads.push(retry);
         await route.fulfill({ json: retry });
       });
+      // Beside the queue "Visa granskning" leads to the item's page; where the pane does not fit the item is its page.
       await open(page, '/todo?item=fakturor');
-      await page.getByRole('link', { name: 'Visa granskning', exact: true }).click();
-      await expect(page.getByRole('heading', { level: 1, name: 'Visa 3 rader' })).toBeVisible();
+      if (viewport.width === desktop.width)
+        await page.getByRole('link', { name: 'Visa granskning', exact: true }).click();
+      await expect(page).toHaveURL(/^[^?]*\/items\/fakturor\?from=/);
+      await expect(page.getByRole('heading', { level: 1, name: INVOICES })).toBeFocused();
       const review = page.getByRole('main');
       await expect(review.getByRole('button', { name: 'Attestera', exact: true })).toHaveCount(0);
-      if (viewport.width === narrow.width) {
-        await review.getByRole('button', { name: 'Översikt', exact: true }).click();
-        await review.getByRole('button', { name: /Visa rad 3: Energibolaget/ }).click();
-      } else {
-        await review
-          .getByRole('list', { name: 'Rader', exact: true })
-          .getByRole('button', { name: /Energibolaget/ })
-          .click();
-      }
+      // The address names no step: the page opens at the row the source refused, where the correction is made.
+      await expect(review.getByRole('heading', { level: 2, name: /Energibolaget/ })).toBeVisible();
       await expect(review).toContainText('Beställningsnummer saknas.');
       await review.getByRole('textbox', { name: 'Beställningsnummer' }).fill('PO-2026-333');
       await review.getByRole('button', { name: 'Spara rättelse', exact: true }).click();
@@ -199,9 +214,10 @@ test.describe('the shared document and semantic catalogue', () => {
       const notice = page.getByRole('region', { name: 'Aviseringar' });
       if (await notice.getByRole('button', { name: 'Stäng avisering' }).isVisible())
         await notice.getByRole('button', { name: 'Stäng avisering' }).click();
+      // The notice's move puts the new item's page, which is its review, in this one's place (D80).
       await review.getByRole('button', { name: 'Granska avvisade igen' }).click();
-      await expect(page.getByRole('heading', { level: 1, name: 'Granska 1 rad' })).toBeVisible();
-      await expect(page).toHaveURL(/^[^?]*\/items\/retry%3Arejected-execution\/review\?from=/);
+      await expect(page).toHaveURL(/^[^?]*\/items\/retry%3Arejected-execution\?from=/);
+      await expect(page.getByRole('heading', { level: 1, name: INVOICES })).toBeVisible();
       const retry = page.getByRole('main');
       await expect(retry.getByRole('heading', { name: /Energibolaget/ })).toBeVisible();
       await expect(retry.getByRole('button', { name: 'Attestera', exact: true })).toBeEnabled();
@@ -211,14 +227,14 @@ test.describe('the shared document and semantic catalogue', () => {
     await originals(page, api);
     await open(page, REVIEW);
     const review = page.getByRole('main');
-    const steps = review.getByRole('list', { name: 'Rader', exact: true });
+    const steps = stepsOf(page);
     const firstInvoice = steps.getByRole('button', { name: /Skolgrossisten · 11 200 kr/ });
     const secondInvoice = steps.getByRole('button', { name: /Skolgrossisten · 7 200 kr/ });
     await expect(firstInvoice).toBeVisible();
     await expect(secondInvoice).toBeVisible();
     await secondInvoice.click();
     await expect(page).toHaveURL(`${REVIEW}&step=2`);
-    await expect(review).toContainText('0 av 3 bedömda');
+    await expect(steps).not.toContainText('Vald för godkännande');
     await expect(steps.getByRole('img', { name: 'Vald för godkännande' })).toHaveCount(0);
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
     await expect(page).toHaveURL(`${REVIEW}&step=3`);
@@ -226,14 +242,15 @@ test.describe('the shared document and semantic catalogue', () => {
     await firstInvoice.focus();
     await expect(firstInvoice).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(REVIEW);
-    await expect(review).toContainText('1 av 3 bedömda');
+    // A step the person chose is named in the address, the first too (D142).
+    await expect(page).toHaveURL(`${REVIEW}&step=1`);
+    await expect(steps.getByRole('listitem').nth(1)).toContainText('Vald för godkännande');
     await review.getByRole('button', { name: 'Lämna kvar', exact: true }).click();
     await steps.getByRole('button', { name: /Skicka/ }).click();
     await expect(review).toContainText('1 av 3 skickas, 1 lämnas kvar');
-    const list = review.getByRole('list', { name: 'Hittills' });
-    await expect(list.getByRole('listitem').nth(0)).toContainText('Lämnas kvar');
-    await expect(list.getByRole('listitem').nth(1)).toContainText('Vald för godkännande');
+    // The steps are the one list of the rows: each says what was decided on it.
+    await expect(steps.getByRole('listitem').nth(0)).toContainText('Lämnas kvar');
+    await expect(steps.getByRole('listitem').nth(1)).toContainText('Vald för godkännande');
     await expectNoAxeViolations(page);
     await page.screenshot({ path: 'test-results/review-step-amounts.png' });
   });
@@ -436,8 +453,9 @@ test.describe('the shared document and semantic catalogue', () => {
       expect(kept).toContain(fixture.evidence['finance:inv:55120']!.revision);
       expect(kept).not.toContain(fixture.evidence['finance:inv:55120']!.proof);
       await page.reload();
-      await expect(review.getByText('1 av 3 bedömda')).toBeVisible();
-      await review.getByRole('button', { name: 'Översikt', exact: true }).click();
+      const steps = stepsOf(page);
+      await expect(steps.getByRole('listitem').nth(0)).toContainText('Vald för godkännande');
+      await steps.getByRole('button', { name: /Skicka/ }).click();
       const reads = fixture.reads.preview;
       fixture.revise(moved);
       if (!moved) {
@@ -454,9 +472,11 @@ test.describe('the shared document and semantic catalogue', () => {
         'Underlaget för Skolgrossisten · 11 200 kr har ändrats sedan du godkände raden. Granska den igen innan du skickar.',
       );
       expect(fixture.reads.preview).toBe(reads + 1);
-      await expect(review.getByText('0 av 3 bedömda')).toBeVisible();
+      await expect(steps.getByRole('listitem').nth(0)).not.toContainText('Vald för godkännande');
       await expect(review.getByRole('button', { name: 'Attestera 0', exact: true })).toBeDisabled();
-      await expect(review.getByRole('button', { name: 'Granska rad 1: Skolgrossisten · 11 200 kr' })).toBeVisible();
+      // The row is reached again from its step, to be read and judged anew. It is not opened here: this mock's item
+      // keeps the row's old revision, so the page would ask for the old document, which the mock refuses by throwing.
+      await expect(steps.getByRole('button', { name: /Skolgrossisten · 11 200 kr/ })).toBeVisible();
       expect(api.acted).toHaveLength(0);
     });
 });
@@ -467,19 +487,22 @@ test.describe('document review on a narrow phone', () => {
     api,
   }) => {
     await originals(page, api);
-    // On a phone the item is its page, alone on the surface, its next step pinned to the foot (D112 item 12).
-    await open(page, '/todo?item=fakturor');
-    await expect(page.getByRole('heading', { level: 1, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
-    const card = page.getByRole('main');
-    await card.getByRole('link', { name: 'Granska 3' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Granska 3 rader' })).toBeVisible();
+    // On a phone the item is its page, alone on the surface (D112 item 12), and that page is the review (D142): the
+    // row in the queue leads straight to it, the decision pinned to the foot.
+    await open(page, '/todo');
+    const row = page.locator('#work-fakturor').getByRole('link');
+    await row.click();
+    await expect(page).toHaveURL('/items/fakturor?from=%2Ftodo');
+    await expect(page.getByRole('heading', { level: 1, name: INVOICES })).toBeVisible();
     const review = page.getByRole('main');
+    await expect(review.getByRole('link', { name: 'Granska 3' })).toHaveCount(0);
     await expect(review.getByRole('button', { name: 'Attestera', exact: true })).toBeEnabled();
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page, review)).toEqual([]);
     await page.screenshot({ path: 'test-results/document-review-phone.png' });
-    // The review is a page (D73, amended 2026-11-12): Back is the item, with the focus on the link that led there.
+    // Back is the queue, with the focus on the row that led to the page (2.4.3).
     await page.goBack();
-    await expect(card.getByRole('link', { name: 'Granska 3' })).toBeFocused();
+    await expect(page).toHaveURL('/todo');
+    await expect(row).toBeFocused();
   });
 });

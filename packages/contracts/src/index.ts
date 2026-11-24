@@ -207,14 +207,40 @@ export function contractProblems(schema: TSchema, value: unknown, limit = Number
       const errors = Value.Errors(schema, value);
       const cut = errors.length >= budget;
       // A type error may be followed by the literal's own, which replaces it: cut off there, it is not worded alone.
-      const problems = worded(schema, cut && errors.at(-1)?.keyword === 'type' ? errors.slice(0, -1) : errors);
+      const problems = worded(schema, cut && errors.at(-1)?.keyword === 'type' ? errors.slice(0, -1) : errors, value);
       if (!cut || problems.length >= limit) return problems.slice(0, limit);
     }
   } finally {
     Settings.Set({ maxErrors });
   }
 }
-function worded(schema: TSchema, errors: ReturnType<typeof Value.Errors>): ContractProblem[] {
+/** The value at the first `depth` steps of a JSON Pointer into it. */
+const valueAt = (value: unknown, pointer: string, depth: number) =>
+  pointer
+    .split('/')
+    .slice(1, depth + 1)
+    .reduce<unknown>(
+      (at, step) => (at as Record<string, unknown> | undefined)?.[step.replace(/~1/g, '/').replace(/~0/g, '~')],
+      value,
+    );
+/**
+ * The branch of a union a value means, when the union's branches are objects that each require a property no other
+ * branch requires and the value carries exactly one of those (`about`: `entity` or `record`, D137). Its errors are then
+ * the value's, worded as any others, and the other branches' are not. Undefined for any other union, whose value is one
+ * that fits no branch.
+ */
+function meantBranch(union: unknown, value: unknown): number | undefined {
+  const variants = (union as { anyOf?: Array<{ type?: unknown; required?: unknown }> } | undefined)?.anyOf;
+  if (!variants || !value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const required = variants.map(v =>
+    v.type === 'object' && Array.isArray(v.required) ? (v.required as string[]) : [],
+  );
+  const own = required.map((r, i) => r.find(key => required.every((o, j) => j === i || !o.includes(key))));
+  if (own.some(key => key === undefined)) return undefined;
+  const present = own.flatMap((key, i) => (Object.prototype.hasOwnProperty.call(value, key!) ? [i] : []));
+  return present.length === 1 ? present[0] : undefined;
+}
+function worded(schema: TSchema, errors: ReturnType<typeof Value.Errors>, value: unknown): ContractProblem[] {
   const literal = new Set(errors.filter(e => e.keyword === 'const').map(e => e.instancePath + ' ' + e.schemaPath));
   const problems: ContractProblem[] = [];
   const said = new Set<string>();
@@ -223,9 +249,29 @@ function worded(schema: TSchema, errors: ReturnType<typeof Value.Errors>): Contr
     said.add(path + ' ' + message);
     problems.push({ path, message });
   };
-  for (const error of errors) {
+  /** The branch of the union at `union` that the value at `path` means, by `meantBranch`. */
+  const meant = (union: string, path: string) =>
+    meantBranch(schemaAt(schema, union), valueAt(value, path, valueDepth(union)));
+  errors: for (const error of errors) {
     const { instancePath: path, schemaPath } = error;
-    const branch = schemaPath.search(/\/anyOf\/\d+/);
+    // Through every union whose branch the value says it means: an error of another branch is not the value's.
+    let from = 0,
+      branch = -1;
+    for (;;) {
+      const found = schemaPath.slice(from).search(/\/anyOf\/\d+/);
+      if (found < 0) break;
+      const at = from + found;
+      const index = Number(/^\/anyOf\/(\d+)/.exec(schemaPath.slice(at))![1]);
+      const chosen = meant(schemaPath.slice(0, at), path);
+      if (chosen === undefined) {
+        branch = at;
+        break;
+      }
+      if (chosen !== index) continue errors;
+      from = at + `/anyOf/${index}`.length;
+    }
+    // A union whose meant branch said what is wrong says nothing of its own.
+    if (branch < 0 && error.keyword === 'anyOf' && meant(schemaPath, path) !== undefined) continue;
     if (branch >= 0 || error.keyword === 'anyOf') {
       const union = branch >= 0 ? schemaPath.slice(0, branch) : schemaPath;
       const steps = path.split('/').slice(0, valueDepth(union) + 1);
@@ -1032,6 +1078,12 @@ export const ViewEntrySchema = object({
    * it declares none), so a page offers to open it for a person only where the server would answer (D124).
    */
   admits: Type.Optional(Type.Array(Type.String())),
+  /**
+   * The assistant may make this read for the person (D141 rule 4): it is among the tools the model is offered for
+   * them, the read's own `model`, its connector's assistant switch and the read's switch all allowing it (D122 item
+   * 4). Absent where it may not, so the pane beside a page that shows the read says so before anything is asked.
+   */
+  assistant: Type.Optional(Type.Literal(true)),
 });
 export type ViewEntry = Static<typeof ViewEntrySchema>;
 /** Whether a view answers with rows (a `table` or a `list`): a list a person works through, which is a page (D116). */
@@ -1963,7 +2015,7 @@ export const ENTITY_COLUMNS_MAX = 3;
  * What a capability's rows concern (D97 item 1). A source says what, never where: Clew places it from the declaration.
  * `param` only on a propose or execute: the input property that takes the key.
  */
-export const AboutSchema = object(
+export const EntityAboutSchema = object(
   {
     entity: EntityKind,
     param: Type.Optional({
@@ -1972,9 +2024,51 @@ export const AboutSchema = object(
         'On a `propose` or `execute` only: the string property of the input that takes the key of the one entity it acts on. A read takes its keys in `keys` and declares none.',
     }),
   },
-  "What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer.",
+  "About a person or a unit (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer.",
 );
-export type About = Static<typeof AboutSchema>;
+export type EntityAbout = Static<typeof EntityAboutSchema>;
+/** An input property of a capability, as an ask names one: what `about.params` maps on both sides. */
+const inputProperty = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_]*$', maxLength: 80 });
+/**
+ * An action about one record of a read of the same connector (D137 item 1): the read, and the action's input properties
+ * mapped to the read's own, the mirror of a view's `open.params`. A record is its read and that read's input, as the
+ * page's address holds it; no key a source made up for the purpose.
+ */
+export const RecordAboutSchema = object(
+  {
+    record: Type.String({
+      pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$',
+      maxLength: 80,
+      description:
+        "A `read` of this connector that answers one record: its view is `record`, `detail`, `text` or `document`, never rows. The action shows on that record's page, under its title.",
+    }),
+    params: Type.Record(inputProperty, inputProperty, {
+      maxProperties: 20,
+      additionalProperties: false,
+      description:
+        "At least one entry: an input property of this action, mapped to the input property of `record` it is filled from. Clew fills each from the input the record's page was read with; the person is never asked for one, and an answer for one is refused.",
+    }),
+  },
+  "About one record of a read (D137). Only on a `propose` or `execute`. Clew lists the action on the record's page for a person who may call it and who can make the record's read with that input, fills the mapped properties from it and asks the rest (`asks`). A `propose` becomes a work item; an `execute` runs after the person's decision, as every execute does. The assistant may fill it in for the record that stands open (`clew.draftAction`), never send it.",
+);
+export type RecordAbout = Static<typeof RecordAboutSchema>;
+/**
+ * What a capability is about (D97, D137): a person or a unit (`entity`), or, on a propose or an execute, one record of
+ * a read of the same connector (`record`). Two forms, told apart by which of `entity` and `record` they carry.
+ */
+export const AboutSchema = Type.Union([EntityAboutSchema, RecordAboutSchema], {
+  description:
+    "What the capability concerns, in one of two forms. `{ entity, param? }` (D97): a person or a unit. `{ record, params }` (D137): on a `propose` or an `execute` only, one record of a read of this connector, the action's inputs filled from the record's. A source says what, never where: Clew places it from the declaration.",
+});
+export type About = EntityAbout | RecordAbout;
+/** The entity form of `about` (D97), or undefined for the record form and for nothing. */
+export const aboutEntity = <A extends EntityAbout | RecordAbout>(
+  about: A | undefined,
+): Extract<A, { entity: unknown }> | undefined =>
+  about && 'entity' in about ? (about as Extract<A, { entity: unknown }>) : undefined;
+/** The record form of `about` (D137), or undefined for the entity form and for nothing. */
+export const aboutRecord = (about: EntityAbout | RecordAbout | undefined): RecordAbout | undefined =>
+  about && 'record' in about ? about : undefined;
 /**
  * How a caller stands to a person they ask a source about (D97 item 8, D117), from Clew's own directory (D99): the person
  * themself (`self`), one of their direct reports (`managed`) or another active person of the organisation
@@ -2401,6 +2495,47 @@ export type EntityEffectInput = Static<typeof EntityEffectInputSchema>;
  */
 export const EntityActionStartedSchema = object({ threadId: id });
 export type EntityActionStarted = Static<typeof EntityActionStartedSchema>;
+/**
+ * An action about a record (D137): it shows on the record's page, under its title, for a reader who may call it and who
+ * can make the record's read, and runs as an action about a person does. `path` is what the person meets; the
+ * properties the record fills (`about.params`) are never among its asks.
+ */
+export const RecordActionSchema = object({
+  capability: Type.String(),
+  connector: Type.String(),
+  source: Type.String(),
+  title: Type.String(),
+  kind: Type.Union([Type.Literal('propose'), Type.Literal('execute')]),
+  path: ActionPathSchema,
+  own,
+});
+export type RecordAction = Static<typeof RecordActionSchema>;
+/** `GET /api/records/:read/actions?input=`: the actions about the record that read draws with that input (D137). */
+export const RecordActionsSchema = object({ actions: Type.Array(RecordActionSchema) });
+export type RecordActions = Static<typeof RecordActionsSchema>;
+/** A record as a page's address holds it (D136, D137): its read's input; never longer than `OPEN_THING_INPUT_MAX` as JSON. */
+const recordInput = Type.Record(Type.String(), Type.Unknown());
+/**
+ * The assistant's draft an action about a record was sent from (D137): the conversation's message that keeps it
+ * (`MessageMeta.recordDraft`). Ids only, never what the conversation says.
+ */
+export const RecordDraftRefSchema = object({ conversationId: id, messageId: id });
+export type RecordDraftRef = Static<typeof RecordDraftRefSchema>;
+/**
+ * `POST /api/records/:read/actions`, `/decide` and `/effect` (D137): the record by the input its read was made with, the
+ * action as `RecordAction.capability`, and the person's answers to its asks. `values` answers a propose's asks when it
+ * starts and an execute's when it is decided; never a property the record fills. `draft`, on a start or a decision
+ * only, names the assistant's draft it was sent from: the server marks that draft as sent with the work item it became,
+ * when it is the person's own draft of this action about this record and not yet marked; else the action runs as
+ * without it.
+ */
+export const RecordActionInputSchema = object({
+  input: recordInput,
+  capability: Type.String({ minLength: 3, maxLength: 120 }),
+  values: Type.Optional(AskValuesSchema),
+  draft: Type.Optional(RecordDraftRefSchema),
+});
+export type RecordActionInput = Static<typeof RecordActionInputSchema>;
 /**
  * What a competence type is (D108 item 2, D120 item 1). A closed list: a certificate, a competence and a skill are one
  * record, a holding, and the kind says which the type is.
@@ -3364,6 +3499,54 @@ export const DraftSchema = object({
   values: Type.Optional(AskValuesSchema),
 });
 export type Draft = Static<typeof DraftSchema>;
+/**
+ * An action about the record that stood open, filled in by the assistant (D137 item 4), beside the work item's draft
+ * (`DraftSchema`): the action, the record by its read and the input the page drew it with, and the values for what the
+ * action asks, checked against the asks as the decision checks them. Kept in the conversation only; the person opens it
+ * in the action's own dialog on the record and sends it from there. Nothing is executed from it. `sent` is written by
+ * the server alone, in the transaction that makes the work item the person sent it as (`RecordActionInput.draft`), so
+ * the draft says it was sent and offers no second send, after a reload too.
+ */
+export const RecordDraftSchema = object({
+  capability: Type.String({ minLength: 3, maxLength: 120 }),
+  record: object({ capability: Type.String({ minLength: 1, maxLength: 120 }), input: recordInput }),
+  values: AskValuesSchema,
+  sent: Type.Optional(object({ threadId: id })),
+});
+export type RecordDraft = Static<typeof RecordDraftSchema>;
+/**
+ * A decision of Clew's own that the assistant has filled in and checked, and not sent (the product owner, 2026-11-18):
+ * where a `draft` is a work item's action, this is a human decision that belongs to no work item. The page the
+ * decision is made on draws it in the form the person would have filled in, and the person's own button sends it;
+ * nothing is executed from it. `calendar.move` is a new time for a meeting of the person's own: the meeting as it
+ * stands (so a page can find it and say what it was) and the time it is proposed for. `calendar.cancel` is that
+ * meeting to be cancelled: the page asks the person its own question, "Ställ in mötet?", and the person answers it.
+ * Neither carries a `ref` or a `revision`: the page saves with the ones it reads from the calendar, and the model never
+ * sees either.
+ */
+export const PreparedSchema = Type.Union([
+  object({
+    kind: Type.Literal('calendar.move'),
+    event: object({
+      id: Type.String({ minLength: 1, maxLength: 1000 }),
+      title: Type.String(),
+      start: instant,
+      end: instant,
+    }),
+    start: instant,
+    end: instant,
+  }),
+  object({
+    kind: Type.Literal('calendar.cancel'),
+    event: object({
+      id: Type.String({ minLength: 1, maxLength: 1000 }),
+      title: Type.String(),
+      start: instant,
+      end: instant,
+    }),
+  }),
+]);
+export type Prepared = Static<typeof PreparedSchema>;
 /** A verb about one chipped object, derived from its actions and Clew's standard actions, never from the model. */
 export const VerbSchema = object({
   id: Type.String(),
@@ -3429,6 +3612,10 @@ export const MessageMetaSchema = object({
    */
   viewItems: Type.Optional(Type.Array(id, { maxItems: VIEW_ITEMS_MAX })),
   draft: Type.Optional(DraftSchema),
+  /** An action about the record that stood open, filled in by the assistant and not sent (D137, `RecordDraftSchema`). */
+  recordDraft: Type.Optional(RecordDraftSchema),
+  /** A decision of Clew's own, filled in by the assistant and not sent (`PreparedSchema`). */
+  prepared: Type.Optional(PreparedSchema),
   toolCalls: Type.Optional(Type.Array(object({ capability: Type.String(), input: Type.Unknown() }))),
   /**
    * Every read the turn made through the registry (D122 item 8): which capability, how many rows it answered, or that
@@ -3668,6 +3855,50 @@ export const ExecutionSummarySchema = object({
   compensates: Type.Union([Type.String(), Type.Null()]),
 });
 export type ExecutionSummary = Static<typeof ExecutionSummarySchema>;
+/** The longest a record's input may be as JSON for it to be sent as the open thing (D136 item 1). */
+export const OPEN_THING_INPUT_MAX = 2000;
+/**
+ * The thing that stands open on the page a question is asked beside (D136 item 1): a person or a unit by Clew's id, a
+ * record by its read and the input that draws it. It says only which thing: the server resolves it again on every turn,
+ * as the asker, and a thing it cannot resolve for them is told to the model as nothing. A work item and a calendar entry
+ * are not sent this way: they go as the chip that stands open (`ConversationInput.beside`).
+ */
+export const OpenThingSchema = Type.Union([
+  object({ kind: Type.Literal('person'), id: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }) }),
+  object({ kind: Type.Literal('unit'), id: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }) }),
+  object({
+    kind: Type.Literal('record'),
+    capability: Type.String({ minLength: 1, maxLength: 120 }),
+    /** The read's input as the page's address holds it; refused when its JSON is longer than `OPEN_THING_INPUT_MAX`. */
+    input: Type.Record(Type.String(), Type.Unknown()),
+  }),
+]);
+export type OpenThing = Static<typeof OpenThingSchema>;
+/**
+ * A question conversation that was asked beside a page (D141 rule 6): the subject the page gave it, so the pane finds
+ * the person's latest conversation about that subject again on any device, the words that say what it is about (Alla
+ * samtal), and when the person opened it as a conversation. Until then it is not among the rail's latest: a question
+ * asked beside each of ten meetings would otherwise push every longer conversation out. Absent on every other thread.
+ */
+export const AskedBesideSchema = object({
+  subject: Type.String({ minLength: 1, maxLength: 1200 }),
+  label: Type.String({ minLength: 1, maxLength: 200 }),
+  openedAt: Type.Union([instant, Type.Null()]),
+  /** The thing the page showed (D136 item 1), kept so every later turn of the conversation is about it. */
+  thing: Type.Optional(OpenThingSchema),
+});
+export type AskedBeside = Static<typeof AskedBesideSchema>;
+/**
+ * What a source offers the person to say on a card where the next step is someone else's and is taken outside Clew
+ * (D139): the button's words ("Jag har bett min chef") and whom the card then waits on ("din chef", as `waitingOn` says
+ * it after "Väntar på"). Saying it writes nothing to the source. Not to be confused with `handover`, a conversation's
+ * exchange with another system's assistant.
+ */
+export const HandOnSchema = object({
+  label: Type.String({ minLength: 1, maxLength: 60 }),
+  waitingOn: Type.String({ minLength: 1, maxLength: 80 }),
+});
+export type HandOn = Static<typeof HandOnSchema>;
 /** Every thread answers "varför ser jag detta?" with trigger, source and time. */
 export const ThreadSchema = object({
   /** Clew authority under which source content was projected; absent legacy snapshots are not trusted. */
@@ -3692,6 +3923,8 @@ export const ThreadSchema = object({
   summary: Type.String(),
   /** The assistants of other systems a question conversation has an exchange with, the one asked last first. */
   handover: Type.Optional(HandoverSchema),
+  /** A question conversation asked beside a page (D141): what it is about, and when it was opened as a conversation. */
+  askedBeside: Type.Optional(AskedBesideSchema),
   items: Type.Array(ThreadItemSchema),
   /**
    * The entities a card of Clew's own is about while none of its rows may name them (D97 item 6, D96 item 6): an action
@@ -3702,6 +3935,14 @@ export const ThreadSchema = object({
   actions: Type.Array(CardActionSchema),
   /** Set when the thread waits on someone else: it is listed under "Pågår utan dig" and never notifies. */
   waitingOn: Type.Union([Type.String(), Type.Null()]),
+  /** The source's offer to say that the next step is taken and whom the card then waits on (D139); absent on most cards. */
+  handOn: Type.Optional(HandOnSchema),
+  /**
+   * The person said so (D139): whom the card waits on since, which is its `waitingOn` while this stands, and when they
+   * said it. Clew's own record, never the source's; gone when the person takes it back, when a reminder of theirs brings
+   * the card back, and when the source changes the card or stops raising it.
+   */
+  handedOn: Type.Optional(object({ to: Type.String(), at: instant })),
   deadline: Type.Union([Type.String(), Type.Null()]),
   receipt: Type.Union([ReceiptSchema, Type.Null()]),
   execution: Type.Optional(Type.Union([ExecutionSummarySchema, Type.Null()])),
@@ -3743,6 +3984,9 @@ export const ItemEventKindSchema = Type.Union([
   Type.Literal('reminder-stopped'),
   Type.Literal('dismissed'),
   Type.Literal('reopened'),
+  /** The person said the next step is taken, so the item waits on someone else (D139), and took that back. */
+  Type.Literal('handed-on'),
+  Type.Literal('handed-back'),
   /** The person decided one of the item's writes; the durable ledger carries it to the source (D45). */
   Type.Literal('decided'),
   /** The person asked to undo the decision. */
@@ -3762,6 +4006,8 @@ export const ItemEventSchema = object(
     kind: ItemEventKindSchema,
     /** `snoozed` and `reminder-set`: when the item comes back. */
     until: Type.Optional(instant),
+    /** `handed-on` and `handed-back`: whom the item waits on, or waited on, in the source's words ("din chef"). */
+    to: Type.Optional(Type.String({ maxLength: 80 })),
     /** `woken`: the time came, or the source changed the item. */
     reason: Type.Optional(Type.Union([Type.Literal('time'), Type.Literal('changed')])),
     /** `decided`: the label of the action decided on, as the item names it now; absent when the item no longer has it. */
@@ -4779,7 +5025,21 @@ export const ConversationInput = object({
    * so, and reads "the open item", "the card" or "the pane" as that thing. A ref that is not among the chips says nothing.
    */
   beside: Type.Optional(ChipSchema.properties.ref),
+  /**
+   * The question is asked in the assistant's pane beside a page (D141): the page's subject, by the key the page gives
+   * it, and the words for what it is about. A conversation this question starts is kept as asked beside that subject
+   * (`Thread.askedBeside`); on a conversation that exists it says nothing.
+   */
+  page: Type.Optional(
+    object({ subject: AskedBesideSchema.properties.subject, label: AskedBesideSchema.properties.label }),
+  ),
   conversationId: Type.Optional(id),
+  /**
+   * The thing that stands open where the question is asked (D136 item 1): on a thing's page beside the assistant's pane,
+   * or beside the transcript on the conversation's page. The server resolves it as the asker; with `page`, a
+   * conversation this question starts keeps it (`AskedBeside.thing`).
+   */
+  thing: Type.Optional(OpenThingSchema),
   /**
    * Send this turn to a source's assistant (`HandoverAssistant.id`) and not to Clew's own. The text goes unchanged, and
    * `chips` are then what the person chose to send with it, each checked on the server before anything leaves.
@@ -4801,6 +5061,25 @@ export const ConversationInput = object({
   side: Type.Optional(Type.Literal(true)),
 });
 export type ConversationInput = Static<typeof ConversationInput>;
+/**
+ * What the assistant may fill in for what stands open (D138 item 7, D137 item 4), asked with the two fields a question
+ * carries about it: the chip that stands open (`beside`, a work item or a calendar entry) and the thing on the page
+ * (`thing`, a record). The pane says it before anything is asked; it is never a reason to refuse.
+ */
+export const AssistantReachInput = object({
+  beside: Type.Optional(ChipSchema.properties.ref),
+  thing: Type.Optional(OpenThingSchema),
+});
+export type AssistantReachInput = Static<typeof AssistantReachInput>;
+/**
+ * The actions the assistant would be offered to fill in if a question were asked now with that open, by the rules the
+ * turn offers them by, each by its title as the person meets it ("Lägg till en kommentar", "Flytta mötet"). Empty for
+ * anything else, for what the person may not see, and without a model that can fill anything in.
+ */
+export const AssistantReachSchema = object({
+  prepares: Type.Array(object({ title: Type.String() })),
+});
+export type AssistantReach = Static<typeof AssistantReachSchema>;
 /** One turn's answer: its shape, where it came from, and what it produced for the page. */
 export const ConversationResponseSchema = object({
   conversationId: id,
@@ -4821,6 +5100,13 @@ export const ConversationResponseSchema = object({
       thread: ThreadSchema,
     }),
   ),
+  /**
+   * An action about the record that stood open that the answer filled in (D137 item 4), with the action as the person
+   * may take it now: the pane draws one row that opens the action's own dialog with the values in it.
+   */
+  recordDraft: Type.Optional(object({ ...RecordDraftSchema.properties, action: RecordActionSchema })),
+  /** A decision of Clew's own that the answer filled in: the page it was asked on draws it in the decision's own form. */
+  prepared: Type.Optional(PreparedSchema),
   clewActions: Type.Array(ClewActionSchema),
   verbs: Type.Optional(Type.Array(VerbSchema)),
   followUps: Type.Array(Type.String()),

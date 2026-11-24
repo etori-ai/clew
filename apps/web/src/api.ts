@@ -54,6 +54,8 @@ import type {
   SnoozePreset,
   AddConnectorInput,
   Area,
+  AssistantReach,
+  AssistantReachInput,
   AssistantStatus,
   HandoverAssistant,
   Attention,
@@ -130,6 +132,8 @@ import type {
   EntityList,
   EntityRows,
   EntitySection,
+  RecordActions,
+  RecordDraftRef,
 } from '@clew/contracts';
 import type {
   BoardingImportBody,
@@ -299,6 +303,48 @@ export const api = {
         capability,
         ...(values ? { values } : {}),
       }),
+  },
+  /**
+   * Actions about a record (D137): the record is its read and the input its page made it with, as the page's address
+   * holds it. `actions` lists those the reader may take; `start` makes a propose's card with its answers (an execute's
+   * card waits for the decision); `decide` makes an execute's card with the human decision in it, from the action
+   * dialog's last button; `effect` reads "Det här händer" before anything exists. A read the reader may not call, a
+   * record they cannot read and an action it does not offer them all answer 404, as an unknown address. `draft` on a
+   * start or a decision names the assistant's draft it was sent from, which the server then marks as sent.
+   */
+  records: {
+    actions: (read: string, input: Record<string, unknown>) =>
+      call<RecordActions>(
+        `/api/records/${encodeURIComponent(read)}/actions?input=${encodeURIComponent(JSON.stringify(input))}`,
+      ),
+    start: (
+      read: string,
+      input: Record<string, unknown>,
+      capability: string,
+      values?: AskValues,
+      draft?: RecordDraftRef,
+    ) =>
+      post<EntityActionStarted>(`/api/records/${encodeURIComponent(read)}/actions`, {
+        input,
+        capability,
+        ...(values ? { values } : {}),
+        ...(draft ? { draft } : {}),
+      }),
+    decide: (
+      read: string,
+      input: Record<string, unknown>,
+      capability: string,
+      values: AskValues,
+      draft?: RecordDraftRef,
+    ) =>
+      post<EntityActionStarted>(`/api/records/${encodeURIComponent(read)}/decide`, {
+        input,
+        capability,
+        values,
+        ...(draft ? { draft } : {}),
+      }),
+    effect: (read: string, input: Record<string, unknown>, capability: string, values: AskValues) =>
+      post<EffectPreview>(`/api/records/${encodeURIComponent(read)}/effect`, { input, capability, values }),
   },
   /**
    * Utvecklingssamtal (D96 items 7 to 9): the two composites of Clew's core connector and the built-in module's writes.
@@ -511,6 +557,11 @@ export const api = {
   itemEvents: (id: string) => call<ItemEvents>(`/api/threads/${id}/events`),
   converse: (input: ConversationInput) => post<ConversationResponse>('/api/conversation', input),
   converseStream,
+  /**
+   * The conversation's page shows a conversation asked beside a page (D141 rule 6): it is marked opened once, and from
+   * then on it is among Ny fråga's latest. Answers the conversation as it stands; another person's is a 404.
+   */
+  conversationOpened: (id: string) => post<Thread>(`/api/conversations/${encodeURIComponent(id)}/opened`),
   objects: (q: string, near: string[] = []) =>
     call<{ objects: ClewObject[] }>(
       '/api/objects?q=' + encodeURIComponent(q) + (near.length ? '&near=' + encodeURIComponent(near.join(',')) : ''),
@@ -520,6 +571,8 @@ export const api = {
   assistantStatus: () => call<AssistantStatus>('/api/assistant/status'),
   /** The assistants of other systems the person may hand a conversation to; empty when no source has any for them. */
   handoverAssistants: () => call<{ assistants: HandoverAssistant[] }>('/api/assistant/handover'),
+  /** What the assistant may fill in for what stands open (D138 item 7); a read, posted for the record's input. */
+  assistantReach: (input: AssistantReachInput) => post<AssistantReach>('/api/assistant/reach', input),
   /** The person's own model in the composer (D24); null goes back to the default. */
   chooseModel: (modelId: string | null) => patch<AssistantStatus>('/api/assistant/model', { modelId }),
   today: () => call<TodayView>('/api/today'),
@@ -578,6 +631,9 @@ export const api = {
   checkCorrection: (id: string) => post<CorrectionExecution>(`/api/executions/${encodeURIComponent(id)}/reconcile`),
   snooze: (id: string, input: SnoozeInput = {}) => post<Thread>(`/api/threads/${id}/snooze`, input),
   snoozePresets: () => call<{ presets: SnoozePreset[] }>('/api/snooze/presets'),
+  /** The person says the next step is someone else's and taken (D139), and takes that back. */
+  handOn: (id: string) => post<Thread>(`/api/threads/${id}/hand-on`),
+  handBack: (id: string) => post<Thread>(`/api/threads/${id}/hand-back`),
   remindInvitees: (id: string) => post<Thread>(`/api/threads/${id}/remind-invitees`),
   remind: (id: string, seconds: number) =>
     post<{ id: string; fireAt: string; thread: Thread }>(`/api/threads/${id}/remind`, { seconds }),

@@ -1,6 +1,6 @@
 # D126 · One page per thing, and one Astryx template per page type
 
-**Status:** provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation) · **Date:** 2026-11-14 · **Area:** ui
+**Status:** provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation; item 4 amended by [D140](D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) on 2026-11-18: a page whose answer is drawn on the page itself may hold the assistant's box in its pane, Kalender first; and by [D141](D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) the same day: the assistant is asked beside every page, which replaces the item's last sentence when built) · **Date:** 2026-11-14 · **Area:** ui
 
 **Current scope.** This decision governs destinations, panes, actions and focus.
 [D130](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md) replaces its rail, sheet layout
@@ -20,6 +20,18 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
    page, the `work-item-detail` composition: the way back and the title, the actions directly under the title, the
    read in the column, the facts in the end `LayoutPanel` (above the read when the page is narrow). The name in a
    row is the link to that page, wherever the row is.
+   **Amended 2026-11-21 (the product owner): a thing's actions are one menu, and no connector gets a button by
+   position.** As built, a person's, a unit's and a record's page drew the first action the server listed as a filled
+   button, the second as a secondary one and the rest under "Fler åtgärder"; which system's action got a button was
+   only the order of the list. Shown a person's title line with "Registrera frånvaro", "Beställ från
+   IT-servicedesken" and "Fråga AI", the owner asked: "how will these actions scale as there are more actions to perform? Right now this might be fine, but we need to keep the modular mindset, what if there are 10 connectors that want this position?"
+   Of three rules offered (one menu; a button only for an action Clew itself ranks first; a button a connector
+   declares) the owner chose the first. So every action about a person, a unit or a record stands in one menu,
+   "Åtgärder" (named "Åtgärder för <name>"), grouped by the system each acts in, at the end of the title's line
+   beside "Fråga AI", in the same shape at every width (the width of the column under the title on a phone) and with
+   one action as with ten. What the page adds of its own (the reader's own "Inställningar") stays a button beside
+   it. A work item's decisions are not actions about a thing in this sense and keep their buttons (rule 2,
+   [D139](D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md)).
 2. **A pane exists in two places.** Beside the queue in Att göra (`table-inbox`: the `Table`, the three piles as a
    `TabList`, the reading pane in the end slot), and beside a conversation (`ai-chat`: the thing the conversation is
    about). The pane draws the same parts as the page; its title is the link to the page; the decision buttons sit
@@ -80,7 +92,9 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
     why and since when, and it carries at most one move: a filled button when the move is the person's, a secondary one
     when it is an offer (Påminn, Ångra); the move is the one the thing has always offered for that state (Kontrollera
     status, the decision again, the review, Ångra, Påminn mig, Ta upp nu, Återöppna), and the others stand under ⋯. A
-    plain to-do has no notice: its title and its buttons say what is expected. Once something has happened or is in
+    plain to-do has no notice: its title and its buttons say what is expected (amended 2026-11-20 by
+    [D139](D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md):
+    a to-do with nothing to decide has a notice with no move, which stands over its buttons). Once something has happened or is in
     the way, the notice takes the place of the buttons and of the grey sentence among them, and "Fråga Clew" and ⋯
     stand under it. `apps/web/src/status-of.ts` is the one mapping from what the item holds (its execution, receipt,
     undo window, what it waits on, a silent system) to a state and its words, keeping every sentence D45, D47, D116 and
@@ -131,3 +145,5 @@ Astryx's templates use `stylex.create` for a few details that Clew's pre-compile
 screen-reader pass has been made. Astryx's `Banner` has no neutral tone, so the notice of "Väntar" is blue like
 "Skickas" (its mark and badge are neutral). A heading cannot stand inside the `Collapsible`'s trigger button, so the
 folded "Händelser" is a named region whose name is the trigger's text, not a heading in the outline.
+
+**Amended 2026-11-21 by [D142](D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md).** Item 1: the one page of a work item reviewed one row at a time is its review (the row and its document in the column, the facts with "Varför ser jag detta?" and "Händelser" in the end panel, the rows as steps under the title). Item 13: that page draws no "Visa granskning" and no "Rader" section; the notice's move where rows were refused is "Granska avvisade igen".

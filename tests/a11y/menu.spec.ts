@@ -223,6 +223,35 @@ test.describe('Samtal among the pages and the register', () => {
     await expect(all).toHaveAttribute('aria-current', 'page');
   });
 
+  test('a conversation asked beside a page and never opened as a conversation is no page of the row, and Samtal lists it with what it is about (D141 rule 6, D138 item 10)', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(desktop);
+    const base = api.threads.find(t => t.kind === 'question')!;
+    const [first, second, third, fourth] = conversations(base);
+    const beside = {
+      ...first!,
+      id: 'samtal-bredvid',
+      title: 'Vad väntar de på från mig?',
+      updatedAt: '2026-11-05T07:00:00.000Z',
+      askedBeside: { subject: 'view:clew.requests', label: 'Om Beställningar och felanmälningar', openedAt: null },
+    };
+    api.threads = [...api.threads.filter(t => t.kind !== 'question'), beside, first!, second!, third!, fourth!];
+    await open(page, '/');
+    // The shell lists no latest conversations (D138 item 10): every one is found under Samtal.
+    const nav = pagesNav(page);
+    await expect(nav.getByRole('group', { name: 'Fråga assistenten' })).toHaveCount(0);
+    await expect(nav.locator('a[href^="/conversations/"]')).toHaveCount(0);
+    await nav.getByRole('link', { name: 'Samtal', exact: true }).click();
+    await expect(page).toHaveURL('/conversations');
+    const main = page.getByRole('main');
+    await expect(main.getByRole('row')).toHaveCount(6);
+    const row = main.getByRole('row').filter({ has: page.getByRole('link', { name: 'Vad väntar de på från mig?' }) });
+    await expect(row.getByRole('cell').nth(1)).toHaveText('Beställningar och felanmälningar');
+    await expectNoAxeViolations(page);
+  });
+
   test('at 320 px the register is a list of links and nothing reflows past the edge', async ({ page, api }) => {
     await page.setViewportSize(narrow);
     const base = api.threads.find(t => t.kind === 'question')!;

@@ -95,6 +95,7 @@ export const clewCalendarTheme: PluginInput & { views: Record<string, Record<str
         focusable,
         info.isInteractive && pressable,
         (info.isSelected || info.event.extendedProps.selected === true) && 'clew-cal-selected',
+        info.event.extendedProps.draft === true && 'clew-cal-draft',
         info.isDragging && 'clew-cal-dragging',
         info.isMirror && 'clew-cal-mirror',
         info.isPast && 'clew-cal-past',

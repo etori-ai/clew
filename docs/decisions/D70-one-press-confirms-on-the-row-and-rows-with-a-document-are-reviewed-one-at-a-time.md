@@ -83,3 +83,5 @@ address ([D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-v
 2026-11-12). The person's decisions are a draft kept in the browser tab for the session, so a reload or a way out and
 back keeps them, and the card then says "Fortsätt granska". Items 1, 3 and 4 stand; what is written, and when, does not
 change.
+
+**Amended 2026-11-21 by [D142](D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md).** Item 2's review is the work item's own page; "Granska N" leads to it from a row of Hem and from the narrow item. Item 1's one press also runs from a row of Hem's "Behöver dig", where the row's button names it. Items 3 and 4 stand.

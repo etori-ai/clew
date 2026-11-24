@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { EntityKind, Subject, ThreadItem } from '@clew/contracts';
 import { database, schema, type Transaction } from '@clew/db';
 import { listThreads, toThread, unresolvedThreads } from '@clew/db/threads';
@@ -51,9 +51,12 @@ const naming = (subjects: readonly Subject[]) => {
 const date = (value: string | null | undefined) =>
   value === undefined ? undefined : value === null ? null : new Date(value);
 const toRow = (patch: ThreadPatch) => {
-  const { handledAt, updatedAt, remindedAt, snoozedUntil, ...rest } = patch;
+  const { handledAt, updatedAt, remindedAt, snoozedUntil, handedOn, ...rest } = patch;
   return {
     ...rest,
+    ...(handedOn !== undefined
+      ? { handedOnTo: handedOn?.to ?? null, handedOnAt: handedOn ? new Date(handedOn.at) : null }
+      : {}),
     ...(handledAt !== undefined ? { handledAt: date(handledAt) } : {}),
     ...(updatedAt !== undefined ? { updatedAt: date(updatedAt)! } : {}),
     ...(remindedAt !== undefined ? { remindedAt: date(remindedAt) } : {}),
@@ -118,8 +121,10 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
         items: t.items,
         subjects: t.subjects ?? [],
         handover: t.handover ?? null,
+        askedBeside: t.askedBeside ?? null,
         actions: t.actions,
         waitingOn: t.waitingOn,
+        handOn: t.handOn ?? null,
         deadline: t.deadline,
         trigger: t.trigger,
         execution: t.execution ?? null,
@@ -184,6 +189,24 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
     );
     return erased;
   },
+  async eraseConversationsBeside(personId) {
+    // The thing a conversation was asked beside is kept in `asked_beside` as written (D136 item 1): containment matches
+    // the kind and the id exactly. An operator's rare erasure reads the conversations without an index of its own.
+    const beside = and(
+      eq(threads.kind, 'question'),
+      sql`${threads.askedBeside} @> ${JSON.stringify({ thing: { kind: 'person', id: personId } })}::jsonb`,
+    );
+    // Locked in id order, as the other erasure takes its threads, then deleted with what hangs on them.
+    const rows = await tx.select({ id: threads.id }).from(threads).where(beside).orderBy(threads.id).for('update');
+    if (!rows.length) return { conversations: 0, messages: 0 };
+    const ids = rows.map(r => r.id);
+    const [counted] = await tx
+      .select({ messages: count() })
+      .from(threadMessages)
+      .where(inArray(threadMessages.threadId, ids));
+    await tx.delete(threads).where(inArray(threads.id, ids));
+    return { conversations: rows.length, messages: counted?.messages ?? 0 };
+  },
   async addMessage(threadId, message) {
     await tx.insert(threadMessages).values({
       id: crypto.randomUUID(),
@@ -197,6 +220,29 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
       .update(threads)
       .set({ updatedAt: new Date(message.at) })
       .where(eq(threads.id, threadId));
+  },
+  async markRecordDraftSent(mark) {
+    // One statement: the row is taken only while every condition holds, so of two marks of one draft the second finds it
+    // marked once the first commits. `jsonb` compares the input as a value, its keys in any order (`marksRecordDraft`).
+    const draft = sql`${threadMessages.meta} -> 'recordDraft'`;
+    const marked = await tx
+      .update(threadMessages)
+      .set({
+        meta: sql`jsonb_set(${threadMessages.meta}, '{recordDraft,sent}', ${JSON.stringify({ threadId: mark.threadId })}::jsonb)`,
+      })
+      .where(
+        and(
+          eq(threadMessages.id, mark.messageId),
+          eq(threadMessages.threadId, mark.conversationId),
+          sql`exists (select 1 from ${threads} where ${threads.id} = ${mark.conversationId} and ${threads.personId} = ${mark.personId} and ${threads.kind} = 'question')`,
+          sql`${draft} ->> 'capability' = ${mark.capability}`,
+          sql`${draft} -> 'record' ->> 'capability' = ${mark.record.capability}`,
+          sql`${draft} -> 'record' -> 'input' = ${JSON.stringify(mark.record.input)}::jsonb`,
+          sql`${draft} -> 'sent' is null`,
+        ),
+      )
+      .returning({ id: threadMessages.id });
+    return marked.length > 0;
   },
   async writeAudit(entry) {
     await tx.insert(audit).values({

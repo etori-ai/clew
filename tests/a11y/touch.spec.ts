@@ -39,7 +39,11 @@ test.describe('a finger reaches every control at 44 px (docs/history/handover.md
   // D74, amended 2026-11-23: the title on a line of its own, then the controls as two rows, the steps with the view menu
   // and Förslag with Ny bokning. It holds in each view (the view menu is widest in the month) and at 360 px, the
   // narrowest of the common phones; at 320 px the controls may wrap to a third row, which the reflow specs cover.
-  test("the calendar's head stays two rows at that size", async ({ page, api: _ }) => {
+  // "Fråga AI" is its mark alone at the end of the title's line, 44 px, and adds no row (D138 as amended 2026-11-20).
+  test("the calendar's head has Fråga AI on its title's line and stays two rows of controls at that size", async ({
+    page,
+    api: _,
+  }) => {
     for (const width of [phone.width, 360])
       for (const [path, calendar] of [
         ['/calendar', /^Vecka 45/],
@@ -58,6 +62,15 @@ test.describe('a finger reaches every control at 44 px (docs/history/handover.md
         for (const control of controls) await expect(control, where).toBeVisible();
         const tops = await Promise.all(controls.map(async control => Math.round((await control.boundingBox())!.y)));
         expect([...new Set(tops)], where).toHaveLength(2);
+        const title = (await page.getByRole('heading', { level: 1 }).boundingBox())!;
+        const door = (await page.getByRole('main').getByRole('button', { name: 'Fråga AI' }).boundingBox())!;
+        expect(door.height, where).toBeGreaterThanOrEqual(44);
+        expect(door.width, where).toBeGreaterThanOrEqual(44);
+        expect(door.y, `Fråga AI is on the title’s line, ${where}`).toBeLessThanOrEqual(title.y);
+        expect(door.y + door.height, where).toBeGreaterThanOrEqual(title.y + title.height);
+        expect(Math.min(...tops), `the controls stand under it, ${where}`).toBeGreaterThanOrEqual(
+          Math.round(door.y + door.height),
+        );
         // Measured from the shell's bar, not from the top of the screen: the bar is the shared header's heading row
         // since D88 (61 px with the bell and the person at touch size), and its height is not the calendar's. The
         // frame's inset (24 px), the trail (28 and 12 under it), the title (32 and 8), two rows of 44 px controls with

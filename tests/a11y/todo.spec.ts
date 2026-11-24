@@ -172,7 +172,7 @@ test.describe('the panes beside the queue and the conversation', () => {
     api,
   }) => {
     api.menu = [menuRow];
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await composer(page).fill('telefonboken lärare');
     await composer(page).press('Enter');
     const log = page.getByRole('log');
@@ -213,17 +213,22 @@ test.describe('the panes beside the queue and the conversation', () => {
 test.describe('asking from a page on a narrower screen', () => {
   test.use({ viewport: desktop });
 
-  test('a question on the landing after a closed conversation starts a new one', async ({ page, api }) => {
+  test('a question on the landing after its answer’s card is closed starts a new conversation', async ({
+    page,
+    api,
+  }) => {
+    // The answer stands in a card under Hem's line (D138 item 9); Stäng takes it away and leaves the conversation.
+    const card = page.getByRole('main').getByRole('region', { name: 'Vem är på plats?', exact: true });
     await open(page, '/');
     await composer(page).fill('Vem är på plats?');
     await composer(page).press('Enter');
-    await expect(answer(page)).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(answer(page)).toBeHidden();
+    await expect(card.getByRole('log')).toContainText('Tio personer är på plats i dag.');
+    await card.getByRole('button', { name: 'Stäng' }).click();
+    await expect(card).toHaveCount(0);
     await composer(page).fill('Vem är på plats?');
     await composer(page).press('Enter');
-    await expect(answer(page).first()).toBeVisible();
-    // Neither question named a conversation to continue (the mock answers both under one id, so both turns are drawn).
+    await expect(card.getByRole('log')).toContainText('Tio personer är på plats i dag.');
+    // Neither question named a conversation to continue.
     expect(api.asked.map(a => a.conversationId ?? null)).toEqual([null, null]);
   });
 });

@@ -13,6 +13,7 @@ import {
   type ViewTone,
 } from '@clew/contracts';
 import { statusWord } from '../components/views/panel-labels';
+import { sourceReads, type PageRead } from '../components/conversation/page-conversation';
 import { wholeRow } from '../view-fields';
 
 /**
@@ -266,4 +267,17 @@ export function silentOf(list: EntityList, answers: ReadonlyMap<string, Answer>,
     if (!out.some(s => s.source === source)) out.push({ source, status: a.status });
   }
   return out;
+}
+
+/**
+ * What "Medarbetare" shows, as the reads the assistant could make for it (D141 rule 4): the people the reader manages
+ * (`people.reports`), and each column through the overviews of its source (`sourceReads`). A column's overviews are
+ * known from the lens of the same read; the list carries none for a column whose read is no lens, which is therefore
+ * said as closed, named by its system.
+ */
+export function staffReads(list: Pick<EntityList, 'columns' | 'lenses'>): PageRead[] {
+  return [
+    { capability: 'people.reports', own: true, label: 'Medarbetare' },
+    ...list.columns.flatMap(c => sourceReads(list.lenses.find(l => l.capability === c.capability) ?? c)),
+  ];
 }

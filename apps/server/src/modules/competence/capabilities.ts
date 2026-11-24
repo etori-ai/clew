@@ -367,15 +367,29 @@ const plural = (n: number, one: string, other: string) => `${n} ${n === 1 ? one 
  * their own rating, which waits for their manager to confirm it; a confirmed level that is not the one asked; or none
  * yet. A card names no particulars beyond the type in its title, as the certificate cards do, so no level is said: the
  * person's list says which is asked and which is held.
+ *
+ * The last sentence says how the item ends, since nothing on the card is pressed to end it (the card's only action is a
+ * read): the scan stops raising a card for the type when the requirement is met, which for a certificate is a holding
+ * that counts and for a skill a level a manager has confirmed that reaches the one asked (`deciding`). A skill added or
+ * rated again on the way there is a new period (`ownCard`), so the card is followed by one with the next of these
+ * summaries until then.
  */
+/**
+ * Whether the next step on a missing type's card is the manager's and taken by talking to them (D139): a certificate
+ * the person lacks, or a skill confirmed below the level asked. A skill not added or not rated is the person's own next
+ * step, and one that waits for the manager's confirmation has nothing left for the person to ask for.
+ */
+export const missingAsksManager = (s: MissingStanding): boolean =>
+  s.least === undefined || (!!s.held && s.held.level !== null && confirmed(s.held));
+const ENDS_WHEN_CONFIRMED = 'Ärendet avslutas av sig självt när din chef har bekräftat nivån som krävs.';
 export function missingSummary(s: MissingStanding): string {
   if (s.least === undefined)
-    return 'Det här krävs i ditt arbete men finns inte registrerat för dig. Prata med din chef om hur du får det.';
+    return 'Det här krävs i ditt arbete men finns inte registrerat för dig. Prata med din chef om hur du får det. Ärendet avslutas av sig självt när det är registrerat för dig.';
   if (!s.held || s.held.level === null)
-    return 'Det här krävs i ditt arbete. Lägg till färdigheten med din nivå, så kan din chef bekräfta den.';
+    return `Det här krävs i ditt arbete. Lägg till färdigheten med din nivå, så kan din chef bekräfta den. ${ENDS_WHEN_CONFIRMED}`;
   if (!confirmed(s.held))
-    return 'Det här krävs i ditt arbete. Din egen bedömning räknas när din chef har bekräftat nivån.';
-  return 'Det här krävs i ditt arbete på en högre nivå än den din chef har bekräftat. Prata med din chef om hur du kommer dit.';
+    return `Det här krävs i ditt arbete. Din egen bedömning räknas när din chef har bekräftat nivån. ${ENDS_WHEN_CONFIRMED}`;
+  return `Det här krävs i ditt arbete på en högre nivå än den din chef har bekräftat. Prata med din chef om hur du kommer dit. ${ENDS_WHEN_CONFIRMED}`;
 }
 
 /** `persona` turns the registry's actor into a use-case persona; the unit tests hand in their own. */
@@ -580,6 +594,9 @@ export function competenceConnector(
         { id: 'open', label: 'Visa mina kompetenser', capability: holdings.name, kind: 'read', role: 'primary' },
       ] as const;
       const occurrence = (card: CardIdentity) => [{ key: card.key, revision: card.revision, period: card.period }];
+      // Where the summary sends the person to their manager, the card offers them to say that they have asked (D139):
+      // it then waits on the manager, and still ends by itself when the scan stops raising it.
+      const askedManager = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
       for (const { standing: s, card } of own) {
         if (s.holding === null) {
           drafts.push({
@@ -589,6 +606,7 @@ export function competenceConnector(
             summary: missingSummary(s),
             reason: 'Saknas',
             actions: [...open],
+            ...(missingAsksManager(s) ? { handOn: askedManager } : {}),
             occurrences: occurrence(card),
           });
           continue;
@@ -599,12 +617,15 @@ export function competenceConnector(
           topic: card.topic,
           area: COMPETENCE_AREA,
           title: expired ? `${s.type.name} gick ut ${day}` : `${s.type.name} går ut ${day}`,
+          // The last sentence says how the item ends (nothing on the card is pressed to end it): the card stands until a
+          // holding that counts and ends later decides the type (`deciding`), which the next scan sees.
           summary: expired
-            ? 'Intyget gäller inte längre. Prata med din chef om att förnya det.'
-            : 'Intyget behöver förnyas innan det går ut. Prata med din chef om nästa tillfälle.',
+            ? 'Intyget gäller inte längre. Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.'
+            : 'Intyget behöver förnyas innan det går ut. Prata med din chef om nästa tillfälle. Ärendet avslutas av sig självt när det förnyade intyget är registrerat.',
           reason: expired ? 'Har gått ut' : 'Går ut inom 90 dagar',
           deadline: s.end,
           actions: [...open],
+          handOn: askedManager,
           occurrences: occurrence(card),
         });
       }

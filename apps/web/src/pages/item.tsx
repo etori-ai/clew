@@ -14,10 +14,11 @@ import { useNav, type NavCurrent } from '../components/shell/nav';
 import { Shell, shortQuery } from '../components/shell/shell';
 import { ContentSkeleton } from '../components/shell/loading';
 import { WorkItemPage } from '../components/work/work-item';
+import { reviewedAction } from '../components/work/card';
+import { ReviewedItem } from './review';
 import { cardBody } from '../components/work/card-panel';
-import { itemSubject } from '../components/views/view-read';
-import { AskClew } from '../components/conversation/thing-panel';
 import { PageFrame } from '../components/shell/page-frame';
+import { itemPageSubject } from '../components/conversation/page-conversation';
 
 /**
  * A work item as a page (D126 rule 1, board Ärende, `/items/<threadId>`): the item's own address, reached by its name
@@ -25,7 +26,8 @@ import { PageFrame } from '../components/shell/page-frame';
  * convention as a person's page, `person-address.ts`). The way back names the page it came from when Clew can name it,
  * else Att göra. The item comes from the stream every page shares (D33), so a decision here is the decision everywhere;
  * an item the stream no longer lists (handled long ago) is read on its own. An item the person may not see is the
- * page's own "finns inte", as the server answers 404 for both.
+ * page's own "finns inte", as the server answers 404 for both. An item whose decision is reviewed one row at a time is
+ * the same address with the review as its page (`ReviewedItem`, D142).
  *
  * When the item leaves the person's hands with its own button (Avfärda, Inte nu), the page leads back to where it came
  * from, as Att göra lets go of an item sent away; the toast keeps the way back to it.
@@ -75,21 +77,24 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
     },
     [threadId, navigate],
   );
-  // "Fråga assistenten" (D126 rule 5): a new conversation with the item beside it.
-  const ask = thread ? <AskClew subject={itemSubject(thread)} /> : null;
+  // An item reviewed one row at a time has one page, which is its review (D142): the rows are its steps.
+  const reviewed = thread && !thread.proposals.length ? reviewedAction(thread) : undefined;
   let body;
-  if (thread && !thread.proposals.length)
-    body = <WorkItemPage thread={thread} back={back} onChange={onChange} ask={ask} />;
-  // The calendar's proposals keep their own card (D27, D112 item 9), under the way back and the item's title.
+  if (thread && reviewed)
+    body = <ReviewedItem key={thread.id} live={thread} action={reviewed} from={from} back={back} onChange={onChange} />;
+  else if (thread && !thread.proposals.length) body = <WorkItemPage thread={thread} back={back} onChange={onChange} />;
+  // The calendar's proposals keep their own card (D27, D112 item 9), under the way back and the item's title; the
+  // assistant's pane is about the item, as on every work item's page (D136).
   else if (thread)
     body = (
-      <PageFrame back={back} title={thread.title} actions={ask}>
+      <PageFrame ask={{ subject: itemPageSubject(thread) }} back={back} title={thread.title}>
         {cardBody(thread, { place: 'pane', level: 2, onChange })}
       </PageFrame>
     );
+  // Until the item is read, and when it is missing, the page has no subject yet and no button.
   else
     body = (
-      <PageFrame>
+      <PageFrame ask={{ subject: null }}>
         {missing ? (
           <EmptyState
             headingLevel={1}

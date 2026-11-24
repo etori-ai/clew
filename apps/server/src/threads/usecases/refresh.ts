@@ -234,6 +234,7 @@ export function refreshUsecases({
               // D135: the units the source says the card is about (D97 item 6).
               ...(d.subjects?.length ? { subjects: d.subjects } : {}),
               waitingOn: d.waitingOn ?? null,
+              ...(d.handOn ? { handOn: d.handOn } : {}),
               deadline: d.deadline ?? null,
               trigger: { reason: d.reason, source: system(job.connector), at },
               createdAt: at,
@@ -265,6 +266,11 @@ export function refreshUsecases({
           }));
           if (!observation || observation.completeness === 'partial')
             items.push(...thread.items.filter(i => !items.some(x => x.ref === i.ref)));
+          // The person handed the card on (D139): while the occurrence stands as it was and the source names nobody
+          // itself, the card keeps waiting on whom they said. A changed revision brings it back to them, as it breaks a
+          // snooze, and a source that says whom the card waits on is believed over the person.
+          const handed = !changed && !d.waitingOn && thread.state === 'open' ? thread.handedOn : undefined;
+          const waitingOn = d.waitingOn ?? handed?.to ?? null;
           if (
             changed ||
             key(
@@ -275,8 +281,10 @@ export function refreshUsecases({
                 thread.actions,
                 thread.deadline ?? null,
                 thread.waitingOn ?? null,
+                thread.handOn ?? null,
               ]),
-            ) !== key(canonical([d.title, d.summary, items, d.actions, d.deadline ?? null, d.waitingOn ?? null]))
+            ) !==
+              key(canonical([d.title, d.summary, items, d.actions, d.deadline ?? null, waitingOn, d.handOn ?? null]))
           ) {
             await tx.updateThread(thread.id, {
               title: d.title,
@@ -284,7 +292,9 @@ export function refreshUsecases({
               items,
               actions: d.actions,
               deadline: d.deadline ?? null,
-              waitingOn: d.waitingOn ?? null,
+              waitingOn,
+              handOn: d.handOn ?? null,
+              ...(thread.handedOn && !handed ? { handedOn: null } : {}),
               updatedAt: at,
               ...(changed
                 ? {
@@ -351,7 +361,13 @@ export function refreshUsecases({
           (t.execution && ['pending', 'running', 'unknown'].includes(t.execution.state))
         )
           continue;
-        await tx.updateThread(threadId, { state: 'handled', handledAt: at, waitingOn: null, updatedAt: at });
+        await tx.updateThread(threadId, {
+          state: 'handled',
+          handledAt: at,
+          waitingOn: null,
+          ...(t.handedOn ? { handedOn: null } : {}),
+          updatedAt: at,
+        });
         await tx.writeAudit({
           actor: 'system:refresh',
           action: 'thread.source_resolved',

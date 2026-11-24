@@ -48,7 +48,7 @@ import { useDecisionSend, useSettling, useThreadAction, type RunAction } from '.
 import { opensDialog, type ActionStep } from '../../action-path';
 import { takeActionRequest, useActionRequest } from '../../action-requests';
 import { ActionDialog } from './action-dialog';
-import { dismissed, reopened, snoozed } from '../../optimistic';
+import { dismissed, handedBack, handedOn, reopened, snoozed } from '../../optimistic';
 import { invalidateStream } from '../../thread-cache';
 import { useConversation } from '../conversation/conversation-context';
 import { executionStatus } from '../../execution-status';
@@ -313,14 +313,16 @@ export const TimePicker = ({
   rows,
   own,
   size = 'sm',
+  variant = 'ghost',
 }: {
   label: string;
   rows: TimeRows['rows'];
   own: TimeRows['own'];
   size?: 'sm' | 'md';
+  variant?: 'ghost' | 'secondary';
 }) => (
   <DropdownMenu
-    button={{ label, size, variant: 'ghost' }}
+    button={{ label, size, variant }}
     presentation="adaptive"
     menuMaxHeight={480}
     items={[...rows, { type: 'divider' as const }, own]}
@@ -627,6 +629,23 @@ export function useThreadActions({ thread, onChange }: ActionProps) {
       },
       { optimistic: dismissed(thread, new Date().toISOString()) },
     );
+  /**
+   * "Jag har bett min chef" (D139): the item waits on whom its source named, at once (D64); the toast says where it
+   * went and its Ångra takes it back.
+   */
+  const handOn = () =>
+    run(
+      async () => {
+        const t = await api.handOn(thread.id);
+        leave(
+          t,
+          `Ärendet väntar på ${t.waitingOn ?? thread.handOn?.waitingOn ?? 'någon annan'}. Det ligger under Väntar på andra.`,
+          () => api.handBack(thread.id),
+        );
+        return t;
+      },
+      { optimistic: handedOn(thread, new Date().toISOString()) },
+    );
   /** A person's own timer on a card that waits on someone else (D17, D49): the card stays where it is until the timer brings it back; Ångra cancels the timer. When it fires, the stream is read again. */
   const remind = (seconds: number) =>
     run(async () => {
@@ -654,6 +673,7 @@ export function useThreadActions({ thread, onChange }: ActionProps) {
     leave,
     perform,
     dismiss,
+    handOn,
     pickRemind,
     reviewed,
     /** The review begun on its page, if any: "Granska N" is then "Fortsätt granska". */
@@ -705,6 +725,14 @@ const reopenable = (thread: Thread) =>
  * buttons keep their look, the pressed one loading (D64), and the notice comes when the item has come to rest; the focus
  * that was on a button the notice replaced goes to the item's title, which the notice stands under (2.4.3).
  *
+ * A to-do with nothing to decide (`status.noDecision`, `nothingToDecide` in `status-of.ts`: every action is a read) has
+ * no button that says what is expected, so the notice stands over its buttons and says it in the source's words, and no
+ * button is filled: its read is a secondary button, and the two ways out stand beside it instead of under ⋯, "Inte nu"
+ * (D49) and "Avfärda", since they are the only things the person can do to the item itself. Where its source offers
+ * the person to say that the next step is someone else's and taken (`status.handOn`, D139: "Jag har bett min chef"),
+ * that is the one filled button, the read stands beside it, and "Inte nu" and "Avfärda" are under ⋯ again (board Intyg,
+ * variant c). Once pressed the item waits: the notice says on whom, with "Påminn mig", and "Det blev inte gjort" under ⋯.
+ *
  * `pinned` is a bar at the foot of a phone's page: the decisions side by side the width of the screen, everything else
  * under ⋯. An action the item draws elsewhere (`omit`: a notice's link out, after its text) is not drawn here too.
  */
@@ -718,6 +746,8 @@ export function ActionRow({
   titleRef,
   reviewShown = false,
   beside = false,
+  part,
+  retry,
 }: {
   thread: Thread;
   actions: Actions;
@@ -737,12 +767,19 @@ export function ActionRow({
   titleRef?: RefObject<HTMLHeadingElement | null> | undefined;
   /** "Visa granskning" stands at the end of the rows' heading, so it is not drawn under ⋯ too. */
   reviewShown?: boolean;
+  /**
+   * On the page of an item reviewed one row at a time, which is its review (D142): the notice alone, under the title,
+   * or ⋯ alone, at the end of the title's line. Nothing leads to the review from there, since the person is on it.
+   */
+  part?: 'notice' | 'menu';
+  /** There, the notice's own move where the state's would have led to the review: "Granska avvisade igen" (D80). */
+  retry?: StatusMove | undefined;
 }) {
   const conversation = useConversation();
   const chipRef = 'thread:' + thread.id;
   const inConversation = conversation.chipped.includes(chipRef);
   const open = thread.state === 'open';
-  const { selected, selectable, settling, pressed, perform, dismiss, run, leave, pickRemind } = actions;
+  const { selected, selectable, settling, pressed, perform, dismiss, handOn, run, leave, pickRemind } = actions;
   const { reviewed, returned, status } = actions;
   const snoozeRows = useSnoozeRows({ thread, run, leave });
   const remindRows = useTimeRows({
@@ -803,7 +840,7 @@ export function ActionRow({
       />
     ) : (
       <Button
-        variant={due ? 'primary' : 'secondary'}
+        variant={due && !status.noDecision ? 'primary' : 'secondary'}
         label={primaryLabel ?? ''}
         isDisabled={selectable && count === 0}
         isLoading={settling && pressed === primary.id}
@@ -833,16 +870,18 @@ export function ActionRow({
   // person's own action settles: the pressed button keeps loading where it was until the item has come to rest (D64).
   const notice = status.notice;
   const showNotice = !!notice && !(settling && pressed !== null);
-  const noticeShown = useRef(showNotice);
+  // The notice of an item with nothing to decide stands over its buttons and replaces none of them.
+  const replaced = showNotice && !status.noDecision;
+  const noticeShown = useRef(replaced);
   useEffect(() => {
     const was = noticeShown.current;
-    noticeShown.current = showNotice;
-    if (was === showNotice) return;
+    noticeShown.current = replaced;
+    if (was === replaced) return;
     // The button that had the focus is gone with the row it stood in: the title the notice stands under takes it.
     const active = document.activeElement;
     if (active && active !== document.body && active.isConnected) return;
     requestAnimationFrame(() => titleRef?.current?.focus());
-  }, [showNotice]);
+  }, [replaced]);
   const reopen = async () => {
     await run(() => api.reopen(thread.id), { optimistic: reopened(thread) });
   };
@@ -858,6 +897,20 @@ export function ActionRow({
       case 'take-up':
       case 'reopen':
         return { label: m.label, clickAction: reopen };
+      case 'hand-on':
+        return {
+          label: m.label,
+          clickAction: async () => {
+            await handOn();
+          },
+        };
+      case 'hand-back':
+        return {
+          label: m.label,
+          clickAction: async () => {
+            await run(() => api.handBack(thread.id), { optimistic: handedBack(thread) });
+          },
+        };
       case 'remind':
         return { label: m.label, menu: [...remindRows.rows, { type: 'divider' as const }, remindRows.own] };
       case 'decide':
@@ -889,7 +942,9 @@ export function ActionRow({
   };
   // The decided review is seen again from the end of the rows' heading; where no rows are drawn, from ⋯.
   const moves: StatusMoveWords[] = [
-    ...(status.review && !reviewShown ? [{ kind: 'review' as const, label: 'Visa granskning', offer: false }] : []),
+    ...(status.review && !reviewShown && !part
+      ? [{ kind: 'review' as const, label: 'Visa granskning', offer: false }]
+      : []),
     ...status.rest,
   ];
 
@@ -948,23 +1003,129 @@ export function ActionRow({
     );
   };
 
+  // Nothing to decide: what holds and how the item ends in the notice, then the read and the two ways out, none filled.
+  if (status.noDecision) {
+    const read = primary ?? here.find(isRead);
+    const others = here.filter(a => a !== read);
+    const said = notice ? (
+      <StatusNotice kind={status.kind} title={notice.title} description={notice.description} />
+    ) : null;
+    const readButton = read ? (
+      <Button
+        variant="secondary"
+        label={read.label}
+        width={width}
+        {...pressOrLink(read)}
+        data-action={read.id}
+        data-thread={thread.id}
+        {...leavingMark(read)}
+      />
+    ) : null;
+    // The source's offer to say the next step is taken (D139): the one filled button.
+    const handOnButton = status.handOn ? (
+      <Button
+        variant="primary"
+        label={status.handOn}
+        width={width}
+        clickAction={async () => {
+          await handOn();
+        }}
+      />
+    ) : null;
+    // The phone's bar: the read the width of the screen and the ways out under ⋯, so no word is cut at 320 px (1.4.10).
+    if (pinned)
+      return (
+        <VStack gap={3}>
+          {said}
+          <HStack gap={2} vAlign="center">
+            {handOnButton && <StackItem size="fill">{handOnButton}</StackItem>}
+            {!handOnButton && readButton && <StackItem size="fill">{readButton}</StackItem>}
+            {more({
+              items: handOnButton && read ? [read, ...others] : others,
+              time: snoozeRows,
+              extra: moves,
+            })}
+          </HStack>
+        </VStack>
+      );
+    if (handOnButton)
+      return (
+        <VStack gap={3}>
+          {said}
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            {handOnButton}
+            {readButton}
+            {ask}
+            {addToConversation}
+            {more({ items: others, time: snoozeRows, extra: moves })}
+          </HStack>
+        </VStack>
+      );
+    return (
+      <VStack gap={3}>
+        {said}
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          {readButton}
+          <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} size="md" variant="secondary" />
+          <Button
+            variant="ghost"
+            label="Avfärda"
+            clickAction={async () => {
+              await dismiss();
+            }}
+          />
+          {ask}
+          {addToConversation}
+          {more({ items: others, dismissable: false, extra: moves })}
+        </HStack>
+      </VStack>
+    );
+  }
   if (showNotice) {
-    const move = notice.move ? moveOf(notice.move) : undefined;
+    const move = notice.move ? (part && notice.move.kind === 'review' ? retry : moveOf(notice.move)) : undefined;
     // While it waits on someone or is set aside it is still the person's to let go of (Avfärda) and its other actions
     // stay under ⋯, as before; a decision on its way, decided or done offers its reads and the state's other moves.
     const stillOpen =
       open && !unresolvedExecution(thread) && (isSnoozed(thread, new Date().toISOString()) || !!thread.waitingOn);
     const allReads = here.filter(a => a !== primary && isRead(a));
-    const menu = stillOpen ? more({ extra: moves }) : more({ items: allReads, dismissable: false, extra: moves });
+    // An item whose every action is a read keeps its read as a button while it waits or is set aside (board Intyg,
+    // variant c2): there it is the one thing the item does, and it stood beside the buttons the notice replaced.
+    const kept = status.noAnswer && stillOpen ? (primary ?? here.find(isRead)) : undefined;
+    const menu = stillOpen
+      ? more({ ...(kept ? { items: here.filter(a => a !== kept) } : {}), extra: moves })
+      : more({ items: allReads, dismissable: false, extra: moves });
+    const words = {
+      kind: status.kind,
+      title: notice.title,
+      description: notice.description,
+      ...(move ? (notice.move!.offer ? { offer: move } : { action: move }) : {}),
+    };
+    if (part === 'menu') return menu;
+    // The notice's own reminder asks for a time of the person's in a dialog of this part's own.
+    if (part === 'notice')
+      return (
+        <>
+          <StatusNotice {...words} />
+          {remindRows.dialog}
+        </>
+      );
+    // Nothing else would stand under the notice: the menu ends the notice, beside its move, and no row of its own is
+    // drawn for it (the product owner, 2026-11-21).
+    if (!kept && !ask && !addToConversation) return <StatusNotice {...words} end={menu} />;
     return (
       <VStack gap={3}>
-        <StatusNotice
-          kind={status.kind}
-          title={notice.title}
-          description={notice.description}
-          {...(move ? (notice.move!.offer ? { offer: move } : { action: move }) : {})}
-        />
+        <StatusNotice {...words} />
         <HStack gap={2} vAlign="center" wrap="wrap">
+          {kept && (
+            <Button
+              variant="secondary"
+              label={kept.label}
+              {...pressOrLink(kept)}
+              data-action={kept.id}
+              data-thread={thread.id}
+              {...leavingMark(kept)}
+            />
+          )}
           {ask}
           {addToConversation}
           {menu}
@@ -972,6 +1133,12 @@ export function ActionRow({
       </VStack>
     );
   }
+  // The review's page has its decisions at its foot: without a notice, only ⋯ is the item's own there.
+  if (part === 'notice') return null;
+  if (part === 'menu')
+    return open && !thread.waitingOn && !isSnoozed(thread, new Date().toISOString())
+      ? more({ items: [...decisions, ...reads, ...rest], time: snoozeRows, extra: moves })
+      : more(open ? {} : { items: here.filter(a => a !== primary && isRead(a)), dismissable: false });
   // Set aside (D28), while the person's own Inte nu settles: the way back is the first button.
   if (open && isSnoozed(thread, new Date().toISOString()))
     return (

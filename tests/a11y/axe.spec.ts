@@ -41,7 +41,7 @@ for (const [layout, viewport] of [
     });
 
     test('the open conversation has no axe violations', async ({ page, api: _ }) => {
-      await open(page, '/');
+      await open(page, '/conversations/new');
       const input = composer(page);
       await input.fill('Vem är på plats?');
       await input.press('Enter');
@@ -50,7 +50,7 @@ for (const [layout, viewport] of [
     });
 
     test('a conversation whose answer is a card has no axe violations', async ({ page, api: _ }) => {
-      await open(page, '/');
+      await open(page, '/conversations/new');
       await composer(page).fill('attestera en faktura');
       await composer(page).press('Enter');
       await expect(page.getByRole('article', { name: 'Ärende: Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
@@ -76,7 +76,7 @@ for (const [layout, viewport] of [
     });
 
     test('a document answer with steps and citations has no axe violations', async ({ page, api: _ }) => {
-      await open(page, '/');
+      await open(page, '/conversations/new');
       const input = composer(page);
       await input.fill('Brukaren har ramlat, vad gör jag?');
       await input.press('Enter');

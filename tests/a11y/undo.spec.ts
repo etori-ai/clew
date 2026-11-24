@@ -84,9 +84,12 @@ test.describe('a decision the card is left waiting on keeps its way back where t
       .click();
     const waiting = page.getByRole('table', { name: 'Väntar på andra' }).locator('#work-samtal');
     await expect(waiting).toContainText('kalenderändringar är bekräftade');
-    await expect(waiting).toContainText('Väntar på andra\u00a0· ');
+    // The row's status is the vocabulary's one word for an item that waits (D126 item 13); whom it waits on is the
+    // item's status under its title.
+    await expect(waiting.getByRole('cell').last()).toHaveText('Väntar');
     await expectNoAxeViolations(page);
     await waiting.getByRole('link').click();
+    await expect(pane.locator('#card-samtal')).toContainText('Väntar på svar från medarbetarna');
     await pane
       .locator('#card-samtal')
       .getByRole('button', { name: /^Ångra allt · / })

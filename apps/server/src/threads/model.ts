@@ -32,13 +32,33 @@ export type ThreadPatch = Partial<
     | 'remindedAt'
     | 'snoozedUntil'
     | 'handover'
+    | 'askedBeside'
   >
->;
+> & {
+  /** The source's offer to hand the card on (D139), or null to take it off the card. */
+  handOn?: Thread['handOn'] | null;
+  /** The person's having handed the card on (D139), or null once that no longer stands. */
+  handedOn?: Thread['handedOn'] | null;
+};
 export interface NewMessage {
   role: 'assistant' | 'user';
   body: string;
   at: string;
   meta?: MessageMeta;
+}
+/**
+ * An assistant's draft about a record (D137) that the person sent as a work item: the conversation's message that keeps
+ * it, whose conversation it must be, the action and the record it must be a draft of, and the work item it became.
+ */
+export interface RecordDraftSent {
+  personId: string;
+  conversationId: string;
+  messageId: string;
+  /** The action, as `RecordDraft.capability`. */
+  capability: string;
+  /** The record by its read and the input it was made with, as `RecordDraft.record`. */
+  record: { capability: string; input: Record<string, unknown> };
+  threadId: string;
 }
 export interface AuditEntry {
   actor: string;
@@ -124,6 +144,14 @@ export interface ThreadTx {
   insertThread(thread: NewThread): Promise<boolean>;
   updateThread(id: string, patch: ThreadPatch): Promise<void>;
   addMessage(threadId: string, message: NewMessage): Promise<void>;
+  /**
+   * Mark an assistant's draft about a record as sent (D137): the message's `recordDraft` gets `sent: { threadId }` and
+   * nothing else moves, not even the conversation's `updatedAt`. Only when the conversation is a `question` of
+   * `personId`'s, the message is in it, and its draft is of the same action about the same record (the read, and the
+   * input as a JSON value, its keys in any order) and not marked yet; anything else writes nothing. True when it marked:
+   * of two marks of one draft, one does.
+   */
+  markRecordDraftSent(mark: RecordDraftSent): Promise<boolean>;
   writeAudit(entry: AuditEntry): Promise<void>;
   /** Idempotent by job id. */
   scheduleJob(job: JobInput): Promise<void>;
@@ -141,6 +169,12 @@ export interface ThreadTx {
    * id, compared exactly (D122). Neither `updatedAt` nor anything the person decided on moves.
    */
   eraseSubject(subject: Subject): Promise<SubjectErasure>;
+  /**
+   * Delete whole every conversation asked beside this person's page (D136 item 8): each thread of kind `question` whose
+   * `askedBeside.thing` is the person, by Clew's key, their id, compared exactly (D122), whoever asked it, with its
+   * messages. A conversation beside a unit or a record is left, whatever its input names.
+   */
+  eraseConversationsBeside(personId: string): Promise<ConversationErasure>;
 }
 /**
  * Whose a source's key is (D122, composition: the people module's user reads). A row or an action arrives naming a person
@@ -158,6 +192,11 @@ export interface SubjectErasure {
   cards: number;
   rows: number;
   cardSubjects: number;
+}
+/** What `eraseConversationsBeside` deleted: the conversations and the messages they held. Counts only. */
+export interface ConversationErasure {
+  conversations: number;
+  messages: number;
 }
 /** A thread found by the entities it names (D97 item 6), with those it names among the ones asked. */
 export interface NamingThread {

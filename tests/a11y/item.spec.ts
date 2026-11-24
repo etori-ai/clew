@@ -1,6 +1,25 @@
 import type { Locator, Page } from '@playwright/test';
-import { desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProblems, short, test } from './support';
-import { NOTICE_REASON, NOTICE_TEXT, NOW, asNotice } from './data';
+import {
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  narrow,
+  open,
+  phone,
+  reflowProblems,
+  scrollPage,
+  short,
+  test,
+} from './support';
+import {
+  ASKED_MANAGER,
+  CERTIFICATE_TITLE,
+  NOTICE_REASON,
+  NOTICE_TEXT,
+  NOW,
+  asNotice,
+  expiredCertificate,
+} from './data';
 
 /**
  * A work item as a page (D126 rule 1, board Ärende, `/items/<threadId>`, the `work-item-detail` template): reached by
@@ -88,8 +107,12 @@ test.describe('the work item as a page', () => {
     ).toBeVisible();
     await page.keyboard.press('Escape');
     await expectNoAxeViolations(page);
-    // From the title the keyboard reaches the decision first: the buttons stand directly under the title.
+    // From the title the keyboard reaches "Fråga AI" at the end of the title's line (D138, amended 2026-11-20) and then
+    // the decision: the buttons stand directly under the title, and the item's own row has no button to ask.
+    await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     await title.focus();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: 'Fråga AI' })).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(page.getByRole('button', { name: 'Attestera 2 valda' })).toBeFocused();
     // The trail leads back to the pane it was opened from.
@@ -273,6 +296,50 @@ test.describe('the work item page on a phone', () => {
   });
 });
 
+/**
+ * A work item's page scrolls as one (D130 item 8 as amended 2026-11-21): the way back, the title and the decisions
+ * scroll away under the shell's header with the read and the facts, so the whole window is the item's. Nothing on the
+ * page sticks or is pinned: it has no tabs, and the frame's one sticky is a tab row's.
+ */
+test.describe('a long work item’s page scrolls as one', () => {
+  for (const [name, viewport] of [
+    ['1280 px', { width: 1280, height: 640 }],
+    ['a phone', { width: 390, height: 700 }],
+  ] as const)
+    test(`at ${name} the title scrolls away with the read and the facts, and nothing but the shell stays`, async ({
+      page,
+      api: _,
+    }) => {
+      await page.setViewportSize(viewport);
+      await open(page, '/items/fakturor');
+      const title = page.getByRole('heading', { level: 1, name: INVOICES });
+      await expect(title).toBeVisible();
+      const start = await scrollPage(page, 0);
+      expect(start.room).toBeGreaterThan(100);
+      const at = await scrollPage(page, start.room);
+      expect(at.scrolled).toBe(start.room);
+      // The title has gone over the top edge, and the foot of the read is in the window.
+      const gone = (await title.boundingBox())!;
+      expect(gone.y + gone.height).toBeLessThanOrEqual(at.top + 1);
+      await expect(page.getByRole('banner')).toBeInViewport();
+      // Nothing in the page sticks, and no region inside it scrolls on its own.
+      const held = await page.evaluate(() => {
+        const main = document.querySelector('main, [role="main"]')!;
+        return [...main.querySelectorAll<HTMLElement>('*')]
+          .filter(el => {
+            const s = getComputedStyle(el);
+            return (
+              s.position === 'sticky' ||
+              ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1)
+            );
+          })
+          .map(el => el.className.toString().slice(0, 60) || el.tagName);
+      });
+      expect(held).toEqual([]);
+      await expectNoAxeViolations(page);
+    });
+});
+
 test.describe('the work item page at 320 px and on a short screen', () => {
   for (const [name, viewport] of [
     ['320 px', narrow],
@@ -285,7 +352,7 @@ test.describe('the work item page at 320 px and on a short screen', () => {
       expect(await reflowProblems(page)).toEqual([]);
     });
 
-  test('on a desktop a row under Rader leads to its document on the review’s page, and Back to the row', async ({
+  test('on a desktop the page of an item reviewed one row at a time is the review: its rows are the steps, a step shows its document on the same page, and Back leaves the page for the link that opened it', async ({
     page,
     api,
   }) => {
@@ -294,20 +361,200 @@ test.describe('the work item page at 320 px and on a short screen', () => {
     card.actions = card.actions.map(a =>
       a.id === 'approve' ? { ...a, review: 'each' as const, preview: 'finance.preview' } : a,
     );
-    await open(page, '/items/fakturor');
-    // The rows and their documents are one list (D126 item 13): each row's name leads to the review's page at that row
-    // (D73, amended 2026-11-12), and there is no second list of the same things.
-    const documents = page.getByRole('region', { name: 'Rader' });
-    await expect(page.getByRole('region', { name: 'Dokument' })).toHaveCount(0);
-    const row = documents.getByRole('link', { name: 'Öppna underlaget för Skolmaterial Norrland AB · 18 300 kr' });
+    await open(page, '/todo?item=fakturor');
+    const name = page
+      .getByRole('complementary', { name: 'Valt ärende' })
+      .getByRole('heading', { name: INVOICES })
+      .getByRole('link', { name: INVOICES });
+    await name.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/items/fakturor?from=%2Ftodo%3Fitem%3Dfakturor');
+    await expect(page.getByRole('heading', { level: 1, name: INVOICES })).toBeVisible();
+    // The item has one page (D142): the rows are its steps, there is no second list of them or of their documents
+    // (D126 item 13), and nothing on it leads to a review elsewhere.
+    const main = page.getByRole('main');
+    const steps = main.getByRole('list', { name: 'Rader', exact: true });
+    await expect(steps).toHaveCount(1);
+    await expect(main.getByRole('region', { name: 'Dokument' })).toHaveCount(0);
+    await expect(main.getByRole('link', { name: /^Öppna underlaget för/ })).toHaveCount(0);
+    await expect(main.getByRole('link', { name: /^Granska 3|^Visa granskning/ })).toHaveCount(0);
+    const row = steps.getByRole('button', { name: /Skolmaterial Norrland AB · 18 300 kr/ });
     await row.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL('/items/fakturor/review?from=%2Fitems%2Ffakturor&step=2');
-    await expect(page.getByRole('heading', { level: 1, name: 'Granska 3 rader' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
+    await expect(page).toHaveURL('/items/fakturor?from=%2Ftodo%3Fitem%3Dfakturor&step=2');
+    await expect(page.getByRole('heading', { level: 1, name: INVOICES })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
+    await expect(main.getByRole('img', { name: /Skolmaterial Norrland AB/ })).toBeVisible();
     await expectNoAxeViolations(page);
+    // A step is rewritten in place: Back leaves the item's page, and the link that opened it has the focus again.
     await page.goBack();
-    await expect(page).toHaveURL('/items/fakturor');
-    await expect(row).toBeFocused();
+    await expect(page).toHaveURL('/todo?item=fakturor');
+    await expect(name).toBeFocused();
+  });
+});
+
+/**
+ * A work item with nothing to decide (every action it offers is a read): the notice under the title says what holds and
+ * how the item ends in the source's words, no button is filled, and the two ways out stand beside the read instead of
+ * under ⋯. Nothing on it says an answer is late: the badge by the title is the source's reason and its day is "Sista dag".
+ */
+test.describe('a work item with nothing to decide', () => {
+  const HOLDS = 'Intyget gäller inte längre';
+  const ENDS =
+    'Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.';
+  const controls = (scope: Locator) => ({
+    read: scope.getByRole('link', { name: 'Visa mina kompetenser' }),
+    later: scope.getByRole('button', { name: 'Inte nu' }),
+    dismiss: scope.getByRole('button', { name: 'Avfärda' }),
+  });
+
+  test('its page says what holds and how it ends, with the read and the two ways out reached by Tab in that order', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(wide);
+    api.threads.push(expiredCertificate());
+    await open(page, '/items/intyg');
+    const main = page.getByRole('main');
+    await expect(page.getByRole('heading', { level: 1, name: CERTIFICATE_TITLE })).toBeFocused();
+    // The notice: the summary's first sentence as its title, the rest under it.
+    await expect(main.getByText(HOLDS, { exact: true })).toBeVisible();
+    await expect(main.getByText(ENDS, { exact: true })).toBeVisible();
+    // The badge by the title is the source's reason, and no fact asks for an answer.
+    await expect(main.locator('.astryx-badge').filter({ hasText: 'Har gått ut' })).toBeVisible();
+    await expect(main.getByText('Försenad', { exact: true })).toHaveCount(0);
+    await expect(main.getByText('försenad', { exact: true })).toHaveCount(0);
+    await expect(main.getByText('Svara senast', { exact: true })).toHaveCount(0);
+    const details = page.getByRole('complementary', { name: 'Uppgifter' });
+    await expect(details).toContainText('Sista dag');
+    await expect(details).toContainText('8 oktober');
+    // The read is a link to its own page; Inte nu and Avfärda stand beside it, and nothing is left for ⋯.
+    const { read, later, dismiss } = controls(main);
+    await expect(read).toHaveAttribute('href', '/tools/competence.holdings?from=%2Fitems%2Fintyg');
+    await expect(main.getByRole('button', { name: 'Fler åtgärder' })).toHaveCount(0);
+    await read.focus();
+    await page.keyboard.press('Tab');
+    await expect(later).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dismiss).toBeFocused();
+    // The summary is said once: Varför ser jag detta? holds the reason and where the item came from.
+    const why = main.getByRole('region', { name: 'Varför ser jag detta?' });
+    await why.getByRole('button').click();
+    await expect(why).toContainText('Har gått ut. Ärendet kom från Personalsystemet');
+    await expect(why).not.toContainText('Prata med din chef');
+    await expectNoAxeViolations(page);
+    // Inte nu is the time picker it has always been (D49), opened from the keyboard.
+    await later.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: /Skriv själv/ })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(later).toBeFocused();
+    // Avfärda behaves as it does from ⋯: the item leaves for Att göra, and the toast offers Ångra.
+    await dismiss.focus();
+    await page.keyboard.press('Enter');
+    const toasts = page.getByRole('region', { name: 'Aviseringar' });
+    await expect(toasts.getByText(/Avfärdad som inte aktuellt/)).toBeVisible();
+    await expect(toasts.getByRole('button', { name: 'Ångra' })).toBeVisible();
+    await expect(page).toHaveURL('/todo');
+    await expectNoAxeViolations(page);
+  });
+
+  test('Att göra’s reading pane says the same, with the same three controls', async ({ page, api }) => {
+    await page.setViewportSize(wide);
+    api.threads.push(expiredCertificate());
+    await open(page, '/todo?item=intyg');
+    const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+    await expect(pane.getByText(HOLDS, { exact: true })).toBeVisible();
+    await expect(pane.getByText(ENDS, { exact: true })).toBeVisible();
+    const { read, later, dismiss } = controls(pane);
+    await expect(read).toBeVisible();
+    await expect(later).toBeVisible();
+    await expect(dismiss).toBeVisible();
+    await expect(pane.getByText('Svara senast', { exact: true })).toHaveCount(0);
+    await expect(pane).toContainText('Sista dag');
+    await expectNoAxeViolations(page);
+  });
+
+  test('at 320 px the notice and the three controls reflow without sideways scrolling', async ({ page, api }) => {
+    await page.setViewportSize(narrow);
+    api.threads.push(expiredCertificate());
+    await open(page, '/items/intyg');
+    const main = page.getByRole('main');
+    await expect(page.getByRole('heading', { level: 1, name: CERTIFICATE_TITLE })).toBeVisible();
+    await expect(main.getByText(HOLDS, { exact: true })).toBeVisible();
+    const { read, later, dismiss } = controls(main);
+    for (const control of [read, later, dismiss]) await expect(control).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+
+  test('where its source offers it, Jag har bett min chef is the one filled button; pressed, the item waits on the manager, with Påminn mig and the way back', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(wide);
+    api.threads.push(expiredCertificate({ handOn: ASKED_MANAGER }));
+    await open(page, '/items/intyg');
+    const main = page.getByRole('main');
+    await expect(page.getByRole('heading', { level: 1, name: CERTIFICATE_TITLE })).toBeFocused();
+    await expect(main.getByText(HOLDS, { exact: true })).toBeVisible();
+    // The person's statement first, the read beside it, and the two ways out under ⋯ again (board Intyg, variant c).
+    const asked = main.getByRole('button', { name: 'Jag har bett min chef' });
+    const { read, later, dismiss } = controls(main);
+    await expect(later).toHaveCount(0);
+    await expect(dismiss).toHaveCount(0);
+    await asked.focus();
+    await page.keyboard.press('Tab');
+    await expect(read).toBeFocused();
+    await page.keyboard.press('Tab');
+    const more = main.getByRole('button', { name: 'Fler åtgärder' });
+    await expect(more).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: 'Inte nu' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expectNoAxeViolations(page);
+    // Said from the keyboard: the item waits on whom the source named, the notice says so, and the toast offers Ångra.
+    await asked.focus();
+    await page.keyboard.press('Enter');
+    const toasts = page.getByRole('region', { name: 'Aviseringar' });
+    await expect(toasts.getByText('Ärendet väntar på din chef. Det ligger under Väntar på andra.')).toBeVisible();
+    await expect(toasts.getByRole('button', { name: 'Ångra' })).toBeVisible();
+    await expect(main.getByText('Väntar på din chef', { exact: true })).toBeVisible();
+    await expect(main.getByText(/^Du sa ”Jag har bett min chef” /)).toBeVisible();
+    await expect(asked).toHaveCount(0);
+    await expect(main.getByRole('button', { name: 'Påminn mig' })).toBeVisible();
+    // Its read is still a button beside ⋯ (board Intyg, variant c2).
+    await expect(read).toBeVisible();
+    // Still nothing says an answer is late: the reason by the title, the day as Sista dag.
+    await expect(main.locator('.astryx-badge').filter({ hasText: 'Har gått ut' })).toBeVisible();
+    await expect(main.getByText(/^försenad$/i)).toHaveCount(0);
+    await expect(page.getByText('Svara senast', { exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // The way back is under ⋯, and gives the item back as it was.
+    await more.focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('menuitem', { name: 'Det blev inte gjort' }).click();
+    await expect(asked).toBeVisible();
+    await expect(main.getByText(HOLDS, { exact: true })).toBeVisible();
+    await expect(main.getByText('Väntar på din chef', { exact: true })).toHaveCount(0);
+  });
+
+  test('at 320 px the filled button, the read and ⋯ reflow without sideways scrolling, before and after it is said', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(narrow);
+    api.threads.push(expiredCertificate({ handOn: ASKED_MANAGER }));
+    await open(page, '/items/intyg');
+    const main = page.getByRole('main');
+    const asked = main.getByRole('button', { name: 'Jag har bett min chef' });
+    await expect(asked).toBeVisible();
+    await expect(controls(main).read).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await asked.click();
+    await expect(main.getByText('Väntar på din chef', { exact: true })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
   });
 });

@@ -39,7 +39,7 @@ import { readOf, withoutRead } from '../../panel-address';
 import { documentHref, reviewHref } from '../../review-address';
 import { entityHref } from '../../person-address';
 import { outcomeStatus, receiptRowsInOrder, type ItemStatus } from '../../status-of';
-import { dueOf, fromClewItself, itemPageHref, noticeOf, rowsSaySomething } from '../../work-items';
+import { dueOf, fromClewItself, itemPageHref, noticeOf, reasonMark, rowsSaySomething } from '../../work-items';
 import { readPageHref } from '../../view-address';
 import { whenWord } from '../../when-word';
 import { useConversation } from '../conversation/conversation-context';
@@ -55,6 +55,8 @@ import {
 } from './card';
 import { StaleMark, silentLine, useSilentSources } from '../shell/silent-sources';
 import { PageFrame, narrowPageQuery } from '../shell/page-frame';
+import { FactsInColumn } from '../shell/page-frame-context';
+import { itemPageSubject } from '../conversation/page-conversation';
 import { FoldedSection, ItemSection } from './item-section';
 
 export { whenWord } from '../../when-word';
@@ -88,19 +90,27 @@ const decided = (thread: Thread) => !!thread.execution || !!thread.receipt || th
  * A due day as the title's badge says it (board Ärende: "Svara i dag"), on a plain to-do only: once the person has
  * decided, the notice says where it stands and the day is a fact (D126 item 13). A badge that only repeats the row's
  * word ("Påminnelse") is left out, as on the item's row.
+ *
+ * An item that asks for no answer (`status.noAnswer`), open, has no answer that can be late: its badge says the source's
+ * reason instead ("Har gått ut", "Saknas"), in the colour its day gives it, or the notice's own where it has no day. A
+ * reason too long for a badge is a sentence, which "Varför ser jag detta?" already holds, and is not drawn here.
  */
-function dueBadge(thread: Thread, day: string) {
+export function dueBadge(thread: Thread, day: string, status: ItemStatus) {
   const due = decided(thread) ? null : dueOf(thread, day);
+  if (status.noAnswer) {
+    const reason = thread.state === 'open' ? reasonMark(thread, day) : null;
+    return reason ? <Badge variant={reason.variant} label={reason.label} /> : null;
+  }
   if (!due || due.label === 'Påminnelse') return null;
   const label = due.label === 'Försenad' ? due.label : `Svara ${due.label.toLocaleLowerCase('sv-SE')}`;
   return <Badge variant={due.variant} label={label} />;
 }
 /** The source line: the system and the area; an item from Clew itself names its area alone (`fromClewItself`). */
-const sourceLine = (mark: { source: string; title: string }, own = false) =>
+export const sourceLine = (mark: { source: string; title: string }, own = false) =>
   [own ? '' : mark.source, mark.title].filter(Boolean).join(' · ');
 
 /** Everything the parts of one work item share: its actions, its marks and where its reads lead. */
-function useWorkItem(thread: Thread, onChange: (thread: Thread) => void) {
+export function useWorkItem(thread: Thread, onChange: (thread: Thread) => void) {
   const title = useRef<HTMLHeadingElement>(null);
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
@@ -133,21 +143,27 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void) {
   const own = fromClewItself(thread, areas?.systems);
   const here = pathname + search;
   // Where the rows stand: the receipt's, read back, once there is one; else the item's own (`rowsSaySomething`).
-  // The rows say something (`rowsSaySomething`), or the receipt read back more than one: a notice's one row, which is
-  // the notice itself, is never a section of its own.
-  const rowsShown = rowsSaySomething(thread) || (thread.receipt?.rows.length ?? 0) > 1;
+  // The rows say something (`rowsSaySomething`), or the receipt read back more than one, or its one row says a fact of
+  // its own (D112 rule 3: the time and place a booking was registered with, what the source did with an approval). A
+  // notice's one row, which is the notice itself with when it was acknowledged, is never a section of its own: the
+  // status under the title says both.
+  const read = thread.receipt?.rows ?? [];
+  const rowsShown = rowsSaySomething(thread) || read.length > 1 || (!notice && !!read[0]?.detail.trim());
   // Each row has a document behind it, read on the review's page (D70, D73 amended 2026-11-12).
   const documents = !!reviewedAction(thread)?.preview && thread.items.some(i => i.selectable);
   return { title, actions, mark, systems, own, from: here, readHref, notice, omit, rowsShown, documents };
 }
-type ItemState = ReturnType<typeof useWorkItem>;
+export type ItemState = ReturnType<typeof useWorkItem>;
 
 /**
  * "Varför ser jag detta?" (board Ärende): the source's reason, where and when it came, and the item's own summary where
  * it says more than the reason (the invoices' match): no sentence of the item's stands without a heading.
  */
 function Why({ thread, item }: { thread: Thread; item: ItemState }) {
-  const summary = !item.notice && thread.summary && thread.summary !== thread.trigger.reason ? thread.summary : null;
+  // The summary of an item with nothing to decide is its notice under the title, and is not said again here.
+  const noticed = item.actions.status.noDecision && !!item.actions.status.notice;
+  const summary =
+    !item.notice && !noticed && thread.summary && thread.summary !== thread.trigger.reason ? thread.summary : null;
   return (
     <VStack gap={3}>
       <Text as="p">
@@ -354,6 +370,10 @@ function eventWords(e: ItemEvent, thread: Thread): string {
       return 'avfärdade ärendet';
     case 'reopened':
       return 'återöppnade ärendet';
+    case 'handed-on':
+      return e.to ? `sa att ärendet väntar på ${e.to}` : 'sa att ärendet väntar på någon annan';
+    case 'handed-back':
+      return 'sa att det inte blev gjort';
     case 'decided':
       return e.action ? `beslutade: ${e.action}` : 'fattade ett beslut';
     case 'undo-decided':
@@ -381,7 +401,16 @@ function eventWords(e: ItemEvent, thread: Thread): string {
  * with when under it. Read from the item's audit rows; the person is "Du", never by name, and nobody else is named.
  * Folded by default (D126 item 13), with how many beside its name once they are read.
  */
-function Events({ thread, of }: { thread: Thread; of?: string | undefined }) {
+function Events({
+  thread,
+  of,
+  quiet = false,
+}: {
+  thread: Thread;
+  of?: string | undefined;
+  /** Its name in the body size, as "Varför ser jag detta?" beside it in the end panel of a review (D142). */
+  quiet?: boolean;
+}) {
   const events = useQuery(itemEventsQuery(thread.id, thread.updatedAt));
   const planned = (thread.timers ?? [])
     .filter(t => t.state === 'scheduled')
@@ -428,6 +457,7 @@ function Events({ thread, of }: { thread: Thread; of?: string | undefined }) {
     <FoldedSection
       title="Händelser"
       countWord="händelser"
+      quiet={quiet}
       of={of}
       count={events.data ? planned.length + events.data.events.length : undefined}
     >
@@ -442,13 +472,16 @@ const hasEvents = (thread: Thread) => !!thread.timers?.some(t => t.state === 'sc
  * the rows name as links to their pages, when it is due, the source and when it came. Only what the item really has.
  * Where the item stands, what it waits on, when it comes back and when it was done are the notice's (D126 item 13: the
  * state is said once). When it was due is a badge while it is the person's to decide, and a plain date once decided.
+ * On an item with nothing to decide the day is the last day of what the item is about, never an answer's: "Sista dag"
+ * and the plain date.
  */
 function Facts({ thread, item, columns }: { thread: Thread; item: ItemState; columns?: number | 'multi' }) {
   const day = today();
   const subjects = thread.items.filter(
     (i, n, all) => i.subject && all.findIndex(j => j.subject && sameSubject(j.subject, i.subject!)) === n,
   );
-  const due = decided(thread) ? null : dueOf(thread, day);
+  const nothing = item.actions.status.noAnswer;
+  const due = decided(thread) || nothing ? null : dueOf(thread, day);
   const deadline = thread.deadline?.slice(0, 10);
   const days = deadline ? daysUntil(deadline, day) : null;
   return (
@@ -473,7 +506,7 @@ function Facts({ thread, item, columns }: { thread: Thread; item: ItemState; col
         </MetadataListItem>
       )}
       {deadline && (
-        <MetadataListItem label="Svara senast">
+        <MetadataListItem label={nothing ? 'Sista dag' : 'Svara senast'}>
           <HStack gap={2} vAlign="center" wrap="wrap">
             {due ? <Badge variant={due.variant} label={due.label.toLocaleLowerCase('sv-SE')} /> : null}
             {(!due || days === null || days > 1) && <Text>{longDate(deadline)}</Text>}
@@ -585,7 +618,7 @@ function Read({
  * refusal, a system that may be old (unless the notice already says it does not answer); and the confirmation and the
  * action dialog the buttons open.
  */
-function Notes({ thread, item, status }: { thread: Thread; item: ItemState; status: ItemStatus }) {
+export function Notes({ thread, item, status }: { thread: Thread; item: ItemState; status: ItemStatus }) {
   const draft = thread.messages.at(-1)?.meta?.draft;
   const silent = useSilentSources().of(thread.connector);
   const said = !!silent && !!status.notice?.description?.includes(silentLine(silent));
@@ -609,6 +642,42 @@ function Notes({ thread, item, status }: { thread: Thread; item: ItemState; stat
   );
 }
 
+/**
+ * What a work item says about itself beside its rows, where its page is the review of them one at a time (D142,
+ * `ReviewedItem`): the facts under "Uppgifter", then "Varför ser jag detta?" and "Händelser", folded, as its read has
+ * them. From five rows, where the steps give way to a progress bar, the rows are a list before the facts (`rows`).
+ */
+export function ItemAbout({
+  thread,
+  item,
+  rows,
+  columns,
+}: {
+  thread: Thread;
+  item: ItemState;
+  rows?: ReactNode;
+  /** The facts' columns where they stand in the page's column instead of the end panel. */
+  columns?: number | 'multi';
+}) {
+  const id = `item-${thread.id}-about`;
+  return (
+    <VStack gap={6}>
+      {rows}
+      {rows && <Divider />}
+      <VStack as="section" gap={4} aria-labelledby={id}>
+        <Heading id={id} level={3} accessibilityLevel={2}>
+          Uppgifter
+        </Heading>
+        <Facts thread={thread} item={item} {...(columns ? { columns } : {})} />
+      </VStack>
+      <FoldedSection title="Varför ser jag detta?" quiet>
+        <Why thread={thread} item={item} />
+      </FoldedSection>
+      {hasEvents(thread) && <Events thread={thread} quiet />}
+    </VStack>
+  );
+}
+
 /** Where a work item is drawn at its narrow width: Att göra's reading pane, beside a conversation, in an answer. */
 export type ItemPlace = 'pane' | 'answer';
 /**
@@ -627,6 +696,7 @@ export function WorkItem({
   ask,
   marked,
   tools,
+  under,
 }: {
   thread: Thread;
   place: ItemPlace;
@@ -641,6 +711,11 @@ export function WorkItem({
   marked?: boolean;
   /** Beside a conversation: what stands before ✕ at the end of the title's row (the menu over what the conversation has named). */
   tools?: ReactNode;
+  /**
+   * In a reading pane: a part of its own under the read, at the pane's foot (Att göra's conversation with the assistant
+   * and its box, D141 rule 5). The read scrolls above it; on a short screen it follows the read in the one flow.
+   */
+  under?: ReactNode;
 }) {
   const short = useMediaQuery(shortQuery);
   const idBase = place === 'answer' ? 'thread' : 'card';
@@ -724,6 +799,7 @@ export function WorkItem({
             {read}
           </ScrollableArea>
         </StackItem>
+        {under}
       </VStack>
     );
   return (
@@ -738,6 +814,7 @@ export function WorkItem({
       {head}
       <Divider />
       {read}
+      {under}
     </VStack>
   );
 }
@@ -747,22 +824,21 @@ export function WorkItem({
  * StatusPanel): in the header the way back (to where the person came from when Clew can name it, else Att göra) with
  * the source beside it, the title as the page's heading with when it is due while it is the person's to decide, and the
  * buttons or the status notice directly under it; the read in the column; the facts under "Uppgifter" in the end panel,
- * 340 px beside the column, and as the read's first section at 1024 px and below. On a short screen nothing is pinned
- * and the page scrolls as one (1.4.10).
+ * 340 px beside the column, and as the read's first section at 1024 px and below and while the assistant's pane stands
+ * beside the page (`FactsInColumn`, D136 item 9, board AskArende). The corner's "Fråga AI" opens the assistant's pane
+ * about the item (`itemPageSubject`, D138); the item's own buttons have no way to ask here. The page scrolls as one,
+ * its title and buttons with the read (D130 item 8 as amended 2026-11-21); beside the assistant's pane it keeps its
+ * header while the read scrolls, and on a short screen nothing is pinned (1.4.10).
  */
 export function WorkItemPage({
   thread,
   back,
   onChange,
-  ask,
 }: {
   thread: Thread;
   back: { label: string; href: string };
   onChange: (thread: Thread) => void;
-  /** "Fråga assistenten" (`AskClew`), after the decisions. */
-  ask?: ReactNode;
 }) {
-  const narrow = useMediaQuery(narrowPageQuery);
   const item = useWorkItem(thread, onChange);
   // The page opens on its heading (2.4.3), once per item: what the person came for.
   useEffect(() => {
@@ -771,10 +847,11 @@ export function WorkItemPage({
   }, [thread.id]);
   const day = today();
   // The one page frame (D126): the way back with the source beside it, the title with when it is due, the buttons or
-  // the notice directly under it, the read in the column and the facts in the end panel; at 1024 px and below the read
-  // places the facts itself, first.
+  // the notice directly under it, the read in the column and the facts in the end panel; at 1024 px and below, and while
+  // the assistant's pane has the end slot, the read places the facts itself, first.
   return (
     <PageFrame
+      ask={{ subject: itemPageSubject(thread) }}
       back={back}
       trail={
         <Text type="supporting" color="secondary">
@@ -783,7 +860,7 @@ export function WorkItemPage({
       }
       title={thread.title}
       titleRef={item.title}
-      status={dueBadge(thread, day)}
+      status={dueBadge(thread, day, item.actions.status)}
       below={
         <VStack gap={4}>
           <ActionRow
@@ -791,7 +868,6 @@ export function WorkItemPage({
             actions={item.actions}
             readHref={item.readHref}
             omit={item.omit}
-            ask={ask}
             titleRef={item.title}
             reviewShown={item.rowsShown}
           />
@@ -811,14 +887,18 @@ export function WorkItemPage({
       factsAbove={false}
     >
       {/* The sections are the page's second level, drawn at the size the board gives them (board Ärende). */}
-      <Read
-        thread={thread}
-        item={item}
-        level={2}
-        gap={8}
-        idBase="item"
-        facts={narrow ? <Facts thread={thread} item={item} columns="multi" /> : undefined}
-      />
+      <FactsInColumn query={narrowPageQuery}>
+        {inColumn => (
+          <Read
+            thread={thread}
+            item={item}
+            level={2}
+            gap={8}
+            idBase="item"
+            facts={inColumn ? <Facts thread={thread} item={item} columns="multi" /> : undefined}
+          />
+        )}
+      </FactsInColumn>
     </PageFrame>
   );
 }

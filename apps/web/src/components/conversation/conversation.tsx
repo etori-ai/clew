@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { stockholmDate, type AskValues } from '@clew/contracts';
 import type {
@@ -6,6 +7,8 @@ import type {
   CalendarEvent,
   Draft,
   MessageMeta,
+  Prepared,
+  RecordDraft,
   SourceCitation,
   Thread,
   ThreadMessage,
@@ -15,6 +18,7 @@ import type {
 import {
   AreaChip,
   AreaGlyph,
+  ArrowsPointingOutIcon,
   Avatar,
   Badge,
   Button,
@@ -36,7 +40,6 @@ import {
   MetadataList,
   MetadataListItem,
   Skeleton,
-  StatusDot,
   SparklesIcon,
   Text,
   Timestamp,
@@ -52,39 +55,52 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { mobileQuery } from '../../media';
-import { weekNumber } from '@clew/calendar/dates';
+import { dayLabel, displayDate, timeRange, weekNumber } from '@clew/calendar/dates';
 import { areasQuery, calendarWeekQuery, entityDetailQuery, threadQuery, viewQuery } from '../../queries';
 import { DeclaredView } from '../views/view';
-import { useConversation, type ChipRef } from './conversation-context';
+import { useConversation, type ChipRef, type PendingTurn } from './conversation-context';
 import { reviewLabel, staleLabel } from '../views/panel-labels';
 import { useMarks, useObjectMark } from '../../marks';
 import { FigureLines } from './figure-line';
 import { ActionDialog } from '../work/action-dialog';
 import { api, ApiError } from '../../api';
 import { useDecisionSend } from '../../mutations';
-import { valueText, type ActionStep } from '../../action-path';
+import { filledIn, type ActionStep } from '../../action-path';
+import { sameDraft } from '../../record-actions';
+import { DraftCard, Drafted, REPLACED, RecordDraftCard, type DraftState } from './drafted';
 import { executionStatus } from '../../execution-status';
-import { answerCard, figureBelongs, type AnswerCard, type ViewRows } from '../../answer-card';
+import { answerCard, figureBelongs, rowsSummary, type AnswerCard, type ViewRows } from '../../answer-card';
 import { isSide, sentWords, sideCount, suggestedWords } from '../../conversation-about';
 import { DOT } from '../../dot';
-import { itemPageHref, rowFacts, rowLine } from '../../work-items';
+import { itemPageHref, openItemId, rowFacts, rowLine } from '../../work-items';
+import { withEntry } from '../../panel-address';
 
 /** An action the assistant filled in (D112 item 8), as the transcript keeps it. */
 export type ActionDraftRef = Draft & { kind: 'action'; actionId: string };
 const isActionDraft = (draft: Draft | undefined): draft is ActionDraftRef =>
   draft?.kind === 'action' && !!draft.actionId;
-/** "Granska och boka" for "Boka samtalet": the action's own first word, as the verb. */
-const verbOf = (label: string) => (label.split(' ')[0] ?? label).toLocaleLowerCase('sv-SE');
 
 /**
- * The assistant's draft of an action (D112 item 8, boards Assistant and Calendar): the action's name, an "Utkast"
- * badge, the filled-in values as a short list, and two buttons. "Granska och <verb>" opens the action's own dialog at its
- * last step with these values, "Ändra" at its first; both are the dialog the action's button opens (D112 item 10), on
- * the work item, which sends through the human decision. Nothing is sent from here. The draft reads the work item from
- * the same cache as every screen (D33), so once the person has sent it the draft says what came back, and a newer draft
- * of the same action marks this one as replaced.
+ * The assistant's draft of a work item's action (D112 item 8, boards Assistant and Calendar). On the conversation's
+ * page: the action's name, an "Utkast" badge, the filled-in values as a short list, and two buttons; "Granska och
+ * <verb>" opens the action's own dialog at its last step with these values, "Ändra" at its first (`DraftCard`). Beside
+ * a page (`compact`, D138 item 8): the row "Ifyllt åt dig" with "Granska och skicka", which opens it at its last step
+ * (`Drafted`). Either way it is the dialog the action's button opens (D112 item 10), on the work item, which sends
+ * through the human decision. Nothing is sent from here. The draft reads the work item from the same cache as every
+ * screen (D33), so once the person has sent it the draft says what came back, and a newer draft of the same action
+ * marks this one as replaced.
  */
-function ActionDraftCard({ draft, at, replaced }: { draft: ActionDraftRef; at: string; replaced: boolean }) {
+function ActionDraftCard({
+  draft,
+  at,
+  replaced,
+  compact,
+}: {
+  draft: ActionDraftRef;
+  at: string;
+  replaced: boolean;
+  compact: boolean;
+}) {
   const item = useQuery(threadQuery(draft.threadId));
   const thread = item.data;
   const action = thread?.actions.find(a => a.id === draft.actionId);
@@ -98,21 +114,24 @@ function ActionDraftCard({ draft, at, replaced }: { draft: ActionDraftRef; at: s
   if (!thread || !action) return null;
   const asks = action.path?.asks ?? [];
   const values = typed ?? draft.values ?? {};
-  const shown = asks.filter(a => values[a.property]);
   // What the person did after the draft was written: the receipt read back, a decision on its way, or the item gone.
   const after = (instant: string | null | undefined) => !!instant && Date.parse(instant) >= Date.parse(at);
   const receipt = thread.receipt && after(thread.receipt.at) ? thread.receipt : null;
   const waiting = !receipt && after(thread.updatedAt) ? executionStatus(thread.execution) : null;
-  const state = receipt
-    ? { variant: 'success' as const, label: 'Skickat' }
+  const state: DraftState | null = receipt
+    ? { variant: 'success', label: 'Skickat' }
     : waiting
-      ? { variant: 'warning' as const, label: 'Skickat, väntar på källan' }
+      ? { variant: 'warning', label: 'Skickat, väntar på källan' }
       : replaced
-        ? { variant: 'neutral' as const, label: 'Ersatt av ett nyare utkast' }
+        ? REPLACED
         : thread.state !== 'open'
-          ? { variant: 'neutral' as const, label: 'Ärendet är redan hanterat' }
+          ? { variant: 'neutral', label: 'Ärendet är redan hanterat' }
           : null;
+  // A draft a newer one replaced keeps its line and drops its values (the product owner, 2026-11-16): the values that
+  // count are in the newest draft, and the older ones were read as a second form.
   const superseded = !receipt && !waiting && replaced;
+  const filled = superseded ? [] : filledIn(asks, values);
+  const detail = receipt?.headline ?? waiting;
   const open = (startAt: ActionStep) => setDialog({ open: true, startAt });
   const send = async (sent: AskValues): Promise<string | null> => {
     const result = await decision.send(async () => {
@@ -123,68 +142,42 @@ function ActionDraftCard({ draft, at, replaced }: { draft: ActionDraftRef; at: s
     });
     return result && 'error' in result ? result.error : null;
   };
+  const actionDialog = dialog && (
+    <ActionDialog
+      target={{ kind: 'item', thread, action }}
+      isOpen={dialog.open}
+      onOpenChange={isOpen => {
+        if (!isOpen) setDialog(d => (d ? { ...d, open: false } : d));
+      }}
+      startAt={dialog.startAt}
+      values={values}
+      onValuesChange={setTyped}
+      onSend={send}
+    />
+  );
+  if (compact)
+    return (
+      <>
+        <Drafted title={action.label} filled={filled} state={state} detail={detail} onReview={() => open('effect')} />
+        {actionDialog}
+      </>
+    );
   return (
-    <ChatMessageBubble variant="ghost" width="100%">
-      <Card padding={4}>
-        <VStack gap={3} as="section" aria-label={`Utkast: ${action.label}`}>
-          {/* The item the draft belongs to, by name and as the way to it: the item is not drawn whole above its draft. */}
-          <Text type="supporting">
-            {`${thread.trigger.source}${DOT}`}
-            <Link href={itemPageHref(thread.id, window.location.pathname + window.location.search)}>
-              {thread.title}
-            </Link>
-          </Text>
-          <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
-            <Text weight="semibold">{action.label}</Text>
-            {state ? (
-              <HStack gap={1.5} vAlign="center">
-                <StatusDot variant={state.variant} label={state.label} aria-hidden />
-                <Text type="supporting">{state.label}</Text>
-              </HStack>
-            ) : (
-              <Badge variant="neutral" label="Utkast" />
-            )}
-          </HStack>
-          {/* A draft a newer one replaced keeps its line and drops its values (the product owner, 2026-11-16): the
-              values that count are in the newest draft, and the older ones were read as a second form. */}
-          {shown.length > 0 && !superseded && (
-            <MetadataList columns="single">
-              {shown.map(a => (
-                <MetadataListItem key={a.property} label={a.label}>
-                  <Text>{valueText(a, values[a.property]!)}</Text>
-                </MetadataListItem>
-              ))}
-            </MetadataList>
-          )}
-          {receipt && <Text type="supporting">{receipt.headline}</Text>}
-          {waiting && <Text type="supporting">{waiting}</Text>}
-          {!state && (
-            <HStack gap={2} wrap="wrap">
-              <Button
-                size="sm"
-                variant="primary"
-                label={`Granska och ${verbOf(action.label)}`}
-                onClick={() => open('effect')}
-              />
-              <Button size="sm" variant="secondary" label="Ändra" onClick={() => open('fill-in')} />
-            </HStack>
-          )}
-        </VStack>
-      </Card>
-      {dialog && (
-        <ActionDialog
-          target={{ kind: 'item', thread, action }}
-          isOpen={dialog.open}
-          onOpenChange={isOpen => {
-            if (!isOpen) setDialog(d => (d ? { ...d, open: false } : d));
-          }}
-          startAt={dialog.startAt}
-          values={values}
-          onValuesChange={setTyped}
-          onSend={send}
-        />
-      )}
-    </ChatMessageBubble>
+    <DraftCard
+      about={{
+        source: thread.trigger.source,
+        name: thread.title,
+        href: itemPageHref(thread.id, window.location.pathname + window.location.search),
+      }}
+      title={action.label}
+      filled={filled}
+      state={state}
+      detail={detail}
+      onReview={() => open('effect')}
+      onChange={() => open('fill-in')}
+    >
+      {actionDialog}
+    </DraftCard>
   );
 }
 
@@ -327,9 +320,15 @@ function HandoverOffer({
 }) {
   const talk = useConversation();
   const first = useRef<HTMLButtonElement>(null);
+  // The offer comes while its turn is still ending, with its buttons disabled: the first one takes the focus once it
+  // can, one time for each offer.
+  const taken = useRef<string | null>(null);
+  const key = `${offer.id}:${held ?? ''}`;
   useEffect(() => {
+    if (isDisabled || taken.current === key) return;
+    taken.current = key;
     first.current?.focus();
-  }, [offer.id, held]);
+  }, [key, isDisabled]);
   // A question Clew held on its way out (D125 item 13): the safe answer comes first and takes the focus.
   if (held)
     return (
@@ -505,16 +504,90 @@ const stepCall = (s: TurnStep): ChatToolCallItem => ({
   ...(s.ms !== undefined && s.status !== 'running' ? { duration: seconds(s.ms) } : {}),
 });
 /** The model's text as it is written (D36), revealed at a steady pace by Astryx's hook; with reduced motion it shows whole. */
-export function StreamingAnswer({ text }: { text: string }) {
+export function StreamingAnswer({ text, headingLevelStart = 2 }: { text: string; headingLevelStart?: 2 | 3 }) {
   const shown = useStreamingText(text, true);
   // Astryx parses what has arrived so far and fades each piece in, so a list or bold text half written is drawn as
   // what it is becoming, not as stray asterisks.
   return (
-    <Markdown density="compact" headingLevelStart={2} isStreaming>
+    <Markdown density="compact" headingLevelStart={headingLevelStart} isStreaming>
       {shown}
     </Markdown>
   );
 }
+/** A time as Kalender's pane writes it: "Torsdag 5 november · 13:00–13:30". */
+const spanWords = (start: string, end: string) => {
+  const day = dayLabel(displayDate(start));
+  return `${day.charAt(0).toLocaleUpperCase('sv-SE')}${day.slice(1)}\u00a0· ${timeRange(start, end)}`;
+};
+/**
+ * A decision of the calendar's the answer prepared (`MessageMeta.prepared`, the product owner 2026-11-18): one row
+ * under the answer's text. A move says the new time, a cancellation the meeting and its time. Beside a conversation its
+ * button is "Visa i kalendern", which opens the meeting on Kalender with "Flytta …" filled in or "Ställ in mötet?"
+ * asked; the prepared decision goes in the router's state, never in the address, so Back or a reload never does it
+ * again. On the page the decision is made on, `action` is that page's own button instead (null: none, where the page
+ * cannot make it). Nothing is saved or cancelled from here: the decision is the person's button on Kalender.
+ */
+export function PreparedRow({
+  prepared,
+  action,
+}: {
+  prepared: Prepared;
+  action?: { label: string; onPress: () => void } | null | undefined;
+}) {
+  const navigate = useNavigate();
+  const said =
+    prepared.kind === 'calendar.move'
+      ? spanWords(prepared.start, prepared.end)
+      : `${prepared.event.title}, ${spanWords(prepared.event.start, prepared.event.end)}`;
+  // The meeting's own week, where it is read; Kalender then shows the week of a new time.
+  const at = new URLSearchParams({ date: displayDate(prepared.event.start), view: 'week' });
+  const button =
+    action === undefined
+      ? {
+          label: 'Visa i kalendern',
+          onPress: () => navigate(withEntry('/calendar', at, prepared.event.id), { state: { prepared } }),
+        }
+      : action;
+  return (
+    <HStack gap={3} vAlign="center" wrap="wrap">
+      <Text weight="semibold">{said}</Text>
+      {button && <Button size="sm" variant="secondary" label={button.label} onClick={button.onPress} />}
+    </HStack>
+  );
+}
+/**
+ * Where an answer beside a page needs more room than the pane has (D141 rules 7 and 10; canvas board AskArende-more):
+ * a view, a proposals' week and the sources an answer cites are drawn on the conversation's page, and the pane draws one
+ * row that says what it is and leads there. It is also where a person meets what the conversation's page is for.
+ */
+function NeedsRoom({ words, href }: { words: string[]; href: string }) {
+  return (
+    <Card variant="muted" padding={3}>
+      <HStack hAlign="between" vAlign="center" gap={3} wrap="wrap">
+        <VStack gap={0.5}>
+          {words.map(w => (
+            <Text key={w} type="supporting" color="secondary">
+              {w}
+            </Text>
+          ))}
+        </VStack>
+        <Button
+          size="sm"
+          variant="secondary"
+          label="Visa i samtalet"
+          icon={<Icon icon={ArrowsPointingOutIcon} size="sm" />}
+          href={href}
+        />
+      </HStack>
+    </Card>
+  );
+}
+/** What a view under an answer is, in words for the row that leads to it: its title and how many rows it holds. */
+const viewWords = (card: Extract<AnswerCard, { kind: 'open' | 'folded' }>) =>
+  [card.view.title, rowsSummary(card.rows)].filter(Boolean).join(DOT);
+/** What an answer cites, in words for that row: the first source, and how many more. */
+const sourceWords = (sources: SourceCitation[]) =>
+  sources.length === 1 ? `Källa: ${sources[0]!.label}` : `Källor: ${sources[0]!.label} och ${sources.length - 1} till`;
 /** The proposals' week in the transcript (D32): the week's meetings with the drawn times among them, as a list in a ghost bubble, after the `ai-chat` template's card-in-a-bubble. */
 function ProposalWeek({ thread }: { thread: Thread }) {
   const week = useQuery({ ...calendarWeekQuery(thread.week ?? ''), enabled: !!thread.week });
@@ -684,7 +757,7 @@ function FoldedCard({
 }: {
   card: Extract<AnswerCard, { kind: 'folded' }>;
   at: string;
-  animatedLayout: AnimatedLayout;
+  animatedLayout?: AnimatedLayout | undefined;
   hrefFor?: ((view: ViewRef) => string) | undefined;
   onShowAll: () => void;
 }) {
@@ -724,7 +797,7 @@ function AnswerView({
 }: {
   card: AnswerCard | undefined;
   at: string;
-  animatedLayout: AnimatedLayout;
+  animatedLayout?: AnimatedLayout | undefined;
   hrefFor?: ((view: ViewRef) => string) | undefined;
   onShowAll: () => void;
 }) {
@@ -759,6 +832,334 @@ function readCalls(
 }
 /** Clew's own turn names itself (boards Samtal and SamtalVerktyg); what it read is said by its calls. */
 const CLEW = 'Assistenten';
+/** Under a question in another system's assistant's panel that Clew sent on from the conversation (D128 item 2). */
+const FROM_CONVERSATION = 'Från samtalet med assistenten';
+/** The answer's place while nothing of it is written yet (board SamtalVerktyg). */
+function HeldAnswer() {
+  return (
+    <VStack gap={2}>
+      <Skeleton width="72%" height={14} />
+      <Skeleton width="48%" height={14} index={1} />
+    </VStack>
+  );
+}
+
+/**
+ * What an assistant's turn draws in its message (D36, D126 item 5, D141 rule 7, D138 items 8 and 9): the transcript's
+ * turns and the answer under Hem's line draw it alike, so an answer reads the same wherever it stands. The message
+ * itself, with its name, is the place's.
+ *
+ * On its way (`pending`): every read as a call with its own status, and its time once it has answered; the answer's
+ * place held until something is known, then its text as it is written; another system's assistant's on a surface of its
+ * own. Written (`message`, Clew's own answer): the reads it made, its words with the sources it cites as numbered
+ * citations, a prepared decision's row, then what the answer is about. On the conversation's page (`room` `page`) that
+ * is the source line, the work items, the view's card and an action's draft as a card under the answer; beside a page
+ * (`pane`, `aside`) an action the assistant filled in is a row in the answer, the work items are rows, and a view and
+ * the sources need room: one row says what they are and leads to the conversation's page (`wholeHref`). A place that
+ * draws the work items its own way gives them as `items` (Hem's rows).
+ *
+ * The parts stand in the same places on the way and once written, so the calls and the answer's place become the
+ * written ones in place: the log speaks the answer once (D36, 4.1.3) and the calls stay as the person left them. `bare`
+ * draws the answer without its bubble, with its time line under it, where the card it stands in is its frame (Hem’s answer).
+ */
+export function AssistantTurn({
+  pending,
+  message: m,
+  room = 'page',
+  headingStart,
+  bare = false,
+  latest = false,
+  replaced = false,
+  recordReplaced = false,
+  items,
+  renderCard,
+  cardHref,
+  prepared,
+  wholeHref,
+  viewHref,
+  onOpenView,
+  animatedLayout,
+}: {
+  /** The turn on its way; while there is one it is what is drawn. */
+  pending?: PendingTurn | null | undefined;
+  /** Clew's own written answer. */
+  message?: ThreadMessage | null | undefined;
+  room?: 'page' | 'pane' | 'aside';
+  /** The level of the answer's first heading, under the heading of the place it stands in. */
+  headingStart: 2 | 3;
+  bare?: boolean;
+  /** The newest answer: its view is read and drawn open, an older one's folded (`answerCard`). */
+  latest?: boolean;
+  /** A newer draft of the same action on the same item stands further down (D112 item 8). */
+  replaced?: boolean;
+  /** A newer draft of the same action about the same record stands further down (D137). */
+  recordReplaced?: boolean;
+  /** The work items the answer names, drawn by the place in the stead of the turn's own (`MessageMeta.cards`). */
+  items?: ReactNode;
+  renderCard?: ((thread: Thread) => ReactNode) | undefined;
+  cardHref?: ((threadId: string) => string) | undefined;
+  prepared?: ((prepared: Prepared) => ReactNode) | undefined;
+  wholeHref?: string | undefined;
+  viewHref?: ((view: ViewRef) => string) | undefined;
+  onOpenView?: ((view: ViewRef) => void) | undefined;
+  animatedLayout?: AnimatedLayout | undefined;
+}) {
+  const talk = useConversation();
+  const marks = useMarks();
+  const views = useQuery(areasQuery).data?.views;
+  const titleOf = (capability: string) => views?.find(v => v.capability === capability)?.title;
+  const systemOf = (capability: string) => marks.system(capability.slice(0, capability.indexOf('.')))?.source;
+  if (pending)
+    return (
+      <>
+        {pending.steps.length > 0 && (
+          <ChatToolCalls
+            calls={pending.steps.map(stepCall)}
+            defaultIsExpanded
+            label={`Assistenten arbetar · ${pending.steps.length} steg`}
+          />
+        )}
+        {pending.handed ? (
+          <AssistantAnswer handover={{ source: pending.handed.source }} isHeld={!pending.answer}>
+            {pending.answer ? (
+              <StreamingAnswer text={keepLines(pending.answer)} headingLevelStart={headingStart} />
+            ) : (
+              <HeldAnswer />
+            )}
+          </AssistantAnswer>
+        ) : bare ? (
+          pending.answer ? (
+            <StreamingAnswer text={pending.answer} headingLevelStart={headingStart} />
+          ) : (
+            <HeldAnswer />
+          )
+        ) : (
+          <ChatMessageBubble variant="ghost" width="100%">
+            {pending.answer ? (
+              <StreamingAnswer text={pending.answer} headingLevelStart={headingStart} />
+            ) : (
+              <HeldAnswer />
+            )}
+          </ChatMessageBubble>
+        )}
+      </>
+    );
+  if (!m) return null;
+  const pane = room !== 'page';
+  const calls = readCalls(m, titleOf, systemOf);
+  const card = answerCard(m.meta, latest);
+  // The item a turn's draft belongs to is not drawn whole above the draft (the product owner, 2026-11-16): the draft
+  // names it and opens the action's dialog itself.
+  const drafted = isActionDraft(m.meta?.draft) ? m.meta!.draft!.threadId : null;
+  // Beside a work item, the item itself is no row of the answer: the row would lead to the page the person is on.
+  const here = pane ? openItemId(window.location.pathname, window.location.search) : null;
+  const cards = (m.meta?.cards ?? []).filter(id => id !== drafted && id !== here);
+  const sources = m.meta?.sources ?? [];
+  const time = (
+    <ChatMessageMetadata
+      timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />}
+      footer={answerFooter(m.meta)}
+    />
+  );
+  // An action the assistant filled in (D138 item 8): beside a page a row under the answer's words, in the answer's
+  // bubble as the other rows there; on the conversation's page the card under the answer it has always been.
+  const actionDraft = isActionDraft(m.meta?.draft) ? (
+    <ActionDraftCard draft={m.meta!.draft as ActionDraftRef} at={m.createdAt} replaced={replaced} compact={pane} />
+  ) : null;
+  const recordDraft = m.meta?.recordDraft ? (
+    <RecordDraftCard
+      draft={m.meta.recordDraft}
+      fresh={talk.latest?.recordDraft}
+      replaced={recordReplaced}
+      compact={pane}
+    />
+  ) : null;
+  // Beside a page, what needs room is said in one row that leads to the conversation's page (D141 rule 7).
+  const roomy = pane
+    ? [...(card && card.kind !== 'button' ? [viewWords(card)] : []), ...(sources.length ? [sourceWords(sources)] : [])]
+    : [];
+  const body = (
+    <VStack gap={3}>
+      <Markdown
+        density="compact"
+        headingLevelStart={headingStart}
+        {...(m.meta?.sources?.length
+          ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const }
+          : {})}
+      >
+        {m.body}
+      </Markdown>
+      {m.meta?.prepared && (prepared ? prepared(m.meta.prepared) : <PreparedRow prepared={m.meta.prepared} />)}
+      {pane && actionDraft}
+      {pane && recordDraft}
+      {!pane && m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
+      {/* A whole work item has no room beside a page: there one item is a row too, its name the link to it. */}
+      {items !== undefined ? (
+        items
+      ) : cards.length > 1 || (cards.length > 0 && (pane || m.meta?.cardsAs === 'rows')) ? (
+        <TurnCardRows
+          ids={cards}
+          hrefFor={id => cardHref?.(id) ?? itemPageHref(id, window.location.pathname + window.location.search)}
+        />
+      ) : (
+        cards.map(id => <TurnCard key={id} id={id} render={renderCard ?? (() => null)} />)
+      )}
+      {pane ? (
+        roomy.length > 0 && wholeHref && <NeedsRoom words={roomy} href={wholeHref} />
+      ) : (
+        <AnswerView
+          card={card}
+          at={m.createdAt}
+          animatedLayout={animatedLayout}
+          hrefFor={viewHref}
+          onShowAll={() => onOpenView?.(m.meta!.view!)}
+        />
+      )}
+      {(card?.kind === 'button' || (!pane && m.meta?.sources?.length)) && (
+        <HStack gap={2} wrap="wrap">
+          {card?.kind === 'button' && (
+            <Button
+              size="sm"
+              label={m.meta!.view!.declared ? 'Visa allt' : `Visa ${m.meta!.view!.title.toLowerCase()}`}
+              {...(viewHref ? { href: viewHref(m.meta!.view!) } : { onClick: () => onOpenView?.(m.meta!.view!) })}
+            />
+          )}
+          {!pane && m.meta?.sources && m.meta.sources.length > 0 && (
+            <Button
+              size="sm"
+              label="Lägg under Behöver dig"
+              isDisabled={talk.busy}
+              clickAction={() => talk.makeCard(m.id)}
+            />
+          )}
+        </HStack>
+      )}
+    </VStack>
+  );
+  return (
+    <>
+      {calls.length > 0 && <ChatToolCalls calls={calls} />}
+      {bare ? (
+        // Without its bubble the answer still says when it came and which model wrote it, as the transcript does
+        // (the product owner, 2026-11-20).
+        <>
+          {body}
+          {time}
+        </>
+      ) : (
+        <ChatMessageBubble variant="ghost" width="100%" metadata={time}>
+          {body}
+        </ChatMessageBubble>
+      )}
+      {actionDraft
+        ? !pane && actionDraft
+        : m.meta?.draft && (
+            <ChatSystemMessage icon={<Icon icon="warning" color="warning" size="sm" />}>
+              Utkast i ärendet. Inget är skickat förrän du trycker på knappen i ärendet.
+            </ChatSystemMessage>
+          )}
+      {!pane && recordDraft}
+    </>
+  );
+}
+
+/**
+ * What stands after the turns (D32, D141 rule 7): the week a proposal answer drew its times in, Clew's own actions to
+ * confirm, and what was done, with Ångra while it can be undone. On the conversation's page the week is drawn whole;
+ * beside a page it needs room, and one row leads to the conversation's page (`wholeHref`). Nothing of it while a turn is
+ * on its way. `bare` draws them without their bubbles, as `AssistantTurn` does.
+ */
+export function AfterTheTurns({
+  room = 'page',
+  bare = false,
+  wholeHref,
+}: {
+  room?: 'page' | 'pane' | 'aside';
+  bare?: boolean;
+  wholeHref?: string | undefined;
+}) {
+  const talk = useConversation();
+  const { latest, done, busy, pending } = talk;
+  // A proposal answer names its thread; the draft carries it. Either way the week is drawn under the answer. The named thread comes from the cache the answer wrote it into.
+  const forslagId = latest?.forslag?.threadId ?? null;
+  const forslag = useQuery({ ...threadQuery(forslagId ?? ''), enabled: !!forslagId });
+  const weekThread = latest?.draft?.thread ?? (forslagId ? (forslag.data ?? null) : null);
+  const pane = room !== 'page';
+  const bubble = (content: ReactNode) =>
+    bare ? (
+      content
+    ) : (
+      <ChatMessageBubble variant="ghost" width="100%">
+        {content}
+      </ChatMessageBubble>
+    );
+  return (
+    <>
+      {!pending &&
+        weekThread &&
+        weekThread.proposals.some(p => p.status === 'proposed') &&
+        (!pane ? (
+          <ProposalWeek thread={weekThread} />
+        ) : (
+          weekThread.week &&
+          wholeHref && (
+            <ChatMessage sender="assistant" name={<VisuallyHidden>{CLEW}</VisuallyHidden>}>
+              {bubble(<NeedsRoom words={[`Vecka ${weekNumber(weekThread.week)} med förslagen`]} href={wholeHref} />)}
+            </ChatMessage>
+          )
+        ))}
+      {!pending && latest && latest.clewActions.length > 0 && (
+        <ChatMessage sender="assistant" name={<VisuallyHidden>{CLEW}</VisuallyHidden>}>
+          {/* A proposal waits for a decision: the same "att bekräfta" as a draft on a card, nothing is done until the black button. */}
+          {bubble(
+            <VStack gap={2}>
+              <HStack gap={2} vAlign="center" wrap="wrap">
+                <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />
+                <Text type="supporting">Inget görs förrän du trycker. Ångra i 10 min efteråt.</Text>
+              </HStack>
+              <List density="compact" listStyle="decimal" aria-label="Att bekräfta">
+                {latest.clewActions.map(a => (
+                  <ListItem
+                    key={a.n}
+                    label={<Text>{a.label}</Text>}
+                    description={
+                      <Text type="supporting">
+                        {a.kind === 'dismiss'
+                          ? 'Ärendet avfärdas och hamnar under Klart'
+                          : 'Ärendet tas upp i morgon 06:00 i stället'}
+                      </Text>
+                    }
+                  />
+                ))}
+              </List>
+              <HStack gap={2} wrap="wrap">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  label={latest.clewActions.length === 1 ? 'Gör det' : 'Gör båda'}
+                  isDisabled={busy}
+                  clickAction={() => talk.performActions(latest.clewActions)}
+                />
+                <Button size="sm" variant="ghost" label="Avbryt" onClick={talk.cancelActions} />
+              </HStack>
+            </VStack>,
+          )}
+        </ChatMessage>
+      )}
+      {done && (
+        <ChatSystemMessage icon={<Icon icon="check" size="sm" color="success" />}>
+          {done.text}
+          {done.undo && (
+            <>
+              {' '}
+              <Button size="sm" variant="ghost" label="Ångra" clickAction={done.undo} />
+            </>
+          )}
+        </ChatSystemMessage>
+      )}
+    </>
+  );
+}
 /**
  * The transcript (D31; D126, boards Samtal, SamtalVerktyg, SamtalEneoFraga and SamtalEneo): the conversation in the
  * `ai-chat` template's message list. The person's chips sit above their bubble as tokens, except the thing the
@@ -768,6 +1169,17 @@ const CLEW = 'Assistenten';
  * confirm is plain content in a ghost bubble (one warning badge, the rows, two buttons), and what was done is a system
  * message with Ångra. The answer is the card (H1): a turn about an open card draws that card in the turn, under its
  * sentence, with the card's own rows and buttons; it is drawn once per conversation and stays live.
+ *
+ * Beside a page (`room="pane"`, D141 "One component" and rule 7) the same transcript is drawn compact, and an answer is
+ * text, a few named rows as links, or one row for an action the assistant filled in: the steps while it reads, the
+ * answer's words, a draft and Clew's own confirmations stay; work items become their rows; a view, a proposals' week and
+ * the sources become one row each that leads to the conversation's page, where there is room for them.
+ *
+ * In the panel of another system's assistant beside a conversation (`room="aside"`, D128 item 2) it is that assistant's
+ * own exchange, drawn as beside a page: every message it is given, none of the lines that say whom the conversation
+ * turns to, and a question says only whether Clew sent it on from the conversation. The panel's heading names the
+ * assistant and leads to its system, so an answer carries the name unseen and no link of its own; what Clew says there
+ * (a system that did not answer, a question held on its way out) is named as Clew's, as in the transcript.
  */
 export function Transcript({
   onOpenView,
@@ -778,6 +1190,9 @@ export function Transcript({
   asideHref,
   asideOpen,
   cardHref,
+  room = 'page',
+  prepared,
+  conversationHref,
 }: {
   onOpenView: (view: ViewRef) => void;
   renderCard: (thread: Thread) => ReactNode;
@@ -801,33 +1216,43 @@ export function Transcript({
   asideOpen?: string | null | undefined;
   /** The address that puts a work item beside the transcript: where a row of several items leads. */
   cardHref?: ((threadId: string) => string) | undefined;
+  /**
+   * Where the transcript is drawn: the conversation's own page, the pane beside another page (D141), or the panel of
+   * another system's assistant beside a conversation, which holds that assistant's own exchange (D128).
+   */
+  room?: 'page' | 'pane' | 'aside';
+  /**
+   * What stands under an answer that prepared a decision (`MessageMeta.prepared`), drawn by the page the decision is
+   * made on (Kalender's "Använd tiden", D140); else the row that leads there.
+   */
+  prepared?: ((prepared: Prepared) => ReactNode) | undefined;
+  /** The conversation's own page, where an answer that needs room is drawn (the pane only; D141 rules 6 and 7). */
+  conversationHref?: string | undefined;
 }) {
   const talk = useConversation();
   const markOf = useObjectMark();
   const marks = useMarks();
-  const views = useQuery(areasQuery).data?.views;
   /** A chip above the person's bubble carries its system's glyph (D71, artboard 8). */
   const glyph = (ref: string) => {
     const icon = markOf(ref)?.icon;
     return icon ? <AreaGlyph icon={icon} /> : undefined;
   };
-  const titleOf = (capability: string) => views?.find(v => v.capability === capability)?.title;
-  const systemOf = (capability: string) => marks.system(capability.slice(0, capability.indexOf('.')))?.source;
-  const { conversation, latest, done, busy, pending } = talk;
-  // A proposal answer names its thread; the draft carries it. Either way the week is drawn under the answer. The named thread comes from the cache the answer wrote it into.
-  const forslagId = latest?.forslag?.threadId ?? null;
-  const forslag = useQuery({ ...threadQuery(forslagId ?? ''), enabled: !!forslagId });
-  const weekThread = latest?.draft?.thread ?? (forslagId ? (forslag.data ?? null) : null);
+  const { conversation, busy, pending } = talk;
   const transcriptArea = useRef<HTMLDivElement>(null);
   const animatedLayout = useAnimatedLayout({ containerRef: transcriptArea });
   if (!conversation && !pending) return null;
-  // What was said in the panel beside the conversation is drawn there: the transcript is Clew's.
+  const pane = room !== 'page';
+  const aside = room === 'aside';
+  // An answer's headings stand under the panel's own heading in another system's assistant's panel.
+  const headingStart = aside ? 3 : 2;
+  const wholeHref = conversationHref ?? (conversation ? `/conversations/${conversation.id}` : undefined);
+  // What was said in the panel beside the conversation is drawn there (`aside`): the transcript is Clew's.
   const everything = conversation?.messages ?? [];
-  const messages = everything.filter(m => !isSide(m));
+  const messages = aside ? everything : everything.filter(m => !isSide(m));
   // An assistant the person turned to in the panel without Clew sending a question on has no card in the transcript:
   // one line stands where it first was asked, so the transcript shows that the exchange exists when it is read later.
   const joined = new Map<number, NonNullable<NonNullable<ThreadMessage['meta']>['handed']>[]>();
-  everything.forEach((m, at) => {
+  (aside ? [] : everything).forEach((m, at) => {
     const handed = m.role === 'user' ? m.meta?.handed : undefined;
     if (!handed?.side) return;
     if (everything.slice(0, at).some(x => x.meta?.handed?.side && x.meta.handed.assistant === handed.assistant)) return;
@@ -853,8 +1278,7 @@ export function Transcript({
   const n = messages.length;
   // Each answer's card (`answerCard`): the latest answer's open and read, an older one's folded in its place, read when
   // the person unfolds it, so a long conversation opened again reads one view.
-  const cardOf = (i: number, m: ThreadMessage) =>
-    m.role === 'assistant' ? answerCard(m.meta, i === n - 1 && !pending) : undefined;
+  const isLatest = (i: number) => i === n - 1 && !pending;
   // The thing the conversation is about is named in the header and stands beside it: its chip is not repeated above
   // every question.
   const tokens = (chips: { ref: string; label: string }[] | undefined) =>
@@ -869,6 +1293,9 @@ export function Transcript({
           m.meta!.draft!.threadId === draft.threadId &&
           m.meta!.draft!.actionId === draft.actionId,
       );
+  // So is a draft of the same action about the same record (D137).
+  const recordReplaced = (i: number, draft: RecordDraft) =>
+    messages.slice(i + 1).some(m => !!m.meta?.recordDraft && sameDraft(m.meta.recordDraft, draft));
   const chipRow = (chips: { ref: string; label: string }[] | undefined) =>
     tokens(chips).length > 0 && (
       <HStack gap={1} wrap="wrap">
@@ -916,40 +1343,35 @@ export function Transcript({
     ) : (
       CLEW
     );
-  /** Another system's assistant over its own answer: its mark, its name and its system's. */
-  const otherName = (who: { assistant: string; name: string; source: string }) => (
-    <AssistantName assistant={who.assistant} name={who.name} source={who.source} />
-  );
-  /** The answer's place while nothing of it is written yet (board SamtalVerktyg). */
-  const held = (
-    <VStack gap={2}>
-      <Skeleton width="72%" height={14} />
-      <Skeleton width="48%" height={14} index={1} />
-    </VStack>
-  );
+  /** Another system's assistant over its own answer: its mark, its name and its system's; in its panel, its name unseen. */
+  const otherName = (who: { assistant: string; name: string; source: string }) =>
+    aside ? (
+      <VisuallyHidden>{who.name}</VisuallyHidden>
+    ) : (
+      <AssistantName assistant={who.assistant} name={who.name} source={who.source} />
+    );
+  const otherMark = (name: string) => (aside ? undefined : <AssistantMark name={name} />);
   const written = (m: ThreadMessage, i: number) => {
     if (m.role === 'user') {
       const handed = m.meta?.handed;
-      return question(`turn-${i}`, m.body, m.createdAt, m.meta?.chips, handed ? sentWords(handed) : undefined);
+      // In the panel a question says only that Clew sent it on from the conversation; one asked there says nothing.
+      const sent = aside ? (handed?.side ? undefined : FROM_CONVERSATION) : handed ? sentWords(handed) : undefined;
+      return question(`turn-${i}`, m.body, m.createdAt, m.meta?.chips, sent);
     }
     const other = answeredBy(m);
-    const time = (
-      <ChatMessageMetadata
-        timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />}
-        footer={other ? undefined : answerFooter(m.meta)}
-      />
-    );
     if (other)
       return (
         <ChatMessage
           key={`turn-${i}`}
           sender="assistant"
-          avatar={<AssistantMark name={other.name} />}
+          avatar={otherMark(other.name)}
           name={otherName(other)}
-          metadata={time}
+          metadata={
+            <ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />} />
+          }
         >
-          <AssistantAnswer handover={other}>
-            <Markdown density="compact" headingLevelStart={2}>
+          <AssistantAnswer handover={aside ? { ...other, link: undefined } : other}>
+            <Markdown density="compact" headingLevelStart={headingStart}>
               {keepLines(m.body)}
             </Markdown>
           </AssistantAnswer>
@@ -973,89 +1395,36 @@ export function Transcript({
           )}
         </ChatMessage>
       );
-    const calls = readCalls(m, titleOf, systemOf);
-    const card = cardOf(i, m);
-    // The item a turn's draft belongs to is not drawn whole above the draft (the product owner, 2026-11-16): the draft
-    // names it and opens the action's dialog itself.
-    const drafted = isActionDraft(m.meta?.draft) ? m.meta!.draft!.threadId : null;
-    const cards = (m.meta?.cards ?? []).filter(id => id !== drafted);
     return (
       <ChatMessage key={`turn-${i}`} sender="assistant" name={clewName(m)}>
-        {calls.length > 0 && <ChatToolCalls calls={calls} />}
-        <ChatMessageBubble variant="ghost" width="100%" metadata={time}>
-          <VStack gap={3}>
-            <Markdown
-              density="compact"
-              headingLevelStart={2}
-              {...(m.meta?.sources?.length
-                ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const }
-                : {})}
-            >
-              {m.body}
-            </Markdown>
-            {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
-            {cards.length > 1 || (cards.length > 0 && m.meta?.cardsAs === 'rows') ? (
-              <TurnCardRows
-                ids={cards}
-                hrefFor={id => cardHref?.(id) ?? itemPageHref(id, window.location.pathname + window.location.search)}
-              />
-            ) : (
-              cards.map(id => <TurnCard key={id} id={id} render={renderCard} />)
-            )}
-            <AnswerView
-              card={card}
-              at={m.createdAt}
-              animatedLayout={animatedLayout}
-              hrefFor={viewHref}
-              onShowAll={() => onOpenView(m.meta!.view!)}
-            />
-            {(card?.kind === 'button' || m.meta?.sources?.length) && (
-              <HStack gap={2} wrap="wrap">
-                {card?.kind === 'button' && (
-                  <Button
-                    size="sm"
-                    label={m.meta!.view!.declared ? 'Visa allt' : `Visa ${m.meta!.view!.title.toLowerCase()}`}
-                    {...(viewHref ? { href: viewHref(m.meta!.view!) } : { onClick: () => onOpenView(m.meta!.view!) })}
-                  />
-                )}
-                {m.meta?.sources && m.meta.sources.length > 0 && (
-                  <Button
-                    size="sm"
-                    label="Lägg under Behöver dig"
-                    isDisabled={busy}
-                    clickAction={() => talk.makeCard(m.id)}
-                  />
-                )}
-              </HStack>
-            )}
-          </VStack>
-        </ChatMessageBubble>
-        {isActionDraft(m.meta?.draft) ? (
-          <ActionDraftCard
-            draft={m.meta!.draft as ActionDraftRef}
-            at={m.createdAt}
-            replaced={replaced(i, m.meta!.draft as ActionDraftRef)}
-          />
-        ) : (
-          m.meta?.draft && (
-            <ChatSystemMessage icon={<Icon icon="warning" color="warning" size="sm" />}>
-              Utkast i ärendet. Inget är skickat förrän du trycker på knappen i ärendet.
-            </ChatSystemMessage>
-          )
-        )}
+        <AssistantTurn
+          message={m}
+          room={room}
+          headingStart={headingStart}
+          latest={isLatest(i)}
+          replaced={isActionDraft(m.meta?.draft) && replaced(i, m.meta!.draft as ActionDraftRef)}
+          recordReplaced={!!m.meta?.recordDraft && recordReplaced(i, m.meta.recordDraft)}
+          renderCard={renderCard}
+          cardHref={cardHref}
+          prepared={prepared}
+          wholeHref={wholeHref}
+          viewHref={viewHref}
+          onOpenView={onOpenView}
+          animatedLayout={animatedLayout}
+        />
       </ChatMessage>
     );
   };
   return (
     <VStack gap={3} ref={transcriptArea}>
-      <ChatMessageList density="balanced" align="bottom" isStreaming={busy}>
+      <ChatMessageList density={pane ? 'compact' : 'balanced'} align="bottom" isStreaming={busy}>
         {[
           ...messages.flatMap((m, i) => {
             // Clew suggested the assistant and the person chose it (D126 item 6): the question stands once, says it was
             // sent on, and one line under it takes the suggestion's place. Anywhere else the person turned to another
             // system's assistant, or back to Clew, the transcript says so once, above the question (D125 item 5).
-            const routed = m.role === 'user' && m.meta?.handed?.routed ? m.meta.handed : null;
-            const line = routed ? undefined : (switchLine(messages, i) ?? handedBackLine(m));
+            const routed = !aside && m.role === 'user' && m.meta?.handed?.routed ? m.meta.handed : null;
+            const line = aside || routed ? undefined : (switchLine(messages, i) ?? handedBackLine(m));
             return [
               ...joinedLines(i),
               ...(line ? [<TurnLine key={`switch-${i}`} line={line} />] : []),
@@ -1068,7 +1437,7 @@ export function Transcript({
           // held until something is known, the capabilities it reads as calls with their status, then the text.
           ...(pending
             ? [
-                ...(!pending.suggested && pendingSwitch(messages, pending)
+                ...(!aside && !pending.suggested && pendingSwitch(messages, pending)
                   ? [<TurnLine key={`switch-${n}`} line={pendingSwitch(messages, pending)!} />]
                   : []),
                 question(
@@ -1076,7 +1445,7 @@ export function Transcript({
                   pending.text,
                   pending.at,
                   pending.chips,
-                  pending.handed ? sentWords({ ...pending.handed, routed: pending.suggested }) : undefined,
+                  !aside && pending.handed ? sentWords({ ...pending.handed, routed: pending.suggested }) : undefined,
                 ),
                 ...(pending.handed && pending.suggested
                   ? [<SuggestedLine key={`suggested-${n}`} name={pending.handed.name} source={pending.handed.source} />]
@@ -1093,7 +1462,7 @@ export function Transcript({
                   <ChatMessage
                     key={`turn-${n + 1}`}
                     sender="assistant"
-                    avatar={pending.handed ? <AssistantMark name={pending.handed.name} /> : undefined}
+                    avatar={pending.handed ? otherMark(pending.handed.name) : undefined}
                     name={
                       pending.handed
                         ? otherName({
@@ -1104,79 +1473,13 @@ export function Transcript({
                         : CLEW
                     }
                   >
-                    {pending.steps.length > 0 && (
-                      <ChatToolCalls
-                        calls={pending.steps.map(stepCall)}
-                        defaultIsExpanded
-                        label={`Assistenten arbetar · ${pending.steps.length} steg`}
-                      />
-                    )}
-                    {pending.handed ? (
-                      <AssistantAnswer handover={{ source: pending.handed.source }} isHeld={!pending.answer}>
-                        {pending.answer ? <StreamingAnswer text={keepLines(pending.answer)} /> : held}
-                      </AssistantAnswer>
-                    ) : (
-                      <ChatMessageBubble variant="ghost" width="100%">
-                        {pending.answer ? <StreamingAnswer text={pending.answer} /> : held}
-                      </ChatMessageBubble>
-                    )}
+                    <AssistantTurn pending={pending} headingStart={headingStart} />
                   </ChatMessage>
                 ),
               ]
             : []),
         ]}
-        {!pending && weekThread && weekThread.proposals.some(p => p.status === 'proposed') && (
-          <ProposalWeek thread={weekThread} />
-        )}
-        {!pending && latest && latest.clewActions.length > 0 && (
-          <ChatMessage sender="assistant" name={<VisuallyHidden>{CLEW}</VisuallyHidden>}>
-            {/* A proposal waits for a decision: the same "att bekräfta" as a draft on a card, nothing is done until the black button. */}
-            <ChatMessageBubble variant="ghost" width="100%">
-              <VStack gap={2}>
-                <HStack gap={2} vAlign="center" wrap="wrap">
-                  <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />
-                  <Text type="supporting">Inget görs förrän du trycker. Ångra i 10 min efteråt.</Text>
-                </HStack>
-                <List density="compact" listStyle="decimal" aria-label="Att bekräfta">
-                  {latest.clewActions.map(a => (
-                    <ListItem
-                      key={a.n}
-                      label={<Text>{a.label}</Text>}
-                      description={
-                        <Text type="supporting">
-                          {a.kind === 'dismiss'
-                            ? 'Ärendet avfärdas och hamnar under Klart'
-                            : 'Ärendet tas upp i morgon 06:00 i stället'}
-                        </Text>
-                      }
-                    />
-                  ))}
-                </List>
-                <HStack gap={2} wrap="wrap">
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    label={latest.clewActions.length === 1 ? 'Gör det' : 'Gör båda'}
-                    isDisabled={busy}
-                    clickAction={() => talk.performActions(latest.clewActions)}
-                  />
-                  <Button size="sm" variant="ghost" label="Avbryt" onClick={talk.cancelActions} />
-                </HStack>
-              </VStack>
-            </ChatMessageBubble>
-          </ChatMessage>
-        )}
-        {done && (
-          <ChatSystemMessage icon={<Icon icon="check" size="sm" color="success" />}>
-            {done.text}
-            {done.undo && (
-              <>
-                {' '}
-                <Button size="sm" variant="ghost" label="Ångra" clickAction={done.undo} />
-              </>
-            )}
-          </ChatSystemMessage>
-        )}
+        <AfterTheTurns room={room} wholeHref={wholeHref} />
       </ChatMessageList>
       {/* No suggested follow-up questions under an answer (D126 rule 8; the product owner, 2026-11-16: they add no
           value). What the server suggests is not drawn. */}

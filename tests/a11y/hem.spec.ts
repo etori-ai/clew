@@ -19,7 +19,16 @@ import {
   workRowLines,
   type MockApi,
 } from './support';
-import { ENTITY_UNIT, NEWS_LINK, asNotice, newsMenuRow, newsOutput, user } from './data';
+import {
+  CERTIFICATE_TITLE,
+  ENTITY_UNIT,
+  NEWS_LINK,
+  asNotice,
+  expiredCertificate,
+  newsMenuRow,
+  newsOutput,
+  user,
+} from './data';
 import { menuRows } from './phonebook';
 import { Units } from './unit-data';
 
@@ -38,6 +47,11 @@ const news = (page: Page) => page.getByRole('region', { name: 'Nyheter' });
 /** The focus card (D130 item 13): a region named by the item it lifts, its heading. */
 const callout = (page: Page) => page.getByRole('main').locator('section[aria-labelledby="fokusnyhet"]');
 const toasts = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
+/** Hem's line's own button, beside the field. */
+const askButton = (page: Page) => page.getByRole('main').getByRole('button', { name: 'Fråga AI', exact: true });
+/** The answer under Hem's line (D138 item 9): a region named by the question, its heading. */
+const answerCard = (page: Page, question: string) =>
+  page.getByRole('main').getByRole('region', { name: question, exact: true });
 /** The suite's clock stands at 09:00 in Stockholm on Wednesday 4 November (`NOW`). */
 const GREETING = 'God morgon, Testa';
 
@@ -154,6 +168,23 @@ test.describe('Hem', () => {
     await expect(heading(page, 1, GREETING)).toBeVisible();
   });
 
+  test('Behöver dig: an item with nothing to decide says the source’s reason as its badge, once, and never Försenad (D139)', async ({
+    page,
+    api,
+  }) => {
+    api.threads.push(expiredCertificate());
+    await open(page, '/');
+    const row = needs(page).getByRole('listitem').filter({ hasText: CERTIFICATE_TITLE });
+    await expect(row.getByRole('link', { name: `Öppna ${CERTIFICATE_TITLE}` })).toHaveAttribute(
+      'href',
+      '/items/intyg?from=%2F',
+    );
+    await expect(row.locator('.astryx-badge')).toHaveText('Har gått ut');
+    await expect(row.getByText('Har gått ut', { exact: true })).toHaveCount(1);
+    await expect(row).not.toContainText(/försenad/i);
+    await expect(row).not.toContainText('Ska göras');
+    await expectNoAxeViolations(page);
+  });
   test('an address that opened something beside Hem before leads to that thing’s page', async ({ page, api: _ }) => {
     await open(page, '/?card=ledighet');
     await expect(page).toHaveURL('/items/ledighet?from=%2F');
@@ -322,15 +353,14 @@ test.describe('Hem', () => {
 
 /**
  * Hem's line (D126 items 4 and 9, board HemFraga variant a): one field, labelled "Fråga assistenten", filling the row under the
- * greeting, and the button "Fråga AI" (D130). Nothing is answered on Hem: Enter or the button asks the question as Hem's
- * composer did, and the conversation takes the column with the question in its transcript; with nothing written the
- * button opens Ny fråga and Enter does nothing. Whom to ask, the model and `@` are the conversation page's box's.
+ * greeting, and the button "Fråga AI" (D130). Enter or the button asks the question, and the answer stands in a card
+ * under the line while Hem stays (D138 items 2 and 9); with nothing written the button opens Ny fråga and Enter does
+ * nothing. Whom to ask, the model and `@` are the conversation page's box's.
  */
 test.describe('Hem’s line', () => {
   test.use({ viewport: desktop });
-  const askButton = (page: Page) => page.getByRole('main').getByRole('button', { name: 'Fråga AI', exact: true });
 
-  test('a labelled field and Fråga AI side by side; Enter asks once, and the conversation takes the column with the question asked', async ({
+  test('a labelled field and Fråga AI side by side; Enter asks once, and the answer stands in a card under the line while Hem stays', async ({
     page,
     api,
   }) => {
@@ -360,22 +390,37 @@ test.describe('Hem’s line', () => {
     await line.evaluate(el => {
       for (let i = 0; i < 2; i++) el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
-    const log = page.getByRole('log');
-    await expect(log).toContainText('Vem är på plats?');
-    await expect(heading(page, 1, 'Vem är på plats?')).toBeVisible();
-    // The conversation's own box has the focus, and Hem's line is gone with Hem.
-    await expect(page.getByRole('combobox', { name: 'Svara i samtalet' })).toBeFocused();
-    await expect(hemLine(page)).toHaveCount(0);
+    // The answer's card stands under the line with the question as its heading (D138 item 9): Hem stays, with its
+    // greeting over the line and its board under the card, and the focus stays in the line.
+    const card = answerCard(page, 'Vem är på plats?');
+    await expect(card.getByRole('heading', { level: 2, name: 'Vem är på plats?', exact: true })).toBeVisible();
+    await expect(page).toHaveURL('/');
+    await expect(heading(page, 1, GREETING)).toBeVisible();
+    await expect(line).toBeFocused();
+    const [l, c, n] = [await box(line), await box(card), await box(needs(page))];
+    expect(c.y).toBeGreaterThanOrEqual(l.y + l.height);
+    expect(n.y).toBeGreaterThanOrEqual(c.y + c.height);
+    // On its way the log is busy, and the conversation has no page to open yet.
+    const log = card.getByRole('log');
+    await expect(log).toHaveAttribute('aria-busy', 'true');
+    await expect(card.getByRole('link', { name: 'Öppna som samtal' })).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Stäng' })).toBeVisible();
     release();
     await expect(log).toContainText('Tio personer är på plats i dag.');
-    await expect(page).toHaveURL(/\/conversations\/konversation$/);
+    await expect(log).not.toHaveAttribute('aria-busy', 'true');
+    await expect(page).toHaveURL('/');
+    await expect(card.getByRole('link', { name: 'Öppna som samtal' })).toHaveAttribute(
+      'href',
+      '/conversations/konversation',
+    );
     expect(api.asked).toHaveLength(1);
-    expect(api.asked[0]).toMatchObject({ text: 'Vem är på plats?', chips: [] });
+    // Clew answers a question asked on the line itself (`own`), in a new conversation.
+    expect(api.asked[0]).toMatchObject({ text: 'Vem är på plats?', chips: [], own: true });
     expect(api.asked[0]!.conversationId).toBeUndefined();
     await expectNoAxeViolations(page);
   });
 
-  test('with nothing written the button opens Ny fråga, where the pages mark Samtal; a question half written stays through a visit elsewhere, and the button asks it', async ({
+  test('with nothing written the button opens Ny fråga, where the pages mark Samtal; a question half written stays through a visit elsewhere, and the button asks it under the line', async ({
     page,
     api,
   }) => {
@@ -405,12 +450,16 @@ test.describe('Hem’s line', () => {
       await expect(hemLine(page)).toHaveValue('Vem är på plats?');
     }
     await askButton(page).click();
-    await expect(page.getByRole('log')).toContainText('Tio personer är på plats i dag.');
-    await expect(page).toHaveURL(/\/conversations\/konversation$/);
-    expect(api.asked).toHaveLength(1);
-    // Esc leads back to Hem, where the line has the focus again, empty.
-    await page.keyboard.press('Escape');
+    const card = answerCard(page, 'Vem är på plats?');
+    await expect(card.getByRole('log')).toContainText('Tio personer är på plats i dag.');
+    // Nothing navigates: the answer is under the line and the line is empty for the next question.
+    await expect(page).toHaveURL('/');
     await expect(heading(page, 1, GREETING)).toBeVisible();
+    await expect(hemLine(page)).toHaveValue('');
+    expect(api.asked).toHaveLength(1);
+    // Stäng takes the card away and the line has the focus.
+    await card.getByRole('button', { name: 'Stäng' }).click();
+    await expect(card).toHaveCount(0);
     await expect(hemLine(page)).toBeFocused();
     await expect(hemLine(page)).toHaveValue('');
   });
@@ -431,6 +480,164 @@ test.describe('Hem’s line', () => {
     // Where the row is this narrow the button is its arrow alone (D130), still named and a target of its own size.
     await expect(ask).toHaveAccessibleName('Fråga AI');
     expect(Math.min(b.width, b.height)).toBeGreaterThanOrEqual(24);
+    expect(await reflowProblems(page)).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expectNoAxeViolations(page);
+  });
+});
+
+/**
+ * The answer under Hem's line (D138 items 2 and 9): one card directly under the line with the board below it. It shows
+ * the conversation's newest exchange, with the question as its heading, the work items the answer names as the rows
+ * "Behöver dig" has, "Öppna som samtal" and "Stäng". The line is the box: the next question goes on in the same
+ * conversation while the card stands, and the corner's "Fråga AI" still leads to the line.
+ */
+test.describe('the answer under Hem’s line', () => {
+  test.use({ viewport: desktop });
+  const askOnLine = async (page: Page, question: string) => {
+    await hemLine(page).fill(question);
+    await hemLine(page).press('Enter');
+  };
+
+  test('a second question goes on in the same conversation, and the card shows only the newest exchange', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/');
+    await askOnLine(page, 'Vem är på plats?');
+    await expect(answerCard(page, 'Vem är på plats?').getByRole('log')).toContainText(
+      'Tio personer är på plats i dag.',
+    );
+    await askOnLine(page, 'Hur många semesterdagar har jag?');
+    const card = answerCard(page, 'Hur många semesterdagar har jag?');
+    await expect(card.getByRole('log')).toContainText('Du har 18 semesterdagar kvar i år.');
+    expect(api.asked).toHaveLength(2);
+    expect(api.asked[1]).toMatchObject({ conversationId: 'konversation', own: true });
+    // One card, the newest exchange: the earlier one is in the conversation.
+    await expect(answerCard(page, 'Vem är på plats?')).toHaveCount(0);
+    await expect(page.getByRole('main').getByText('Tio personer är på plats i dag.')).toHaveCount(0);
+    await expect(page).toHaveURL('/');
+    await expectNoAxeViolations(page);
+  });
+
+  test('Stäng takes the card away and gives the focus to the line; the conversation is still under Samtal, and the next question starts a new one', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/');
+    await askOnLine(page, 'Vem är på plats?');
+    const card = answerCard(page, 'Vem är på plats?');
+    await expect(card.getByRole('log')).toContainText('Tio personer är på plats i dag.');
+    await card.getByRole('button', { name: 'Stäng' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(card).toHaveCount(0);
+    await expect(hemLine(page)).toBeFocused();
+    await askOnLine(page, 'Hur många semesterdagar har jag?');
+    await expect(answerCard(page, 'Hur många semesterdagar har jag?').getByRole('log')).toContainText(
+      'Du har 18 semesterdagar kvar i år.',
+    );
+    expect(api.asked[1]!.conversationId).toBeUndefined();
+    // The conversation stays where conversations are found (D138 item 10).
+    await rail(page).getByRole('link', { name: 'Samtal', exact: true }).click();
+    await expect(page.getByRole('main').locator('a[href^="/conversations/konversation"]').first()).toBeVisible();
+  });
+
+  test('Stäng while the answer is on its way stops the turn, puts the question back in the line and says so', async ({
+    page,
+    api,
+  }) => {
+    const release = api.holdAnswer();
+    await open(page, '/');
+    await askOnLine(page, 'Vem är på plats?');
+    const card = answerCard(page, 'Vem är på plats?');
+    await expect(card.getByRole('log')).toHaveAttribute('aria-busy', 'true');
+    await card.getByRole('button', { name: 'Stäng' }).click();
+    await expect(card).toHaveCount(0);
+    await expect(hemLine(page)).toBeFocused();
+    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringMatching(/Frågan avbröts/));
+    release();
+    await expect(page).toHaveURL('/');
+    await expect(answerCard(page, 'Vem är på plats?')).toHaveCount(0);
+  });
+
+  test('Öppna som samtal leads to the conversation’s page with the whole conversation; Back shows the card again with the focus on the line, and a reload shows Hem without it', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/');
+    await askOnLine(page, 'Vem är på plats?');
+    await expect(answerCard(page, 'Vem är på plats?').getByRole('log')).toContainText(
+      'Tio personer är på plats i dag.',
+    );
+    await askOnLine(page, 'Hur många semesterdagar har jag?');
+    const card = answerCard(page, 'Hur många semesterdagar har jag?');
+    await expect(card.getByRole('log')).toContainText('Du har 18 semesterdagar kvar i år.');
+    const whole = card.getByRole('link', { name: 'Öppna som samtal' });
+    await whole.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/conversations/konversation');
+    const log = page.getByRole('main').getByRole('log');
+    await expect(log).toContainText('Tio personer är på plats i dag.');
+    await expect(log).toContainText('Du har 18 semesterdagar kvar i år.');
+    await expect(page.getByRole('combobox', { name: 'Svara i samtalet' })).toBeFocused();
+    await page.goBack();
+    await expect(page).toHaveURL('/');
+    await expect(card.getByRole('log')).toContainText('Du har 18 semesterdagar kvar i år.');
+    await expect(hemLine(page)).toBeFocused();
+    // The card is the moment's: Hem at rest is its board, and the conversation is under Samtal.
+    await page.reload();
+    await expect(heading(page, 1, GREETING)).toBeVisible();
+    await expect(needs(page)).toBeVisible();
+    await expect(card).toHaveCount(0);
+    await expect(page.getByRole('main').getByRole('log')).toHaveCount(0);
+  });
+
+  test('the work items an answer names are rows as Behöver dig has them, each a link to its item with Hem as the way back', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/');
+    await askOnLine(page, 'Attestera en faktura');
+    const card = answerCard(page, 'Attestera en faktura');
+    await expect(card.getByRole('log')).toContainText('Två matchar sina beställningar');
+    const rows = card.getByRole('list', { name: 'Ärenden i svaret' });
+    await expect(rows.getByRole('listitem')).toHaveCount(1);
+    await expect(rows.getByRole('link', { name: /Attestera 3 fakturor/ }).first()).toHaveAttribute(
+      'href',
+      '/items/fakturor?from=%2F',
+    );
+    // The card's own article of the transcript is not drawn a second time.
+    await expect(card.getByRole('article', { name: /^Ärende: / })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test('the corner’s Fråga AI still leads to the line while the card stands', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await askOnLine(page, 'Vem är på plats?');
+    const card = answerCard(page, 'Vem är på plats?');
+    await expect(card.getByRole('log')).toContainText('Tio personer är på plats i dag.');
+    const corner = page.getByRole('button', { name: 'Fråga AI: gå till frågefältet', exact: true });
+    await expect(corner).toHaveCount(1);
+    await card.getByRole('button', { name: 'Stäng' }).focus();
+    await corner.focus();
+    await page.keyboard.press('Enter');
+    await expect(hemLine(page)).toBeFocused();
+    await expect(card).toBeVisible();
+  });
+
+  test('at 320 px the card with a named item reflows with nothing cut, its buttons under its heading', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(narrow);
+    await open(page, '/');
+    await askOnLine(page, 'Attestera en faktura');
+    const card = answerCard(page, 'Attestera en faktura');
+    await expect(card.getByRole('log')).toContainText('Två matchar sina beställningar');
+    await expect(card.getByRole('list', { name: 'Ärenden i svaret' }).getByRole('listitem')).toHaveCount(1);
+    await expect(card.getByRole('link', { name: 'Öppna som samtal' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Stäng' })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expectNoAxeViolations(page);
@@ -785,5 +992,33 @@ test.describe('I dag when the calendar does not answer, and for a person with no
       await expect(day(page).getByRole('heading', { name: 'I dag' })).toBeVisible();
       expect(await reflowProblems(page, day(page)), state).toEqual([]);
     }
+  });
+});
+
+test.describe('a row whose next press is the decision itself runs it from the row (D142, D70 item 1)', () => {
+  test.use({ viewport: desktop });
+
+  test('the button says the action, the title is the link to the item’s page, and one press writes and is said', async ({
+    page,
+    api,
+  }) => {
+    // Hem draws the most urgent rows: the notice is due today here, so it is among them.
+    const notice = api.threads.find(t => t.id === 'rutin')!;
+    notice.deadline = '2026-11-04';
+    await open(page, '/');
+    const row = needs(page).locator('#work-rutin');
+    // The button is not a link to the page here, so the item's name is (D142 item 7).
+    await expect(row.getByRole('link', { name: 'Ny rutin för läkemedelshantering' })).toHaveAttribute(
+      'href',
+      '/items/rutin?from=%2F',
+    );
+    await expect(row.getByRole('link', { name: /^Öppna/ })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    const ack = row.getByRole('button', { name: 'Jag har läst: Ny rutin för läkemedelshantering' });
+    await ack.focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => api.acted.map(a => [a.threadId, a.body.actionId])).toEqual([['rutin', 'ack']]);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(toasts(page).getByText(/^Läskvittot är registrerat\. Ärendet ligger under Klart\./)).toBeVisible();
   });
 });

@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import type { Subject, Thread } from '../packages/contracts/src/index';
-import type { AuditEntry, NewThread, ThreadStore, WorkflowStart } from '../apps/server/src/threads/model';
+import type { OpenThing, Subject, Thread } from '../packages/contracts/src/index';
+import type {
+  AuditEntry,
+  NewThread,
+  RecordDraftSent,
+  ThreadStore,
+  WorkflowStart,
+} from '../apps/server/src/threads/model';
 import { reminderStart, reminderWorkflowId } from '../apps/server/src/threads/domain';
 
 /**
@@ -252,6 +258,140 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       // A patch that does not name it leaves it.
       await store.transaction(tx => tx.updateThread(handed.id, { summary: 'Svar', updatedAt: plus(T0, 2000) }));
       expect((await store.readThread(a, handed.id))!.handover).toEqual(continued);
+    });
+    test('a card’s offer to hand it on and the person’s having done so are kept, patched and taken off again (D139)', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const handOn = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
+      const plain = draft(a);
+      const offered = draft(a, { topic: 'offered', handOn });
+      await store.transaction(async tx => {
+        await tx.insertThread(plain);
+        await tx.insertThread(offered);
+      });
+      const bare = (await store.readThread(a, plain.id))!;
+      expect('handOn' in bare || 'handedOn' in bare).toBe(false);
+      expect((await store.readThread(a, offered.id))!.handOn).toEqual(handOn);
+      expect('handedOn' in (await store.readThread(a, offered.id))!).toBe(false);
+      // The person says so: whom the card waits on since, and when, read back as written inside and outside the lock.
+      const handedOn = { to: 'din chef', at: plus(T0, 1000) };
+      await store.transaction(async tx => {
+        await tx.updateThread(offered.id, { waitingOn: 'din chef', handedOn, updatedAt: plus(T0, 1000) });
+        expect((await tx.lockThread(a, offered.id))!.handedOn).toEqual(handedOn);
+      });
+      expect(await store.readThread(a, offered.id)).toMatchObject({ waitingOn: 'din chef', handOn, handedOn });
+      // A patch that names neither leaves both.
+      await store.transaction(tx => tx.updateThread(offered.id, { summary: 'Ny', updatedAt: plus(T0, 2000) }));
+      expect(await store.readThread(a, offered.id)).toMatchObject({ handOn, handedOn });
+      // Null takes each off the card, and the thread reads as one that never had it.
+      await store.transaction(tx =>
+        tx.updateThread(offered.id, { waitingOn: null, handedOn: null, handOn: null, updatedAt: plus(T0, 3000) }),
+      );
+      const cleared = (await store.readThread(a, offered.id))!;
+      expect('handOn' in cleared || 'handedOn' in cleared).toBe(false);
+      // The source's offer can change and come back.
+      const other = { label: 'Jag har skickat in det', waitingOn: 'lönekontoret' };
+      await store.transaction(tx => tx.updateThread(offered.id, { handOn: other, updatedAt: plus(T0, 4000) }));
+      expect((await store.readThread(a, offered.id))!.handOn).toEqual(other);
+    });
+    test('the page a conversation was asked beside is kept with it, patched to opened, and absent on every other thread (D141)', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const askedBeside = { subject: 'tool:clew.requests', label: 'Mina beställningar', openedAt: null };
+      const plain = draft(a, { kind: 'question', topic: 'question', connector: 'clew', area: 'fragor' });
+      const beside = draft(a, { kind: 'question', topic: 'question', connector: 'clew', area: 'fragor', askedBeside });
+      await store.transaction(async tx => {
+        await tx.insertThread(plain);
+        await tx.insertThread(beside);
+      });
+      expect('askedBeside' in (await store.readThread(a, plain.id))!).toBe(false);
+      expect((await store.readThread(a, beside.id))!.askedBeside).toEqual(askedBeside);
+      expect((await store.listThreads(a, T0)).find(t => t.id === beside.id)!.askedBeside).toEqual(askedBeside);
+      expect((await store.listThreads(a, T0)).find(t => t.id === plain.id)!.askedBeside).toBeUndefined();
+      const opened = { ...askedBeside, openedAt: plus(T0, 1000) };
+      await store.transaction(tx => tx.updateThread(beside.id, { askedBeside: opened }));
+      expect((await store.readThread(a, beside.id))!.askedBeside).toEqual(opened);
+      expect((await store.readThreadById(beside.id))!.askedBeside).toEqual(opened);
+      expect((await store.transaction(tx => tx.lockThread(a, beside.id)))!.askedBeside).toEqual(opened);
+      // A patch of it alone moves nothing else, and a patch that does not name it leaves it.
+      expect((await store.readThread(a, beside.id))!.updatedAt).toBe(T0);
+      await store.transaction(tx => tx.updateThread(beside.id, { summary: 'Svar', updatedAt: plus(T0, 2000) }));
+      expect((await store.readThread(a, beside.id))!.askedBeside).toEqual(opened);
+    });
+    test("an assistant's draft about a record is marked as sent once, on the person's own conversation only (D137)", async () => {
+      const {
+        store,
+        people: [a, b],
+      } = await make();
+      const record = { capability: 'servicedesk.request', input: { ref: 'request:servicedesk:SD-1', desk: 'it' } };
+      const recordDraft = { capability: 'servicedesk.comment', record, values: { text: 'Felkoden är E07.' } };
+      const meta = { refs: ['request:servicedesk:SD-1'], recordDraft };
+      const conversation = draft(a, { kind: 'question', topic: 'question', connector: 'clew', area: 'fragor' });
+      const work = draft(a);
+      await store.transaction(async tx => {
+        await tx.insertThread(conversation);
+        await tx.insertThread(work);
+        await tx.addMessage(conversation.id, { role: 'user', body: 'Skriv att felkoden är E07', at: plus(T0, 1000) });
+        await tx.addMessage(conversation.id, { role: 'assistant', body: 'Ifyllt.', at: plus(T0, 1000), meta });
+        await tx.addMessage(work.id, { role: 'assistant', body: 'Ifyllt.', at: plus(T0, 1000), meta });
+      });
+      const [question, answer] = (await store.readThread(a, conversation.id))!.messages;
+      const [onWork] = (await store.readThread(a, work.id))!.messages;
+      // The record as the request names it: the same input, its keys in another order.
+      const mark: RecordDraftSent = {
+        personId: a,
+        conversationId: conversation.id,
+        messageId: answer!.id,
+        capability: 'servicedesk.comment',
+        record: { capability: 'servicedesk.request', input: { desk: 'it', ref: 'request:servicedesk:SD-1' } },
+        threadId: 'work-1',
+      };
+      const wrong: Array<[string, RecordDraftSent]> = [
+        ["another person's conversation", { ...mark, personId: b }],
+        ['a message without a draft', { ...mark, messageId: question!.id }],
+        ['another action', { ...mark, capability: 'servicedesk.close' }],
+        ['another read', { ...mark, record: { ...mark.record, capability: 'servicedesk.requests' } }],
+        [
+          'another record',
+          { ...mark, record: { ...mark.record, input: { desk: 'it', ref: 'request:servicedesk:SD-2' } } },
+        ],
+        ['less of the input', { ...mark, record: { ...mark.record, input: { ref: 'request:servicedesk:SD-1' } } }],
+        ['the message named under another thread', { ...mark, conversationId: work.id }],
+        [
+          "a work item's message, which is no conversation",
+          { ...mark, conversationId: work.id, messageId: onWork!.id },
+        ],
+      ];
+      for (const [what, other] of wrong)
+        expect([what, await store.transaction(tx => tx.markRecordDraftSent(other))]).toEqual([what, false]);
+      const before = (await store.readThread(a, conversation.id))!;
+      expect(before.messages[1]!.meta).toEqual(meta);
+      // A mark rolls back with its transaction.
+      await expect(
+        store.transaction(async tx => {
+          expect(await tx.markRecordDraftSent(mark)).toBe(true);
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      expect((await store.readThread(a, conversation.id))!.messages[1]!.meta).toEqual(meta);
+      // Marked with the work item it became; nothing else of the message or the conversation moves.
+      expect(await store.transaction(tx => tx.markRecordDraftSent(mark))).toBe(true);
+      const after = (await store.readThread(a, conversation.id))!;
+      const sent = { ...meta, recordDraft: { ...recordDraft, sent: { threadId: 'work-1' } } };
+      expect(after.messages.map(m => [m.id, m.role, m.body, m.meta])).toEqual([
+        [question!.id, 'user', 'Skriv att felkoden är E07', undefined],
+        [answer!.id, 'assistant', 'Ifyllt.', sent],
+      ]);
+      expect(after.updatedAt).toBe(before.updatedAt);
+      // Once: a second mark, for another work item, writes nothing, and the first stays.
+      expect(await store.transaction(tx => tx.markRecordDraftSent({ ...mark, threadId: 'work-2' }))).toBe(false);
+      expect((await store.readThread(a, conversation.id))!.messages[1]!.meta).toEqual(sent);
+      // The work item's own message, which carried the same draft, was never touched.
+      expect((await store.readThread(a, work.id))!.messages[0]!.meta).toEqual(meta);
     });
     test("an action's read-receipt mark is kept with the action and read back as stored (D112)", async () => {
       const {
@@ -577,6 +717,82 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect((await store.readThread(b, theirs.id))!.items.map(i => i.subject)).toEqual([undefined, other]);
       expect((await store.threadsNaming(b, [other])).map(n => n.thread.id)).toEqual([theirs.id]);
       expect(await store.transaction(tx => tx.eraseSubject(gone))).toEqual({ cards: 0, rows: 0, cardSubjects: 0 });
+    });
+    test('erasing a person deletes whole every conversation asked beside their page, whoever asked, and nothing else (D136 item 8)', async () => {
+      const {
+        store,
+        people: [a, b],
+        auditFor,
+      } = await make();
+      const run = unique();
+      const gone = `Anna.L-${run}`,
+        kept = `erik-${run}`;
+      const beside = (thing?: OpenThing) => ({
+        subject: `person:${gone}`,
+        label: 'Anna Lindqvist',
+        openedAt: null,
+        ...(thing ? { thing } : {}),
+      });
+      const question = (personId: string, thing?: OpenThing) =>
+        draft(personId, {
+          kind: 'question',
+          topic: 'question',
+          connector: 'clew',
+          area: 'fragor',
+          title: 'Vad har Anna kvar att göra?',
+          items: [],
+          actions: [],
+          deadline: null,
+          ...(thing === undefined ? {} : { askedBeside: beside(thing) }),
+        });
+      const mine = question(a, { kind: 'person', id: gone }),
+        theirs = question(b, { kind: 'person', id: gone });
+      // Kept: another person whose id differs only in case (D122), another person, a unit and a record whose input names
+      // the person (erasure does not look inside an input), a conversation asked beside nothing, and a work item.
+      const keptThreads = [
+        question(a, { kind: 'person', id: gone.toLowerCase() }),
+        question(a, { kind: 'person', id: kept }),
+        question(b, { kind: 'unit', id: gone }),
+        question(a, { kind: 'record', capability: 'hr.person', input: { person: gone } }),
+        question(b),
+        draft(a, { askedBeside: beside({ kind: 'person', id: gone }) }),
+      ];
+      await store.transaction(async tx => {
+        for (const t of [mine, theirs, ...keptThreads]) await tx.insertThread(t);
+        for (const t of [mine, theirs, keptThreads[0]!]) {
+          await tx.addMessage(t.id, { role: 'user', body: 'Vad har Anna kvar att göra?', at: plus(T0, 1000) });
+          await tx.addMessage(t.id, { role: 'assistant', body: 'Hon har ett ärende kvar.', at: plus(T0, 1000) });
+        }
+      });
+      // Read back as written: the thing is kept with the conversation's subject.
+      expect((await store.readThread(a, mine.id))!.askedBeside).toEqual(beside({ kind: 'person', id: gone }));
+      const entry = { actor: 'operator:cli', action: 'conversation.person_erased', subject: 'person:' + gone, at: T0 };
+      await expect(
+        store.transaction(async tx => {
+          await tx.eraseConversationsBeside(gone);
+          await tx.writeAudit(entry);
+          throw new Error('after the audit row');
+        }),
+      ).rejects.toThrow('after the audit row');
+      expect((await store.readThread(a, mine.id))!.messages).toHaveLength(2);
+      expect((await store.readThread(b, theirs.id))!.messages).toHaveLength(2);
+      expect(await auditFor('person:' + gone)).toEqual([]);
+      expect(await store.transaction(tx => tx.eraseConversationsBeside(gone.toUpperCase()))).toEqual({
+        conversations: 0,
+        messages: 0,
+      });
+      expect(await store.transaction(tx => tx.eraseConversationsBeside(gone))).toEqual({
+        conversations: 2,
+        messages: 4,
+      });
+      expect(await store.readThread(a, mine.id)).toBeUndefined();
+      expect(await store.readThread(b, theirs.id)).toBeUndefined();
+      for (const t of keptThreads) expect((await store.readThread(t.personId, t.id))?.id).toBe(t.id);
+      expect((await store.readThread(a, keptThreads[0]!.id))!.messages).toHaveLength(2);
+      expect(await store.transaction(tx => tx.eraseConversationsBeside(gone))).toEqual({
+        conversations: 0,
+        messages: 0,
+      });
     });
     test('an audit row and a job commit with the writes they belong to, and roll back with them', async () => {
       const {

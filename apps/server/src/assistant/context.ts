@@ -1,5 +1,10 @@
 import { isSnoozed, type CalendarEvent, type ReceiptRow, type SearchHit, type Thread } from '@clew/contracts';
 import { dayLabel, shortDayLabel, timeLabel, timeRange } from '@clew/calendar/dates';
+import { whyNotChangeable } from './prepared';
+
+/** A meeting of the person's own, as the model is told it: the buttons where the meeting is shown do both. */
+const OWN_MEETING =
+  'Det är personens eget möte: personen kan själv flytta det med "Flytta …" och ställa in det med "Ställ in …" där mötet visas, utan något annat program.';
 
 /** A chip resolved against what the person may actually see. Labels from the browser are never trusted. */
 export type ResolvedObject =
@@ -61,7 +66,10 @@ function cardState(t: Thread, now: string): string {
   }
   if (isSnoozed(t, now)) return ' Ärendet ligger under Inte nu.' + buttons(['Ta upp nu', more()]);
   if (t.waitingOn) return ` Ärendet väntar på ${t.waitingOn}.` + buttons(['Påminn mig', more()]);
-  return buttons([...(primary ? [primary.label] : []), ...secondary.map(a => a.label), 'Inte nu', more()]);
+  // The source's offer to say that the next step is someone else's and taken (D139) is a button of the person's own:
+  // the model is told it is there, and has no tool that presses it.
+  const handOn = t.handOn && !t.receipt && !t.execution ? [t.handOn.label] : [];
+  return buttons([...handOn, ...(primary ? [primary.label] : []), ...secondary.map(a => a.label), 'Inte nu', more()]);
 }
 /** A work item's last day as a person reads it ("måndag 16 november"); anything that is not a date as it came. */
 export const dueLabel = (date: string) => (/^\d{4}-\d{2}-\d{2}$/.test(date) ? dayLabel(date) : date);
@@ -75,6 +83,39 @@ export function workItemLine(t: Thread, now: string): string {
     `Ärende "${t.title}" (${t.trigger.source}${t.deadline ? ', senast ' + dueLabel(t.deadline) : ''}).` +
     (t.state === 'handled' ? ' Ärendet är hanterat.' : cardState(t, now))
   );
+}
+/**
+ * What stands open on a thing's page as Clew resolved it for the asker this turn (D136), other than one of the asker's
+ * people, whose line is `openPersonLine`: the asker's own page (item 3), a unit they manage or follow up (item 5), a
+ * record read for the model as a tool call would have read it (item 6), or a record the model cannot read. Whatever
+ * resolves to nothing for the asker (a colleague's page, a unit they do not follow up) has no line at all.
+ */
+export type OpenThingLine =
+  | { kind: 'own' }
+  | { kind: 'unit'; id: string; name: string }
+  | { kind: 'record'; capability: string; title: string; source: string; reading: unknown }
+  | { kind: 'unread'; read?: { title: string; source: string } };
+/**
+ * The Swedish line for what stands open, for the block beside the conversation, where "sidan", "enheten" and "den
+ * öppna posten" are this thing. A record is handed as its view lets a model read it (`modelReading`), never with the
+ * input the page drew it with: that input may name a person by a key, and the record is read again every turn.
+ */
+export function openThingLine(open: OpenThingLine): string {
+  switch (open.kind) {
+    case 'own':
+      return 'Personens egen sida. Gäller frågan sidan, gäller den personen själv: läs med verktygen utan att ange någon medarbetare, så svarar de för personen.';
+    case 'unit':
+      return `Sidan om enheten ${open.name}, enhetens id ${open.id}, som personen är chef för eller följer upp. Ett verktyg som tar en enhet läser den med id:t ${open.id}.`;
+    case 'record':
+      return (
+        `Den öppna posten "${open.title}" (${open.source}), läst nu med verktyget ${open.capability} så som sidan visar den. ` +
+        `Gäller frågan den öppna posten, svara utifrån detta: ${JSON.stringify(open.reading)}`
+      );
+    case 'unread':
+      return open.read
+        ? `Den öppna posten "${open.read.title}" (${open.read.source}) kan du inte läsa. Gäller frågan den, säg att du inte kan läsa den.`
+        : 'Det som står öppet på sidan kan du inte läsa. Gäller frågan det, säg att du inte kan läsa det som visas.';
+  }
 }
 /**
  * Swedish lines for the system prompt's "Du tittar på" block. Names appear here only because the person pointed at the
@@ -111,9 +152,20 @@ export function serialiseContext(
       case 'proposal':
         return `Förslaget ${o.proposal.participant.name} ${day(o.proposal.start)} ${timeRange(o.proposal.start, o.proposal.end)} i ärendet "${o.thread.title}".`;
       case 'event':
-        return `Mötet "${o.event.title}" ${day(o.event.start)} ${o.event.allDay ? 'heldag' : timeRange(o.event.start, o.event.end)}${o.event.room ? ', ' + o.event.room : ''} i kalendern.`;
+        // What the person can do with it themselves, so the model neither offers what it cannot prepare nor sends the
+        // person to another program for what the meeting's own buttons do.
+        return (
+          `Mötet "${o.event.title}" ${day(o.event.start)} ${o.event.allDay ? 'heldag' : timeRange(o.event.start, o.event.end)}${o.event.room ? ', ' + o.event.room : ''} i kalendern. ` +
+          (whyNotChangeable(o.event) ?? OWN_MEETING)
+        );
       case 'capability':
-        return `Förmågan "${o.title}" (${o.source}).`;
+        // A list or a view that stands open is named with the read that draws it (D141 rule 4): asked "vad väntar de
+        // på?" beside a register, the model otherwise reads whichever list it knows best, not the one on the page.
+        return (
+          `Förmågan "${o.title}" (${o.source}), verktyget ${o.name}. ` +
+          `Gäller frågan det som visas där och verktyget finns bland dina, läs med det innan du svarar; ` +
+          `finns det inte, säg att du inte kan läsa det som visas.`
+        );
       case 'document': {
         const h = o.hit;
         const kept = [
