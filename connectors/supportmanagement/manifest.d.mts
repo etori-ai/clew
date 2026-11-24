@@ -4,5 +4,7 @@ export declare const DEFAULT_SOURCE: string;
 export declare const errandRefParts: { municipalityId: string; namespace: string; id: string };
 export declare const errandRefPattern: string;
 export declare const STATES: string[];
-export declare function createManifest(options?: { audience?: string; source?: string }): unknown;
+export declare const requestRefPattern: string;
+export declare const REQUEST_STATES: string[];
+export declare function createManifest(options?: { audience?: string; source?: string; owner?: boolean }): unknown;
 export declare const manifest: unknown;
