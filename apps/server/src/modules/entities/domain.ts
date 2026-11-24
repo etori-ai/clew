@@ -211,14 +211,20 @@ export function reportOf(
 export const isReport = (reach: Reach, id: string) =>
   reach.managed.some(unit => unit.people.some(p => p.id === id && askable(p) && reportsTo(reach, p)));
 /**
- * A report of the reader's without a user name, named by Clew's own id (D117): for a core capability of Clew's own
- * domains that takes a person by id, as the talks domain does. Someone with a user name is never named by id.
+ * A report of the reader's named by Clew's own id (D117), for a core capability of Clew's own domains that takes a
+ * person by id: one without a user name, whom nothing else names, as the talks domain names them, and one with a user
+ * name that can be asked about, whom Clew's own records name by id (D122: a card's action, written by the core).
  */
-export function reportById(reach: Reach, id: string): (ReachPerson & { userName: null }) | undefined {
+export function reportById(reach: Reach, id: string): ReachPerson | undefined {
   for (const unit of reach.managed)
     for (const person of unit.people)
-      if (person.id === id && person.userName === null && person.enabled && reportsTo(reach, person))
-        return person as ReachPerson & { userName: null };
+      if (
+        person.id === id &&
+        person.enabled &&
+        (person.userName === null || askable(person)) &&
+        reportsTo(reach, person)
+      )
+        return person;
   return undefined;
 }
 /** A unit the reader manages or belongs to, by its id. */

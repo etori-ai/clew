@@ -193,8 +193,9 @@ function noticeWords(notice: TalkNotice): Pick<ThreadDraft, 'title' | 'summary' 
 }
 /**
  * A card the scan asks for (D133, D134). It names nobody in its title, summary, reason or row: the person is the row's
- * subject, by user name, and the input of the read the card opens, the person's place in the round, from which the
- * talk opens. A reminder to prepare is due the day of the talk. `open` names the two reads a card may open.
+ * subject, by user name, which the stream keeps as their id (`keyedDrafts`), and the input of the read the card opens,
+ * the person's place in the round, from which the talk opens, by Clew's id (D122: Clew is the source). A reminder to
+ * prepare is due the day of the talk. `open` names the two reads a card may open.
  */
 function noticeDraft(notice: TalkNotice, open: { person: string; round: string }): ThreadDraft {
   const key = notice.userName && [...notice.userName].length <= ENTITY_KEY_MAX ? notice.userName : undefined;
@@ -224,7 +225,7 @@ function noticeDraft(notice: TalkNotice, open: { person: string; round: string }
             kind: 'read' as const,
             role: 'primary' as const,
             target: 'panel' as const,
-            input: { keys: [key] },
+            input: { keys: [notice.personId] },
           }
         : {
             id: 'open',
@@ -292,8 +293,9 @@ export function talksConnector(
     // The person's talk is written in the talk drawer (D96 item 7), the section's second way in. A query alone: the drawer
     // lies over whichever page the way in is drawn on, Personal or the person's own (D111 rule 5).
     about: { entity: 'person', page: { title: 'Öppna samtalet', href: '?talk={id}' } },
-    // The round lists a manager's reports (D99): nobody else is asked about (D117).
-    person: { admits: ['managed'] },
+    // The round lists a manager's reports (D99): nobody else is asked about (D117). A card of the scan names the person
+    // by Clew's id (D122), which the registry gives the read as the user name.
+    person: { admits: ['managed'], ids: true },
     run: async (actor, input) => {
       const { round, rows } = await talks.aboutPeople(await persona(actor), input.keys);
       return {

@@ -924,8 +924,9 @@ export function BoardingPlanReadPage({ user, admin }: { user: SessionUser; admin
 /**
  * The page of the read `boarding.person` for one person (`/tools/boarding.person?input={"keys":[…]}`, D116), which
  * the suggestion's card "Förbered introduktionen" leads to: that person's page, where "Starta introduktion" is one press
- * away. The read names them by user name and the page by Clew's id, so the person is read to learn it. A read about more
- * than one person is a list: Personal with the lens Introduktion och avslut.
+ * away. The card names them by Clew's id (D122), as the page does; the person is read first, so one the reader may not
+ * open is said to be missing. A read about more than one person is a list: Personal with the lens Introduktion och
+ * avslut.
  */
 export function BoardingPersonReadPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const { search } = useLocation();
