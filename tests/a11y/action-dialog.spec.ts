@@ -109,9 +109,11 @@ test.describe('the action dialog on a work item', () => {
     await dialog.getByRole('button', { name: 'Boka samtalet' }).click();
     await expect(dialog).toBeHidden();
     await expect.poll(() => sent.length).toBe(1);
+    // Decided on the item as it was shown (AM-4).
     expect(sent[0]).toEqual({
       actionId: 'book',
       values: { when: '2026-11-05T12:15:00.000Z', place: 'Bergsåkers skola, rum 12' },
+      version: '2026-11-04T08:00:00.000Z',
     });
     // The decision waits on the source first, then the receipt is on the work item when it answers (D45): each row
     // read back, Ångra with the minutes left, and the decision under Händelser. The notice draws the headline bare.
@@ -345,7 +347,11 @@ test.describe('the action dialog on a work item', () => {
     await expect(dialog.getByRole('definition')).toHaveText(['Trevlig jul!']);
     await dialog.getByRole('button', { name: 'Godkänn', exact: true }).click();
     await expect.poll(() => sent.length).toBe(1);
-    expect(sent[0]).toEqual({ actionId: 'decide', values: { comment: 'Trevlig jul!' } });
+    expect(sent[0]).toEqual({
+      actionId: 'decide',
+      values: { comment: 'Trevlig jul!' },
+      version: '2026-11-04T08:00:00.000Z',
+    });
     await expect(page.locator('#card-ledighet').getByText('Ansökan är godkänd', { exact: true })).toBeVisible();
   });
 
@@ -355,7 +361,7 @@ test.describe('the action dialog on a work item', () => {
     await pane(page).getByRole('button', { name: 'Godkänn', exact: true }).click();
     await dialogOf(page, 'Godkänn').getByRole('button', { name: 'Godkänn', exact: true }).click();
     await expect.poll(() => sent.length).toBe(1);
-    expect(sent[0]).toEqual({ actionId: 'decide', values: {} });
+    expect(sent[0]).toEqual({ actionId: 'decide', values: {}, version: '2026-11-04T08:00:00.000Z' });
   });
 
   test('a write that asks nothing but says what it writes is one step, without step markers', async ({ page, api }) => {
