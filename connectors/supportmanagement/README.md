@@ -145,7 +145,7 @@ reporter has to answer is an assumption to confirm per namespace.
 | `CLEW_CONNECTOR_SECRET` | The secret shared with Clew, 16 characters or more. Required |
 | `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks`. Required; HTTPS outside the local development allowlist |
 | `PORT` | Default 4050 |
-| `SM_ADAPTER` | `fixture` (default, made-up errands) or `api` (SupportManagement) |
+| `SM_ADAPTER` | `api` (SupportManagement) or `fixture` (made-up errands, development and tests only). Required: without it the connector does not start, and `fixture` beside `SM_URL` is refused |
 | `SM_AUDIENCE` | The audience the person's token is issued for. Default `supportmanagement`. It is part of the manifest, so refresh the manifest in Clew after changing it |
 | `SM_SOURCE_LABEL` | The system's name as a person reads it. Default `Ärendesystemet` |
 | `SM_URL` | The API base, the gateway's address for SupportManagement. Required for `api`; HTTPS outside localhost |
@@ -178,7 +178,7 @@ With the local Clew stack running, inside the devcontainer:
 
 ```sh
 docker exec -w /workspace clew-app-1 bun scripts/auth-setup.ts
-docker exec -w /workspace -e CLEW_CONNECTOR_SECRET=local-docs-only-transport-key -e CLEW_URL=http://127.0.0.1:3000 clew-app-1 node connectors/supportmanagement/server.mjs
+docker exec -w /workspace -e CLEW_CONNECTOR_SECRET=local-docs-only-transport-key -e CLEW_URL=http://127.0.0.1:3000 -e SM_ADAPTER=fixture clew-app-1 node connectors/supportmanagement/server.mjs
 docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4050 --id sm --secret local-docs-only-transport-key
 docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts sm http://127.0.0.1:4050 --secret local-docs-only-transport-key
 ```

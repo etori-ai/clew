@@ -1,20 +1,21 @@
-# The SupportManagement connector next to the devcontainer. An administrator registers it in Clew (Administration ›
-# Anslutna system, or `bun scripts/connector-add.ts`), so nothing on Clew's container names it (D23).
+# The SupportManagement connector on its own, next to a Clew and a SupportManagement it can reach. An administrator
+# registers it in Clew (Administration › Anslutna system, or `bun scripts/connector-add.ts`), so nothing on Clew's
+# container names it (D23). In development it runs inside the app container instead (README.md, "Run and check").
 #
-#   SM_SECRET=<16+ characters> CLEW_URL=http://host.docker.internal:3000 docker compose -f connectors/supportmanagement/compose.yaml up sm
-# and register it from inside the app container with the same secret:
-#   docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts sm http://host.docker.internal:4050 --secret <the secret>
+#   SM_SECRET=<16+ characters> CLEW_URL=https://clew.example SM_ADAPTER=api SM_URL=https://… SM_MUNICIPALITY_ID=… \
+#     SM_AUDIENCE=<the audience the gateway accepts> docker compose -f connectors/supportmanagement/compose.yaml up sm
 #
-# Without SM_ADAPTER the connector serves the made-up errands in errands.mjs. Against SupportManagement (D89):
-#   SM_ADAPTER=api SM_URL=https://… SM_MUNICIPALITY_ID=… SM_AUDIENCE=<the audience the gateway accepts>
-# The connector holds no credential for SupportManagement: every call carries the person's own token.
+# CLEW_URL is https: the connector fetches Clew's public keys from it, and over plain http only from a host of the
+# development stack. SM_ADAPTER has no default: the connector does not start without it. `SM_ADAPTER=fixture` serves
+# the made-up errands in errands.mjs instead, for development only, and is refused beside SM_URL (D89). The connector
+# holds no credential for SupportManagement: every call carries the person's own token.
 services:
   sm:
     build: .
     environment:
       CLEW_CONNECTOR_SECRET: ${SM_SECRET:?set SM_SECRET to a shared secret of 16+ characters}
       CLEW_URL: ${CLEW_URL:?set CLEW_URL to Clew's base URL, https outside local development}
-      SM_ADAPTER: ${SM_ADAPTER:-fixture}
+      SM_ADAPTER: ${SM_ADAPTER:?set SM_ADAPTER to api (with SM_URL and SM_MUNICIPALITY_ID), or to fixture for made-up development data}
       SM_AUDIENCE: ${SM_AUDIENCE:-}
       SM_SOURCE_LABEL: ${SM_SOURCE_LABEL:-}
       SM_MUNICIPALITY_ID: ${SM_MUNICIPALITY_ID:-}

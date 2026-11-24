@@ -5,7 +5,7 @@ import { checkConnector } from '../../packages/connectors/src/check';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as hrManifest } from '../../connectors/hr/connector.mjs';
 import { memoryState } from '../../connectors/hr/state.mjs';
-import { assertionFor, testJwks } from '../connector-authority';
+import { assertionFor, testAuthority, testJwks } from '../connector-authority';
 import { ThreadDraftSchema } from '../../packages/connectors/src/protocol';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -340,6 +340,58 @@ describe('the HR fixture connector', () => {
     expect(state.get<Record<string, unknown>>('talks')).toEqual({});
     expect(state.get<Record<string, unknown>>('leave-decisions')).toEqual({});
     expect(state.get<Record<string, unknown>>('reported-absences')).toEqual({});
+  });
+  test('a captured request runs once: sent again under its own operation id or another it is refused, and a scan names no capability (CS-L1, CS-L2)', async () => {
+    const { service } = stack({ feedKey: 'feed-key' });
+    const sent: Request[] = [];
+    const registry = new Registry();
+    registry.register(
+      remoteConnector(parseManifest(hrManifest, 'hr'), {
+        url: 'http://hr',
+        key: secret,
+        assert: assertionFor('hr', secret),
+        fetch: async (input, init) => {
+          const request = new Request(input, init);
+          sent.push(request.clone());
+          return service.handle(request);
+        },
+      }),
+    );
+    const absence = { person: 'hr:emp:1005', from: '2026-11-04', extent: 100 };
+    await registry.run(hillevi, 'hr.reportAbsence', absence, { operationId: 'op-1' });
+    const write = sent.at(-1)!;
+    const body = await write.clone().text();
+    const resend = (operationId: string) => {
+      const headers = new Headers(write.headers);
+      headers.set('x-clew-operation-id', operationId);
+      return service.handle(new Request(write.url, { method: 'POST', headers, body }));
+    };
+    // The same bytes under a new operation id, and as they were: the HR system keeps one sick report, not three.
+    expect((await resend('op-2')).status).toBe(401);
+    expect((await resend('op-1')).status).toBe(401);
+    const feed = await service.handle(
+      new Request('http://hr/fixture/absences', { headers: { 'x-fixture-key': 'feed-key' } }),
+    );
+    expect(((await feed.json()) as Rows).rows).toHaveLength(1);
+    // A manager's scan, not yet sent, aimed at a capability's name anywhere but its own route runs nothing; on the scan's
+    // route it is still taken, so nothing was used up on the way.
+    const scanBody = JSON.stringify({ actor: hillevi });
+    const scan = await (await testAuthority(secret)).assert('hr', hillevi, [], [], { body: scanBody });
+    const post = (path: string) =>
+      service.handle(
+        new Request('http://hr' + path, {
+          method: 'POST',
+          headers: { authorization: 'Bearer ' + scan, 'x-clew-connector-key': secret },
+          body: scanBody,
+        }),
+      );
+    for (const path of [
+      '/clew/XXXXXXXXXXXXXhr.whoIsOn',
+      '/clew/capabilitiesXhr.absenceOverview',
+      '/clew/scan/hr.whoIsOn',
+    ])
+      expect([path, (await post(path)).status]).toEqual([path, 401]);
+    expect((await post('/clew/scan')).status).toBe(200);
   });
   test('the follower proposes the sick report only when it does not exist yet, and the report is registered once', async () => {
     const { registry, service } = stack({ feedKey: 'feed-key' });

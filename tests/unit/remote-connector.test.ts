@@ -15,7 +15,7 @@ import {
 import { createConnector, manifest as helloManifest } from '../../connectors/hello/connector.mjs';
 import { createVerifier } from '../../connectors/hello/verification.mjs';
 import { loadConnectors, registerConnector } from '../../apps/server/src/connectors/remote';
-import { assertionFor, testJwks, testAuthority } from '../connector-authority';
+import { assertionFor, signedRequest, testJwks, testAuthority } from '../connector-authority';
 import { decodeJwt } from 'jose';
 import { checkConnector } from '../../packages/connectors/src/check';
 import type { ConnectorHealth } from '../../packages/db/src/schema';
@@ -166,6 +166,33 @@ describe('a remote connector in the registry', () => {
     });
     expect(clewCalls).toEqual([
       { url: 'http://clew/api/connectors/call', auth: 'Bearer ', body: { name: 'calendar.today', input: {} } },
+    ]);
+  });
+  test("a capability that fails answers a fixed sentence, never what was thrown: a callback's refusal or a network error (CS-L6)", async () => {
+    let fail: () => Promise<Response> = async () =>
+      Response.json({ error: { code: 'denied', message: 'Kalendern: intern detalj 0x2f' } }, { status: 403 });
+    const hello = createConnector({ jwks: testJwks, secret, clewUrl: 'http://clew', fetch: () => fail() });
+    const call = async () =>
+      hello.handle(
+        await signedRequest('http://hello/clew/capabilities/hello.dayWithMeetings', {
+          id: 'hello',
+          actor: hassan,
+          key: secret,
+          body: { actor: hassan, input: {} },
+        }),
+      );
+    const refused = await call();
+    expect([refused.status, await refused.json()]).toEqual([
+      503,
+      { error: { code: 'unavailable', message: 'Hello-anslutningen kunde inte svara.' } },
+    ]);
+    fail = async () => {
+      throw new TypeError('fetch failed: connect ECONNREFUSED 10.0.0.7:3000');
+    };
+    const unreachable = await call();
+    expect([unreachable.status, await unreachable.json()]).toEqual([
+      503,
+      { error: { code: 'unavailable', message: 'Hello-anslutningen kunde inte svara.' } },
     ]);
   });
   test("keeps a capability's about from the manifest (D97), and signs the person's user name into the actor the service reads", async () => {

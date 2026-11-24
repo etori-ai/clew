@@ -47,22 +47,27 @@ export async function installationRequest(
   });
 }
 /**
- * A request to a connector service as Clew sends it (D117): the body serialised once and the assertion bound to it and,
- * on a capability's route, to the capability. For suites that call a service's handler directly.
+ * A request to a connector service as Clew sends it (D117): the body serialised once and the assertion bound to it, on
+ * a capability's route to the capability, and to the `x-clew-operation-id` among `headers` when there is one. For
+ * suites that call a service's handler directly.
  */
 export async function signedRequest(
   url: string,
   options: { id: string; actor: Actor; body: unknown; key?: string; label?: string; headers?: Record<string, string> },
 ) {
   const text = JSON.stringify(options.body);
-  const at = new URL(url).pathname.indexOf('/clew/capabilities/');
-  const capability =
-    at < 0 ? undefined : decodeURIComponent(new URL(url).pathname.slice(at + '/clew/capabilities/'.length));
+  const path = new URL(url).pathname;
+  // As Clew names it: only at the start of the path (`remote.ts`, `post`).
+  const capability = path.startsWith('/clew/capabilities/')
+    ? decodeURIComponent(path.slice('/clew/capabilities/'.length))
+    : undefined;
+  const operationId = options.headers?.['x-clew-operation-id'];
   const token = await (
     await testAuthority(options.label)
   ).assert(options.id, options.actor, [], [], {
     body: text,
     ...(capability ? { capability } : {}),
+    ...(operationId ? { operationId } : {}),
   });
   return new Request(url, {
     method: 'POST',

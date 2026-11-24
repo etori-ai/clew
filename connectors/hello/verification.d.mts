@@ -1,10 +1,12 @@
 /**
- * What a request binds an assertion to (D117, D119): the digest of its exact body and, on a capability's route or an
- * installation read's, its name and which route it is. `capability` is null for a path that names one of the routes
- * anywhere but exactly, which no assertion matches.
+ * What a request binds an assertion to (D117, D119): the digest of its exact body, its `X-Clew-Operation-Id` when it
+ * carries one, and, on a capability's route or an installation read's, its name and which route it is. `capability` is
+ * undefined only on the routes that name none (`/clew/scan`, `/clew/figure`, `/clew/documents`, `/clew/ask`) and null on
+ * any other path, which no assertion matches.
  */
 export interface AssertionBinding {
   body: string;
+  operationId?: string;
   capability?: string | null;
   route?: 'capabilities' | 'installation';
 }

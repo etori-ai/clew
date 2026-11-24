@@ -1,20 +1,22 @@
-# The Qlik connector next to the devcontainer. An administrator registers it in Clew (Administration ›
-# Anslutna system, or `bun scripts/connector-add.ts`), so nothing on Clew's container names it (D23).
+# The Qlik connector on its own, next to a Clew and a Qlik it can reach. An administrator registers it in Clew
+# (Administration › Anslutna system, or `bun scripts/connector-add.ts`), so nothing on Clew's container names it (D23).
+# In development it is the `qlik` service of .devcontainer/compose.yaml instead (README.md).
 #
-#   QLIK_SECRET=<16+ characters> docker compose -f connectors/qlik/compose.yaml up qlik
-# and register it from inside the app container with the same secret:
-#   docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts qlik http://host.docker.internal:4048 --secret <the secret> --enable
+#   QLIK_SECRET=<16+ characters> CLEW_URL=https://clew.example QLIK_ADAPTER=engine QLIK_URL=wss://… QLIK_APP_ID=… \
+#   QLIK_TOKEN=… QLIK_SICK_LEAVE_CUBE='{"unit":"…","period":"…","measures":{"total":"…","headcount":"…"}}' \
+#   QLIK_UNIT_MAP='{"<unit id>":["…"]}' docker compose -f connectors/qlik/compose.yaml up qlik
 #
-# Without QLIK_ADAPTER the connector serves the made-up statistics in statistics.mjs. Against Qlik (D82):
-#   QLIK_ADAPTER=engine QLIK_URL=wss://… QLIK_APP_ID=… QLIK_TOKEN=… (from the secrets store, never from this file)
-#   QLIK_SICK_LEAVE_CUBE='{"unit":"…","period":"…","measures":{"total":"…","headcount":"…"}}' QLIK_UNIT_MAP='{"<unit id>":["…"]}'
+# The secret and the token come from the secrets store, never from this file.
+# QLIK_ADAPTER has no default: the connector does not start without it. `QLIK_ADAPTER=fixture` serves the made-up
+# statistics in statistics.mjs instead, for development only, and is refused beside QLIK_URL, QLIK_APP_ID or QLIK_TOKEN
+# (D82).
 services:
   qlik:
     build: .
     environment:
       CLEW_CONNECTOR_SECRET: ${QLIK_SECRET:?set QLIK_SECRET to a shared secret of 16+ characters}
       CLEW_URL: ${CLEW_URL:?set CLEW_URL to Clew's base URL, https outside local development}
-      QLIK_ADAPTER: ${QLIK_ADAPTER:-fixture}
+      QLIK_ADAPTER: ${QLIK_ADAPTER:?set QLIK_ADAPTER to engine (with QLIK_URL, QLIK_APP_ID and QLIK_TOKEN), or to fixture for made-up development data}
       QLIK_UNIT_MAP: ${QLIK_UNIT_MAP:-}
       QLIK_MIN_GROUP: ${QLIK_MIN_GROUP:-}
       QLIK_SICK_LEAVE_WARN_ABOVE: ${QLIK_SICK_LEAVE_WARN_ABOVE:-}

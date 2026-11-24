@@ -1,17 +1,16 @@
 // Serves connector.mjs over HTTP. Environment:
-//   PORT (default 4020), CLEW_CONNECTOR_SECRET (shared with Clew),
-//   PHONEBOOK_ADAPTER  "fixture" (default: the made-up organisation in directory.mjs) or "http"
+//   PORT (default 4020), CLEW_CONNECTOR_SECRET (shared with Clew), CLEW_URL (where Clew's keys are fetched)
+//   PHONEBOOK_ADAPTER  "http" or "fixture" (the made-up organisation in directory.mjs: development and tests only).
+//                      Required: there is no default (`adapterOf` in connector.mjs)
 //   PHONEBOOK_URL, PHONEBOOK_API_KEY  the phone book API and its integration key, for the http adapter
 //   PHONEBOOK_ALLOW_HTTP  true lets PHONEBOOK_URL be plain http on a private development network
 //   PHONEBOOK_UNIT_MAP  optional JSON object: Clew unit id -> the phone book's unit id, where they differ
 import { createServer } from 'node:http';
 import { listener } from './http.mjs';
-import { createConnector } from './connector.mjs';
+import { adapterOf, createConnector } from './connector.mjs';
 import { createFixtureDirectory, createHttpDirectory } from './directory.mjs';
 
-const adapter = process.env.PHONEBOOK_ADAPTER ?? 'fixture';
-if (adapter !== 'fixture' && adapter !== 'http')
-  throw new Error(`Unknown PHONEBOOK_ADAPTER "${adapter}". Known: fixture, http.`);
+const adapter = adapterOf(process.env);
 const directory =
   adapter === 'http'
     ? createHttpDirectory({ url: process.env.PHONEBOOK_URL, apiKey: process.env.PHONEBOOK_API_KEY })

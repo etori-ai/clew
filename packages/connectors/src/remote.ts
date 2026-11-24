@@ -64,13 +64,16 @@ export interface RemoteTransport {
 }
 /**
  * What an assertion is bound to (D117): `body`, the exact request body it is sent with, which the signer digests
- * (SHA-256, base64url, the `body` claim), and on `/clew/capabilities/{name}` the capability's `name` (the `capability`
- * claim). A connector's verifier recomputes both from the request it received, so neither the input nor the `about` it
- * carries can be changed and the assertion cannot be replayed on another capability.
+ * (SHA-256, base64url, the `body` claim), on `/clew/capabilities/{name}` the capability's `name` (the `capability`
+ * claim), and on an approved write the `X-Clew-Operation-Id` it is sent with (the `operationId` claim). A connector's
+ * verifier recomputes all three from the request it received, so neither the input nor the `about` it carries can be
+ * changed, and the assertion cannot be replayed on another capability or as another operation.
  */
 export interface AssertionBinding {
   body: string;
   capability?: string;
+  /** The operation id the request carries in `X-Clew-Operation-Id`, when it carries one. */
+  operationId?: string;
   /**
    * `false`: the assertion carries no callback grant, whatever the connector's `uses` say. A question to a source's
    * assistant, and the read that lists the assistants, are sent so: only the person's text leaves Clew, and nothing is
@@ -296,6 +299,7 @@ async function post(
     ...(path.startsWith(CAPABILITY_ROUTE)
       ? { capability: decodeURIComponent(path.slice(CAPABILITY_ROUTE.length)) }
       : {}),
+    ...(operationId ? { operationId } : {}),
     ...(callback === false ? { callback } : {}),
   };
   let response: Response;

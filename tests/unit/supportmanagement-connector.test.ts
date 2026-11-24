@@ -4,7 +4,12 @@ import { createServer } from 'node:http';
 import { connect, type AddressInfo } from 'node:net';
 import { type Actor } from '../../packages/connectors/src/index';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
-import { createConnector, createManifest, type ErrandSource } from '../../connectors/supportmanagement/connector.mjs';
+import {
+  adapterOf,
+  createConnector,
+  createManifest,
+  type ErrandSource,
+} from '../../connectors/supportmanagement/connector.mjs';
 import {
   SourceDenied,
   SourceNotFound,
@@ -256,6 +261,23 @@ describe('the SupportManagement connector', () => {
       (await call({ 'x-clew-connector-key': 'wrong-secret-wrong-secret', authorization: 'Bearer x.y.z' })).status,
     ).toBe(401);
     expect((await call({ 'x-clew-connector-key': secret, authorization: 'Bearer x.y.z' })).status).toBe(401);
+  });
+});
+
+describe('the adapter (CS-L7)', () => {
+  test('is always named: no default, and the made-up errands never start beside an address', () => {
+    expect(adapterOf({ SM_ADAPTER: 'api', SM_URL: 'https://sm.example', SM_MUNICIPALITY_ID: '2281' })).toBe('api');
+    expect(adapterOf({ SM_ADAPTER: 'fixture' })).toBe('fixture');
+    // What compose passes for an unset variable is the empty string.
+    expect(adapterOf({ SM_ADAPTER: 'fixture', SM_URL: '' })).toBe('fixture');
+    // An address without the adapter named used to start the made-up errands.
+    expect(() => adapterOf({ SM_URL: 'https://sm.example' })).toThrow('SM_ADAPTER is not set');
+    expect(() => adapterOf({})).toThrow('SM_ADAPTER is not set');
+    expect(() => adapterOf({ SM_ADAPTER: ' ' })).toThrow('SM_ADAPTER is not set');
+    expect(() => adapterOf({ SM_ADAPTER: 'live' })).toThrow('Unknown SM_ADAPTER "live"');
+    expect(() => adapterOf({ SM_ADAPTER: 'fixture', SM_URL: 'https://sm.example' })).toThrow(
+      'SM_ADAPTER is "fixture" but SM_URL is set',
+    );
   });
 });
 

@@ -26,7 +26,7 @@ A running instance serves JSON Schema at `/api/protocol/connector-protocol.schem
 
 | Need | Start from | Limit |
 |---|---|---|
-| Read a directory/catalogue and display it | [phonebook](../../connectors/phonebook/README.md) | Synthetic data by default; its HTTP API and organization-wide lookup policy are assumptions to replace. |
+| Read a directory/catalogue and display it | [phonebook](../../connectors/phonebook/README.md) | Synthetic data with `PHONEBOOK_ADAPTER=fixture`; its HTTP API and organization-wide lookup policy are assumptions to replace. |
 | Explore routes, callbacks, scans and figures | [hello](../../connectors/hello/README.md) | In-memory demonstration; toy writes are not a recovery guarantee. |
 | Study source-side deduplication and lookup | [reference](../../connectors/reference/README.md) | Synthetic SQLite source, not a real-system pilot. |
 | Retrieve documents using delegated user authority | [eneo](../../connectors/eneo/README.md) | Requires compatible source and IdP configuration; interactive reads only. |

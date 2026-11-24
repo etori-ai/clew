@@ -63,7 +63,7 @@ the real source is not settled.
 | `CLEW_CONNECTOR_SECRET` | The secret shared with Clew, 16 characters or more. Required |
 | `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks`. Required; HTTPS outside the local development allowlist |
 | `PORT` | Default 4048 |
-| `QLIK_ADAPTER` | `fixture` (default, made-up statistics) or `engine` (Qlik's Engine API) |
+| `QLIK_ADAPTER` | `engine` (Qlik's Engine API) or `fixture` (made-up statistics, development and tests only). Required: without it the connector does not start, and `fixture` beside `QLIK_URL`, `QLIK_APP_ID` or `QLIK_TOKEN` is refused |
 | `QLIK_UNIT_MAP` | JSON object, Clew unit id to an array of the source's unit names: `{"unit-skola":["Barn- och utbildningsförvaltningen"]}`. Required for `engine`; a unit without an entry sees nothing. Without it the fixture runs in open mode |
 | `QLIK_MIN_GROUP` | The smallest headcount whose rates are shown. Default 5, a placeholder: HR and the data protection officer decide |
 | `QLIK_SICK_LEAVE_WARN_ABOVE` | Optional rate in percent from which the sick-leave figure's tone is `warn`, and `ok` below ("Inom målet" in `qlik.unit`), and from which `qlik.unit` says "Bevaka". Without it or the next the tone is `none` |
@@ -104,7 +104,7 @@ fixture's sick-leave figure and the finance fixture's spent frame on Hem, as an 
 instead. To run it by hand instead, inside the devcontainer:
 
 ```sh
-docker exec -w /workspace -e CLEW_CONNECTOR_SECRET=local-docs-only-transport-key -e CLEW_URL=http://127.0.0.1:3000 clew-app-1 node connectors/qlik/server.mjs
+docker exec -w /workspace -e CLEW_CONNECTOR_SECRET=local-docs-only-transport-key -e CLEW_URL=http://127.0.0.1:3000 -e QLIK_ADAPTER=fixture clew-app-1 node connectors/qlik/server.mjs
 docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4048 --id qlik --secret local-docs-only-transport-key
 docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts qlik http://127.0.0.1:4048 --secret local-docs-only-transport-key
 ```

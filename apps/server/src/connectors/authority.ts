@@ -61,10 +61,11 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
     jwks,
     /**
      * The request assertion for one call, bound to it (D117): `body` is the SHA-256 of the exact request body, base64url,
-     * and `capability` the capability's name on its route. The body carries the input and, when it names people or
-     * units, how the actor stands to each (`about`), so the binding covers both and the bearer stays the same size
-     * however many keys a call names. The callback grant is never bound and never carries `about`; `callback: false`
-     * leaves it out.
+     * `capability` the capability's name on its route, and `operationId` the `X-Clew-Operation-Id` an approved write is
+     * sent with, so the same assertion cannot carry the write again as another operation. The body carries the input and,
+     * when it names people or units, how the actor stands to each (`about`), so the binding covers both and the bearer
+     * stays the same size however many keys a call names. The callback grant is never bound and never carries `about`;
+     * `callback: false` leaves it out.
      */
     async assert(
       connectorId: string,
@@ -85,6 +86,7 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
           ...(callback ? { callback } : {}),
           ...(binding ? { body: bodyDigest(binding.body) } : {}),
           ...(binding?.capability ? { capability: binding.capability } : {}),
+          ...(binding?.operationId ? { operationId: binding.operationId } : {}),
         },
         true,
       );

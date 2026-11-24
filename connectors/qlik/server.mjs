@@ -1,6 +1,7 @@
 // Serves connector.mjs over HTTP. Environment (README.md has the full table):
 //   PORT (default 4048), CLEW_CONNECTOR_SECRET (shared with Clew), CLEW_URL (where Clew's keys are fetched)
-//   QLIK_ADAPTER                "fixture" (default: the made-up statistics in statistics.mjs) or "engine" (Qlik)
+//   QLIK_ADAPTER                "engine" (Qlik) or "fixture" (the made-up statistics in statistics.mjs: development and
+//                               tests only). Required: there is no default (`adapterOf` in connector.mjs)
 //   QLIK_UNIT_MAP               JSON object: Clew unit id -> array of Qlik's unit names. Required for engine; without it
 //                               the fixture answers for every unit Clew asks about (open mode, development only)
 //   QLIK_MIN_GROUP              the smallest group whose rates are shown (default 5)
@@ -12,7 +13,7 @@
 //   QLIK_URL, QLIK_APP_ID, QLIK_TOKEN, QLIK_SICK_LEAVE_CUBE, QLIK_RATES_AS  the engine adapter (engine.mjs)
 import { createServer } from 'node:http';
 import { listener } from './http.mjs';
-import { createConnector } from './connector.mjs';
+import { adapterOf, createConnector } from './connector.mjs';
 import { createFixtureStatistics } from './statistics.mjs';
 import { createQlikStatistics } from './engine.mjs';
 
@@ -41,9 +42,7 @@ const finite = (name, fallback) => {
   return n;
 };
 
-const adapter = process.env.QLIK_ADAPTER ?? 'fixture';
-if (adapter !== 'fixture' && adapter !== 'engine')
-  throw new Error(`Unknown QLIK_ADAPTER "${adapter}". Known: fixture, engine.`);
+const adapter = adapterOf(process.env);
 
 // The fixture without a map is open mode: every unit Clew asks about has made-up figures (connector.mjs).
 const unitMap = json('QLIK_UNIT_MAP', adapter === 'fixture' ? null : undefined);

@@ -66,8 +66,9 @@ import {
  * Every POST carries an installation-signed RS256 bearer assertion and X-Clew-Connector-Key (transport only).
  * Verify public keys at the configured Clew URL, issuer, audience, subject/actor and bounded lifetime (D44), and that
  * the assertion was issued for this request: its `body` claim the SHA-256 of the exact body, its `capability` claim the
- * capability of the route (D117). When the input names people or units, Clew has already left out every key the caller
- * may not ask about, and the body's `about` says how the caller stands to each key sent (`CallAbout`).
+ * capability of the route and its `operationId` claim the request's X-Clew-Operation-Id (D117), and take each `jti` once.
+ * When the input names people or units, Clew has already left out every key the caller may not ask about, and the body's
+ * `about` says how the caller stands to each key sent (`CallAbout`).
  * On `/clew/installation/{name}` no person is behind the call (D119): the assertion carries no `actor`, its subject is
  * `clew:installation` and its `caller` claim `installation`, bound to the body and the name as every call is. Answer it
  * only to that assertion, and never answer a person's assertion there.
@@ -1067,7 +1068,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
     in: 'header',
     required: false,
     schema: text(
-      'The durable operation id of an approved write (D45). Deduplicate on it; the same id means the same approved operation.',
+      "The durable operation id of an approved write (D45). Deduplicate on it; the same id means the same approved operation. The assertion's `operationId` claim carries it too (D117): a request whose header and claim differ, or that has one without the other, was not sent by Clew.",
     ),
   };
   const delegated = {
@@ -1390,7 +1391,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
           scheme: 'bearer',
           bearerFormat: 'JWT',
           description:
-            "RS256 assertion signed by the installation: who is acting (`actor`), for which connector, for at most two minutes, bound to one request (D117): `body` is the SHA-256 of the exact request body, base64url, and on `/clew/capabilities/{name}` `capability` is that name. Verify against `/api/connectors/jwks`, and recompute both from the request received; the body's `input` and `about` (`CallAbout`) are then Clew's.",
+            "RS256 assertion signed by the installation: who is acting (`actor`), for which connector, for at most two minutes, bound to one request (D117): `body` is the SHA-256 of the exact request body, base64url, on `/clew/capabilities/{name}` `capability` is that name, and on an approved write `operationId` is its `X-Clew-Operation-Id`. Verify against `/api/connectors/jwks`, recompute all three from the request received, and accept an assertion without `capability` only on `/clew/scan`, `/clew/figure`, `/clew/documents` and `/clew/ask`; the body's `input` and `about` (`CallAbout`) are then Clew's. Clew signs one for every request, so take each `jti` once and refuse it again until it expires.",
         },
         installationAssertion: {
           type: 'http',
