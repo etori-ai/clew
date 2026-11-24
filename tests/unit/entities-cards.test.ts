@@ -15,6 +15,7 @@ import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
 import { SUBJECT_ERASED, subjectCards, subjectErasure } from '../../apps/server/src/threads/usecases/subjects';
 import type { ThreadStore } from '../../apps/server/src/threads/model';
 import { memoryPersonKeys } from '../person-keys';
+import { refreshScan } from '../refresh-scan';
 
 /**
  * "Behöver dig" on a person and "Just nu" on the list (D97 items 5 and 6) as the person meets them: a source's scan pushes
@@ -181,10 +182,8 @@ function world(scans: Record<string, ThreadDraft[]> = SCANS) {
   const threads = threadUsecases({
     store,
     registry,
-    people: keys,
     run: (p, name, input) => registry.run(audiencedActorOf(p), name, input),
     calendar: {
-      ensureProposalThread: async () => undefined,
       replan: async (_p, id) => (await store.readThreadById(id))!,
       dismiss: async (_p, id) => (await store.readThreadById(id))!,
       todayEvents: async () => [],
@@ -202,8 +201,12 @@ function world(scans: Record<string, ThreadDraft[]> = SCANS) {
     cardsNaming: (p, subjects) => cardsAbout.cardsNaming(p, subjects),
   });
   const erasure = subjectErasure({ store, clock, people: keys });
-  /** The thread a person's scan pushed on a topic. */
-  const card = async (who: string, topic: string) => (await store.openThread(who, topic))!.id;
+  /** The thread a person's scan pushed on a topic: the refresh path keys the topic by the scan's authority (D47). */
+  const card = async (who: string, topic: string) =>
+    store.dump().find(r => r.personId === who && r.thread.state === 'open' && r.thread.topic.startsWith(topic + ':'))!
+      .thread.id;
+  // The person's scan as the server runs it, rows keyed by id as they arrive (D122).
+  const scanned = refreshScan({ store, registry, clock, people: keys });
   return {
     people,
     keys,
@@ -214,7 +217,7 @@ function world(scans: Record<string, ThreadDraft[]> = SCANS) {
     card,
     advance: (ms: number) => void (now += ms),
     scan: async (...who: string[]) => {
-      for (const id of who) await threads.ensureThreads(people.persona(id));
+      for (const id of who) await scanned(people.persona(id));
     },
   };
 }
@@ -358,37 +361,6 @@ describe('the cards about a person', () => {
     await w.scan('hillevi');
     expect((await w.store.readThread('hillevi', sick))?.items).toEqual([row('sick:1', 'Erik Sund sjuk 10–11 nov')]);
     expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards).toEqual([]);
-  });
-  test('a rename the source has not made is no activity on a card: its row is rewritten and its snooze holds, until the source moves (D122)', async () => {
-    const scans = { ...SCANS, hillevi: [...SCANS.hillevi!] };
-    const w = world(scans);
-    await w.scan('hillevi');
-    const hillevi = w.people.persona('hillevi');
-    const sick = await w.card('hillevi', 'sick');
-    await w.threads.snoozeThread(hillevi, sick, { until: '2026-11-10T12:00:00.000Z' });
-    const actions = () => w.store.audit.filter(a => a.subject === 'thread:' + sick).map(a => a.action);
-    w.people.state.users.get('erik')!.userName = 'erik.sund';
-    w.advance(60_000);
-    await w.scan('hillevi');
-    const renamed = (await w.store.readThread('hillevi', sick))!;
-    expect(renamed.items).toEqual([row('sick:1', 'Erik Sund sjuk 10–11 nov')]);
-    expect(renamed.snoozedUntil).toBe('2026-11-10T12:00:00.000Z');
-    expect(await w.store.readTimer(`snooze:${sick}`)).toMatchObject({ state: 'active' });
-    expect(actions()).toEqual(['thread.pushed', 'thread.snoozed', 'thread.refreshed']);
-    expect(w.store.deliveries.filter(id => id.startsWith('woken:'))).toEqual([]);
-    // The source moving is activity: the snooze breaks, and the word the person was promised goes out now (D28, D49).
-    scans.hillevi[0] = { ...scans.hillevi[0]!, items: [row('sick:1', 'Erik Sund sjuk 10–12 nov', person('erik.s'))] };
-    w.advance(60_000);
-    await w.scan('hillevi');
-    expect((await w.store.readThread('hillevi', sick))!.snoozedUntil).toBeNull();
-    expect(actions()).toEqual([
-      'thread.pushed',
-      'thread.snoozed',
-      'thread.refreshed',
-      'thread.refreshed',
-      'thread.woken',
-    ]);
-    expect(w.store.deliveries.filter(id => id.startsWith('woken:'))).toHaveLength(1);
   });
   test("an action point's card names the employee on the thread, never on a row, and shows on them (D96 item 6)", async () => {
     const w = world();

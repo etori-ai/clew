@@ -75,7 +75,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
       setDraft({ title: m.title, description: m.description, model: m.model });
     }
   }, [m?.id, m?.updatedAt]);
-  usePageTitle(m ? m.title : null);
+  usePageTitle(m ? m.title : readError ? 'Modellen kunde inte läsas' : null);
   const { run, busy, error: actionError } = useAdminAction({ toastId: 'model:' + id });
   const removal = useAdminAction({ invalidate: [keys.admin.models], toastId: 'model:' + id });
   const error = actionError ?? removal.error ?? readError;
@@ -94,9 +94,13 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
     return (
       <AdminShell pending={!error} user={user} section="modeller" title={null} thing={{}}>
         {error ? (
-          <Text as="p" role="alert" color="accent">
-            {error}
-          </Text>
+          <>
+            {/* The page keeps its one level-1 heading when the model cannot be read: what is missing, the alert why. */}
+            <Heading level={1}>Modellen kunde inte läsas</Heading>
+            <Text as="p" role="alert" color="accent">
+              {error}
+            </Text>
+          </>
         ) : (
           <Text type="supporting" role="status">
             Läser modellen …

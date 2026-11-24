@@ -64,7 +64,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
   useEffect(() => {
     if (p) setDraft({ title: p.title, baseUrl: p.baseUrl });
   }, [p?.id, p?.updatedAt]);
-  usePageTitle(p ? p.title : null);
+  usePageTitle(p ? p.title : readError ? 'Leverantören kunde inte läsas' : null);
   const { run, busy, error: actionError, reset: resetAction } = useAdminAction({ toastId: 'provider:' + id });
   const removal = useAdminAction({ invalidate: [keys.admin.models], toastId: 'provider:' + id });
   const error = actionError ?? removal.error ?? readError;
@@ -83,9 +83,13 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
     return (
       <AdminShell pending={!error} user={user} section="modeller" title={null} thing={{}}>
         {error ? (
-          <Text as="p" role="alert" color="accent">
-            {error}
-          </Text>
+          <>
+            {/* The page keeps its one level-1 heading when the provider cannot be read: what is missing, the alert why. */}
+            <Heading level={1}>Leverantören kunde inte läsas</Heading>
+            <Text as="p" role="alert" color="accent">
+              {error}
+            </Text>
+          </>
         ) : (
           <Text type="supporting" role="status">
             Läser leverantören …

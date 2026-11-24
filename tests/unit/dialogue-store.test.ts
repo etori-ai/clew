@@ -8,8 +8,9 @@ dialogueStoreContract('memory', async () => {
   return {
     store,
     prefix: 'm-' + randomUUID().slice(0, 8),
-    async seedPerson(id, _organisationId, name) {
-      store.addPerson(id, name);
+    async seedPerson(id, _organisationId, name, extra = {}) {
+      // The memory store keys a person by id alone: it has no user name to confuse with one.
+      store.addPerson(id, name, extra.enabled ?? true);
     },
     async seedUnit(id, _organisationId, label) {
       store.addUnit(id, label);

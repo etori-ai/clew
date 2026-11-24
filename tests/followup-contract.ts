@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { AuthenticatedContext } from '../packages/contracts/src';
+import type { AuthenticatedContext, Thread } from '../packages/contracts/src';
 import type { Team } from '../apps/server/src/modules/calendar/model';
 import {
   followupUsecases,
@@ -73,11 +73,16 @@ type Harness = {
   id: string;
   store: FollowupStore;
   deliveries(): Promise<number>;
+  /** The reminder cards in the invitees' streams: whose, and what they say. */
+  delivered(): Promise<Array<{ id: string; personId: string; title: string; summary: string; trigger: unknown }>>;
+  /** The manager's card as stored. */
+  card(): Promise<Pick<Thread, 'state' | 'handledAt' | 'waitingOn' | 'summary' | 'updatedAt'>>;
   audits(): Promise<string[]>;
-  /** The details of the thread's audit rows of one action, oldest first. */
-  details(action: string): Promise<unknown[]>;
+  /** The details of the audit rows of one action about `subject` (the thread by default), oldest first. */
+  details(action: string, subject?: string): Promise<unknown[]>;
 };
-export function followupContract(name: string, make: () => Promise<Harness>) {
+/** `answered`: the invitee has accepted, so nobody is waiting. */
+export function followupContract(name: string, make: (options?: { answered?: boolean }) => Promise<Harness>) {
   const build = (
     h: Harness,
     version = 'v1',
@@ -200,5 +205,61 @@ export function followupContract(name: string, make: () => Promise<Harness>) {
     expect(await h.deliveries()).toBe(2);
     await build(h, 'v1', '2026-12-02T09:00:00.000Z').uc.fire(h.id, 1);
     expect((await h.store.read(h.id))?.policy).toMatchObject({ state: 'finished', reason: 'expired' });
+  });
+  test(
+    name + ': a reminder is the invitee’s own card, once per proposal and ordinal, with its thread.pushed row',
+    async () => {
+      const h = await make();
+      await build(h).uc.fire(h.id, 1);
+      const card = `followup:${h.id}:proposal:1`;
+      expect(await h.delivered()).toEqual([
+        {
+          id: card,
+          personId: h.id + ':invitee',
+          title: 'Svara på inbjudan till utvecklingssamtal',
+          summary: 'Sender väntar på ditt svar om utvecklingssamtalet. Svara i din kalender.',
+          trigger: { reason: 'Inbjudan väntar på svar · påminnelse 1 av 2', source: 'Kalendern', at: followupAt },
+        },
+      ]);
+      expect(await h.details('thread.pushed', 'thread:' + card)).toEqual([
+        { proposal: h.id + ':proposal', ordinal: 1, owner: h.id + ':invitee' },
+      ]);
+    },
+  );
+  test(
+    name +
+      ': a return writes the manager’s card and stops the timer: lost authority and the policy’s end bring it back open with why',
+    async () => {
+      const h = await make();
+      await build(h, 'v2').uc.fire(h.id, 1);
+      expect(await h.card()).toEqual({
+        state: 'open',
+        handledAt: null,
+        waitingOn: null,
+        updatedAt: followupAt,
+        summary: 'Uppföljningen behöver din bedömning. Den godkända planen är avslutad.',
+      });
+      expect((await h.store.read(h.id))?.timer).toMatchObject({ generation: 1, state: 'cancelled' });
+      const ended = await make(),
+        end = '2026-12-02T09:00:00.000Z';
+      await build(ended, 'v1', end).uc.fire(ended.id, 1);
+      expect(await ended.card()).toMatchObject({ state: 'open', handledAt: null, waitingOn: null, updatedAt: end });
+      expect((await ended.store.read(ended.id))?.timer?.state).toBe('cancelled');
+    },
+  );
+  test(name + ': with every invitation answered, the return hands the card back handled', async () => {
+    const h = await make({ answered: true });
+    await build(h).uc.fire(h.id, 1);
+    expect(await h.card()).toEqual({
+      state: 'handled',
+      handledAt: followupAt,
+      waitingOn: null,
+      updatedAt: followupAt,
+      summary: 'Alla inbjudningar har besvarats.',
+    });
+    expect((await h.store.read(h.id))?.policy).toMatchObject({ state: 'finished' });
+    expect((await h.store.read(h.id))?.timer?.state).toBe('cancelled');
+    expect(await h.details('obligation.returned')).toEqual([{ generation: 1, waiting: 0 }]);
+    expect(await h.deliveries()).toBe(0);
   });
 }

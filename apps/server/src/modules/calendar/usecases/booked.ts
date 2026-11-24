@@ -49,7 +49,7 @@ export function bookedElsewhere(deps: { store: ProposalStore; team: Team; people
 }
 /**
  * An approved invitation another manager has on its way to a person, as the approval of a second one finds it under its
- * lock (`composition/execution-projection.ts`): the drawn time it invites to, and where the execution sending it stands.
+ * lock (`threads/usecases/projection.ts`): the drawn time it invites to, and where the execution sending it stands.
  */
 export interface InvitationOnItsWay {
   start: string;

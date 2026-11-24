@@ -1453,8 +1453,10 @@ describe('action points', () => {
         details: { roundId: expect.any(String), dueOn: '2026-12-15', generation: 1 },
       },
     ]);
-    store.sink.fires = (_, generation) => generation === 2;
+    // The same generation again has fired already, and a generation never scheduled is stale: nothing is written.
     expect(await talks.commitmentDue(threadId, 1)).toBe(false);
+    expect(await talks.commitmentDue(threadId, 2)).toBe(false);
+    expect(store.state.timers.get(threadId)).toMatchObject({ generation: 1, state: 'fired' });
     expect(store.audit().filter(a => a.action === 'talks.commitment_due')).toHaveLength(1);
     await talks.completeCommitment(asAnna, id);
     const fired = store.calls().filter(c => c.op === 'fire').length;
@@ -1555,7 +1557,9 @@ describe('erasure and export', () => {
     });
     await talks.completeCommitment(asAnna, id);
     await talks.reopenCommitment(asAnna, id);
-    await talks.commitmentDue(store.state.commitments.get(id)!.threadId!, 1);
+    // Opened again, the card's timer is at its second generation; it is due the morning after the day.
+    now = new Date('2026-12-16T05:00:00.000Z');
+    expect(await talks.commitmentDue(store.state.commitments.get(id)!.threadId!, 2)).toBe(true);
     await talks.exportDomain('operator:cli', ORG);
     deactivate('anna');
     await talks.erasePerson('operator:cli', 'anna');

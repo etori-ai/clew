@@ -158,7 +158,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   useEffect(() => {
     if (c) setAudience(c.audience);
   }, [c?.id, c?.updatedAt]);
-  usePageTitle(c ? c.source : null);
+  usePageTitle(c ? c.source : readError ? 'Anslutningen kunde inte läsas' : null);
   // Every action re-reads the admin queries and then says what it did; removing re-reads the list alone and drops this page's own read before leaving.
   const {
     run,
@@ -182,9 +182,13 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     return (
       <AdminShell pending={!error} user={user} section="anslutningar" title={null} thing={{}}>
         {error ? (
-          <Text as="p" role="alert" color="accent">
-            {error}
-          </Text>
+          <>
+            {/* The page keeps its one level-1 heading when the connector cannot be read: what is missing, the alert why. */}
+            <Heading level={1}>Anslutningen kunde inte läsas</Heading>
+            <Text as="p" role="alert" color="accent">
+              {error}
+            </Text>
+          </>
         ) : (
           <Text type="supporting" role="status">
             Läser anslutningen …

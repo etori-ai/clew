@@ -100,6 +100,9 @@ import { DialogFrame } from '../components/shell/dialog-frame';
 import { StartPlanDialog } from '../components/people/boarding-start';
 import { PageFrame } from '../components/shell/page-frame';
 
+/** The page's heading when the plan cannot be read, in the browser's tab too. */
+const FAILED_TITLE = 'Planen kunde inte hämtas';
+
 /**
  * One person's introduction or leaving as a page (D124, D116 rule 11: a list a person works through is a page), at
  * `/boarding/<personId>`, in the detail shape a person's page has (`EntityPage`, the `work-item-detail` template with its
@@ -203,7 +206,7 @@ function Plan({
   const entityAction = useEntityAction();
   const title = detail ? planTitle(detail.plan.event, name) : person ? `Introduktion och avslut för ${name}` : null;
   // On the person's own page the page names the tab.
-  usePageTitle(frame === 'tab' ? null : missing ? 'Planen finns inte' : title);
+  usePageTitle(frame === 'tab' ? null : missing ? 'Planen finns inte' : failed && !title ? FAILED_TITLE : title);
 
   // The way back (D116 rule 11): the page in `from` when Clew can name it (the person's own page by their id, the list
   // Introduktion och avslut), else where the reader works from: Personal for the manager, Att göra for an item's owner,
@@ -342,6 +345,9 @@ function Plan({
       <PlanMissing />
     ) : failed ? (
       <VStack gap={3}>
+        {/* On a page of its own the plan keeps its one level-1 heading when it cannot be read; in the person's tab, the
+            person's page has it. */}
+        {frame !== 'tab' && <Heading level={1}>{FAILED_TITLE}</Heading>}
         <Text as="p" role="alert">
           {errorMessage(failed.error, 'Planen kunde inte hämtas just nu.')}
         </Text>

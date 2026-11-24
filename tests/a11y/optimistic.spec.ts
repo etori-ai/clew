@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { desktop, expect, open, phone, test } from './support';
+import { desktop, expect, expectNoAxeViolations, open, phone, test } from './support';
 
 /** Avfärda the way a person does it (D48): from Fler åtgärder on the work item, opened from its row in Att göra (D126). */
 async function dismiss(page: Page, row: Locator) {
@@ -50,6 +50,7 @@ test.describe("a card shows the person's own action at once (D64)", () => {
     // The reason is announced at once, as an error should be (4.1.3).
     await expect(page.getByRole('alert').filter({ hasText: 'Något gick fel. Försök igen.' }).first()).toBeVisible();
     await expect(toasts.getByRole('button', { name: 'Ångra' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
   });
 });
 

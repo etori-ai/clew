@@ -23,8 +23,13 @@ import { authRoutes } from '../../apps/server/src/routes/auth';
  * provider ends the sessions of its `sid` by either channel (D121): front-channel logout from a cross-site frame
  * without a cookie, back-channel logout as before, with its receipt against a replayed token. The session's cookie is
  * read under its `__Host-` name only (D145): a bare one that a sibling host set opens no protected route and is not what
- * a sign-out ends. The server's logger is watched while the file runs. Run with `bun run test:db` inside the
- * devcontainer.
+ * a sign-out ends. A sign-in that succeeds (ID-9 of the 2026-11-23 identity review), from `/login` through `/callback`
+ * or by the development sign-in, opens one session under HttpOnly, SameSite=Lax cookies (Secure and `__Host-` outside
+ * the local stack), writes `login` or `login-dev`, returns to the local address it started from with its query, and
+ * replaces the session of the browser's earlier cookie (`replaced`); a write needs the public origin and the session's
+ * CSRF token; a person deactivated or without a grant loses the session at the next request (`access-revoked`); a
+ * sign-out needs the token too and writes `logout`. The server's logger is watched while the file runs. Run with
+ * `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -540,5 +545,388 @@ describe('the session cookie is read under its __Host- name only (D145)', () => 
     expect(own.status).toBe(200);
     expect(await state(digest)).toEqual({ open: false, tokens: '' });
     expect(own.headers.get('set-cookie')).toStartWith('__Host-clew-session=;');
+  });
+});
+
+/** The Set-Cookie line a response sets for the cookie `name`: the line, the cookie's value and its attributes in order. */
+function cookieSet(response: Response, name: string) {
+  const line = response.headers.getSetCookie().find(candidate => candidate.startsWith(name + '='));
+  if (line === undefined) return undefined;
+  const [pair, ...attributes] = line.split('; ');
+  return { line, value: pair!.slice(name.length + 1), attributes };
+}
+const authLog = schema.authenticationAudit;
+/** The newest row of the authentication log, so that a step's own rows can be read after it. */
+const mark = async () =>
+  (
+    await database()
+      .select({ id: sql<number>`coalesce(max(${authLog.id}), 0)`.mapWith(Number) })
+      .from(authLog)
+  )[0]!.id;
+/** The actions the authentication log holds about `personId` after the row `after`, oldest first. */
+const loggedSince = async (personId: string, after: number) =>
+  (
+    await database()
+      .select({ action: authLog.action })
+      .from(authLog)
+      .where(and(gt(authLog.id, after), eq(authLog.actor, 'person:' + personId)))
+      .orderBy(authLog.id)
+  ).map(row => row.action);
+/** Provisioned people for a describe, enabled and with a grant each, whom a sign-in binds by their user name. */
+async function seed(people: Array<{ id: string; userName: string; name: string }>) {
+  await database()
+    .insert(schema.people)
+    .values(people.map(p => ({ ...p, organisationId: 'test', externalId: p.id, enabled: true })));
+  await database()
+    .insert(schema.accessGrants)
+    .values(people.map(p => grantOf(p.id)));
+}
+const grantOf = (personId: string) => ({
+  personId,
+  unitId: 'u',
+  unitLabel: 'U',
+  role: 'employee' as const,
+  capabilities: [] as string[],
+});
+/** Removes people a describe seeded, with everything their sign-ins wrote. */
+async function removePeople(ids: string[]) {
+  const db = database(),
+    actors = ids.map(id => 'person:' + id);
+  await db.delete(schema.sessions).where(inArray(schema.sessions.personId, ids));
+  await db.delete(schema.identityBindings).where(inArray(schema.identityBindings.personId, ids));
+  await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, ids));
+  await db.delete(schema.audit).where(inArray(schema.audit.subject, actors));
+  await db.delete(authLog).where(inArray(authLog.actor, actors));
+  await db.delete(schema.people).where(inArray(schema.people.id, ids));
+}
+
+describe('a sign-in that succeeds, and the session it opens until it ends (ID-9)', () => {
+  const prefix = 'routes-signin-' + suffix.slice(0, 8),
+    eva = prefix + '-eva',
+    evaName = prefix + '.eva',
+    subject = 'sub-' + prefix;
+  const sessionCookie = (raw: string) => ({ Cookie: '__Host-clew-session=' + raw });
+  beforeAll(() => seed([{ id: eva, userName: evaName, name: 'Eva Ek' }]));
+  afterAll(() => removePeople([eva]));
+  /**
+   * A sign-in as Eva from `/login` through the provider to `/callback`, in a browser that also holds the session cookie
+   * `earlier` when one is given: the answers of both routes and the session cookie the callback set.
+   */
+  async function signInAsEva(returnTo: string, earlier?: string) {
+    const started = await authRoutes.request('/login?returnTo=' + encodeURIComponent(returnTo));
+    const at = new URL(started.headers.get('location')!);
+    const login = cookieSet(started, '__Host-clew-login')!;
+    digests.push(tokenDigest(login.value));
+    tokenAnswer = async () =>
+      Response.json({
+        access_token: 'access-1',
+        token_type: 'Bearer',
+        expires_in: 300,
+        refresh_token: 'refresh-1',
+        id_token: await new SignJWT({
+          nonce: at.searchParams.get('nonce')!,
+          sid: 'sid-' + prefix,
+          preferred_username: evaName,
+        })
+          .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+          .setIssuer(issuer)
+          .setAudience(clientId)
+          .setSubject(subject)
+          .setIssuedAt()
+          .setExpirationTime('5m')
+          .sign(keys.privateKey),
+      });
+    const cookies = ['__Host-clew-login=' + login.value, ...(earlier ? ['__Host-clew-session=' + earlier] : [])];
+    const response = await authRoutes.request('/callback?code=code-1&state=' + at.searchParams.get('state'), {
+      headers: { Cookie: cookies.join('; ') },
+    });
+    return { started, login: login.value, response, session: cookieSet(response, '__Host-clew-session')?.value };
+  }
+  const csrfOf = async (raw: string) =>
+    ((await (await authRoutes.request('/session', { headers: sessionCookie(raw) })).json()) as { csrfToken: string })
+      .csrfToken;
+
+  test('a sign-in from /login through /callback opens one session, writes identity-bound and login, and returns with the query', async () => {
+    const before = await mark();
+    const { started, login, response, session } = await signInAsEva('/calendar?week=48');
+    // Both cookies are HttpOnly, Secure and SameSite=Lax under the __Host- prefix: the sign-in's for its five minutes,
+    // the session's for eight hours.
+    expect(started.status).toBe(303);
+    expect(cookieSet(started, '__Host-clew-login')!.attributes).toEqual([
+      'Max-Age=300',
+      'Path=/',
+      'HttpOnly',
+      'Secure',
+      'SameSite=Lax',
+    ]);
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/calendar?week=48');
+    expect(cookieSet(response, '__Host-clew-session')!.attributes).toEqual([
+      'Max-Age=28800',
+      'Path=/',
+      'HttpOnly',
+      'Secure',
+      'SameSite=Lax',
+    ]);
+    // The callback clears the sign-in's cookie and has used up its row.
+    expect(cookieSet(response, '__Host-clew-login')!.line).toBe('__Host-clew-login=; Max-Age=0; Path=/; Secure');
+    const left = await database()
+      .select()
+      .from(schema.loginTransactions)
+      .where(eq(schema.loginTransactions.digest, tokenDigest(login)));
+    expect(left).toEqual([]);
+    const [row] = await database()
+      .select()
+      .from(schema.sessions)
+      .where(eq(schema.sessions.digest, tokenDigest(session!)));
+    expect(row).toMatchObject({ personId: eva, issuer, subject, sid: 'sid-' + prefix, clientId, revokedAt: null });
+    // The provider's tokens are kept sealed, and the session has a CSRF token of its own.
+    expect(row!.tokens).not.toContain('refresh-1');
+    expect(row!.tokens).not.toContain('access-1');
+    expect(row!.csrf).toHaveLength(43);
+    expect(Math.abs(row!.expiresAt.getTime() - (Date.now() + 8 * 3600_000))).toBeLessThan(60_000);
+    expect(await loggedSince(eva, before)).toEqual(['identity-bound', 'login']);
+    const answer = await authRoutes.request('/session', { headers: sessionCookie(session!) });
+    expect(answer.status).toBe(200);
+    expect(await answer.json()).toMatchObject({ csrfToken: row!.csrf });
+  });
+  test('the return address a sign-in starts with keeps its query, and is the home page when it would leave the installation', async () => {
+    const kept = async (returnTo: string) => {
+      const started = await authRoutes.request('/login?returnTo=' + encodeURIComponent(returnTo));
+      const digest = tokenDigest(cookieSet(started, '__Host-clew-login')!.value);
+      digests.push(digest);
+      const [row] = await database()
+        .select({ returnTo: schema.loginTransactions.returnTo })
+        .from(schema.loginTransactions)
+        .where(eq(schema.loginTransactions.digest, digest));
+      return row?.returnTo;
+    };
+    expect(await kept('/items/abc?step=2')).toBe('/items/abc?step=2');
+    for (const away of [
+      '//evil.example/x',
+      'https://evil.example/x',
+      '/\\evil.example',
+      '/api/session',
+      '/login?reason=expired',
+    ])
+      expect(await kept(away)).toBe('/');
+  });
+  test('a second sign-in in the same browser replaces the first: login, then replaced, and only the new session is open', async () => {
+    const first = (await signInAsEva('/')).session!;
+    // A sign-in in another browser sends no session cookie and replaces nothing.
+    const elsewhere = (await signInAsEva('/')).session!;
+    const before = await mark();
+    const second = await signInAsEva('//evil.example/x', first);
+    expect(second.response.headers.get('location')).toBe('/');
+    expect(await loggedSince(eva, before)).toEqual(['login', 'replaced']);
+    expect(await state(tokenDigest(first))).toEqual({ open: false, tokens: '' });
+    expect((await state(tokenDigest(second.session!)))?.open).toBe(true);
+    expect((await state(tokenDigest(elsewhere)))?.open).toBe(true);
+  });
+  test('a write through the session needs the public origin and the session’s CSRF token; anything else is 403 invalid and changes nothing', async () => {
+    const raw = (await signInAsEva('/')).session!,
+      digest = tokenDigest(raw),
+      csrf = await csrfOf(raw);
+    const idle = async () =>
+      (
+        await database()
+          .select({ at: schema.sessions.idleExpiresAt })
+          .from(schema.sessions)
+          .where(eq(schema.sessions.digest, digest))
+      )[0]!.at.getTime();
+    const signedIn = await idle();
+    const activity = (headers: Record<string, string>) =>
+      authRoutes.request('/activity', { method: 'POST', headers: { ...sessionCookie(raw), ...headers } });
+    const refusedHeaders: Array<Record<string, string>> = [
+      { 'X-CSRF-Token': csrf },
+      { Origin: 'https://evil.example', 'X-CSRF-Token': csrf },
+      { Origin: settings.PUBLIC_URL! },
+      { Origin: settings.PUBLIC_URL!, 'X-CSRF-Token': csrf.slice(1) },
+      { Origin: settings.PUBLIC_URL!, 'X-CSRF-Token': randomToken() },
+    ];
+    for (const headers of refusedHeaders) {
+      const refused = await activity(headers);
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toEqual({ error: 'Du saknar behörighet för åtgärden.', code: 'invalid' });
+    }
+    expect(await idle()).toBe(signedIn);
+    expect((await state(digest))?.open).toBe(true);
+    const passed = await activity({ Origin: settings.PUBLIC_URL!, 'X-CSRF-Token': csrf });
+    expect(passed.status).toBe(200);
+    expect(await passed.json()).toEqual({ expiresAt: expect.any(String) });
+  });
+  test('a person who is deactivated, or loses the grant, is signed out at the next request with access-revoked', async () => {
+    const ask = (raw: string) => authRoutes.request('/session', { headers: sessionCookie(raw) });
+    const deniedAnswer = { error: 'Du saknar behörighet för åtgärden.', code: 'denied' };
+    try {
+      const deactivated = (await signInAsEva('/')).session!;
+      await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, eva));
+      let before = await mark();
+      const refused = await ask(deactivated);
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toEqual(deniedAnswer);
+      expect(await loggedSince(eva, before)).toEqual(['access-revoked']);
+      expect(await state(tokenDigest(deactivated))).toEqual({ open: false, tokens: '' });
+      // Taken back, the person signs in again: the ended session stays ended.
+      await database().update(schema.people).set({ enabled: true }).where(eq(schema.people.id, eva));
+      expect((await ask(deactivated)).status).toBe(401);
+      const ungranted = (await signInAsEva('/')).session!;
+      await database().delete(schema.accessGrants).where(eq(schema.accessGrants.personId, eva));
+      before = await mark();
+      const withoutGrant = await ask(ungranted);
+      expect(withoutGrant.status).toBe(403);
+      expect(await withoutGrant.json()).toEqual(deniedAnswer);
+      expect(await loggedSince(eva, before)).toEqual(['access-revoked']);
+      expect(await state(tokenDigest(ungranted))).toEqual({ open: false, tokens: '' });
+    } finally {
+      await database().update(schema.people).set({ enabled: true }).where(eq(schema.people.id, eva));
+      await database().insert(schema.accessGrants).values(grantOf(eva)).onConflictDoNothing();
+    }
+  });
+  test('a sign-out needs the session’s CSRF token; it ends the session with logout and sends the person to the sign-in page', async () => {
+    const raw = (await signInAsEva('/')).session!,
+      digest = tokenDigest(raw),
+      csrf = await csrfOf(raw);
+    const signOut = (headers: Record<string, string>) =>
+      authRoutes.request('/logout', { method: 'POST', headers: { ...sessionCookie(raw), ...headers } });
+    const before = await mark();
+    const refusedHeaders: Array<Record<string, string>> = [
+      { Origin: settings.PUBLIC_URL!, 'X-CSRF-Token': 'not-the-token' },
+      { Origin: settings.PUBLIC_URL! },
+      { Origin: 'https://evil.example', 'X-CSRF-Token': csrf },
+      { 'X-CSRF-Token': csrf },
+    ];
+    for (const headers of refusedHeaders) {
+      const refused = await signOut(headers);
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toEqual({ error: 'Utloggningen kunde inte bekräftas. Försök igen.' });
+    }
+    expect((await state(digest))?.open).toBe(true);
+    const done = await signOut({ Origin: settings.PUBLIC_URL!, 'X-CSRF-Token': csrf });
+    expect(done.status).toBe(200);
+    // This provider names no end-session endpoint, so the person goes to Clew's own sign-in page.
+    expect(await done.json()).toEqual({ url: settings.PUBLIC_URL + '/login' });
+    expect(done.headers.get('set-cookie')).toStartWith('__Host-clew-session=;');
+    expect(await state(digest)).toEqual({ open: false, tokens: '' });
+    expect(await loggedSince(eva, before)).toEqual(['logout']);
+    expect((await authRoutes.request('/session', { headers: sessionCookie(raw) })).status).toBe(401);
+  });
+});
+
+describe('a development sign-in opens its session as login-dev, under bare cookie names on the local stack (ID-9, D6)', () => {
+  const prefix = 'routes-dev-' + suffix.slice(0, 8),
+    olof = prefix + '-olof',
+    olofName = prefix + '.olof';
+  // The local stack: Keycloak on keycloak.orb.local and Clew on localhost, both on plain http.
+  const devIssuer = 'http://keycloak.orb.local/realms/dev-' + suffix,
+    devOrigin = 'http://localhost:3020';
+  const local: Record<string, string> = {
+    OIDC_ISSUER: devIssuer,
+    PUBLIC_URL: devOrigin,
+    AUTH_LOCAL_HTTP: 'true',
+    AUTH_DEV_LOGIN: 'true',
+    AUTH_DEV_ACCOUNTS: olofName + ':synthetic-password',
+    FRONTEND_ORIGINS: '',
+  };
+  const outside: Record<string, string | undefined> = {};
+  /** The grants the provider's token endpoint was asked for: the grant type and the account. */
+  const grants: string[] = [];
+  let served: typeof fetch;
+  beforeAll(async () => {
+    await seed([{ id: olof, userName: olofName, name: 'Olof Dev' }]);
+    for (const [k, v] of Object.entries(local)) {
+      outside[k] = process.env[k];
+      process.env[k] = v;
+    }
+    served = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === devIssuer + '/.well-known/openid-configuration')
+        return Response.json({
+          issuer: devIssuer,
+          authorization_endpoint: devIssuer + '/auth',
+          token_endpoint: devIssuer + '/token',
+          jwks_uri: devIssuer + '/certs',
+        });
+      if (url === devIssuer + '/certs') return Response.json(jwks);
+      if (url === devIssuer + '/token') {
+        const body = new URLSearchParams(input instanceof Request ? await input.text() : String(init?.body ?? ''));
+        grants.push(body.get('grant_type') + ' ' + body.get('username'));
+        return Response.json({
+          access_token: 'access-dev',
+          token_type: 'Bearer',
+          expires_in: 300,
+          refresh_token: 'refresh-dev',
+          id_token: await new SignJWT({ preferred_username: body.get('username') })
+            .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+            .setIssuer(devIssuer)
+            .setAudience(clientId)
+            .setSubject('sub-' + prefix)
+            .setIssuedAt()
+            .setExpirationTime('5m')
+            .sign(keys.privateKey),
+        });
+      }
+      return served(input, init);
+    }) as typeof fetch;
+  });
+  afterAll(async () => {
+    globalThis.fetch = served;
+    for (const [k, v] of Object.entries(outside))
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    await removePeople([olof]);
+  });
+  const devSignIn = (query: string, cookie?: string) =>
+    authRoutes.request('/dev/login?' + query, cookie ? { headers: { Cookie: 'clew-session=' + cookie } } : {});
+
+  test('the sign-in page lists the persona; one click signs in by the password grant, writes login-dev and sets clew-session without Secure', async () => {
+    expect(await (await authRoutes.request('/dev')).json()).toEqual({
+      accounts: [{ userName: olofName, name: 'Olof Dev' }],
+    });
+    const before = await mark();
+    const response = await devSignIn(
+      'as=' + encodeURIComponent(olofName) + '&returnTo=' + encodeURIComponent('/calendar?week=48'),
+    );
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/calendar?week=48');
+    expect(grants).toEqual(['password ' + olofName]);
+    // Plain http keeps no __Host- cookie and no Secure one; the rest is as anywhere.
+    const session = cookieSet(response, 'clew-session')!;
+    expect(session.attributes).toEqual(['Max-Age=28800', 'Path=/', 'HttpOnly', 'SameSite=Lax']);
+    expect(await loggedSince(olof, before)).toEqual(['identity-bound', 'login-dev']);
+    const [row] = await database()
+      .select()
+      .from(schema.sessions)
+      .where(eq(schema.sessions.digest, tokenDigest(session.value)));
+    expect(row).toMatchObject({ personId: olof, issuer: devIssuer, subject: 'sub-' + prefix, revokedAt: null });
+  });
+  test('a second development sign-in in the same browser replaces the first; an unknown persona is refused before the provider is asked', async () => {
+    const first = cookieSet(await devSignIn('as=' + olofName), 'clew-session')!.value;
+    const before = await mark();
+    const second = await devSignIn('as=' + olofName, first);
+    expect(second.headers.get('location')).toBe('/');
+    expect(await loggedSince(olof, before)).toEqual(['login-dev', 'replaced']);
+    expect(await state(tokenDigest(first))).toEqual({ open: false, tokens: '' });
+    grants.length = 0;
+    const unknown = await devSignIn('as=nobody.' + prefix);
+    expect(unknown.status).toBe(303);
+    expect(unknown.headers.get('location')).toBe('/login?reason=invalid');
+    expect(grants).toEqual([]);
+  });
+  test('a development session signs out as any other: logout, and the sign-in page on the local origin', async () => {
+    const raw = cookieSet(await devSignIn('as=' + olofName), 'clew-session')!.value;
+    const session = await authRoutes.request('/session', { headers: { Cookie: 'clew-session=' + raw } });
+    const { csrfToken } = (await session.json()) as { csrfToken: string };
+    const before = await mark();
+    const out = await authRoutes.request('/logout', {
+      method: 'POST',
+      headers: { Cookie: 'clew-session=' + raw, Origin: devOrigin, 'X-CSRF-Token': csrfToken },
+    });
+    expect(out.status).toBe(200);
+    expect(await out.json()).toEqual({ url: devOrigin + '/login' });
+    expect(out.headers.get('set-cookie')).toStartWith('clew-session=;');
+    expect(await loggedSince(olof, before)).toEqual(['logout']);
+    expect(await state(tokenDigest(raw))).toEqual({ open: false, tokens: '' });
   });
 });

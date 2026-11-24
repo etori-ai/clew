@@ -1,8 +1,9 @@
 import { afterAll, expect, test } from 'bun:test';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { eq, inArray, like, sql } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import { readAudit } from '../../packages/db/src/threads';
 import { postgresThreadStore } from '../../apps/server/src/threads/adapters/postgres';
+import { postgresAttention } from '../../apps/server/src/threads/adapters/attention-postgres';
 import { draft, storeContract } from '../store-contract';
 import { reminderStart } from '../../apps/server/src/threads/domain';
 import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
@@ -41,6 +42,11 @@ afterAll(async () => {
         );
       await database().delete(schema.threads).where(inArray(schema.threads.id, ids));
     }
+    // A deferred delivery's release job (D47): the deliveries and the days go with the people.
+    for (const person of created)
+      await database()
+        .delete(schema.jobs)
+        .where(like(schema.jobs.id, `attention:automatic:${person}:%`));
     await database().delete(schema.people).where(inArray(schema.people.id, created));
   }
   await forgetTestWorkflows();
@@ -70,6 +76,14 @@ storeContract('postgres', async () => {
       })),
     hasJob: async id =>
       (await database().select({ id: schema.jobs.id }).from(schema.jobs).where(eq(schema.jobs.id, id))).length > 0,
+    admitted: async personId =>
+      (await database().select().from(schema.deliveries).where(eq(schema.deliveries.personId, personId))).map(d => ({
+        id: d.id,
+        threadId: d.threadId,
+        kind: d.kind,
+        dueAt: d.dueAt.toISOString(),
+      })),
+    day: (personId, at) => postgresAttention().day(personId, at),
   };
 });
 

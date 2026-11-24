@@ -29,6 +29,8 @@ const hasBody = (spec: PanelViewSpec) =>
   spec.kind === 'record' && !!(spec.document || spec.items || spec.metrics || spec.series || spec.activity);
 /** The heading the page sends the focus to when the person arrives from a link on another page. */
 const TITLE_ID = 'vy-rubrik';
+/** The page's heading when it fails before it is named: the areas that name it could not be read. */
+const FAILED_TITLE = 'Sidan kunde inte läsas';
 /** The one person a view's input names by `person`, or null. */
 function personOf(inputJson: string | null): string | null {
   try {
@@ -145,8 +147,6 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
         )
       : null;
   const ask = <AskClew subject={subject} />;
-  const heading = missing ? 'Verktyget finns inte' : title || null;
-  usePageTitle(heading, heading ?? false);
   // Arrived from a link on another page, the person starts at the heading (2.4.3): the page they left took the focus
   // with it. From the rail, or with the focus somewhere already, it stays where it is.
   useEffect(() => {
@@ -166,6 +166,9 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
       : main.failed && !missing
         ? { message: errorMessage(main.failed, 'Kunde inte hämta.'), retry: main.retry }
         : null;
+  // A page whose read failed before it could be named keeps a level-1 heading, and the browser's tab says the same.
+  const heading = missing ? 'Verktyget finns inte' : title || (failed ? FAILED_TITLE : null);
+  usePageTitle(heading, heading ?? false);
   /** Where a row's own read leads (D116, D126): its own page, with this one as the way back. */
   const hrefFor = (v: ViewRef) => viewOpenHref(views, location.pathname, location.search, v);
   // The way back (a person's page names it the same way): the page the view was opened from, by its name.
@@ -264,9 +267,13 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
             <>
               {trail}
               {/* The one page header (D74): with a declared view the view draws it, with its controls at the end of the title's line and its mark row under it; before the view has arrived the title stands alone in the same place. The skeleton is the heading's line, 32 px. */}
-              {title
-                ? !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} end={ask} />
-                : !failed && <Skeleton height={32} width={200} />}
+              {title ? (
+                !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} end={ask} />
+              ) : failed ? (
+                <Heading level={1}>{FAILED_TITLE}</Heading>
+              ) : (
+                <Skeleton height={32} width={200} />
+              )}
               {banner}
               {tool ? (
                 <ContentArrival>

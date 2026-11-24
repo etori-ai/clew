@@ -1,3 +1,4 @@
+import { dueTimerFires, morningAfterDue } from '@clew/contracts';
 import type {
   CommitmentRecord,
   Erased,
@@ -16,8 +17,10 @@ import type {
  * Transactions run one at a time, as row locks would make them.
  *
  * The owner's cards (`WorkItemTx`) are recorded here instead of written to a stream: every call in `state.calls`, each
- * card's state in `state.cards`. A test makes the card sink throw with `sink.throwOn` and decides what `fire` answers
- * with `sink.fires`.
+ * card's state in `state.cards` and its `due` timer in `state.timers`, scheduled, cancelled and fenced as composition
+ * does it over the thread store (`morningAfterDue`, `dueTimerFires`): a generation counts up across close and reopen, and
+ * `fire` answers true only for the active generation, due by its time. A test makes the card sink throw with
+ * `sink.throwOn`.
  */
 export type WorkItemCall =
   | ({ op: 'open' } & Parameters<WorkItemTx['open']>[0])
@@ -31,6 +34,13 @@ export interface MemoryCard {
   dueOn: string;
   state: 'open' | 'handled';
 }
+/** A card's `due` timer, as the thread store's row has it (D47): one per card, its generation counted across replacements. */
+export interface MemoryTimer {
+  kind: 'due';
+  generation: number;
+  dueAt: string;
+  state: 'active' | 'cancelled' | 'fired';
+}
 export interface MemoryTalkState {
   rounds: Map<string, RoundRecord>;
   talks: Map<string, TalkRecord>;
@@ -38,13 +48,13 @@ export interface MemoryTalkState {
   persons: Map<string, PersonRef>;
   audit: TalkAudit[];
   cards: Map<string, MemoryCard>;
+  /** Each card's `due` timer by the card's id; it goes with the card. */
+  timers: Map<string, MemoryTimer>;
   calls: WorkItemCall[];
 }
 export interface MemoryCardSink {
   /** The card call that throws, as a failing thread store would. */
   throwOn?: WorkItemCall['op'];
-  /** What `fire` answers: true when the timer is still active at that generation. Default true for an open card. */
-  fires?: boolean | ((threadId: string, generation: number) => boolean);
 }
 const byCreated = <T extends { createdAt: string; id: string }>(rows: T[]) =>
   rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
@@ -57,6 +67,7 @@ export function memoryTalkStore(seed: { persons?: PersonRef[] } = {}) {
     persons: new Map((seed.persons ?? []).map(p => [p.id, { ...p }])),
     audit: [],
     cards: new Map(),
+    timers: new Map(),
     calls: [],
   };
   const sink: MemoryCardSink = {};
@@ -77,42 +88,67 @@ export function memoryTalkStore(seed: { persons?: PersonRef[] } = {}) {
   const fail = (op: WorkItemCall['op']) => {
     if (sink.throwOn === op) throw new Error(`card sink failed on ${op}`);
   };
+  /** The card's next `due` generation, due the morning after `dueOn` (never before `at`), as composition schedules it. */
+  const schedule = (threadId: string, dueOn: string, at: string) =>
+    state.timers.set(threadId, {
+      kind: 'due',
+      generation: (state.timers.get(threadId)?.generation ?? 0) + 1,
+      dueAt: morningAfterDue(dueOn, at),
+      state: 'active',
+    });
+  const cancel = (threadId: string) => {
+    const timer = state.timers.get(threadId);
+    if (timer?.state === 'active') timer.state = 'cancelled';
+  };
   const workItems: WorkItemTx = {
     async open(input) {
       fail('open');
       state.calls.push({ op: 'open', ...input });
+      // The card's id is its key, as the thread's primary key is in Postgres.
+      if (state.cards.has(input.threadId)) throw new Error(`The action point card ${input.threadId} already exists.`);
       state.cards.set(input.threadId, {
         personId: input.personId,
         commitmentId: input.commitmentId,
         dueOn: input.dueOn,
         state: 'open',
       });
+      schedule(input.threadId, input.dueOn, input.at);
     },
     async close(threadId, at) {
       fail('close');
       state.calls.push({ op: 'close', threadId, at });
       const card = state.cards.get(threadId);
-      if (card) card.state = 'handled';
+      if (!card) return;
+      card.state = 'handled';
+      cancel(threadId);
     },
     async reopen(threadId, dueOn, at) {
       fail('reopen');
       state.calls.push({ op: 'reopen', threadId, dueOn, at });
       const card = state.cards.get(threadId);
-      if (card) Object.assign(card, { state: 'open', dueOn });
+      if (!card) return;
+      Object.assign(card, { state: 'open', dueOn });
+      schedule(threadId, dueOn, at);
     },
     async fire(threadId, generation, at) {
       fail('fire');
       const card = state.cards.get(threadId);
-      const answer = typeof sink.fires === 'function' ? sink.fires(threadId, generation) : (sink.fires ?? true);
-      const fired = !!card && answer;
-      if (fired) card!.state = 'open';
+      const timer = state.timers.get(threadId);
+      const fired = !!card && dueTimerFires(timer, 'due', generation, at);
+      if (fired) {
+        card!.state = 'open';
+        timer!.state = 'fired';
+      }
       state.calls.push({ op: 'fire', threadId, generation, at, fired });
       return fired;
     },
     async remove(threadIds) {
       fail('remove');
       state.calls.push({ op: 'remove', threadIds: [...threadIds] });
-      for (const id of threadIds) state.cards.delete(id);
+      for (const id of threadIds) {
+        state.cards.delete(id);
+        state.timers.delete(id);
+      }
       // The thread's foreign key nulls the pointer, as `ON DELETE SET NULL` does in Postgres.
       for (const c of state.commitments.values()) if (c.threadId && threadIds.includes(c.threadId)) c.threadId = null;
     },

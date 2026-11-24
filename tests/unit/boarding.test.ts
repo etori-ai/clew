@@ -644,19 +644,24 @@ describe('working the plan', () => {
       at: at(),
       details: { planId: id, dueOn: '2026-11-20', generation: 1 },
     });
-    // The card port says the generation is stale: nothing is written.
-    store.sink.fires = (_, generation) => generation === 2;
+    // The same generation again has fired already: nothing is written.
     let audited = store.audit().length;
     expect(await boarding.itemDue(order!.threadId!, 1)).toBe(false);
     expect(store.audit().length).toBe(audited);
-    store.sink.fires = true;
-    await boarding.setDone(karin, order!.id);
+    // An item ticked and opened again has its card's next timer: the first generation's late workflow is stale.
+    await boarding.setDone(karin, welcome!.id);
+    await boarding.setNotDone(karin, welcome!.id);
+    expect(store.state.timers.get(welcome!.threadId!)).toMatchObject({ generation: 2, state: 'active' });
+    now = new Date('2026-12-05T05:00:00.000Z');
     audited = store.audit().length;
+    expect(await boarding.itemDue(welcome!.threadId!, 1)).toBe(false);
+    expect(store.audit().length).toBe(audited);
+    await boarding.setDone(karin, order!.id);
     expect(await boarding.itemDue(order!.threadId!, 2)).toBe(false);
     expect(await boarding.itemDue('no-such-card', 1)).toBe(false);
     await boarding.closePlan(karin, id);
     audited = store.audit().length;
-    expect(await boarding.itemDue(welcome!.threadId!, 1)).toBe(false);
+    expect(await boarding.itemDue(welcome!.threadId!, 2)).toBe(false);
     expect(store.audit().length).toBe(audited);
   });
 });

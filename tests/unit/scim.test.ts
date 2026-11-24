@@ -1511,6 +1511,19 @@ scimStoreContract('memory', async () => {
       return store.state.authenticationAudit[id]?.actor;
     },
     withLeavers: (leavers, leaverFailed) => memoryProvisionStore({ leavers, leaverFailed }),
+    withWritingLeavers: () => {
+      // The binding's own record commits on its own, as the competence module's memory store does.
+      const kept: Array<{ personId: string; kind: string }> = [];
+      const keep = (kind: string) => async (change: { personId: string }) => {
+        kept.push({ personId: change.personId, kind });
+      };
+      return {
+        store: memoryProvisionStore({
+          leavers: () => ({ deactivated: keep('deactivated'), reactivated: keep('reactivated') }),
+        }),
+        written: async personId => kept.filter(k => k.personId === personId).map(k => k.kind),
+      };
+    },
     withErasure: erasure => memoryProvisionStore({ erasure }),
   };
 });

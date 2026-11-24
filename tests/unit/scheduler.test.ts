@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import {
-  JOB_LEASE_MS,
-  JOB_RUN_LONG_MS,
-  type Job,
-  type JobExecutions,
-  type JobQueue,
-} from '../../apps/server/src/scheduler/model';
+import { memoryJobTable } from '../../apps/server/src/scheduler/adapters/memory';
+import { JOB_LEASE_MS, JOB_RUN_LONG_MS } from '../../apps/server/src/scheduler/model';
 import {
   createScheduler,
   NIGHTLY,
@@ -34,75 +29,42 @@ const persona = (id: string): AuthenticatedContext => ({
     return { version: 'v1' };
   },
 });
-type Row = Job & { runAt: string; status: 'temporal' | 'executing' | 'done'; attempts: number; leaseUntil?: string };
 /**
- * The job table as the engine sees it: a row is claimed once its run time has come, under the lease, which its run
- * renews. The jobs in `stranded` wait under a replaced release until they are taken over; `asked` is what each take-over
- * looked at.
+ * The job table as the engine sees it: the scheduler's memory adapter, held to Postgres by `tests/job-store-contract.ts`,
+ * with what this suite adds around it. The jobs in `stranded` wait under a replaced release until they are taken over;
+ * `asked` is what each take-over looked at; `finished` is each completion, by job and attempt; `failRenewal` makes every
+ * renewal throw, as a database that does not answer does.
  */
 function memoryJobs() {
-  const rows: Row[] = [];
+  const table = memoryJobTable(),
+    { renew, completed } = table;
   const finished: Array<[string, number]> = [];
   const stranded = new Set<string>();
   const asked: string[][] = [];
   let renewFails = false;
-  const holds = (row: Row | undefined, attempt: number): row is Row =>
-    !!row && row.status === 'executing' && row.attempts === attempt;
-  const queue: JobQueue &
-    JobExecutions & {
-      rows: Row[];
-      finished: typeof finished;
-      stranded: Set<string>;
-      asked: string[][];
-      failRenewal: (fails: boolean) => void;
-    } = {
-    rows,
+  return Object.assign(table, {
     finished,
     stranded,
     asked,
-    failRenewal: fails => {
+    failRenewal: (fails: boolean) => {
       renewFails = fails;
     },
-    async schedule(job) {
-      if (!rows.some(r => r.id === job.id))
-        rows.push({ ...job, payload: job.payload ?? {}, status: 'temporal', attempts: 0 });
-    },
-    async takeOver(ids) {
+    async takeOver(ids: string[]) {
       asked.push(ids);
       const taken = ids.filter(id => stranded.has(id));
       taken.forEach(id => stranded.delete(id));
       return taken;
     },
-    async unfinished(prefix) {
-      return rows.filter(r => r.id.startsWith(prefix) && r.status !== 'done').map(r => r.id);
-    },
-    async claimExecution(id, at) {
-      const row = rows.find(r => r.id === id);
-      if (!row || row.status === 'done') return undefined;
-      if (row.runAt > at || (row.status === 'executing' && row.leaseUntil! > at)) return 'busy';
-      Object.assign(row, {
-        status: 'executing',
-        attempts: row.attempts + 1,
-        leaseUntil: new Date(Date.parse(at) + JOB_LEASE_MS).toISOString(),
-      });
-      return { id, kind: row.kind, payload: row.payload, attempt: row.attempts };
-    },
-    async renew(id, attempt, at) {
+    async renew(id: string, attempt: number, at: string) {
       if (renewFails) throw new Error('database unavailable');
-      const row = rows.find(r => r.id === id);
-      if (!holds(row, attempt)) return false;
-      row.leaseUntil = new Date(Date.parse(at) + JOB_LEASE_MS).toISOString();
-      return true;
+      return renew(id, attempt, at);
     },
-    async completed(id, attempt) {
-      const row = rows.find(r => r.id === id);
-      if (!holds(row, attempt)) return false;
-      row.status = 'done';
-      finished.push([id, attempt]);
-      return true;
+    async completed(id: string, attempt: number, at: string) {
+      const done = await completed(id, attempt, at);
+      if (done) finished.push([id, attempt]);
+      return done;
     },
-  };
-  return queue;
+  });
 }
 /** The runner's repeating timer, fired by hand: `fire` runs every tick still running and lets what they started settle. */
 function manualTimer() {

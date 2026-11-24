@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { Subject, Thread } from '../packages/contracts/src/index';
-import type { AuditEntry, NewThread, ThreadStore, WorkflowStart } from '../apps/server/src/threads/model';
+import type { ExecutionSummary, Subject, Thread } from '../packages/contracts/src/index';
+import type { AuditEntry, NewThread, ThreadStore, TimerIntent, WorkflowStart } from '../apps/server/src/threads/model';
 import { reminderStart, reminderWorkflowId } from '../apps/server/src/threads/domain';
 
 /**
@@ -18,6 +18,10 @@ export interface StoreHarness {
   enqueued(prefix: string): Promise<WorkflowStart[]>;
   /** The workflow ids whose wait a committed transaction ended, in order. */
   cancelled(): Promise<string[]>;
+  /** The deliveries admitted for a person (D47), in any order. */
+  admitted(personId: string): Promise<Array<{ id: string; threadId: string; kind: string; dueAt: string }>>;
+  /** The person's attention day at `at`: how many automatic cards it has taken, and until when the next wait. */
+  day(personId: string, at: string): Promise<{ used: number; bundledUntil: string | null }>;
 }
 const T0 = '2026-11-04T06:00:00.000Z';
 const plus = (iso: string, ms: number) => new Date(Date.parse(iso) + ms).toISOString();
@@ -669,6 +673,142 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
         'timer.blocked',
       ]);
       expect(await store.history(['thread:nothing'], 10)).toEqual([]);
+    });
+    test('a thread is locked by id whoever owns it, and the execution a patch names is read back whole (DE-M7)', async () => {
+      const {
+        store,
+        people: [, b],
+      } = await make();
+      const t = draft(b);
+      await store.transaction(tx => tx.insertThread(t));
+      const execution: ExecutionSummary = {
+        id: `e-${t.id}`,
+        decisionId: `d-${t.id}`,
+        operation: 'finance.approve',
+        state: 'pending',
+        reason: null,
+        compensates: null,
+      };
+      const locked = await store.transaction(async tx => {
+        expect(await tx.lockThreadById(`t-nothing-${t.id}`)).toBeUndefined();
+        const found = await tx.lockThreadById(t.id);
+        await tx.updateThread(t.id, { execution, updatedAt: plus(T0, 1000) });
+        // What the transaction wrote is what the lock reads next, before the commit.
+        expect((await tx.lockThreadById(t.id))?.execution).toEqual(execution);
+        return found;
+      });
+      expect(locked).toEqual({ ...(await store.readThread(b, t.id))!, execution: undefined, updatedAt: T0 });
+      expect((await store.readThread(b, t.id))?.execution).toEqual(execution);
+      const settled = { ...execution, state: 'failed' as const, reason: 'Källan svarade inte.' };
+      await store.transaction(tx => tx.updateThread(t.id, { execution: settled }));
+      expect(await store.readThreadById(t.id)).toMatchObject({ execution: settled, updatedAt: plus(T0, 1000) });
+    });
+    test('a timer read inside a transaction sees what it scheduled; updateTimer writes only the generation it names (DE-M7)', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const t = draft(a),
+        id = `reminder:${t.id}`;
+      await store.transaction(tx => tx.insertThread(t));
+      const input = {
+        id,
+        personId: a,
+        threadId: t.id,
+        kind: 'reminder' as const,
+        unitId: 'unit',
+        authorizationVersion: 'v1',
+        dueAt: plus(T0, 60_000),
+        requestedAt: T0,
+      };
+      await expect(
+        store.transaction(async tx => {
+          const first = await tx.scheduleTimer(input);
+          expect(await tx.readTimer(id)).toEqual(first);
+          await tx.updateTimer({ ...first, state: 'blocked', reason: 'authority-revoked' });
+          expect(await tx.readTimer(id)).toMatchObject({
+            generation: 1,
+            state: 'blocked',
+            reason: 'authority-revoked',
+          });
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      expect(await store.readTimer(id)).toBeUndefined();
+      const [old, current] = await store.transaction(async tx => [
+        await tx.scheduleTimer(input),
+        await tx.scheduleTimer({ ...input, dueAt: plus(T0, 120_000) }),
+      ]);
+      // A step of the replaced generation lands nowhere: the fence the reminder workflow relies on.
+      await store.transaction(tx => tx.updateTimer({ ...old!, state: 'fired', reason: 'stale' }));
+      expect(await store.readTimer(id)).toEqual(current);
+      const delivered: TimerIntent = {
+        ...current!,
+        state: 'fired',
+        deliveredGeneration: 2,
+        deliveredState: 'delivered',
+        attempt: 1,
+        nextAt: plus(T0, 120_000),
+        leaseUntil: plus(T0, 180_000),
+      };
+      await store.transaction(tx => tx.updateTimer(delivered));
+      expect(await store.readTimer(id)).toEqual(delivered);
+    });
+    test("a delivery is admitted once by id, rolls back with its card, and an automatic one takes from the person's day (D47, DE-M7)", async () => {
+      const {
+        store,
+        people: [a],
+        admitted,
+        day,
+      } = await make();
+      const t = draft(a),
+        u = draft(a);
+      await store.transaction(async tx => {
+        await tx.insertThread(t);
+        await tx.insertThread(u);
+      });
+      const minutes = (n: number) => plus(T0, n * 60_000);
+      await expect(
+        store.transaction(async tx => {
+          await tx.admitDelivery({ id: `${t.id}:0`, personId: a, threadId: t.id, kind: 'automatic', at: T0 });
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      expect(await admitted(a)).toEqual([]);
+      expect(await day(a, T0)).toEqual({ used: 0, bundledUntil: null });
+      // 07:00 in Stockholm, outside the review's grace: three automatic cards come at once, the fourth waits for the
+      // noon bundle. Each lands in its own five-minute bucket.
+      for (const n of [1, 2, 3, 4])
+        await store.transaction(tx =>
+          tx.admitDelivery({
+            id: `${t.id}:${n}`,
+            personId: a,
+            threadId: t.id,
+            kind: 'automatic',
+            at: minutes(5 * (n - 1)),
+          }),
+        );
+      // The same identity again, later: nothing changes, neither the delivery nor the day.
+      await store.transaction(tx =>
+        tx.admitDelivery({ id: `${t.id}:1`, personId: a, threadId: t.id, kind: 'automatic', at: minutes(30) }),
+      );
+      // A reminder the person set is due when it fires and takes nothing from the day.
+      await store.transaction(tx =>
+        tx.admitDelivery({ id: `${u.id}:reminded`, personId: a, threadId: u.id, kind: 'reminder', at: minutes(16) }),
+      );
+      const noon = '2026-11-04T11:00:00.000Z';
+      const byId = (x: { id: string }, y: { id: string }) => (x.id < y.id ? -1 : 1);
+      expect((await admitted(a)).sort(byId)).toEqual(
+        [
+          { id: `${t.id}:1`, threadId: t.id, kind: 'automatic', dueAt: T0 },
+          { id: `${t.id}:2`, threadId: t.id, kind: 'automatic', dueAt: minutes(5) },
+          { id: `${t.id}:3`, threadId: t.id, kind: 'automatic', dueAt: minutes(10) },
+          { id: `${t.id}:4`, threadId: t.id, kind: 'automatic', dueAt: noon },
+          { id: `${u.id}:reminded`, threadId: u.id, kind: 'reminder', dueAt: minutes(16) },
+        ].sort(byId),
+      );
+      expect(await day(a, minutes(16))).toEqual({ used: 3, bundledUntil: noon });
+      expect(await day(a, '2026-11-05T06:00:00.000Z')).toEqual({ used: 0, bundledUntil: null });
     });
   });
 }

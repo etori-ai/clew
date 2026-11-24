@@ -4849,6 +4849,32 @@ export type MeetingTimes = Static<typeof MeetingTimesSchema>;
 /** The day's rhythm (D28): the review, the bundles and the quiet hours as Stockholm wall-clock times that the scheduler and the page both read. */
 export const dayRhythm = { review: '06:00', bundles: ['12:00', '16:00'], quiet: '17:00', graceMinutes: 15 } as const;
 /**
+ * When the due timer of a card due on `dueOn` fires (an action point's, D96 item 5; a dated activity's, D118 item 4):
+ * the day's review on the morning after, never before `at`, so a day already past gives a timer due at once. Composition
+ * and the modules' memory card sinks both schedule by it.
+ */
+export function morningAfterDue(dueOn: string, at: string): string {
+  const morning = stockholmInstant(shiftDate(dueOn, 1), dayRhythm.review);
+  return Date.parse(morning) > Date.parse(at) ? morning : at;
+}
+/**
+ * The fence of a core module's due timer (D47, D86): it fires only while it is the card's timer of the module's own
+ * kind, still active at the generation its workflow was started for, and due by `at`. A replaced, cancelled or already
+ * fired generation, and a workflow that runs early, fire nothing. The one check of every card port's `fire`, on the
+ * thread store in composition and in the modules' memory card sinks.
+ */
+export const dueTimerFires = <T extends { kind: string; generation: number; state: string; dueAt: string }>(
+  timer: T | undefined,
+  kind: string,
+  generation: number,
+  at: string,
+): timer is T =>
+  !!timer &&
+  timer.kind === kind &&
+  timer.generation === generation &&
+  timer.state === 'active' &&
+  Date.parse(timer.dueAt) <= Date.parse(at);
+/**
  * One point on the day track: what it is, when (HH:MM Stockholm), whether it has passed, and the cards it pushed. A scan
  * pushes its cards in one go, so a point is a moment, never a card: `count` says how many cards the moment brought and,
  * for an interruption, `title` names the first. Pushes within `dayRhythm.graceMinutes` of the review or a bundle belong to it.

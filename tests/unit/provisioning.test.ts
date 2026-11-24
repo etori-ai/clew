@@ -327,9 +327,6 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
     async setGroupCapabilities(rows) {
       s.groupCapabilities = rows.map(row => ({ organisationId: 'org', ...row }));
     },
-    async setGroupRelations(rows) {
-      s.groupRelations = rows.map(row => ({ organisationId: 'org', ...row }));
-    },
     async relations(id) {
       return s.grants.get(id)?.relations ?? [];
     },

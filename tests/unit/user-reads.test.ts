@@ -1,5 +1,6 @@
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { directoryUsecases } from '../../apps/server/src/modules/people/usecases';
+import { memoryPersonKeys } from '../person-keys';
 import { userRow } from '../scim-store-contract';
 import {
   USER_READ_ORGANISATION,
@@ -10,14 +11,18 @@ import {
   userReadsContract,
 } from '../user-reads-contract';
 
-/** A user name as the people table compares it: without regard to case, in its composed form (NFC). */
-const folded = (name: string) => name.normalize('NFC').toLowerCase();
-
+/**
+ * The user reads on memory: the directory over the memory provisioning store, and whose a user name is through
+ * `memoryPersonKeys`, the helper every unit suite binds where the server binds the people module's user reads (DE-M7),
+ * so the rules it keeps (the reader's organisation, case and composition, a name two people hold) are the contract's.
+ */
 userReadsContract('memory', async () => {
   const actors = userReadActors('memory-user'),
     colleague = userReadColleague(actors),
     others = userReadOthers('memory-user'),
     store = memoryProvisionStore();
+  // The people table: the actors and their colleague in one organisation, beside a person of another, a deactivated
+  // one of theirs and two of theirs whose user names differ only in how they are composed.
   await store.transaction(async tx => {
     await tx.writeUnits(
       USER_READ_ORGANISATION,
@@ -29,47 +34,23 @@ userReadsContract('memory', async () => {
       );
       await tx.replaceAssignments(a.id, [{ unitId: a.unitId, role: a.role }]);
     }
-    await tx.insertUser(userRow(colleague.id, USER_READ_ORGANISATION, { name: colleague.name }));
+    await tx.insertUser(userRow(colleague.id, USER_READ_ORGANISATION, { name: colleague.name, userName: null }));
     await tx.replaceAssignments(colleague.id, colleague.placed);
+    for (const other of others)
+      await tx.insertUser(
+        userRow(other.id, other.organisationId, { name: other.name, userName: other.userName, enabled: other.enabled }),
+      );
   });
-  // The people table: the actors and their colleague in one organisation, beside a person of another, a deactivated
-  // one of theirs and two of theirs whose user names differ only in how they are composed.
-  const people: Array<{ id: string; organisationId: string; userName: string | null; enabled: boolean }> = [
-    ...actors.map(a => ({
-      id: a.id,
-      organisationId: USER_READ_ORGANISATION,
-      userName: userReadNames(actors)[a.id] ?? null,
-      enabled: true,
-    })),
-    { id: colleague.id, organisationId: USER_READ_ORGANISATION, userName: null, enabled: true },
-    ...others,
-  ];
+  const keys = memoryPersonKeys(store.state);
   return {
     actors,
     others,
     reads: {
       capabilities: async id => (actors.find(a => a.id === id)?.role === 'manager' ? ['test.read'] : []),
       ...directoryUsecases({ store }),
-      userName: async id => people.find(p => p.id === id)?.userName ?? null,
-      holders: async (readerId, userNames) => {
-        const held = new Map<string, string>();
-        const reader = people.find(p => p.id === readerId);
-        if (!reader) return held;
-        for (const name of userNames) {
-          const ids = people
-            .filter(
-              p =>
-                p.organisationId === reader.organisationId &&
-                p.userName !== null &&
-                folded(p.userName) === folded(name),
-            )
-            .map(p => p.id);
-          // Two holders of spellings that compare alike leave the name naming nobody.
-          if (ids.length === 1) held.set(name, ids[0]!);
-        }
-        return held;
-      },
-      enabled: async id => people.find(p => p.id === id)?.enabled,
+      userName: keys.userName,
+      holders: keys.holders,
+      enabled: keys.enabled,
     },
   };
 });

@@ -5,6 +5,7 @@ import type { ThreadTx } from '../threads/model';
 import { reminderStart } from '../threads/domain';
 import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postgres';
 import type { FollowupSnapshot, FollowupStore, FollowupTx } from '../modules/calendar/usecases/followups';
+import { reminderCard, returnedCard } from '../modules/calendar/usecases/obligation';
 
 /**
  * Cross-module local delivery uses the same physical transaction as its ordinal and policy. The obligation timer's
@@ -68,36 +69,38 @@ const adapter = (tx: Transaction, timers: ThreadTx): FollowupTx => ({
     await timers.cancelTimer(`obligation:${threadId}`, at);
   },
   async deliver(personId, p, ordinal, sender, at) {
-    const id = `followup:${p.id}:${ordinal}`,
-      title = 'Svara på inbjudan till utvecklingssamtal';
-    const summary = `${sender} väntar på ditt svar om utvecklingssamtalet. Svara i din kalender.`;
+    const card = reminderCard(p.id, ordinal, sender, at);
     const inserted = await tx
       .insert(schema.threads)
       .values({
-        id,
+        id: card.id,
         personId,
         kind: 'pushed',
-        topic: id,
-        title,
+        topic: card.id,
+        title: card.title,
         state: 'open',
         connector: 'calendar',
         area: 'calendar',
-        summary,
-        trigger: { reason: `Inbjudan väntar på svar · påminnelse ${ordinal} av 2`, source: 'Kalendern', at },
+        summary: card.summary,
+        trigger: card.trigger,
         createdAt: new Date(at),
         updatedAt: new Date(at),
       })
       .onConflictDoNothing()
       .returning();
     if (inserted.length) {
-      await timers.admitDelivery({ id: `delivery:${id}`, personId, threadId: id, kind: 'automatic', at });
-      await tx
-        .insert(schema.threadMessages)
-        .values({ id: `message:${id}`, threadId: id, role: 'assistant', body: summary, createdAt: new Date(at) });
+      await timers.admitDelivery({ id: `delivery:${card.id}`, personId, threadId: card.id, kind: 'automatic', at });
+      await tx.insert(schema.threadMessages).values({
+        id: `message:${card.id}`,
+        threadId: card.id,
+        role: 'assistant',
+        body: card.summary,
+        createdAt: new Date(at),
+      });
       await tx.insert(schema.audit).values({
         actor: 'assistant:obligation',
         action: 'thread.pushed',
-        subject: `thread:${id}`,
+        subject: `thread:${card.id}`,
         createdAt: new Date(at),
         details: { proposal: p.id, ordinal, owner: personId },
       });
@@ -110,18 +113,10 @@ const adapter = (tx: Transaction, timers: ThreadTx): FollowupTx => ({
       .where(and(eq(schema.proposals.id, p.id), eq(schema.proposals.reminders, p.reminders)));
   },
   async returnThread(threadId, at, reason) {
+    const { handledAt, updatedAt, ...card } = returnedCard(reason, at);
     await tx
       .update(schema.threads)
-      .set({
-        state: reason === 'answered' ? 'handled' : 'open',
-        handledAt: reason === 'answered' ? new Date(at) : null,
-        waitingOn: null,
-        updatedAt: new Date(at),
-        summary:
-          reason === 'answered'
-            ? 'Alla inbjudningar har besvarats.'
-            : 'Uppföljningen behöver din bedömning. Den godkända planen är avslutad.',
-      })
+      .set({ ...card, handledAt: handledAt === null ? null : new Date(handledAt), updatedAt: new Date(updatedAt) })
       .where(eq(schema.threads.id, threadId));
   },
   async audit(e) {

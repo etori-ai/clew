@@ -12,6 +12,7 @@ import {
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 import { fixtureConnectors } from '../fixture-connectors';
+import { refreshScan } from '../refresh-scan';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
@@ -33,7 +34,7 @@ import {
 } from '../../apps/server/src/assistant/model';
 import { WireError, type ManagedPerson } from '../../apps/server/src/assistant/ports';
 import { openAICompatibleWire } from '../../apps/server/src/assistant/adapters/openai-compatible';
-import { capabilityRunner } from '../../apps/server/src/connectors/run';
+import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import { DRAFT_TOOL, draftableActions, draftTool } from '../../apps/server/src/assistant/drafts';
 import { parseManifest, remoteConnector } from '../../packages/connectors/src/remote';
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
@@ -122,16 +123,22 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
   const threads = threadUsecases({
     store,
     registry,
-    // Whose a source's user name is (D122): in this world every person's id is their user name.
+    run,
+    calendar: { ...calendar, todayEvents: async () => [] },
+    clock,
+    ids,
+  });
+  // The person's scan as the server runs it (D47). Whose a source's user name is (D122): in this world every person's
+  // id is their user name.
+  const scan = refreshScan({
+    store,
+    registry,
+    clock,
     people: {
       holders: async (_reader: string, names: readonly string[]) =>
         new Map(names.filter(n => directory.some(d => d.key === n)).map(n => [n, n])),
       userName: async (id: string) => (directory.some(d => d.key === id) ? id : null),
     },
-    run,
-    calendar: { ...calendar, todayEvents: async () => [] },
-    clock,
-    ids,
   });
   const reminders = reminderUsecases({ store, clock });
   // A work item a propose becomes when the assistant is asked for it: the same use case as one the person starts.
@@ -179,7 +186,8 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
   const deps = {
     store,
     registry,
-    run,
+    // `run`, `handover` and `start` as composition binds them (AM-13); the people are this world's own directory.
+    ...assistantFunctions({ registry, start: started.startCard }),
     calendar,
     models: {
       resolve: async (p: AuthenticatedContext) => {
@@ -191,7 +199,6 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     clock,
     ids,
     trace: () => '0af7651916cd43dd8448eb211c80319c',
-    start: started.startCard,
     log: (...args: unknown[]) => {
       logged.push(args);
     },
@@ -208,6 +215,7 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     cal,
     registry,
     threads,
+    scan,
     reminders,
     calendar,
     assistant,
@@ -215,6 +223,9 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     status,
     logged,
     deps,
+    // The person's own run and start, apart from the assistant's ports.
+    run,
+    started,
     advance: (ms: number) => {
       time += ms;
     },
@@ -348,8 +359,8 @@ describe('a question without the model', () => {
   });
   test('the @ objects come from the open cards in scope', async () => {
     const w = world();
-    await w.threads.ensureThreads(hillevi);
-    const invoices = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
+    await w.scan(hillevi);
+    const invoices = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('finance:invoices:'))!;
     // With nothing typed, `@` offers the context alone, never everything open.
     expect(await w.assistant.listObjects(hillevi, '')).toEqual([]);
     const near = await w.assistant.listObjects(hillevi, '', ['thread:' + invoices.id]);
@@ -384,8 +395,8 @@ describe('a question without the model', () => {
 describe('the answer is the card (D34, H1)', () => {
   test('a question that names an open card is answered with that card without the model, audited, and the card is drawn once', async () => {
     const w = world();
-    await w.threads.ensureThreads(hillevi);
-    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
+    await w.scan(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('finance:invoices:'))!;
     const first = await w.assistant.converse(hillevi, { text: 'attestera en faktura' });
     expect(first).toMatchObject({ assistant: 'router', shape: 'svar', answer: { source: 'Ekonomisystemet' } });
     expect(first.answer.body).toContain(card.summary.replace(/\.$/, ''));
@@ -409,8 +420,8 @@ describe('the answer is the card (D34, H1)', () => {
   });
   test('a chipped card is drawn in the turn that asks about it', async () => {
     const w = world();
-    await w.threads.ensureThreads(hillevi);
-    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
+    await w.scan(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('finance:invoices:'))!;
     const why = await w.assistant.converse(hillevi, {
       text: 'varför ser jag detta?',
       chips: [{ ref: 'thread:' + card.id, kind: 'thread', label: card.title }],
@@ -422,8 +433,8 @@ describe('the answer is the card (D34, H1)', () => {
 
 describe('a chipped card', () => {
   async function invoices(w: ReturnType<typeof world>) {
-    await w.threads.ensureThreads(hillevi);
-    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
+    await w.scan(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('finance:invoices:'))!;
   }
   const chip = (t: Thread) => [{ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title }];
   test('proposes Clew actions instead of acting, and answers why', async () => {
@@ -740,9 +751,9 @@ describe('with a model', () => {
       return { text: 'Det gick inte att läsa.', toolCalls: [] };
     };
     const w = world({ generate, extra: [payroll] });
-    // The server's runner: a refusal becomes an InputError in the registry's words, with its code as the cause.
-    const assistant = assistantUsecases({ ...w.deps, run: capabilityRunner(w.registry) });
-    const turn = await assistant.converse(hillevi, { text: 'Visa mitt lönebesked' });
+    // The world's runner is the server's (`assistantFunctions`): a refusal becomes an InputError in the registry's words,
+    // with its code as the cause.
+    const turn = await w.assistant.converse(hillevi, { text: 'Visa mitt lönebesked' });
     expect(told).toEqual([{ error: TOOL_INVALID }, { error: TOOL_UNANSWERED }]);
     expect(JSON.stringify(told)).not.toContain('lon_2026');
     expect(turn.thread.messages.at(-1)!.meta?.reads).toEqual([
@@ -1077,7 +1088,7 @@ describe('a declared view is the answer, with and without the model (D38)', () =
     const kept = JSON.stringify([await w.store.readThread('hassan', r.conversationId), w.store.audit]);
     expect(kept).not.toMatch(/Anna|0980|070-|kommun\.example/);
     // The view itself is read from the source when it is opened, as the person.
-    expect(await w.deps.run<{ rows: unknown[] }>(hassan, r.view!.capability, r.view!.input)).toMatchObject({
+    expect(await w.run<{ rows: unknown[] }>(hassan, r.view!.capability, r.view!.input)).toMatchObject({
       rows: [{ name: 'Anna Lindqvist', phone: '0980-319 203' }],
     });
     const team = await w.assistant.converse(hassan, { text: 'mitt team' });
@@ -1136,7 +1147,7 @@ test('a transferred person cannot use old source cards through chips, object sug
       return { text: 'Här är svaret.', toolCalls: [] };
     },
   });
-  await w.threads.ensureThreads(hillevi);
+  await w.scan(hillevi);
   const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
   const transferred = {
     ...hillevi,
@@ -1173,8 +1184,8 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
   const LATER = '2026-11-12T13:15:00.000Z';
   type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
   async function rehab(w: ReturnType<typeof world>) {
-    await w.threads.ensureThreads(hillevi);
-    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'hr:rehab:hr:emp:1001')!;
+    await w.scan(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('hr:rehab:hr:emp:1001:'))!;
   }
   test('a draft of the item’s action is checked, kept in the conversation with its audit row, and nothing is sent', async () => {
     const offered: string[][] = [];
@@ -1293,9 +1304,9 @@ describe('the thing open beside the transcript is told to the model as that', ()
       return { text: 'Det är fakturorna från Skolgrossisten.', toolCalls: [] };
     };
     const w = world({ generate });
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     const cards = await w.threads.listThreadsFor(hillevi);
-    const invoices = cards.find(t => t.topic === 'finance:invoices')!;
+    const invoices = cards.find(t => t.topic.startsWith('finance:invoices:'))!;
     const other = cards.find(t => t.id !== invoices.id && t.kind === 'pushed' && t.state === 'open')!;
     const chip = (t: typeof invoices) => ({ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title });
     const turn = await w.assistant.converse(hillevi, {
@@ -1354,8 +1365,8 @@ describe('a question about a person the asker manages (D115)', () => {
   /** What a source holds about Anna's health, as the rehab card's summary and row say it: never handed to the model. */
   const HEALTH = ['Namnet visas i personalsystemet', 'korta perioder sedan', 'Sjuk ·', '"periods"', 'hr:emp:1001'];
   async function rehab(w: ReturnType<typeof world>) {
-    await w.threads.ensureThreads(hillevi);
-    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'hr:rehab:hr:emp:1001')!;
+    await w.scan(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('hr:rehab:hr:emp:1001:'))!;
   }
   /** A tool-using model the test plays: it calls the tools named in `script` in order, and everything it is handed is kept. */
   function scripted(script: Array<[tool: string, input: Record<string, unknown>]>, text: string) {
@@ -1705,7 +1716,7 @@ describe('the assistant switch keeps a connector from the model, not only its to
   test('a chipped card, a card the question names, an earlier answer and its reads are kept from the model once the connector is closed', async () => {
     const model = reading(['Tre fakturor väntar på attest.']);
     const w = world({ generate: model.generate });
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
     const chip = { ref: 'thread:' + card.id, kind: 'thread' as const, label: card.title };
     const first = await w.assistant.converse(hillevi, { text: 'Vad står det här?', chips: [chip] });
@@ -1741,7 +1752,7 @@ describe('the assistant switch keeps a connector from the model, not only its to
       return { text: texts.shift()!, toolCalls: [] };
     };
     const w = world({ generate });
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
     const chip = { ref: 'thread:' + card.id, kind: 'thread' as const, label: card.title };
     const first = await w.assistant.converse(hillevi, { text: 'Vad står det här?', chips: [chip] });
@@ -1788,7 +1799,7 @@ describe('the assistant switch keeps a connector from the model, not only its to
   test('the work about a named person in a closed connector is not told of, and is no draft', async () => {
     const model = reading();
     const w = world({ generate: model.generate });
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     w.registry.govern('hr', { ...openGovernance(), toolsEnabled: false });
     await w.assistant.converse(hillevi, { text: 'Anna har varit sjuk i två veckor, vad gör jag?' });
     expect(model.systems[0]).toContain(
@@ -2174,7 +2185,7 @@ describe('the assistant starts a work item from a propose, the person sends it',
   test('the propose’s topic is what makes it one item for the assistant; started by the person, the input tells two apart', async () => {
     const w = world({ extra: [desk([])] });
     const start = (input: Record<string, unknown>, same?: 'topic') =>
-      w.deps.start!(hassan, 'desk.reportFault', input, { reason: 'Du valde', ...(same ? { same } : {}) });
+      w.started.startCard(hassan, 'desk.reportFault', input, { reason: 'Du valde', ...(same ? { same } : {}) });
     const a = await start({ problem: 'Skärmen är svart' }, 'topic');
     const b = await start({ problem: 'Skärmen är svart', place: 'Sal 12' }, 'topic');
     expect(b.threadId).toBe(a.threadId);

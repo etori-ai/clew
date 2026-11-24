@@ -32,9 +32,8 @@ import {
   type ThreadDraft,
 } from '@clew/connectors';
 import { InputError } from '../../context';
-import type { PersonKeys, ThreadStore, ThreadTx } from '../model';
+import type { ThreadStore, ThreadTx } from '../model';
 import { threadAccess } from '../access';
-import { keyedDrafts } from './keys';
 
 /**
  * The stream's use cases (D20, D25): one function per user action, the actor first, built over ports. Nothing in here
@@ -43,12 +42,11 @@ import { keyedDrafts } from './keys';
  */
 export interface ThreadDeps {
   store: ThreadStore;
-  registry: Pick<Registry, 'scan' | 'areas' | 'connector' | 'visible' | 'find' | 'viewFor' | 'allowed'>;
+  registry: Pick<Registry, 'areas' | 'connector' | 'visible' | 'find' | 'viewFor' | 'allowed'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
   run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
   /** The calendar's proposal path, the one coupling the stream has to a module (recorded as debt in D20). */
   calendar: {
-    ensureProposalThread(persona: AuthenticatedContext, source: string): Promise<Thread | undefined>;
     replan(persona: AuthenticatedContext, threadId: string, week: string): Promise<Thread>;
     dismiss(persona: AuthenticatedContext, threadId: string): Promise<Thread>;
     /** Today's timed meetings, for the preset "när jag är tillbaka från …" (D29). Empty when the calendar cannot be read. */
@@ -57,33 +55,13 @@ export interface ThreadDeps {
   /** The timers behind a snooze (D29, D49): the same reminder workflow as D17, and the same return. */
   clock: () => Date;
   ids: () => string;
-  /** Whose a source's key is (D122): a row that names a person by user name names them by id. Absent: by nobody. */
-  people?: PersonKeys;
 }
 const REOPEN_MS = 10 * 60_000;
 /** Attention budget: pushed threads today against a fixed daily budget. The rest is bundled to lunch or the next morning. */
 export const ATTENTION_BUDGET = 3;
-const sameDraft = (t: Thread, d: ThreadDraft, items: Thread['items']) =>
-  t.title === d.title &&
-  t.summary === d.summary &&
-  (t.deadline ?? null) === (d.deadline ?? null) &&
-  JSON.stringify(t.items) === JSON.stringify(items) &&
-  JSON.stringify(t.actions) === JSON.stringify(d.actions);
-/**
- * Rows without the people they name, whom Clew resolves from its directory (D122): what the source wrote, as far as a
- * stored card can tell, since the card keeps the id and not the source's key.
- */
-const unnamed = (items: Thread['items']) =>
-  items.map(item => {
-    if (item.subject?.entity !== 'person') return item;
-    const { subject: _, ...rest } = item;
-    return rest;
-  });
-
 export function threadUsecases(deps: ThreadDeps) {
-  const { store, registry, run, calendar, clock, ids, people } = deps;
+  const { store, registry, run, calendar, clock, ids } = deps;
   const access = threadAccess(store, registry);
-  const inFlight = new Map<string, Promise<void>>();
   /**
    * A card as the API answers it (D112 item 10): each propose or execute of the card's own connector carries its path,
    * what it asks the person and whether it says beforehand what it writes, from the registered declaration on every read.
@@ -104,116 +82,21 @@ export function threadUsecases(deps: ThreadDeps) {
     pathed((await store.readThread(persona.id, threadId))!);
 
   /**
-   * First visit of the day and the nightly scan: every connector says what it wants to push, one open thread per topic.
-   * The calendar's proposal thread keeps its own path (planner), everything else is a generic card.
+   * Clear a snooze whose time has passed and say so, in the sweep's transaction. The timer, if any, is ended quietly. A
+   * source that changes the work clears the snooze on the refresh path instead (`refresh.ts`, D28).
    */
-  function ensureThreads(persona: AuthenticatedContext, source = 'Nattlig genomgång 06:00') {
-    // One scan per person at a time; a second caller waits for the first instead of pushing the same cards again.
-    const running = inFlight.get(persona.id);
-    if (running) return running;
-    const task = scanInto(persona, source).finally(() => inFlight.delete(persona.id));
-    inFlight.set(persona.id, task);
-    return task;
-  }
-  async function scanInto(persona: AuthenticatedContext, source: string) {
-    if (registry.visible(audiencedActorOf(persona), 'calendar')) await calendar.ensureProposalThread(persona, source);
-    await wakeDue(persona);
-    // A person a row names by user name is kept by id (D122), resolved as the rows arrive.
-    const drafts = await keyedDrafts(people, persona, await registry.scan(audiencedActorOf(persona)));
-    const now = clock();
-    for (const d of drafts) {
-      const scopedTopic = `${d.topic}:authority:${persona.authorizationVersion}`;
-      const existing =
-        (await store.openThread(persona.id, scopedTopic)) ?? (await store.openThread(persona.id, d.topic));
-      // Changed authority must not manufacture a second decision while the old one may have reached the source.
-      if (
-        existing &&
-        (existing.receipt ||
-          (existing.execution && ['pending', 'running', 'unknown'].includes(existing.execution.state)))
-      )
-        continue;
-      if (!existing || existing.sourceAuthorization !== persona.authorizationVersion) {
-        // D135: the open card made under other authority is superseded by this one, so none is left behind unseen.
-        if (existing)
-          await store.transaction(async tx => {
-            const current = await tx.lockThread(persona.id, existing.id);
-            if (current?.state !== 'open' || current.receipt) return;
-            const at = now.toISOString();
-            await tx.updateThread(existing.id, { state: 'handled', handledAt: at, waitingOn: null, updatedAt: at });
-            await tx.cancelTimer(`snooze:${existing.id}`, at);
-            await tx.writeAudit({
-              actor: 'assistant:scan',
-              action: 'thread.superseded',
-              subject: 'thread:' + existing.id,
-              at,
-              details: { connector: d.connector },
-            });
-          });
-        await pushDraft(persona, existing ? { ...d, topic: scopedTopic } : d, 'assistant:scan', now);
-        continue;
-      }
-      // An untouched open card follows its source: rows, title and deadline refresh, the person's selection survives.
-      const items = (d.items ?? []).map(i => ({
-        ...i,
-        selected: existing.items.find(x => x.ref === i.ref)?.selected ?? i.selected,
-      }));
-      if (sameDraft(existing, d, items)) continue;
-      // A row that names another person, or nobody, because the directory changed (a rename, a leaver, a reused name) is
-      // rewritten, but only the source moving is activity that wakes a snoozed card (D122).
-      const moved = !sameDraft({ ...existing, items: unnamed(existing.items) }, d, unnamed(items));
-      await store.transaction(async tx => {
-        const current = await tx.lockThread(persona.id, existing.id);
-        if (
-          !current ||
-          current.updatedAt !== existing.updatedAt ||
-          current.state !== 'open' ||
-          current.receipt ||
-          (current.execution && ['pending', 'running', 'unknown'].includes(current.execution.state))
-        )
-          return;
-        await tx.updateThread(existing.id, {
-          title: d.title,
-          summary: d.summary,
-          items,
-          actions: d.actions,
-          deadline: d.deadline ?? null,
-          updatedAt: now.toISOString(),
-        });
-        await tx.writeAudit({
-          actor: 'assistant:scan',
-          action: 'thread.refreshed',
-          subject: 'thread:' + existing.id,
-          at: now.toISOString(),
-          details: { connector: d.connector, topic: d.topic, owner: persona.id },
-        });
-        // A snoozed card whose source moved comes back early (D28, D29): the snooze breaks on activity.
-        if (existing.snoozedUntil && moved) {
-          await wake(tx, existing, 'changed', now.toISOString());
-          // The timer ends here, so the word the person was promised goes out now (D49), as it does on the refresh path.
-          await tx.admitDelivery({
-            id: `woken:${existing.id}:${now.toISOString()}`,
-            personId: persona.id,
-            threadId: existing.id,
-            kind: 'automatic',
-            at: now.toISOString(),
-          });
-        }
-      });
-    }
-  }
-  /** Clear a snooze and say why, in the same transaction as what woke it: the time passed, or the source changed. The timer, if any, is ended quietly. */
-  async function wake(tx: ThreadTx, thread: Thread, reason: 'time' | 'changed', at: string) {
+  async function wake(tx: ThreadTx, thread: Thread, at: string) {
     await tx.updateThread(thread.id, { snoozedUntil: null, updatedAt: at });
     await tx.writeAudit({
       actor: 'assistant:scan',
       action: 'thread.woken',
       subject: 'thread:' + thread.id,
       at,
-      details: { reason, snoozedUntil: thread.snoozedUntil },
+      details: { reason: 'time', snoozedUntil: thread.snoozedUntil },
     });
     if (thread.snoozedUntil) await tx.cancelTimer(`snooze:${thread.id}`, at);
   }
-  /** The sweep (D28): every open card whose snooze has run out is awake again. Runs before every read of the stream and on the 06:00 scan. */
+  /** The sweep (D28): every open card whose snooze has run out is awake again. Runs before every read of the stream. */
   async function wakeDue(persona: Pick<AuthenticatedContext, 'id'>) {
     const now = clock().toISOString();
     const due = (await store.listThreads(persona.id, now)).filter(
@@ -224,8 +107,7 @@ export function threadUsecases(deps: ThreadDeps) {
         const current = await tx.lockThread(persona.id, t.id);
         // A live snooze timer wakes the card itself; one blocked, cancelled or fired never will, so the sweep does (DE-L11).
         if ((await tx.readTimer(`snooze:${t.id}`))?.state === 'active') return;
-        if (current?.state === 'open' && current.snoozedUntil && !isSnoozed(current, now))
-          await wake(tx, current, 'time', now);
+        if (current?.state === 'open' && current.snoozedUntil && !isSnoozed(current, now)) await wake(tx, current, now);
       });
   }
   /** Push one card for a person. Idempotent by (person, topic): the store refuses a second open card on the topic, across processes. */
@@ -629,7 +511,6 @@ export function threadUsecases(deps: ThreadDeps) {
     return { threadId: id };
   }
   return {
-    ensureThreads,
     pushDraft,
     retryRejected,
     listAreas,
