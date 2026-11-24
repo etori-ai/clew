@@ -17,8 +17,8 @@ export function sessionCookie(c: Context): string | undefined {
 }
 export const privateHeaders = { 'Cache-Control': 'no-store, private', 'X-Content-Type-Options': 'nosniff' };
 export class InputError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'InputError';
   }
 }

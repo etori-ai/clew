@@ -213,6 +213,13 @@ export interface Clew {
    * caller. In process only: a remote connector is never told. A source that logs reads of people records it.
    */
   caller?: RunCaller;
+  /**
+   * What this call answers goes to a model, now or later in the conversation (D122 item 4), as `RunContext.forModel`
+   * says: a capability that lists
+   * other connectors' sources (`clew.search`, `clew.errands`, `clew.requests`, `clew.news`) or their work items
+   * (`clew.work`) leaves out every one the administrator has closed to the assistant. In process only.
+   */
+  forModel?: true;
   /** Run another connector's `read` or `propose` as the same actor. Scope applies; `execute` is refused. */
   call<O = unknown>(name: string, input?: unknown): Promise<O>;
   /**
@@ -252,9 +259,22 @@ export interface RunContext {
    * is never `direct`: a call the assistant makes resolves no relation held by grant (D122 item 5).
    */
   caller?: RunCaller;
+  /**
+   * What the call answers goes to a model, now or when a later turn of the conversation hears the answer: a read in a
+   * conversation turn, the model's tool call or the router's (D122 item 4). A capability whose connector or own switch
+   * keeps it from the assistant (`Registry.forModel`) is unknown to such a call, nested calls included, and the
+   * capability is told (`Clew.forModel`) so a list of other connectors' sources leaves out the closed ones. Carried into
+   * every nested in-process call; never sent to a remote connector. Set only beside `caller: 'assistant'`; a thing the
+   * person pointed at is resolved without it, since what of it the model may have is decided where it is told.
+   */
+  forModel?: boolean;
 }
 /** Who made a call for the person, when it was not the person themself (D122 item 6). */
 export type RunCaller = 'assistant';
+/** How a composite asks for its sources: `forModel` when what it answers is handed to a model (`Clew.forModel`). */
+export interface SourceOptions {
+  forModel?: boolean;
+}
 /** What `Registry.validate` resolved about whom an input names (D117): opaque, issued and redeemed by one registry. */
 export class Resolution {
   private constructor() {}
@@ -1041,6 +1061,7 @@ export class Registry implements HoldingsReader {
       ...(context.signal ? { signal: context.signal } : {}),
       ...(context.operationId ? { operationId: context.operationId } : {}),
       ...(context.caller ? { caller: context.caller } : {}),
+      ...(context.forModel ? { forModel: true as const } : {}),
       call: async <O>(name: string, input: unknown = {}) => {
         await this.refresh();
         const owner = origin ? this.connectors.get(origin) : undefined;
@@ -1058,6 +1079,7 @@ export class Registry implements HoldingsReader {
             chain: context.chain,
             signal: context.signal,
             ...(context.caller ? { caller: context.caller } : {}),
+            ...(context.forModel ? { forModel: true } : {}),
           },
           true,
         );
@@ -1092,6 +1114,9 @@ export class Registry implements HoldingsReader {
     if (context.authorize) await context.authorize();
     const found = this.findFor(actor, name);
     if (!found) throw unknownCapability();
+    // What a model is handed (D122 item 4): a capability the administrator keeps from the assistant does not exist for
+    // the model's call, nor for a call it makes in turn.
+    if (context.forModel && !this.forModel(found.connector.id, name)) throw unknownCapability();
     // On the capability this call would run, by the governance just read: an execute the person may not know of is
     // unknown above, and one they can see is refused here, whenever it came into view.
     if (nested && found.capability.kind === 'execute')
@@ -1121,6 +1146,7 @@ export class Registry implements HoldingsReader {
     await this.refresh();
     if (context.authorize) await context.authorize();
     if (!this.allowed(actor, name)) throw unknownCapability();
+    if (context.forModel && !this.forModel(found.connector.id, name)) throw unknownCapability();
     return { output: output as O, narrowed };
   }
   /** Metadata and binary bytes share the read's scope and source, with a final descriptor/policy check. */
@@ -1391,10 +1417,19 @@ export class Registry implements HoldingsReader {
         : {}),
     };
   }
+  /**
+   * Whether a composite's source may answer this call: every source the person may use, and for a call whose answer a
+   * model is handed (`forModel`, D122 item 4) only one the administrator has not closed to the assistant, by its
+   * connector's switch or its own. So what a model reads through `clew.search`, `clew.errands`, `clew.requests` and
+   * `clew.news` holds nothing of a closed source: neither its hits or rows nor that it was asked.
+   */
+  private sourceFor(c: { connector: Connector; capability: Capability }, options: SourceOptions) {
+    return !options.forModel || this.forModel(c.connector.id, c.capability.name);
+  }
   /** The search sources a person may use (D26): every `<id>.search` read in scope, except the composite itself. */
-  searchSources(actor: Actor) {
+  searchSources(actor: Actor, options: SourceOptions = {}) {
     return this.capabilitiesFor(actor)
-      .filter(c => isSearchSource(c.capability, c.connector.id))
+      .filter(c => isSearchSource(c.capability, c.connector.id) && this.sourceFor(c, options))
       .map(c => ({
         name: c.capability.name,
         connectorId: c.connector.id,
@@ -1408,9 +1443,14 @@ export class Registry implements HoldingsReader {
    * The name is tested before the scope: `clew.errands` is in scope only for a person with a source, so its own scope
    * asks this, and must never be asked from here.
    */
-  errandSources(actor: Actor) {
+  errandSources(actor: Actor, options: SourceOptions = {}) {
     return [...this.capabilities.values()]
-      .filter(c => isErrandSource(c.capability, c.connector.id) && !!this.allowed(actor, c.capability.name))
+      .filter(
+        c =>
+          isErrandSource(c.capability, c.connector.id) &&
+          !!this.allowed(actor, c.capability.name) &&
+          this.sourceFor(c, options),
+      )
       .map(c => ({
         name: c.capability.name,
         connectorId: c.connector.id,
@@ -1423,9 +1463,14 @@ export class Registry implements HoldingsReader {
    * As in `errandSources`, the name is tested before the scope: `clew.requests` is in scope only for a person with a
    * source, so its own scope asks this, and must never be asked from here.
    */
-  requestSources(actor: Actor) {
+  requestSources(actor: Actor, options: SourceOptions = {}) {
     return [...this.capabilities.values()]
-      .filter(c => isRequestSource(c.capability, c.connector.id) && !!this.allowed(actor, c.capability.name))
+      .filter(
+        c =>
+          isRequestSource(c.capability, c.connector.id) &&
+          !!this.allowed(actor, c.capability.name) &&
+          this.sourceFor(c, options),
+      )
       .map(c => ({
         name: c.capability.name,
         connectorId: c.connector.id,
@@ -1438,9 +1483,14 @@ export class Registry implements HoldingsReader {
    * of it opens in Clew. As in `errandSources`, the name is tested before the scope: `clew.news` is in scope only for a
    * person with a source, so its own scope asks this, and must never be asked from here.
    */
-  newsSources(actor: Actor) {
+  newsSources(actor: Actor, options: SourceOptions = {}) {
     return [...this.capabilities.values()]
-      .filter(c => isNewsSource(c.capability, c.connector.id) && !!this.allowed(actor, c.capability.name))
+      .filter(
+        c =>
+          isNewsSource(c.capability, c.connector.id) &&
+          !!this.allowed(actor, c.capability.name) &&
+          this.sourceFor(c, options),
+      )
       .map(c => ({
         name: c.capability.name,
         connectorId: c.connector.id,
@@ -1978,6 +2028,16 @@ export class Registry implements HoldingsReader {
       }));
   }
   /**
+   * Whether the administrator lets the model have what a connector holds (D122 item 4): its assistant switch on
+   * Administration › Anslutna system, and, with a read named, that read's own switch. `tools` asks it of every read, and
+   * the assistant asks it of everything else it would hand the model from the connector: a work item pointed at or named,
+   * a meeting, a passage, an earlier answer written from it. A connector the registry does not govern is closed.
+   */
+  forModel(connectorId: string, capability?: string): boolean {
+    const g = this.governance(connectorId);
+    return g.toolsEnabled && (capability === undefined || g.capabilities[capability]?.model !== false);
+  }
+  /**
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).
    * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
    * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4), the
@@ -1989,25 +2049,34 @@ export class Registry implements HoldingsReader {
    * registered or not (D96 item 6), since an action point is free text about a person and another system's round is
    * not Clew's to open.
    * A read about an entity is never a tool either (D97 item 7): the loader refuses `model: true` on one, and this holds
-   * whatever a registration says. Nor is an action about a record (D137 item 4): the model never names the record, and
-   * fills such an action in only for the record that stands open, through `clew.draftAction`. Clew's own connectors are governed here as any other (D122 item 4): the connector's
-   * assistant switch and each read's. What the model reads of a tool's output is `modelReading` of its view.
+   * whatever a registration says. A record action is offered only through the draft for its open record (D137). Clew's own connectors are governed here as any other (D122 item 4): the connector's
+   * assistant switch and each read's. What the model reads of a tool's output is `modelReading` of its view. A composite
+   * is left out too when the person has sources for it and the administrator has closed every one of them to the
+   * assistant: it would answer an empty list for a person who has rows, and the model would say there are none. The
+   * router routes only to what this offers, so the same holds for it.
    */
   tools(actor: Actor) {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
     const errands = this.capabilities.has(SEARCH_CONNECTOR + '.errands');
     const requests = this.capabilities.has(SEARCH_CONNECTOR + '.requests');
     const news = this.capabilities.has(SEARCH_CONNECTOR + '.news');
+    const listers: Record<string, (options: SourceOptions) => unknown[]> = {
+      [SEARCH_CONNECTOR + '.search']: options => this.searchSources(actor, options),
+      [SEARCH_CONNECTOR + '.errands']: options => this.errandSources(actor, options),
+      [SEARCH_CONNECTOR + '.requests']: options => this.requestSources(actor, options),
+      [SEARCH_CONNECTOR + '.news']: options => this.newsSources(actor, options),
+    };
+    const allClosed = (name: string) => {
+      const lister = listers[name];
+      return !!lister && lister({ forModel: true }).length === 0 && lister({}).length > 0;
+    };
     // An execute's effect read (D112) says what a decision will write; the loader holds it to model: false, and this holds whatever a registration says.
     const effects = new Set(
       [...this.capabilities.values()].flatMap(c => (c.capability.effect ? [c.capability.effect] : [])),
     );
     return this.capabilitiesFor(actor)
       .filter(c => !effects.has(c.capability.name))
-      .filter(c => {
-        const g = this.governance(c.connector.id);
-        return c.capability.model && g.toolsEnabled && g.capabilities[c.capability.name]?.model !== false;
-      })
+      .filter(c => c.capability.model && this.forModel(c.connector.id, c.capability.name))
       .filter(c => !(composite && isSearchSource(c.capability, c.connector.id)))
       .filter(c => !(errands && isErrandSource(c.capability, c.connector.id)))
       .filter(c => !(requests && isRequestSource(c.capability, c.connector.id)))
@@ -2017,6 +2086,7 @@ export class Registry implements HoldingsReader {
       .filter(c => c.capability.name !== TALK_COMPOSITE && c.capability.name !== COMMITMENT_COMPOSITE)
       .filter(c => !(c.capability.kind === 'read' && c.capability.about))
       .filter(c => !aboutRecord(c.capability.about))
+      .filter(c => !allClosed(c.capability.name))
       .map(c => ({
         name: c.capability.name,
         title: c.capability.title,

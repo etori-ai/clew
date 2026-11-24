@@ -45,6 +45,7 @@ import {
   siteHeader,
 } from './data';
 import { newsItemOutput, newsItemSpec, newsSpec } from './data';
+import { providerAddressProblem } from '@clew/contracts';
 import type { AssistantReach, NewsResult, RecordAction } from '@clew/contracts';
 import {
   assistantStatus,
@@ -2939,6 +2940,8 @@ export class MockApi {
     }
     if (!id && method === 'POST') {
       const input = body() as { id: string; title: string; baseUrl: string; apiKey?: string };
+      const wrong = providerAddressProblem(input.baseUrl);
+      if (wrong) return route.fulfill({ status: 400, json: { error: wrong } });
       const p: ProviderSummary = {
         ...this.providers[0]!,
         id: input.id,
@@ -2954,8 +2957,26 @@ export class MockApi {
     const p = this.providers.find(x => x.id === id);
     if (!p) return missing('Leverantören');
     if (action === 'test') return json(providerReport);
+    // As the server does (D24): an address it cannot read, or with a user name or password in it, is refused, and so
+    // is a key given for a host the provider has left since the page was read.
+    const origin = (url: string) => {
+      try {
+        return new URL(url).origin;
+      } catch {
+        return undefined;
+      }
+    };
     if (action === 'key') {
-      const next = { ...p, hasKey: !!body().apiKey, keyChangedAt: NOW };
+      const input = body() as { apiKey: string; baseUrl?: string };
+      if (!input.baseUrl || !origin(input.baseUrl) || origin(input.baseUrl) !== origin(p.baseUrl))
+        return route.fulfill({
+          status: 400,
+          json: {
+            error:
+              'Leverantörens adress har ändrats sedan sidan lästes in. Läs in sidan igen och lägg in nyckeln för den nya adressen.',
+          },
+        });
+      const next = { ...p, hasKey: !!input.apiKey, keyChangedAt: NOW };
       this.providers = this.providers.map(x => (x.id === id ? next : x));
       return json(providerDetail(next));
     }
@@ -2964,7 +2985,17 @@ export class MockApi {
       return json({ removed: true });
     }
     if (method === 'PATCH') {
-      const next = { ...p, ...(body() as Partial<ProviderSummary>), updatedAt: new Date().toISOString() };
+      const patch = body() as Partial<ProviderSummary>;
+      const wrong = patch.baseUrl === undefined ? undefined : providerAddressProblem(patch.baseUrl);
+      if (wrong) return route.fulfill({ status: 400, json: { error: wrong } });
+      // As the server does (D24): an address on another host takes the key with it.
+      const moved = !!patch.baseUrl && p.hasKey && origin(patch.baseUrl) !== origin(p.baseUrl);
+      const next = {
+        ...p,
+        ...patch,
+        ...(moved ? { hasKey: false, keyChangedAt: NOW } : {}),
+        updatedAt: new Date().toISOString(),
+      };
       this.providers = this.providers.map(x => (x.id === id ? next : x));
       return json(providerDetail(next));
     }

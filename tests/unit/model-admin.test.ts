@@ -1,7 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { AddModelInput, checkContract, type AuthenticatedContext } from '../../packages/contracts/src/index';
+import {
+  AddModelInput,
+  AddProviderInput,
+  checkContract,
+  PROVIDER_ADDRESS_FORM,
+  PROVIDER_ADDRESS_USERINFO,
+  ProviderKeyInput,
+  ProviderPatchInput,
+  type AuthenticatedContext,
+} from '../../packages/contracts/src/index';
 import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
-import { modelUsecases, PERSONAL_DATA_UNCONFIRMED } from '../../apps/server/src/assistant/usecases/models';
+import {
+  modelUsecases,
+  PERSONAL_DATA_UNCONFIRMED,
+  PROVIDER_MOVED,
+} from '../../apps/server/src/assistant/usecases/models';
 import { choicesFor, pickModel, slugFor } from '../../apps/server/src/assistant/domain';
 import type { ModelRecord } from '../../apps/server/src/assistant/ports';
 
@@ -244,7 +257,7 @@ describe('providers', () => {
     await w.models.updateProvider(w.mikael, 'kommunen', { title: 'Egna modeller', baseUrl: 'http://llm.test/v1' });
     expect(actions(w.store, 'provider:kommunen')).toEqual(['provider.added', 'provider.title']);
     w.advance(60_000);
-    await w.models.rotateKey(w.mikael, 'kommunen', { apiKey: 'fel-nyckel' });
+    await w.models.rotateKey(w.mikael, 'kommunen', { apiKey: 'fel-nyckel', baseUrl: 'http://llm.test/v1' });
     expect((await w.models.readProvider(w.mikael, 'kommunen')).keyChangedAt).toBe('2026-11-05T07:01:00.000Z');
     expect(await w.models.testProvider(w.mikael, 'kommunen')).toMatchObject({
       ok: false,
@@ -252,7 +265,7 @@ describe('providers', () => {
     });
     expect(w.health.available('kommunen')).toBe(false);
     expect((await w.store.readProvider('kommunen'))!.health.status).toBe('key-rejected');
-    await w.models.rotateKey(w.mikael, 'kommunen', { apiKey: KEY });
+    await w.models.rotateKey(w.mikael, 'kommunen', { apiKey: KEY, baseUrl: 'http://llm.test/v1' });
     expect(await w.models.testModel(w.mikael, 'gpt-oss-120b')).toMatchObject({ ok: true, health: { status: 'ok' } });
     expect(w.health.available('kommunen')).toBe(true);
     expect(actions(w.store, 'provider:kommunen')).toEqual([
@@ -261,6 +274,103 @@ describe('providers', () => {
       'provider.key',
       'provider.key',
     ]);
+  });
+  test('a new address on the same host keeps the key; an address on another host removes it in the same audited change, so the key never travels there', async () => {
+    const w = world();
+    await installed(w);
+    await w.models.updateProvider(w.mikael, 'kommunen', { baseUrl: 'http://llm.test/v2/' });
+    expect(await w.models.readProvider(w.mikael, 'kommunen')).toMatchObject({
+      baseUrl: 'http://llm.test/v2',
+      hasKey: true,
+    });
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'person:mikael',
+      action: 'provider.url',
+      subject: 'provider:kommunen',
+      at: T0,
+      details: { from: 'http://llm.test/v1', to: 'http://llm.test/v2' },
+    });
+    w.advance(60_000);
+    const moved = await w.models.updateProvider(w.mikael, 'kommunen', { baseUrl: 'https://annan.example/v1' });
+    expect(moved).toMatchObject({
+      baseUrl: 'https://annan.example/v1',
+      hasKey: false,
+      keyChangedAt: '2026-11-05T07:01:00.000Z',
+    });
+    expect((await w.store.readProvider('kommunen'))!.apiKey).toBeNull();
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'person:mikael',
+      action: 'provider.url',
+      subject: 'provider:kommunen',
+      at: '2026-11-05T07:01:00.000Z',
+      details: { from: 'http://llm.test/v2', to: 'https://annan.example/v1', keyRemoved: true },
+    });
+    expect(JSON.stringify(w.store.audit)).not.toContain(KEY);
+    // A test of the new address sends no key.
+    await w.models.testProvider(w.mikael, 'kommunen');
+    expect(w.wire.calls.at(-1)).toMatchObject({ baseUrl: 'https://annan.example/v1' });
+    expect(w.wire.calls.at(-1)).not.toHaveProperty('apiKey');
+    // Another port is another host too.
+    await w.models.rotateKey(w.mikael, 'kommunen', { apiKey: KEY, baseUrl: 'https://annan.example/v1' });
+    await w.models.updateProvider(w.mikael, 'kommunen', { baseUrl: 'https://annan.example:8443/v1' });
+    expect(await w.models.readProvider(w.mikael, 'kommunen')).toMatchObject({ hasKey: false });
+  });
+  test('a key is for the address the administrator saw: one given for a host the provider has left is refused and nothing is written', async () => {
+    const w = world();
+    await installed(w);
+    // Another administrator moves the provider while the first has "Byt nyckel" open on the old address.
+    await w.models.updateProvider(w.mikael, 'kommunen', { baseUrl: 'https://annan.example/v1' });
+    const before = w.store.audit.length;
+    for (const baseUrl of ['http://llm.test/v1', 'https://annan.example:8443/v1', 'http://[::1'])
+      await expect(w.models.rotateKey(w.mikael, 'kommunen', { apiKey: KEY, baseUrl })).rejects.toThrow(PROVIDER_MOVED);
+    expect((await w.store.readProvider('kommunen'))!.apiKey).toBeNull();
+    expect(w.store.audit).toHaveLength(before);
+    // The address the page shows now, or another path on its host, takes the key.
+    await w.models.rotateKey(w.mikael, 'kommunen', { apiKey: KEY, baseUrl: 'https://annan.example/v2' });
+    expect(await w.models.readProvider(w.mikael, 'kommunen')).toMatchObject({ hasKey: true });
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'provider.key', details: { key: true } });
+    // The page sends the address it shows; the contract requires it.
+    expect(checkContract(ProviderKeyInput, { apiKey: KEY })).toBe(false);
+  });
+  test('a key given while the address moves to another host never stays with the new host, whichever transaction runs first', async () => {
+    for (const keyFirst of [true, false]) {
+      const w = world();
+      await w.models.addProvider(w.mikael, { id: 'kommunen', title: 'Kommunen', baseUrl: 'http://llm.test/v1' });
+      const key = () => w.models.rotateKey(w.mikael, 'kommunen', { apiKey: KEY, baseUrl: 'http://llm.test/v1' });
+      const move = () => w.models.updateProvider(w.mikael, 'kommunen', { baseUrl: 'https://annan.example/v1' });
+      const settled = await Promise.allSettled(keyFirst ? [key(), move()] : [move(), key()]);
+      const row = (await w.store.readProvider('kommunen'))!;
+      expect(row.baseUrl).toBe('https://annan.example/v1');
+      expect(row.apiKey).toBeNull();
+      expect(settled.filter(s => s.status === 'rejected')).toHaveLength(keyFirst ? 0 : 1);
+      expect(actions(w.store, 'provider:kommunen')).toEqual(
+        keyFirst ? ['provider.added', 'provider.key', 'provider.url'] : ['provider.added', 'provider.url'],
+      );
+      if (keyFirst) expect(w.store.audit.at(-1)?.details).toMatchObject({ keyRemoved: true });
+    }
+  });
+  test('an address with a user name or a password, or one that cannot be read, is refused in the words the page shows, and so is it by the contract', async () => {
+    const w = world();
+    await installed(w);
+    const before = w.store.audit.length;
+    // The contract refuses what a pattern can see; the use case also what only a parser can.
+    for (const [baseUrl, problem, contract] of [
+      ['https://mikael:hemligt@llm.test/v1', PROVIDER_ADDRESS_USERINFO, false],
+      ['https://sk-nyckel@llm.test/v1', PROVIDER_ADDRESS_USERINFO, false],
+      ['https://@llm.test/v1', PROVIDER_ADDRESS_USERINFO, false],
+      ['http://[::1/v1', PROVIDER_ADDRESS_FORM, true],
+      ['ftp://llm.test/v1', PROVIDER_ADDRESS_FORM, false],
+    ] as const) {
+      await expect(w.models.updateProvider(w.mikael, 'kommunen', { baseUrl })).rejects.toThrow(problem);
+      await expect(w.models.addProvider(w.mikael, { id: 'ny', title: 'Ny', baseUrl })).rejects.toThrow(problem);
+      expect(checkContract(ProviderPatchInput, { baseUrl })).toBe(contract);
+      expect(checkContract(AddProviderInput, { id: 'ny', title: 'Ny', baseUrl })).toBe(contract);
+    }
+    // An @ in the path is no user name.
+    expect(checkContract(ProviderPatchInput, { baseUrl: 'https://llm.test/v1/@team' })).toBe(true);
+    expect(w.store.audit).toHaveLength(before);
+    expect(await w.store.readProvider('ny')).toBeUndefined();
+    expect(w.wire.calls.filter(c => c.baseUrl.includes('@'))).toEqual([]);
   });
   test('adding a model settles its reasoning: off only when the provider refuses tools with it, audited, and back when it stops', async () => {
     const w = world();

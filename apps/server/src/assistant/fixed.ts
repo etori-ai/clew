@@ -3,7 +3,19 @@ import { dayLabel, displayDate, timeRange, weekNumber, nextWeekStart } from '@cl
 import { audiencedActorOf } from '@clew/connectors';
 import type { AssistantDeps } from './ports';
 
-export type FixedAnswer = { title: string; body: string; reason: string; source: string; forslagThreadId?: string };
+/**
+ * A fixed answer and where it came from: `connectors` are the connectors whose data its sentence quotes, read here
+ * without a capability of the registry (the calendar's day, the areas' figures), so a later turn can tell whether the
+ * answer may be handed to a model (D122 item 4).
+ */
+export type FixedAnswer = {
+  title: string;
+  body: string;
+  reason: string;
+  source: string;
+  connectors: string[];
+  forslagThreadId?: string;
+};
 /** A question that asks what to do ("vad gör jag", "vad ska jag göra", "hur gör jag"): never answered with a figure (D115). */
 export const asksWhatToDo = (q: string) =>
   /\b(vad|hur)\s+(gör|ska|bör|borde|behöver|måste)\s+(jag|man|vi)(?![\p{L}])/iu.test(q);
@@ -39,6 +51,7 @@ export async function routeFixed(
       body: `${dayLabel(view.date)}: ${list}. ${gap ? `Längsta lucka ${timeRange(gap.start, gap.end)}.` : ''}`.trim(),
       reason: 'Du frågade om dagen',
       source: 'Kalendern',
+      connectors: ['calendar'],
     };
   }
   if (/utvecklingssamtal|\bsamtal\b|förslag/.test(q) && deps.registry.visible(persona, 'calendar')) {
@@ -55,6 +68,7 @@ export async function routeFixed(
         : 'Det finns inga utvecklingssamtal att planera just nu.',
       reason: 'Du frågade om utvecklingssamtalen',
       source: 'Kalendern',
+      connectors: ['calendar'],
       ...(open && thread ? { forslagThreadId: thread.id } : {}),
     };
   }
@@ -62,7 +76,7 @@ export async function routeFixed(
     // The figures the person's connectors answer (D54), as Läget draws them; one whose words the question names, else all.
     const figures = (await deps.registry.areas(audiencedActorOf(persona)))
       .filter(a => a.figure?.value && !a.figure.unavailable)
-      .map(a => ({ ...a.figure!, area: a.title, source: a.source }));
+      .map(a => ({ ...a.figure!, area: a.title, source: a.source, connector: a.connector }));
     const words = q.match(/[a-zåäö]{5,}/g) ?? [];
     const pick = figures.filter(f =>
       words.some(w => `${f.label} ${f.area}`.toLowerCase().includes(w.slice(0, Math.max(5, w.length - 3)))),
@@ -74,6 +88,7 @@ export async function routeFixed(
       body: chosen.map(f => `${f.label}: ${f.value}${f.comparison ? `, ${f.comparison}` : ''}.`).join(' '),
       reason: 'Du frågade om läget',
       source: [...new Set(chosen.map(f => f.source))].join(', '),
+      connectors: [...new Set(chosen.map(f => f.connector))],
     };
   }
   if (/varför|vafför|why/.test(q)) {
@@ -82,6 +97,7 @@ export async function routeFixed(
       body: 'Varje ärende kommer från en utlösare: en nattlig genomgång, en händelse i ett källsystem eller en fråga från dig. Källa och tid står på varje ärende, och "Varför ser jag detta?" i ärendet visar skälet. Du får högst tre avbrott per dag; resten samlas till lunch eller nästa morgon.',
       reason: 'Du frågade om sidan',
       source: 'Startsidan',
+      connectors: [],
     };
   }
   return undefined;

@@ -85,6 +85,13 @@ export interface AuditEntry {
 }
 /** Writes inside one transaction: the audit row commits or rolls back with the rest. */
 export interface ModelTx {
+  /**
+   * The provider as it is now, its row held until the transaction ends: another transaction that locks the same row
+   * waits until this one commits or rolls back, and then reads what it wrote. A change decided from the row (whether a
+   * new address takes the key, whether a key is for the address the administrator saw) is decided from this read, so
+   * two administrators saving at once cannot leave a key with a host it was not given for. Undefined when there is none.
+   */
+  lockProvider(id: string): Promise<ProviderRecord | undefined>;
   /** False when the id is taken. */
   insertProvider(record: NewProvider): Promise<boolean>;
   /** Bumps the version; false when the row does not exist. */
@@ -120,7 +127,10 @@ export interface Endpoint {
   baseUrl: string;
   apiKey?: string;
 }
-/** How a call to an endpoint failed: no answer (network, timeout, 5xx), the key refused (401, 403), or an answer that is not what was asked for. */
+/**
+ * How a call to an endpoint failed: no answer (network, timeout, 5xx), the key refused (401, 403), or an answer that is
+ * not what was asked for. A turn's own requests are classed more narrowly (`turnError` in the live wire).
+ */
 export class WireError extends Error {
   constructor(
     readonly kind: 'unreachable' | 'key-rejected' | 'unsupported',
@@ -140,8 +150,11 @@ export interface ModelWire {
   generator(endpoint: Endpoint, model: string, reasoning: ModelReasoning): ModelGenerate;
 }
 /**
- * Which endpoints answer, per provider, in this process. A failed generation marks the provider down and the router
- * answers until a probe or a test brings it back (D8). A provider nobody has checked yet counts as worth trying.
+ * Which endpoints answer, per provider, in this process. A generation the endpoint did not answer, or whose key it
+ * refused (a `WireError` of kind `unreachable` or `key-rejected`), marks the provider down and the router answers until
+ * a probe or a test brings it back (D8). A turn that failed for reasons of its own (it ran out of time, the endpoint
+ * refused that one request, the model wrote no answer) marks nothing. A provider nobody has checked yet counts as worth
+ * trying.
  */
 export interface ModelHealth {
   available(providerId: string): boolean;
@@ -163,10 +176,10 @@ export interface ModelResolver {
 }
 /**
  * A person the asker manages (D94, D99), as the people module lists them on Personal: Clew's key for them (their id,
- * which card rows, the index from entity to cards and a person's page name them by, D122), the user name a read that
- * takes a person is given (the source's key, D96 talks item 8, which the registry resolves as the asker's report or
- * refuses, D117), their name and the unit they are on. Only people who can be asked about (active, with a user name,
- * D97) are listed, each once.
+ * which card rows and the index from entity to cards name them by, D122), the user name a read about them takes (the
+ * registry resolves a person a read names by it, D117), their name and the unit they are on. Only people who can be
+ * asked about (active, with a user name, D97) are listed, each once. The model is told the user name, never the key
+ * (`managedPeople` binds the port).
  */
 export interface ManagedPerson {
   key: string;
@@ -193,24 +206,32 @@ export interface AssistantDeps {
     | 'connector'
     | 'recordActions'
     | 'validate'
+    | 'forModel'
   >;
   /**
    * Run a read through the registry as the person, on the assistant's behalf: every call the assistant makes says so
    * (`caller: 'assistant'`, D122 item 6), so a source that logs reads of people records who made it, and none is the
-   * person's own direct read (D121, D122 item 5). `runCapability` in the server.
+   * person's own direct read (D121, D122 item 5). A read of a turn says too that its answer is the model's, now or
+   * later in the conversation (`forModel`, D122 item 4): the registry refuses it a read the administrator has closed to
+   * the assistant, nested reads included, and a list of other systems' sources (the composite search, errands,
+   * requests, news, the person's work items) leaves the closed ones out. A chip the person pointed at is resolved
+   * without it: what the model may not have of it is said to be there (`closedLine`). `runCapability` in the server.
    */
   run: <O = unknown>(
     persona: AuthenticatedContext,
     name: string,
     input: unknown,
-    context: { caller: 'assistant' },
+    context: { caller: 'assistant'; forModel?: boolean },
   ) => Promise<O>;
   calendar: Pick<CalendarUsecases, 'listWeek' | 'readToday' | 'samtalStatus' | 'ensureProposalThread' | 'replan'>;
   models: ModelResolver;
   clock: () => Date;
   ids: () => string;
   log: (message: string, ...details: unknown[]) => void;
-  /** The active trace's id (D91), written on a model turn's message and audit row so the record finds its trace; absent when nothing traces. */
+  /**
+   * The active trace's id (D91), written on a model turn's message and audit row so the record finds its trace, the
+   * turns the model did not answer included; absent when nothing traces.
+   */
   trace?: () => string | undefined;
   /**
    * The people the asker manages, read on every turn (D115): a name in a question is resolved among them and nobody
@@ -242,12 +263,13 @@ export interface AssistantDeps {
    * as the person, its draft becomes the item, and the item and its audit row commit together. Nothing is sent to a
    * source: the item's execute runs only through the human decision. `same: 'topic'` makes the propose's own topic
    * the item's identity, so what the model happened to pass does not make a second item while the first is open.
+   * `by` says the assistant started it, and with which model when a model's tool call did, for the item's audit row.
    * Absent, a propose the model calls is run as any capability and makes no work item.
    */
   start?: (
     persona: AuthenticatedContext,
     capability: string,
     input: Record<string, unknown>,
-    context: { reason: string; same?: 'topic' },
+    context: { reason: string; same?: 'topic'; by: { assistant: true; model?: string } },
   ) => Promise<{ threadId: string }>;
 }

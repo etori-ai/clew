@@ -213,6 +213,71 @@ test.describe('model administration', () => {
           .getByRole('checkbox'),
       ).toHaveCount(3);
     });
+    test('an address on another host is saved without its key by keyboard alone, and the page says so in words', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/models/providers/kommunen');
+      const address = page.getByRole('textbox', { name: /^Adress/ });
+      await expect(address).toHaveAccessibleDescription(
+        /Byts servern tas nyckeln bort, och du lägger in en ny med Byt nyckel/,
+      );
+      // By keyboard: into the field, the new address typed, on to Spara and Enter.
+      await address.focus();
+      await page.keyboard.press('ControlOrMeta+A');
+      await page.keyboard.type('https://annan.example/v1');
+      const save = page.getByRole('button', { name: 'Spara', exact: true });
+      for (let i = 0; i < 10 && !(await save.evaluate(el => el === document.activeElement)); i++)
+        await page.keyboard.press('Tab');
+      await expect(save).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Nyckeln togs bort eftersom adressen är på en annan server'));
+      // Saved, there is nothing left to save: focus is not lost to the page, and the next step is in reach.
+      await expect(save).toBeDisabled();
+      expect((await focused(page)).tag).not.toBe('body');
+      await expect(page.getByRole('button', { name: 'Byt nyckel' })).toBeEnabled();
+      await expectNoAxeViolations(page);
+    });
+    test('an address with a user name or a password is refused at the field, in words, before anything is sent', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/models/providers/kommunen');
+      const address = page.getByRole('textbox', { name: /^Adress/ });
+      await address.fill('https://mikael:hemligt@llm.kommunen.se/v1');
+      await expect(address).toHaveAttribute('aria-invalid', 'true');
+      await expect(
+        page.getByText('Adressen får inte innehålla användarnamn eller lösenord.', { exact: false }),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Spara', exact: true })).toBeDisabled();
+      await expectNoAxeViolations(page);
+    });
+    test('a key given after the provider moved to another host is refused in the dialog, where focus is', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/models/providers/kommunen');
+      await page.getByRole('button', { name: 'Byt nyckel' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Byt nyckel' });
+      // Another administrator moves the provider while this page still shows the old address.
+      await page.evaluate(() =>
+        fetch('/api/admin/providers/kommunen', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ baseUrl: 'https://annan.example/v1' }),
+        }),
+      );
+      await dialog.getByLabel(/^Ny nyckel/).fill('ny-nyckel');
+      await dialog.getByRole('button', { name: 'Byt nyckel' }).click();
+      await expect(dialog.getByRole('alert')).toContainText('Leverantörens adress har ändrats sedan sidan lästes in.');
+      await expect(dialog).toBeVisible();
+      await expectNoAxeViolations(page);
+    });
     test('"Lägg till modell" asks the endpoint for its list and offers only what is not added yet, or an id by hand', async ({
       page,
       api,
@@ -303,6 +368,18 @@ test.describe('model administration', () => {
         await open(page, path);
         expect(await reflowProblems(page)).toEqual([]);
       }
+      // The provider's page with the field's refusal and with what saving an address on another host says.
+      await open(page, '/admin/models/providers/kommunen');
+      const address = page.getByRole('textbox', { name: /^Adress/ });
+      await address.fill('https://mikael:hemligt@llm.kommunen.se/v1');
+      await expect(address).toHaveAttribute('aria-invalid', 'true');
+      expect(await reflowProblems(page)).toEqual([]);
+      await address.fill('https://annan.example/v1');
+      await page.getByRole('button', { name: 'Spara', exact: true }).click();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Nyckeln togs bort eftersom adressen är på en annan server'));
+      expect(await reflowProblems(page)).toEqual([]);
       await open(page, '/admin/models');
       await expect(page.getByRole('list', { name: 'Modeller hos Kommunens modeller' })).toBeVisible();
       await page.getByRole('button', { name: 'Lägg till leverantör' }).click();

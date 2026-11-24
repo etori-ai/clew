@@ -36,7 +36,8 @@ import { calendarConnector } from '../../apps/server/src/modules/calendar/connec
 import { workCapabilities } from '../../apps/server/src/modules/work/capabilities';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { assistantUsecases, type AssistantDeps, type TurnObserver } from '../../apps/server/src/assistant';
-import type { ModelGenerate } from '../../apps/server/src/assistant/model';
+import { TOOL_REFUSED, type ModelGenerate } from '../../apps/server/src/assistant/model';
+import { managedPeople } from '../../apps/server/src/assistant/people';
 import { CARD_MARKS_MAX, cardRows, namedItems } from '../../apps/server/src/assistant/card';
 import { fixtureConnectors } from '../fixture-connectors';
 
@@ -264,7 +265,12 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
           kind: 'core',
           source: 'Startsidan',
           areas: [],
-          ...workCapabilities({ list: async () => options.work!, clock: () => new Date(T) }),
+          // As composition binds it: the systems the model may have, asked of the registry on every call.
+          ...workCapabilities({
+            list: async () => options.work!,
+            clock: () => new Date(T),
+            forModel: connectorId => registry.forModel(connectorId),
+          }),
         } as Connector,
       ]
     : [];
@@ -295,16 +301,7 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
     log: (...args) => {
       logged.push(args);
     },
-    // Composition's binding (D115): the people Personal lists for the asker, co-managers included, by Clew's id with
-    // the user name a read that takes a person is given (D122).
-    people: async persona =>
-      (await d.staff.reach(persona)).managed.flatMap(unit =>
-        unit.people.flatMap(p => {
-          const userName = personKey(p);
-          return userName ? [{ key: p.id, userName, name: p.name, unit: unit.unitLabel }] : [];
-        }),
-      ),
-    // Composition's binding (D136 item 5): the units the asker manages or follows up below, never one they are only on.
+    people: async persona => managedPeople((await d.staff.reach(persona)).managed, personKey),
     units: async persona => {
       const reach = await d.staff.reach(persona);
       return followedUnits(reach)
@@ -344,11 +341,12 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
       body: turn.thread.messages.at(-1)!.body,
     };
   };
-  return { d, registry, competence, store, threads, ask, model, logged, freeAsked };
+  return { d, deps, registry, competence, store, threads, ask, model, logged, freeAsked };
 }
 
 const competenceTools = (offered: string[]) => offered.filter(t => t.startsWith('competence__')).sort();
-const UNKNOWN = { error: 'Okänd förmåga.' };
+/** What the model is told of a read the registry refused: Clew's words, never the refusal's (`toolFailure`). */
+const UNKNOWN = { error: TOOL_REFUSED };
 
 describe('which of Clew’s own reads the model is offered (D122 item 3)', () => {
   test('a manager is offered their own and their reports’ holdings, what needs doing and a unit’s coverage, and free times', async () => {
@@ -484,6 +482,26 @@ describe('the assistant reads as the person who asks, never more (D122 item 5)',
       ['hillevi', 'managed', 'assistant', 'person', 'anna', 1],
     ]);
     expect(turn.assistant).toBe('model');
+  });
+  test('a report whose user name is not their id: the prompt and the lookup give the user name, and a read with it answers', async () => {
+    const w = await world([
+      ['clew__findPerson', { name: 'Erik' }],
+      ['competence__holdings', { person: 'Erik.S' }],
+    ]);
+    // The people port is bound as the server binds it: Clew's key is Erik's id, the user name is what a read takes.
+    expect((await w.deps.people!(w.d.persona('hillevi'))).find(p => p.name === 'Erik Sandström')).toEqual({
+      key: 'erik',
+      userName: 'Erik.S',
+      name: 'Erik Sandström',
+      unit: 'Bergsåkers skola',
+    });
+    const { handed, audit } = await w.ask('hillevi', 'Vilken kompetens har Erik?');
+    expect(w.model.systems.at(-1)).toContain('"Erik" är Erik Sandström på Bergsåkers skola, användarnamn Erik.S.');
+    expect(w.model.systems.at(-1)).not.toContain('användarnamn erik');
+    expect(handed[0]).toMatchObject({ found: 'one', name: 'Erik Sandström', userName: 'Erik.S' });
+    expect(handed[1]).toMatchObject({ antal: 1, rader: [{ Kompetens: 'HLR', Status: 'går ut snart' }] });
+    expect((audit.details as { reads: unknown[] }).reads).toEqual([{ capability: 'competence.holdings', rows: 1 }]);
+    expect(w.store.readLog().map(r => [r.caller, r.personId])).toEqual([['assistant', 'erik']]);
   });
   test('the person themself: their own holdings, unlogged whoever reads them; a colleague’s is refused and reaches nobody', async () => {
     const w = await world([
@@ -908,6 +926,29 @@ describe('the work items an answer names among the rows it draws', () => {
     const w = await world([['clew__work', {}]], { work: items });
     w.model.turn.text = 'Inget av dina ärenden är försenat.';
     expect((await w.ask('hillevi', 'Vilka är försenade?')).meta.viewItems).toBeUndefined();
+  });
+  test('the model is handed none of the items of a system closed to the assistant, only how many there are, and an answer from the list is withheld once its system is closed (D122 item 4)', async () => {
+    const rehab = {
+      ...workItem('t-rehab', 'Rehabplan för Anna Lindqvist'),
+      connector: 'hr',
+      trigger: { reason: 'Kom', source: 'Personalsystemet', at: T },
+    } as Thread;
+    const w = await world([['clew__work', {}]], { work: [...items, rehab] });
+    w.registry.govern('hr', { ...openGovernance(), toolsEnabled: false });
+    const first = await w.ask('hillevi', 'Vad har jag att göra?');
+    expect(w.model.handed[0]).toMatchObject({ total: 4, withheld: 1 });
+    expect(JSON.stringify(w.model.handed)).not.toContain('Rehabplan');
+    expect(JSON.stringify(first.meta)).not.toContain('t-rehab');
+    // The answer was written from the economy system's items.
+    expect(first.meta.basis).toEqual({ connectors: ['finance'] });
+    // The person's own read of Att göra lists all five.
+    expect((await w.registry.run<{ total: number }>(actorOf(w.d.persona('hillevi')), 'clew.work', {})).total).toBe(5);
+    w.registry.govern('finance', { ...openGovernance(), toolsEnabled: false });
+    w.model.turn.script = [];
+    await w.ask('hillevi', 'Och sedan?', first.turn.conversationId);
+    const heard = JSON.stringify(w.model.told.at(-1));
+    expect(heard).toContain('Ett tidigare svar som inte lämnas till dig');
+    expect(heard).not.toContain('Svar.');
   });
 });
 
