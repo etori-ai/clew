@@ -1,3 +1,4 @@
+import type { CardExecutionResult } from './model';
 import { foldSourceKey, RELEASED_BY_PERSON, SUBJECT_CHANGED, type AuthenticatedContext } from '@clew/contracts';
 import { RelationsUnavailableError, type ExecuteResult } from '@clew/connectors';
 import {
@@ -812,8 +813,18 @@ export function executionUsecases({
    * The rows of the person's work item that its decisions carried out and no undo took back (DE-M1): a decision made
    * again on the item leaves them out, whichever earlier decision did them.
    */
-  async function doneOn(persona: AuthenticatedContext, threadId: string) {
-    return doneOnCard(await store.readCard(persona.id, threadId));
+  async function doneOnCards(personId: string, threadIds: readonly string[]) {
+    const byCard = new Map<string, CardExecutionResult[]>();
+    for (const execution of await store.readCardResults(personId, threadIds)) {
+      const id = execution.threadId;
+      const group = byCard.get(id);
+      if (group) group.push(execution);
+      else byCard.set(id, [execution]);
+    }
+    return new Map([...byCard].map(([id, entries]) => [id, new Set(doneOnCard(entries))]));
   }
-  return { approve, approveJob, undoJob, observe, readJob, read, progress, reconcile, release, doneOn };
+  async function doneOn(persona: AuthenticatedContext, threadId: string) {
+    return [...((await doneOnCards(persona.id, [threadId])).get(threadId) ?? [])];
+  }
+  return { approve, approveJob, undoJob, observe, readJob, read, progress, reconcile, release, doneOn, doneOnCards };
 }

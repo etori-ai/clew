@@ -47,7 +47,7 @@ function fakeClock(start = T0) {
     },
   });
 }
-function world() {
+function world(doneOnCards: ThreadDeps['doneOnCards'] = async () => new Map()) {
   const registry = new Registry();
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
   const store = memoryThreadStore(),
@@ -74,6 +74,7 @@ function world() {
     },
   };
   const deps: ThreadDeps = {
+    doneOnCards,
     store,
     registry,
     run: (p, name, input) => registry.run(audiencedActorOf(p), name, input),
@@ -89,6 +90,44 @@ function world() {
 }
 const actions = (store: ReturnType<typeof memoryThreadStore>, id: string) =>
   store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);
+
+test('a failed retry keeps rows confirmed in earlier decisions out of the list and detail selection', async () => {
+  const done = new Map<string, Set<string>>();
+  const w = world(async () => done);
+  await w.scan(hillevi);
+  const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
+  const [first, remaining] = card.items;
+  done.set(card.id, new Set([first!.ref]));
+  await w.store.transaction(tx =>
+    tx.updateThread(card.id, {
+      execution: {
+        id: 'second',
+        decisionId: 'again',
+        operation: 'finance.approve',
+        state: 'failed',
+        reason: null,
+        compensates: null,
+      },
+      receipt: {
+        at: T0,
+        headline: 'Misslyckades',
+        undoUntil: null,
+        undoCapability: null,
+        rows: [{ ref: remaining!.ref, label: remaining!.label, outcome: 'failed', detail: 'Avvisad.' }],
+      },
+    }),
+  );
+  for (const shown of [
+    await w.threads.threadFor(hillevi, card.id),
+    (await w.threads.listThreadsFor(hillevi)).find(t => t.id === card.id),
+  ]) {
+    expect(shown?.items[0]).toMatchObject({ ref: first!.ref, selected: false, selectable: false });
+    expect(shown?.items[1]).toEqual(remaining!);
+  }
+  // When a confirmed row has been undone, the original source selection is available again.
+  done.clear();
+  expect((await w.threads.threadFor(hillevi, card.id))?.items).toEqual(card.items);
+});
 
 test('rejected-row recovery is scoped, audited once, and never repeats a completed retry or an uncertain write', async () => {
   const w = world();
