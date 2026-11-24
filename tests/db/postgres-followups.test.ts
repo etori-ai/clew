@@ -1,5 +1,5 @@
 import { afterAll } from 'bun:test';
-import { inArray, eq } from 'drizzle-orm';
+import { and, inArray, eq } from 'drizzle-orm';
 import { database, schema, closeDatabase } from '../../packages/db/src';
 import { postgresProposalStore } from '../../apps/server/src/modules/calendar/adapters/postgres';
 import { postgresFollowupStore } from '../../apps/server/src/composition/followup-store';
@@ -84,5 +84,13 @@ followupContract('postgres follow-up', async () => {
           .from(schema.audit)
           .where(eq(schema.audit.subject, 'thread:' + id))
       ).map(a => a.action),
+    details: async action =>
+      (
+        await database()
+          .select()
+          .from(schema.audit)
+          .where(and(eq(schema.audit.subject, 'thread:' + id), eq(schema.audit.action, action)))
+          .orderBy(schema.audit.createdAt)
+      ).map(a => a.details),
   };
 });

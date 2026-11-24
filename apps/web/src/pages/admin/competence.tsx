@@ -123,7 +123,6 @@ const validityText = (months: number | undefined, kind?: CompetenceKind) =>
         ? `${months} månader (${months / 12} år)`
         : `${months} månader`
       : 'Ingen regel';
-const holdingsText = (n: number) => `${n} intyg`;
 /**
  * What a person holds of a type, in the word for its kind (D120): a skill's holdings are "färdigheter", every other
  * kind's "intyg", one and many.
@@ -136,6 +135,25 @@ const heldWords = (skill: boolean) =>
 const countText = (n: CompetenceShownCount, one: string, many: string) =>
   n === 'few' ? `färre än ${COMPETENCE_GROUP_MIN} ${many}` : `${n} ${n === 1 ? one : many}`;
 const some = (n: CompetenceShownCount) => n === 'few' || n > 0;
+/** How many of the holdings counted from the rule a new validity changes, as the server shows it (D118). */
+const changedText = (n: CompetenceShownCount) => (n === 'few' ? `färre än ${COMPETENCE_GROUP_MIN}` : `${n}`);
+/**
+ * What a new validity does, before it is saved (D108 item 3): how many holdings are counted from the rule and how many
+ * change status today. For holdings of a few people the server does not say how many change, and neither does this.
+ */
+function impactText(impact: CompetenceValidityImpact): string {
+  const { turnExpired, turnValid } = impact;
+  const change =
+    turnExpired === undefined || turnValid === undefined
+      ? 'De är för få för att visa hur många av dem som byter status.'
+      : some(turnExpired)
+        ? `Med ändringen blir ${changedText(turnExpired)} av dem utgångna i dag.`
+        : some(turnValid)
+          ? `Med ändringen blir ${changedText(turnValid)} av dem giltiga igen.`
+          : 'Inget av dem byter status i dag.';
+  const counted = countText(impact.holdings, 'intyg', 'intyg');
+  return `${counted.charAt(0).toUpperCase()}${counted.slice(1)} räknas efter regeln. ${change} Tryck Spara ändringen för att genomföra den.`;
+}
 /** The catalogue's page: a full ESCO import is some 14 000 types, never all drawn. */
 const PAGE = 50;
 interface Row extends Record<string, unknown> {
@@ -358,7 +376,6 @@ function TypeDialog({
   const onOpenChange = (next: boolean) => {
     if (!next) onClose();
   };
-  const becomesExpired = impact ? impact.expiredAfter - impact.expiredBefore : 0;
   const previewError = preview.isError ? errorMessage(preview.error, 'Det gick inte att räkna vad som flyttas.') : null;
   const footer = merged
     ? { secondary: undefined, primary: <Button size="sm" variant="primary" label="Stäng" onClick={onClose} /> }
@@ -574,13 +591,7 @@ function TypeDialog({
               <Text as="p" role="status">
                 {impact.holdings === 0
                   ? 'Inga intyg räknas efter den här regeln ännu, så ingenting ändras för någon.'
-                  : `${holdingsText(impact.holdings)} räknas efter regeln. ${
-                      becomesExpired > 0
-                        ? `Med ändringen blir ${becomesExpired} av dem utgångna i dag.`
-                        : becomesExpired < 0
-                          ? `Med ändringen blir ${-becomesExpired} av dem giltiga igen.`
-                          : 'Inget av dem byter status i dag.'
-                    } Tryck Spara ändringen för att genomföra den.`}
+                  : impactText(impact)}
               </Text>
             )}
             {archiving && (

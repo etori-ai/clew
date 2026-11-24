@@ -2693,12 +2693,21 @@ export interface CompetenceMergePreview {
   /** Whether registrations of people's own wait for both types: while any do, the merge is refused. Never how many. */
   waiting: boolean;
 }
-/** What a change of a type's validity would do to the holdings counted from it (D108 item 3), before it is confirmed. */
+/**
+ * What a change of a type's validity would do to the holdings counted from it (D108 item 3), before it is confirmed.
+ * Counted as an administrator may see it (D118), as a merge's preview is: active people's holdings only, and a count
+ * below `COMPETENCE_GROUP_MIN` is `few`.
+ */
 export interface CompetenceValidityImpact {
   /** Holdings that end by the rule: the ones with no date of the issuer's. */
-  holdings: number;
-  expiredBefore: number;
-  expiredAfter: number;
+  holdings: CompetenceShownCount;
+  /**
+   * Of them, those the new validity turns expired today and those it turns valid again. Absent when the holdings are
+   * of fewer than `COMPETENCE_GROUP_MIN` people: asked month by month, what changes for so few would date their
+   * holdings.
+   */
+  turnExpired?: CompetenceShownCount;
+  turnValid?: CompetenceShownCount;
 }
 /**
  * A manager registers a certificate for a person who reports to them, or a person registers their own for their manager

@@ -171,8 +171,9 @@ export interface Related {
 /**
  * The core rule of who may be asked about (D97 item 8, D117), as the registry asks it: how `actor` stands to each of
  * these keys of `entity`, for the relations in `admits` only. A key the directory does not know, or that names someone
- * outside `admits`, is absent. With `ids`, a person without a user name may be named by Clew's own id (a core
- * capability of Clew's own domains only). Throws when the directory cannot be read: never an empty answer for an error.
+ * outside `admits`, is absent. With `ids` (a core capability of Clew's own domains only), the actor themself or a report
+ * may be named by Clew's own id, answered by their user name in `key` where they have one. Throws when the directory
+ * cannot be read: never an empty answer for an error.
  * Composition binds it to the entities module over the people directory.
  */
 export type RelationResolver = (
@@ -304,8 +305,10 @@ export interface Capability<I = unknown, O = unknown> {
   /**
    * Who may be asked about through it (D117): the relations a caller may have to a person its input names, and on a
    * capability not about a person the input property that takes the key. The registry enforces it on every path. Only
-   * Clew's own connectors may add `ids`: a person without a user name may then be named by Clew's own id, as the talks
-   * domain names them; a manifest cannot carry it, since Clew's id is never sent to a connector. Only they may admit
+   * Clew's own connectors may add `ids`: the caller themself or a report may then be named by Clew's own id, as the
+   * talks domain names a person without a user name and Clew's own cards name anyone (D122), and the capability is
+   * given the user name where the person has one; a manifest cannot carry it, since Clew's id is never sent to a
+   * connector. Only they may admit
    * `registrar` (D121): the protocol's relations are `PROTOCOL_PERSON_RELATIONS`, so a manifest cannot carry it either,
    * and a connector is never told it.
    */
@@ -1512,12 +1515,19 @@ export class Registry implements HoldingsReader {
     };
   }
   /**
-   * Every registered `propose` that follows a fact kind (D55), whether or not this person may call it: the job assembler
-   * classifies an administrator's binding against it, so a follower that went away or out of scope is named, never silently skipped.
+   * Every registered `propose` that follows a fact kind (D55) on a connector that exists for this person (`visible`),
+   * whether or not they may call it: the job assembler classifies an administrator's binding against it, so a follower
+   * out of scope or switched off is named, never silently skipped. A follower of a connector hidden from the person is
+   * not answered, so its id, name and capability never reach them (D23).
    */
-  followers(actor: Actor, kind: string): FollowerRef[] {
+  followers(actor: AudiencedActor, kind: string): FollowerRef[] {
     return [...this.capabilities.values()]
-      .filter(c => c.capability.kind === 'propose' && c.capability.follows?.includes(kind))
+      .filter(
+        c =>
+          c.capability.kind === 'propose' &&
+          c.capability.follows?.includes(kind) &&
+          this.visible(actor, c.connector.id),
+      )
       .map(c => ({
         name: c.capability.name,
         connectorId: c.connector.id,

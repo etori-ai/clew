@@ -84,16 +84,22 @@ const staff: Staff = async p =>
   p.id === 'hillevi'
     ? { manages: true, reports: REPORTS, tree: [{ id: 'unit-skola', parentId: null }] }
     : { manages: false, reports: [], tree: [] };
-/** Who may be asked about (D117), as the directory would answer it: Hillevi manages Anna and Vilma; nobody else anyone. */
-const relations: RelationResolver = async (actor, entity, keys, admits) =>
-  keys.flatMap(asked =>
-    entity === 'person' &&
-    actor.id === 'hillevi' &&
-    admits.includes('managed') &&
-    ['anna', 'vilma.strand'].includes(asked.toLowerCase())
-      ? [{ asked, key: asked.toLowerCase(), relation: 'managed' as const }]
-      : [],
-  );
+/**
+ * Who may be asked about (D117), as the directory would answer it: Hillevi manages Anna and Vilma; nobody else anyone. A
+ * read that takes Clew's id (`ids`) may name them by it and is given their user name, as the rule answers.
+ */
+const IDS: Record<string, string> = { 'p-anna': 'anna', 'p-vilma': 'vilma.strand' };
+const relations: RelationResolver = async (actor, entity, keys, admits, options) =>
+  keys.flatMap(asked => {
+    const key = ['anna', 'vilma.strand'].includes(asked.toLowerCase())
+      ? asked.toLowerCase()
+      : options?.ids
+        ? IDS[asked]
+        : undefined;
+    return entity === 'person' && actor.id === 'hillevi' && admits.includes('managed') && key
+      ? [{ asked, key, relation: 'managed' as const }]
+      : [];
+  });
 const LAYERS = [
   BOARDING_IMPORT_COLUMNS.join(';'),
   'Alla nyanställda;introduction;all;;Beställ dator;order;manager;-14;',
@@ -229,7 +235,7 @@ describe('the boarding wiring (D124)', () => {
     expect(reads.map(c => c.view)).toEqual([planView, personBoardingView]);
     const found = w.registry.find('boarding.person')!.capability;
     expect(found.about).toEqual({ entity: 'person', page: { title: 'Öppna planen', href: '/boarding/{id}' } });
-    expect(found.person).toEqual({ admits: ['managed'] });
+    expect(found.person).toEqual({ admits: ['managed'], ids: true });
   });
 
   test('`boarding.person` answers through the registry for the reader’s reports alone', async () => {
@@ -292,8 +298,10 @@ describe('the boarding wiring (D124)', () => {
       reason: 'Börjar snart',
       deadline: '2026-12-04',
       occurrences: [{ key: 'boarding:suggestion:p-vilma', revision: '2026-12-04', period: '2026-12-04' }],
-      actions: [{ capability: 'boarding.person', kind: 'read', input: { keys: ['vilma.strand'] } }],
+      // Clew is the source, so its card names the person by Clew's id, never by the user name (D122).
+      actions: [{ capability: 'boarding.person', kind: 'read', input: { keys: ['p-vilma'] } }],
     });
+    expect(JSON.stringify(draft!.actions)).not.toContain('vilma.strand');
     expect(draft!.items).toEqual([
       {
         ref: 'boarding:person:p-vilma',
@@ -306,6 +314,24 @@ describe('the boarding wiring (D124)', () => {
       },
     ]);
     expect(JSON.stringify(draft)).not.toContain('Vilma');
+    // The button's read, as the card names it, answers for Vilma through the registry, which gives the read her user
+    // name; her id and her user name are one person, answered once. Anyone else is asked about nobody by the id either.
+    const byId = (await w.registry.run(actorOf(hillevi), 'boarding.person', draft!.actions[0]!.input!)) as {
+      rows: Array<Record<string, unknown>>;
+    };
+    expect(byId.rows).toEqual([
+      { key: 'vilma.strand', status: 'Plan saknas', event: 'Introduktion', day: 'Börjar 4 dec' },
+    ]);
+    expect(
+      (
+        (await w.registry.run(actorOf(hillevi), 'boarding.person', { keys: ['p-vilma', 'vilma.strand'] })) as {
+          rows: unknown[];
+        }
+      ).rows,
+    ).toHaveLength(1);
+    expect(
+      ((await w.registry.run(actorOf(anna), 'boarding.person', { keys: ['p-vilma'] })) as { rows: unknown[] }).rows,
+    ).toEqual([]);
     // Started, the suggestion is gone from the next observation, which resolves the card.
     await w.boarding.startPlan(hillevi, { personId: 'p-vilma', event: 'introduction', anchorOn: '2026-12-04' });
     expect((await w.registry.scanOne(actorOf(hillevi), BOARDING_CONNECTOR)).drafts).toEqual([]);

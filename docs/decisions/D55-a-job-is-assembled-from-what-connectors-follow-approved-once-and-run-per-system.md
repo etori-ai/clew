@@ -1,6 +1,6 @@
 # D55 · A job is assembled from what connectors follow, approved once, and run as one execution or watch per system
 
-**Status:** proposed · **Date:** 2026-11-06 · **Area:** integrations
+**Status:** proposed; item 10 narrowed 2026-11-24 in the fixes of the review of 2026-11-23 (`CB-7`): a binding whose own audience leaves the person out, or whose connector does not exist for them (D23: switched off, or they are outside its audience), is not in their proposal at all, so no connector is named to a person who cannot see it; every other binding is named with its outcome · **Date:** 2026-11-06 · **Area:** integrations
 
 **Decision.** One event in a person's work (an employee's sick report) often means work in several systems at once:
 an entry in the HR system, a changed shift in time reporting, payroll picking it up, a talk that may need moving.

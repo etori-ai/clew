@@ -5,6 +5,8 @@ import type { FollowBinding } from './contracts';
 /** The ports of the jobs module (D25). The registry's followers and offers come in as functions, the ledger as a port, so no module imports another (D20). */
 export type Followers = (actor: AudiencedActor, kind: string) => FollowerRef[];
 export type Offered = (kind: string) => boolean;
+/** Whether a connector exists for this person: registered, switched on and they are in its audience (D23). */
+export type Visible = (actor: AudiencedActor, connectorId: string) => boolean;
 export type JobCall = <O = unknown>(name: string, input?: unknown) => Promise<O>;
 export interface BindingAudit {
   actor: string;
@@ -52,6 +54,7 @@ export interface JobDeps {
   bindings: FollowBindingStore;
   followers: Followers;
   offered: Offered;
+  visible: Visible;
   ledger: JobLedger;
   clock: () => Date;
   ids: () => string;

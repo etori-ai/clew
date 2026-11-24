@@ -11,6 +11,7 @@ the invoices as a table, the budget position as a detail, the figure "Förbrukat
 "Attestera n fakturor", whose items are the invoices with the ones matching an order preselected. A manager of a unit
 without a cost centre gets empty answers. One invoice always answers `unknown` on attest, so the unknown outcome and
 its later read-back are exercised end to end; `finance.approve` and `finance.unapprove` are deduplicated by Clew's
-operation id and read back through `finance.lookup` (D45). `finance.open` gives the link into the system.
+operation id and read back through `finance.lookup` (D45). `finance.unapprove` takes back an attest on the manager's
+own cost centre only; another one's invoice is a failed row. `finance.open` gives the link into the system.
 
 `tests/unit/finance-connector.test.ts` runs it over the protocol with the memory store.

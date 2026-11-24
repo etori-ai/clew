@@ -4,9 +4,13 @@ import { join } from 'node:path';
 import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import { rebindIdentity, signIn } from '../../packages/db/src/auth';
+import { boardingStoreWithCards } from '../../apps/server/src/composition/boarding';
 import { competenceStoreWithCards } from '../../apps/server/src/composition/competence';
+import { dialogueStoreWithCards } from '../../apps/server/src/composition/dialogue';
+import { boardingUsecases } from '../../apps/server/src/modules/boarding/usecases';
 import { talkStoreWithCards } from '../../apps/server/src/composition/talks';
 import { competenceUsecases } from '../../apps/server/src/modules/competence/usecases';
+import { dialogueUsecases } from '../../apps/server/src/modules/dialogue/usecases';
 import { SCIM } from '../../apps/server/src/modules/people/contracts';
 import { postgresProvisionStore, postgresUserReads } from '../../apps/server/src/modules/people/adapters/postgres';
 import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
@@ -21,7 +25,7 @@ import { forgetTestWorkflows, testDurable } from './durable';
  * pushed through the SCIM use cases and signs in through `@clew/db/auth`, so every table and audit row the erasure must
  * reach is written by the code that writes it in production; then every one of them is read back, the audit trail and
  * the authentication log searched for every value that named the person. The source can push the freed name and key
- * again as a new person, the erasures of cards, talks and competence still find the person by id, and the script
+ * again as a new person, the other erasures of the runbook still find the person by id, and the script
  * answers as the runbook says. Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
@@ -156,6 +160,16 @@ const snapshot = async () => ({
     .orderBy(schema.sessions.digest),
   audit: await auditTrail(),
   signIns: await signInLog(),
+  invitations: await db
+    .select({
+      id: schema.proposals.id,
+      participantId: schema.proposals.participantId,
+      name: schema.proposals.participantName,
+      email: schema.proposals.participantEmail,
+    })
+    .from(schema.proposals)
+    .where(like(schema.proposals.id, prefix + '%'))
+    .orderBy(schema.proposals.id),
 });
 
 afterAll(async () => {
@@ -173,6 +187,8 @@ afterAll(async () => {
       or(like(schema.audit.subject, 'person:' + prefix + '%'), like(schema.audit.subject, 'group:' + prefix + '%')),
     );
   if (people.length) {
+    // The planning card with its invitations, and the cards the other erasures were run over.
+    await db.delete(schema.threads).where(inArray(schema.threads.personId, people));
     await db.delete(schema.identityBindings).where(inArray(schema.identityBindings.personId, people));
     await db.delete(schema.sessions).where(inArray(schema.sessions.personId, people));
     await db.delete(schema.groupMembers).where(inArray(schema.groupMembers.personId, people));
@@ -231,6 +247,34 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     BASE,
   );
   const choir = await scim.createGroup(p, group('kor-' + prefix, 'Kören', [asa]), BASE);
+  // A manager's planning card that invited her twice, with her name and address as they were each time, and Bo once.
+  const planning = prefix + '-planning',
+    hour = (h: number) => new Date(Date.UTC(2026, 10, 20, h));
+  await db.insert(schema.threads).values({
+    id: planning,
+    personId: bo,
+    kind: 'pushed',
+    topic: 'planning:' + prefix,
+    title: 'Planera utvecklingssamtal',
+    trigger: { reason: 'test', source: 'test', at: at.toISOString() },
+  });
+  const invitation = (n: number, participantId: string, participantName: string, participantEmail: string) => ({
+    id: prefix + '-proposal-' + n,
+    threadId: planning,
+    personId: bo,
+    participantId,
+    participantName,
+    participantEmail,
+    start: hour(8 + n),
+    end: hour(9 + n),
+  });
+  await db
+    .insert(schema.proposals)
+    .values([
+      invitation(1, asa, 'Åsa Berg', email),
+      invitation(2, asa, 'Åsa Lind', email.toUpperCase()),
+      invitation(3, bo, 'Bo Ek', 'bo.' + prefix + '@sundsvall.test'),
+    ]);
 
   // As the sign-in writes it: Åsa binds under two issuers and Bo under one; Bo's claim arrives with Åsa's subject and
   // is refused naming her as the holder; a new account of Åsa's is refused; an operator rebinds her, and binds her
@@ -294,6 +338,8 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     // Created, patched, replaced and deactivated; the refusal about her and the three rebinds; Bo's refusal she held.
     auditRows: 9,
     signInRows: 2,
+    // The two invitations to her; Bo's is his.
+    invitations: 2,
   };
   expect(await erasure.erasePerson(OPERATOR, asa)).toEqual({ erased: counts });
   const after = await snapshot();
@@ -331,6 +377,12 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
   expect(after.grants.map(g => g.personId)).toEqual([bo]);
   expect(after.bindings.map(b => [b.issuer, b.subject, b.personId])).toEqual([[issuerA, 'sub-bo-' + prefix, bo]]);
   expect(after.sessions).toEqual([{ digest: prefix + '-s3', personId: bo }]);
+  // Her invitations stay, the manager's history, and name her by her id alone.
+  expect(after.invitations).toEqual([
+    { id: prefix + '-proposal-1', participantId: asa, name: '', email: '' },
+    { id: prefix + '-proposal-2', participantId: asa, name: '', email: '' },
+    before.invitations.find(row => row.participantId === bo)!,
+  ]);
 
   // Every event is where it was, with the erasure's row last.
   expect(after.audit.map(row => [row.action, row.subject])).toEqual([
@@ -371,7 +423,12 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     ]),
   );
   // The jsonb and the log searched as text, without regard to case, for every value that named her.
-  const kept = JSON.stringify([after.people.find(row => row.id === asa), after.audit, after.signIns]).toLowerCase();
+  const kept = JSON.stringify([
+    after.people.find(row => row.id === asa),
+    after.audit,
+    after.signIns,
+    after.invitations.filter(row => row.participantId === asa),
+  ]).toLowerCase();
   for (const value of [
     first.userName,
     first.externalId,
@@ -399,6 +456,7 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
       sessions: 0,
       auditRows: 0,
       signInRows: 0,
+      invitations: 0,
     },
   });
 
@@ -423,6 +481,7 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
       sessions: 0,
       auditRows: 0,
       signInRows: 0,
+      invitations: 0,
     },
   });
   const erasedAgain = await snapshot();
@@ -444,7 +503,8 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
       .where(eq(schema.people.id, asa)),
   ).toEqual([{ userName: null, externalId: null }]);
 
-  // The erasures of cards, talks and competence, run first by the runbook, still find her by her id.
+  // The erasures of cards, talks, competence, the follow-up dialogue and introduction and leaving, run first by the
+  // runbook, still find her by her id.
   const options = { durable: testDurable, cancel: async () => {} };
   const subjectsErasure = subjectErasure({
     store: postgresThreadStore(options),
@@ -477,6 +537,20 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     approvals: 0,
     cards: 0,
   });
+  const dialogue = dialogueUsecases({
+    store: dialogueStoreWithCards(options, { clock }),
+    followed: async () => [],
+    clock,
+    ids,
+  });
+  expect(await dialogue.erasePerson(OPERATOR, asa)).toEqual({ cleared: 0, cards: 0 });
+  const boarding = boardingUsecases({
+    store: boardingStoreWithCards(options, { clock }),
+    staff: async () => ({ manages: false, reports: [], tree: [] }),
+    clock,
+    ids,
+  });
+  expect(await boarding.erasePerson(OPERATOR, asa)).toEqual({ plans: 0, items: 0, cleared: 0, cards: 0 });
 });
 
 test('overlapping erasures of the claimed person and the holder preserve both redactions on a shared conflict', async () => {
@@ -570,7 +644,7 @@ test('the script refuses an unknown id and an active person, erases a deactivate
   ).id;
   expect(run(id)).toEqual({
     code: 0,
-    out: `Erased person "${id}": 4 personal fields cleared; 0 memberships, 0 placements, 0 grants, 0 sign-in bindings and 0 sessions removed; 2 audit rows and 0 sign-in log rows cleared of their identifiers. Audited as person:${id}.`,
+    out: `Erased person "${id}": 4 personal fields cleared; 0 memberships, 0 placements, 0 grants, 0 sign-in bindings and 0 sessions removed; 0 invitations cleared of their name and address; 2 audit rows and 0 sign-in log rows cleared of their identifiers. Audited as person:${id}.`,
     err: '',
   });
   const names = await db

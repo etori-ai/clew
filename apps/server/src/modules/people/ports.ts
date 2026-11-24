@@ -355,6 +355,13 @@ export interface ProvisionTx {
    * and in the composed form (NFC) on both sides; how many rows changed. The rest of each row stays.
    */
   eraseClaims(names: readonly string[], marker: string): Promise<number>;
+  /**
+   * Clears the name and the address that every invitation to the person was drawn with (the calendar's proposals that
+   * invite them, by their id: `participant_name` and `participant_email` set to the empty text). The rows stay, the
+   * inviting manager's history and the round's count with them, and still name the person by their id. How many rows
+   * changed: a row already cleared is not counted again.
+   */
+  eraseInvitations(personId: string): Promise<number>;
   /** Add or remove one group-capability row of an organisation; true when the row changed. */
   setGroupCapability(
     organisationId: string,

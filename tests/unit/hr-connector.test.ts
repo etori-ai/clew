@@ -274,6 +274,73 @@ describe('the HR fixture connector', () => {
     await registry.run(hillevi, 'hr.undecideLeave', { refs: ['hr:leave:7781'] }, { operationId: 'op-3' });
     expect((await registry.scan(hillevi)).filter(d => d.topic.startsWith('hr:leave:'))).toHaveLength(2);
   });
+  test("an undo answers for the manager's own unit as the write it takes back does, and leaves another unit's records (CS-M2)", async () => {
+    const { registry, state } = stack();
+    await registry.run(
+      hillevi,
+      'hr.decideLeave',
+      { refs: ['hr:leave:7781'], decision: 'approve' },
+      { operationId: 'a' },
+    );
+    await registry.run(hillevi, 'hr.bookTalk', { refs: ['hr:emp:1005'] }, { operationId: 'b' });
+    const absence = { person: 'hr:emp:1005', from: '2026-11-04', extent: 100 };
+    await registry.run(hillevi, 'hr.reportAbsence', absence, { operationId: 'c' });
+    // Karin manages a unit with no staff here: each undo of Hillevi's records is a failed row, and nothing is removed.
+    const talk = await registry.run<Result>(
+      stranger,
+      'hr.unbookTalk',
+      { refs: ['hr:emp:1005'] },
+      { operationId: 'k1' },
+    );
+    expect(talk.headline).toBe('Bokningen kunde inte tas bort.');
+    expect(talk.rows).toEqual([
+      expect.objectContaining({ ref: 'hr:emp:1005', outcome: 'failed', detail: 'inte i din enhet' }),
+    ]);
+    const leave = await registry.run<Result>(
+      stranger,
+      'hr.undecideLeave',
+      { refs: ['hr:leave:7781'] },
+      { operationId: 'k2' },
+    );
+    expect([leave.headline, leave.rows.map(r => [r.outcome, r.detail])]).toEqual([
+      'Beslutet kunde inte återtas.',
+      [['failed', 'finns inte i personalsystemet']],
+    ]);
+    const ref = 'hr:absence:1005:2026-11-04';
+    const sick = await registry.run<Result>(stranger, 'hr.withdrawAbsence', { refs: [ref] }, { operationId: 'k3' });
+    // Another unit's report answers as one that does not exist, as Hillevi's own unknown ref does.
+    const unknown = await registry.run<Result>(
+      hillevi,
+      'hr.withdrawAbsence',
+      { refs: ['hr:absence:1005:2026-11-05'] },
+      { operationId: 'h0' },
+    );
+    expect(sick).toEqual(
+      expect.objectContaining({
+        headline: 'Sjukanmälan kunde inte tas bort.',
+        rows: [expect.objectContaining({ ref })],
+      }),
+    );
+    expect(sick.rows[0]!.detail).toBe(unknown.rows[0]!.detail);
+    expect(sick.rows[0]!.outcome).toBe('failed');
+    expect(Object.keys(state.get<Record<string, unknown>>('talks'))).toEqual(['hr:emp:1005']);
+    expect(Object.keys(state.get<Record<string, unknown>>('leave-decisions'))).toEqual(['hr:leave:7781']);
+    expect(Object.values(state.get<Record<string, { ref: string }>>('reported-absences')).map(r => r.ref)).toEqual([
+      ref,
+    ]);
+    // A stranger's report for Hillevi's employee is refused before any earlier receipt is answered.
+    await expect(registry.run(stranger, 'hr.reportAbsence', absence)).rejects.toThrow(/inte i din enhet/);
+    // Hillevi's own undos take them back.
+    for (const [name, refs, id] of [
+      ['hr.unbookTalk', ['hr:emp:1005'], 'h1'],
+      ['hr.undecideLeave', ['hr:leave:7781'], 'h2'],
+      ['hr.withdrawAbsence', [ref], 'h3'],
+    ] as const)
+      expect((await registry.run<Result>(hillevi, name, { refs }, { operationId: id })).rows[0]!.outcome).toBe('done');
+    expect(state.get<Record<string, unknown>>('talks')).toEqual({});
+    expect(state.get<Record<string, unknown>>('leave-decisions')).toEqual({});
+    expect(state.get<Record<string, unknown>>('reported-absences')).toEqual({});
+  });
   test('the follower proposes the sick report only when it does not exist yet, and the report is registered once', async () => {
     const { registry, service } = stack({ feedKey: 'feed-key' });
     const fact = { kind: 'hr:absence', attributes: { person: 'hr:emp:1005', from: '2026-11-04', extent: 100 } };

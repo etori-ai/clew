@@ -44,7 +44,8 @@ request waiting on the manager. A manager of another unit gets the same reads ov
 Every `execute` is deduplicated by Clew's operation id (`X-Clew-Operation-Id`): the same id answers with the first
 result, a different input under the same id is refused with 409, and `hr.lookup` finds the result afterwards (D45). The
 writes are the leave decision and its undo, the rehab talk and its undo, the sick report and its withdrawal, the
-delegation renewal. `hr.proposeAbsence` follows the fact `hr:absence` (D55): one `hr.reportAbsence` step when the report
+delegation renewal. Each undo answers for the manager's own unit as the write it takes back does: a ref outside it is a
+failed row and nothing is removed, and a sick report of someone else's answers as one that does not exist. `hr.proposeAbsence` follows the fact `hr:absence` (D55): one `hr.reportAbsence` step when the report
 does not exist yet, none when it does. A follower cannot also be an action about a person (D97), and `hr.reportAbsence`
 takes the HR system's own employee ref (`hr:emp:N`), so the person's menu gets its own propose.
 

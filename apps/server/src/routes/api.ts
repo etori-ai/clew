@@ -358,9 +358,9 @@ api.post('/threads/:id/execution/check', async c => {
     id = c.req.param('id');
   const thread = await threadFor(persona, id);
   if (!thread) return c.json({ error: 'Ärendet finns inte.' }, 404);
-  // Any decision not yet settled is checked: one waiting to be sent whose workflow ended is started again (DE-L1).
-  if (thread.execution && ['pending', 'running', 'unknown'].includes(thread.execution.state))
-    await executions.reconcile(persona, thread.execution.id);
+  // The use case decides what a check does (DE-L1): one waiting to be sent, in doubt, or left running past its lease is
+  // started again; anything else is left as it is.
+  if (thread.execution) await executions.reconcile(persona, thread.execution.id);
   return c.json(await threadFor(persona, id));
 });
 /**

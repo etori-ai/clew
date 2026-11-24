@@ -284,13 +284,26 @@ test.describe('Administration › Kompetens', () => {
       await expect(dialog.getByRole('textbox', { name: /Namn/ })).toHaveValue('HLR');
       const months = dialog.getByRole('spinbutton', { name: /Giltigt i/ });
       await expect(months).toHaveValue('24');
+      // Held by a few people, the server says no more than that, and neither does the page (CO-L1).
+      api.validityImpact = { holdings: 'few' };
+      await months.fill('6');
+      await page.keyboard.press('Tab');
+      await dialog.getByRole('button', { name: 'Spara', exact: true }).click();
+      await expect(
+        dialog.getByRole('status').filter({
+          hasText: 'Färre än 5 intyg räknas efter regeln. De är för få för att visa hur många av dem som byter status.',
+        }),
+      ).toBeVisible();
+      await expectNoAxeViolations(page);
+      // A new number asks again.
+      api.validityImpact = { holdings: 12, turnExpired: 7, turnValid: 0 };
       await months.fill('12');
       await page.keyboard.press('Tab');
       await dialog.getByRole('button', { name: 'Spara', exact: true }).click();
       await expect(
         dialog
           .getByRole('status')
-          .filter({ hasText: '3 intyg räknas efter regeln. Med ändringen blir 2 av dem utgångna i dag.' }),
+          .filter({ hasText: '12 intyg räknas efter regeln. Med ändringen blir 7 av dem utgångna i dag.' }),
       ).toBeVisible();
       expect(api.catalogueWrites).toEqual([]);
       await expectNoAxeViolations(page);
