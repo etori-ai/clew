@@ -31,7 +31,7 @@ A running instance serves JSON Schema at `/api/protocol/connector-protocol.schem
 | Study source-side deduplication and lookup | [reference](../../connectors/reference/README.md) | Synthetic SQLite source, not a real-system pilot. |
 | Retrieve documents using delegated user authority | [eneo](../../connectors/eneo/README.md) | Requires compatible source and IdP configuration; interactive reads only. |
 
-For a first read integration, copy the **whole phonebook directory** to your own project: manifest, connector handlers, source adapter, verifier, server and Dockerfile. It has no workspace dependency. The existing [service walkthrough](example-custom-directory.md#run-the-fixture-as-a-service) gives start, check and registration commands.
+For a first read integration, copy the **whole phonebook directory** to your own project: manifest, connector handlers, source adapter, verifier, server, Dockerfile and `LICENSE`. A connector built in this repository is Clew's code under the AGPL v3, and its image copies `LICENSE` in ([D143](../decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md)). It has no workspace dependency. The existing [service walkthrough](example-custom-directory.md#run-the-fixture-as-a-service) gives start, check and registration commands.
 
 Run the unmodified fixture first. You should be able to register it as a draft, enable it for a test audience and open Telefonbok or Mitt team after selecting that view as a menu tool. This proves the Clew-to-connector boundary before you add your source.
 

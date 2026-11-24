@@ -1,5 +1,6 @@
 {
   "name": "clew",
+  "license": "AGPL-3.0-only",
   "private": true,
   "packageManager": "bun@1.4.4",
   "workspaces": [
