@@ -19,7 +19,7 @@ import type {
   ViewRef,
   WrittenTurn,
 } from '@clew/contracts';
-import { matchesWrittenTurn, viewRows } from '@clew/contracts';
+import { matchesWrittenTurn, turnRequestKey, viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
 import { audiencedActorOf, answersOf, CLEW_SOURCE, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
@@ -242,7 +242,7 @@ export function assistantUsecases(deps: AssistantDeps) {
   const access = threadAccess(store, registry);
   const todayDate = () => displayDate(clock().toISOString());
   const thread = async (persona: AuthenticatedContext, id: string) => (await access.read(persona, id))!;
-  const handOver = handoverPath(deps);
+  const handOver = handoverPath(deps, written);
   /** Clew's own tools of a turn (D112 item 8, D115, D125 item 11): never a read of the registry, never switched off. */
   const OWN_TOOLS = new Set([PERSON_TOOL, DRAFT_TOOL, HANDOVER_TOOL]);
   /**
@@ -982,23 +982,29 @@ export function assistantUsecases(deps: AssistantDeps) {
   ): Promise<ConversationResponse> {
     // The same question sent again under its key (WD-L3), after a stop or an answer that broke on its way: the turn as
     // it was written, and nothing asked or written again. A key that is another question's is refused here.
-    if (input.turn) {
-      const done = await written(persona, input.turn, input);
-      if (done) return done;
+    if (!input.turn) return keyedTurn(persona, input, observer);
+    const done = await written(persona, input.turn, input);
+    if (done) return done;
+    const key = runningKey(persona, input.turn);
+    const identity = turnRequestKey(input);
+    const active = running.get(key);
+    if (active) {
+      if (active.identity !== identity) throw new InputError(KEY_REFUSED);
+      await active.turn;
+      const answer = await written(persona, input.turn, input);
+      if (!answer) throw new InputError(KEY_REFUSED);
+      return answer;
     }
     const turn = keyedTurn(persona, input, observer);
-    if (!input.turn) return turn;
-    // While it runs, the page's read-back after Stoppa waits for it in this process (`writtenTurn`).
-    const key = runningKey(persona, input.turn);
-    running.set(key, turn);
+    running.set(key, { identity, turn });
     try {
       return await turn;
     } finally {
-      if (running.get(key) === turn) running.delete(key);
+      running.delete(key);
     }
   }
   /** The turns running in this process, by the person and the question's key (WD-L3). */
-  const running = new Map<string, Promise<ConversationResponse>>();
+  const running = new Map<string, { identity: string; turn: Promise<ConversationResponse> }>();
   const runningKey = (persona: AuthenticatedContext, key: string) => `${persona.id}\n${key}`;
   async function keyedTurn(
     persona: AuthenticatedContext,
@@ -1078,7 +1084,7 @@ export function assistantUsecases(deps: AssistantDeps) {
   async function writtenTurn(persona: AuthenticatedContext, key: string): Promise<WrittenTurn> {
     if (!TURN_KEY.test(key)) throw new InputError('Ogiltig förfrågan.');
     const run = running.get(runningKey(persona, key));
-    if (run) await settledWithin(run, TURN_WAIT_MS);
+    if (run) await settledWithin(run.turn, TURN_WAIT_MS);
     return { written: (await written(persona, key)) ?? null };
   }
   /** One turn to Clew's own assistant, and its record when it ends without an answer. */

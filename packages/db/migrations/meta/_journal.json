@@ -652,6 +652,13 @@
       "when": 1795520281301,
       "tag": "0092_card_decision_revision",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1795520563937,
+      "tag": "0093_external_handover_turn",
+      "breakpoints": true
     }
   ]
 }

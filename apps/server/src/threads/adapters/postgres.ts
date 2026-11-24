@@ -278,6 +278,14 @@ export function postgresThreadStore(options: ThreadStoreOptions): ThreadStore {
     listThreads: (personId, now) => listThreads(personId, new Date(now)),
     listConversations: (personId, { after, limit }) => listConversations(personId, after, limit),
     turnWritten,
+    async claimHandover(turn, personId) {
+      const inserted = await database()
+        .insert(schema.handoverTurns)
+        .values({ turn, personId })
+        .onConflictDoNothing()
+        .returning({ turn: schema.handoverTurns.turn });
+      return inserted.length === 1;
+    },
     readThread: (personId, id) => read(database(), and(eq(threads.id, id), eq(threads.personId, personId))),
     readThreadById: id => read(database(), eq(threads.id, id)),
     async openThread(personId, topic) {

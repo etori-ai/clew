@@ -69,6 +69,17 @@ export const draft = (personId: string, overrides: Partial<NewThread> = {}): New
 
 export function storeContract(name: string, make: () => Promise<StoreHarness>) {
   describe(`${name} store`, () => {
+    test('only one caller reserves a handover key, across people and retries', async () => {
+      const {
+        store,
+        people: [first, second],
+      } = await make();
+      const key = 'handover-' + unique();
+      const claims = await Promise.all([store.claimHandover(key, first), store.claimHandover(key, second)]);
+      expect(claims.sort()).toEqual([false, true]);
+      expect(await store.claimHandover(key, first)).toBe(false);
+      expect(await store.turnWritten(key)).toBeUndefined();
+    });
     test('a changed action advances the decision revision even at the same clock instant', async () => {
       const {
         store,

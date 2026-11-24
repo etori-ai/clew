@@ -381,6 +381,13 @@ export const threads = pgTable(
     check('thread_state', sql`${t.state} IN ('open', 'handled', 'dismissed')`),
   ],
 );
+/** A turn whose question may already have reached another system. Keep the reservation across restarts. */
+export const handoverTurns = pgTable('handover_turn', {
+  turn: text('turn').primaryKey(),
+  personId: text('person_id')
+    .notNull()
+    .references(() => people.id, { onDelete: 'cascade' }),
+});
 export const threadMessages = pgTable(
   'thread_message',
   {
