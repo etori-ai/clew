@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, type ReactNode } from 'react';
-import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Navigate, useLocation, useParams, useSearchParams } from 'react-router';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import type { EntityList, SessionUser } from '@clew/contracts';
 import {
@@ -39,9 +39,6 @@ import {
   lensHref,
   usePeopleReads,
 } from './staff-parts';
-
-/** What the search field filters by, in the address (D126 rule 9): `?q=<words>`, replaced as the person types. */
-const QUERY = 'q';
 
 /**
  * Personal at `/staff`. A person, a talk and a work item are each a page (D111 rule 3, D126 rules 1 and 3): an address
@@ -113,7 +110,9 @@ function matching(list: EntityList, words: string): EntityList['groups'] {
  * sources that need the reader. A lens's tab (`?show=<capability>`) is that source's view, sorted by need. Each row's
  * name is the link to the person's page (Avatar, name, title); its actions are in its menu, which opens the action
  * dialog (`entity-actions.ts`): nothing is created before the dialog's last button. A source that does not answer is
- * said once, with Försök igen; the rest stands. The search field narrows the rows by name, in the address (`?q=`).
+ * said once, with Försök igen; the rest stands. The search field narrows the rows by name; its words are the page's own
+ * and never in its address, which an access log and the browser's history keep, nor in the way back (`from`) a person's
+ * page is given: they are a person's name (D100 item 5). A reload, or a visit to a person and back, forgets them.
  *
  * Someone who manages nobody gets an empty list from the server, and the page says whom it is for. On a phone the people
  * are rows, so the page never scrolls sideways (1.4.10).
@@ -121,7 +120,6 @@ function matching(list: EntityList, words: string): EntityList['groups'] {
 function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
   const [search] = useSearchParams();
-  const navigate = useNavigate();
   const listQ = useQuery(entityListQuery('person'));
   const list = listQ.data;
   const read = useMemo(() => (list ? sourcesRead(list) : []), [list]);
@@ -131,7 +129,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
   // The people are rows on a phone; wider, the table, which scrolls sideways within its card where its columns do not
   // fit (a data table's exception in 1.4.10), as it did before the panel left the page.
   const narrow = mobile;
-  const words = search.get(QUERY) ?? '';
+  const [words, type] = useState('');
   const groups = useMemo(() => (list ? matching(list, words) : []), [list, words]);
   const found = groups.some(g => g.entities.length > 0);
   const total = list ? peopleCount(list.groups) : 0;
@@ -148,14 +146,6 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
     },
     [],
   );
-  // The search is part of the address, replaced as the person types, so Back leaves the page rather than each letter.
-  const type = (value: string) => {
-    const next = new URLSearchParams(search);
-    if (value) next.set(QUERY, value);
-    else next.delete(QUERY);
-    const q = next.toString();
-    navigate({ search: q ? `?${q}` : '' }, { replace: true });
-  };
   // What the page draws waits for: the list, and the sources it shows (all of them on Medarbetare, the lens under a lens).
   const shown = lens ? [lens.capability] : read;
   const pending = listQ.isPending || shown.some(c => answers.get(c)?.status === 'pending');
