@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { MAX_MANIFEST_BYTES, openApiDocument, protocolSchema } from '@clew/connectors/protocol';
 import { previewManifest } from '@clew/connectors/preview';
@@ -8,6 +9,7 @@ import { manifest as phonebook } from '../../../../connectors/phonebook/connecto
 import { parseManifest } from '@clew/connectors/remote';
 import { schemaCompiler } from '@clew/connectors';
 import { boundedText } from '../bounded-body';
+import { collect, keptPackage, noticesText, packageRoot } from '../../../../scripts/third-party-notices';
 
 /**
  * The connector protocol as this instance speaks it (D60): the JSON Schema bundle, an OpenAPI document, a page that
@@ -22,6 +24,27 @@ const cached = { ...shared, 'Cache-Control': 'public, max-age=300' };
 const clewUrl = (requestUrl: string) => (process.env.PUBLIC_URL ?? new URL(requestUrl).origin).replace(/\/+$/, '');
 // The browser bundle is self-contained and ships next to the package's JS entry point.
 const viewer = new URL('./browser/standalone.js', import.meta.resolve('@scalar/api-reference'));
+export const VIEWER_SCRIPT = fileURLToPath(viewer);
+/**
+ * What the standalone script holds that Clew's install does not, named by the script's source map and its banner: the
+ * script is built from Scalar's own lockfile. Tailwind's base styles come from Scalar's development dependencies, and
+ * unist-util-find-after from hast-util-to-text 4.0.2, which 4.0.3 no longer uses. Their upstream texts are kept.
+ */
+export const VIEWER_BUILT_IN = [
+  { name: 'tailwindcss', version: '4.3.5', license: 'MIT', text: 'licences/tailwindcss.txt' },
+  { name: 'unist-util-find-after', version: '5.0.0', license: 'MIT', text: 'licences/unist-util-find-after.txt' },
+];
+/**
+ * What the script passes on (D143 item 3), found as every browser build of Clew's finds it: Scalar's package, what its
+ * build bundled from elsewhere, and every runtime dependency they carry, with their licence files.
+ */
+export function viewerPackages() {
+  const found = collect([packageRoot(VIEWER_SCRIPT)!]);
+  return { ...found, bundled: [...found.bundled, ...VIEWER_BUILT_IN.map(p => keptPackage(p))] };
+}
+// Read from the installed packages when first asked for; they do not change while the process runs.
+let notices: string | undefined;
+const license = new URL('../../../../LICENSE', import.meta.url);
 const page = `<!doctype html>
 <html lang="en">
 <head>
@@ -60,6 +83,7 @@ export const PROTOCOL_PAGE_HEADERS = {
   'Referrer-Policy': 'same-origin',
 };
 const script = { ...cached, 'Content-Type': 'text/javascript; charset=utf-8' };
+const plain = { ...cached, 'Content-Type': 'text/plain; charset=utf-8' };
 
 /** The manifest field by field, with examples from the repository's two example connectors: public data, never a registered connector's. */
 const reference = manifestReference([parseManifest(phonebook, 'phonebook'), parseManifest(hello, 'hello')]);
@@ -69,6 +93,9 @@ protocolRoutes.get('/manifest-reference.json', c => c.json(reference, 200, cache
 protocolRoutes.get('/manifest-reference', c => c.redirect('/protocol/manifest', 302));
 protocolRoutes.get('/scalar.js', async c => c.body(await readFile(viewer), 200, script));
 protocolRoutes.get('/viewer.js', c => c.body(start, 200, script));
+// Beside the script, as every browser build of Clew's writes them beside its files (D143 item 3).
+protocolRoutes.get('/third-party-notices.txt', c => c.body((notices ??= noticesText(viewerPackages())), 200, plain));
+protocolRoutes.get('/LICENSE.txt', async c => c.body(await readFile(license, 'utf8'), 200, plain));
 protocolRoutes.get('/openapi.json', c => c.json(openApiDocument({ clewUrl: clewUrl(c.req.url) }), 200, cached));
 protocolRoutes.get('/connector-protocol.schema.json', c => c.json(protocolSchema(), 200, cached));
 protocolRoutes.options('/manifest', c =>
@@ -96,3 +123,13 @@ protocolRoutes.post('/manifest', async c => {
     'Cache-Control': 'no-store',
   });
 });
+
+/**
+ * Mounts the protocol at `/api/protocol`, before the session guard. The page is asked for with a trailing slash too,
+ * which the mounted routes do not match: that address would fall through to the guard and answer as an expired session,
+ * so it is sent to the page.
+ */
+export function mountProtocol(app: Hono) {
+  app.get('/api/protocol/', c => c.redirect('/api/protocol', 301));
+  app.route('/api/protocol', protocolRoutes);
+}

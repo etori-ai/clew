@@ -395,5 +395,91 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
       expect(await told(id)).toEqual(['established', 'observed', 'moved', 'ended']);
       expect(await told(`inv-${unique()}`)).toEqual([]);
     });
+
+    test('the cards that name an invitee are found by structure whoever owns them, and the invitations to them are cleared of the name and the address and kept (D123)', async () => {
+      const {
+        store,
+        people: [a, b],
+        foreignThread,
+      } = await make();
+      const invitee = 'invitee-' + unique(),
+        other = 'invitee-' + unique();
+      const her = { personId: invitee, name: 'Anna Berg', email: 'anna.berg@clew.test' };
+      const unplaced = (personId: string, label: string) => ({
+        ref: 'unplaced:' + personId,
+        label,
+        detail: 'Ingen gemensam tid',
+        selectable: false,
+        selected: false,
+      });
+      // a's card invites her twice, once with an address since changed and since withdrawn, and invites another; b's
+      // card could not place her; a's second card names only the other person, and b's second only by a label that
+      // happens to be her name, which is no structure.
+      const [sent, invited, rowed, theirs, named] = [draft(a), draft(a), draft(b), draft(a), draft(b)];
+      const first = proposal(sent.id, a, 'Anna', { participant: her, status: 'confirmed' }),
+        second = proposal(sent.id, a, 'Anna', {
+          participant: { ...her, email: 'Old.Anna@clew.test' },
+          status: 'superseded',
+          start: '2026-11-10T08:00:00.000Z',
+          end: '2026-11-10T09:00:00.000Z',
+        }),
+        others = proposal(invited.id, a, 'Bo', {
+          participant: { personId: other, name: 'Bo Ek', email: 'bo@clew.test' },
+        });
+      await store.transaction(async tx => {
+        for (const t of [sent, invited, rowed, theirs, named]) expect(await tx.insertThread(t)).toBe(true);
+        await tx.insertProposals([first, second, others]);
+        await tx.updateThread(rowed.id, { items: [unplaced(invitee, 'Anna Berg'), unplaced(other, 'Bo Ek')] });
+        await tx.updateThread(theirs.id, { items: [unplaced(other, 'Bo Ek')] });
+        await tx.updateThread(named.id, { items: [unplaced(other, 'Anna Berg')] });
+      });
+      // Another connector's card is never the store's, whatever it holds.
+      await foreignThread(a, `utvecklingssamtal-${unique()}`);
+      const byId = (x: { id: string }, y: { id: string }) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0);
+      expect(await store.transaction(tx => tx.inviteeCards(invitee))).toEqual(
+        [
+          { id: sent.id, personId: a },
+          { id: rowed.id, personId: b },
+        ].sort(byId),
+      );
+      expect(await store.transaction(tx => tx.inviteeCards(other))).toEqual(
+        [
+          { id: invited.id, personId: a },
+          { id: rowed.id, personId: b },
+          { id: theirs.id, personId: a },
+          { id: named.id, personId: b },
+        ].sort(byId),
+      );
+      expect(await store.transaction(tx => tx.inviteeCards('invitee-' + unique()))).toEqual([]);
+      const participants = async () =>
+        (await store.readThread(a, sent.id))!.proposals.map(p => [p.id, p.status, p.participant]);
+      // Cleared in a transaction that fails afterwards, nothing is cleared.
+      await expect(
+        store.transaction(async tx => {
+          expect(await tx.clearInvitee(invitee)).toBe(2);
+          throw new Error('after the clearing');
+        }),
+      ).rejects.toThrow('after the clearing');
+      expect(await participants()).toEqual([
+        [first.id, 'confirmed', her],
+        [second.id, 'superseded', { ...her, email: 'Old.Anna@clew.test' }],
+      ]);
+      // Every invitation to her, whatever its status, keeps its row and its status and names her by id alone.
+      expect(await store.transaction(tx => tx.clearInvitee(invitee))).toBe(2);
+      expect(await participants()).toEqual([
+        [first.id, 'confirmed', { personId: invitee, name: '', email: '' }],
+        [second.id, 'superseded', { personId: invitee, name: '', email: '' }],
+      ]);
+      expect((await store.readThread(a, invited.id))!.proposals[0]!.participant).toEqual(others.participant);
+      // Once more, nothing is left to clear; nor is there for an id nobody invited.
+      expect(await store.transaction(async tx => [await tx.clearInvitee(invitee), await tx.clearInvitee(a)])).toEqual([
+        0, 0,
+      ]);
+      // The rows stay on the cards: clearing the invitations is not the card's change.
+      expect((await store.readThread(b, rowed.id))!.thread.items.map(i => i.ref)).toEqual([
+        'unplaced:' + invitee,
+        'unplaced:' + other,
+      ]);
+    });
   });
 }

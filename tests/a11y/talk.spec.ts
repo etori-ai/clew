@@ -637,7 +637,7 @@ for (const [layout, viewport] of [
       api,
     }) => {
       expect(api.talksOffered).toBe(true);
-      await page.route('**/api/cap/clew.talks?**', route =>
+      await page.route('**/api/cap/clew.talks', route =>
         route.fulfill({ status: 502, json: { error: 'Utvecklingssamtalen svarar inte just nu.' } }),
       );
       await open(page, '/staff?talk=anna');
@@ -650,7 +650,7 @@ for (const [layout, viewport] of [
 
     test('when the action points cannot be read the talk says so with Försök igen', async ({ page, api }) => {
       expect(api.talksOffered).toBe(true);
-      await page.route('**/api/cap/clew.commitments?**', route =>
+      await page.route('**/api/cap/clew.commitments', route =>
         route.fulfill({ status: 502, json: { error: 'Åtgärdspunkterna svarar inte just nu.' } }),
       );
       await open(page, '/staff?talk=anna');

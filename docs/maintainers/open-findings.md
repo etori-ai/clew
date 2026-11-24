@@ -20,14 +20,12 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 12 | The session and the change stream in the browser | `WD-M1`, `WD-M2`, `WD-M3`, `WD-M4`, `WD-L2`, `WD-L4`, `WD-L9` | |
 | 13 | The conversation's state | `WD-L1`, `WD-L3`, `WD-L5`, `WD-L6`, `WD-L7`, `WD-L8` | |
 | 14 | The calendar's time zones, entries and talk meetings | `DE-M8`, `DE-L14`, `DE-L15`, `DE-L16`, `WA-M2`, `WA-L5` | |
 | 15 | No installation's name or brand in the code, and Swedish where a person reads | `AM-12`, `BL-9`, `WA-L6`, `WA-L7`, `WA-L11`, `WA-L12`, `WA-L13` | |
 | 16 | The interface's theme check, spaces and measures | `WA-M1`, `WA-L4`, `WA-L8`, `WA-L9`, `WA-L10`, `WA-L14` | |
 | 17 | Tests and contracts that can see the fault | `WA-M5`, `DE-M4`, `DE-M7`, `ID-9`, `AM-13`, `BD-L6`, `DE-L3` | |
 | 18 | The database: audit gaps, comparisons, indexes and migrations | `DE-L4`, `DE-L7`, `DE-L8`, `DE-L9`, `DE-L10`, `DE-L12`, `DE-L13`, `BD-L4` | |
-| 19 | The build, the images and the documents that span areas | `BL-4`, `BL-5`, `BL-11`, `BL-12`, `BL-13`, `BL-14`, `BL-15` | |
 
 ## Counts
 
@@ -37,13 +35,13 @@ no batch.
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 0 | 0 | 0 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 0 | 2 | 2 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 3 | 11 | 14 |
-| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
+| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 1 | 1 | 2 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 2 | 2 |
-| WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
+| WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 0 | 6 | 6 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 0 | 0 |
-| | **Total** | **0** | **12** | **43** | **55** |
+| | **Total** | **0** | **7** | **34** | **41** |
 
 ## High
 
@@ -107,14 +105,7 @@ and it carries the baseline table of every suite, the failing-test table under f
 | Id | Severity | Finding | Where |
 |---|---|---|---|
 | BL-3 | Medium | `main` has no branch protection or ruleset, so no check is required before a change lands. | GitHub settings of the repository |
-| BL-4 | Medium | The local development guide starts a Keycloak container that nothing in the repository creates, pins or describes. | `docs/maintainers/local-development.md:16` |
-| BL-5 | Low | Seven connector images set a SQLite path under `/data`, which the image lacks and `node` cannot write, so they do not start as built. | `connectors/hr/Dockerfile:5` |
 | BL-9 | Low | The web image serves Sundsvall's trademarked dragon from `apps/web/public/branding/`, though the build is said to carry no branding. | `apps/web/Dockerfile:7` |
-| BL-11 | Low | The documentation site's lockfile pins `vite` and `esbuild` with known advisories, and no workflow runs `bun audit`. | `site/package.json` |
-| BL-12 | Low | Connector base images are pinned by tag only and named without a registry, and `bun` is installed globally without integrity. | `connectors/*/Dockerfile` |
-| BL-13 | Low | `bun run deps` does not cruise `apps/web`, where one violation of `clew-does-not-import-connectors` stands in a test. | `package.json` |
-| BL-14 | Low | Documents that span areas state things the repository no longer holds: duplicate decision numbers, protocol 2, Astryx and FullCalendar commands, ports and the trailing slash. | `docs/reference/status.md:29` |
-| BL-15 | Low | The connector protocol's reference page serves Scalar's packaged standalone script, which bundles Vue and other packages, with Scalar's own notice only (`apps/server/licences/scalar-MIT.txt`); the other packages' notices survive in part as `@license` comments. Found by the review of the licence batch, 2026-11-23. | `apps/server/src/routes/protocol.ts:25` |
 
 ## The competence domain
 
@@ -142,19 +133,12 @@ stream's cost) with a table of statements per tick.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| WD-M1 | Medium | The session boundary ends the session, in every tab, on any non-2xx answer or network error, so a transient failure reads as a sign-out. | `packages/ui/src/session.tsx:98` |
-| WD-M2 | Medium | The change stream's `EventSource` has no `onerror`, so after one reconnect answered with an HTTP error it stays closed. | `apps/web/src/main.tsx:126-130` |
-| WD-M3 | Medium | A link opened signed out loses its query on the way through sign-in, and "Logga in igen" loses the whole address. | `apps/web/src/main.tsx:195` |
-| WD-M4 | Medium | Typed text and user names are sent as query strings in four places, where nginx's default access log and the browser history keep them. | `apps/web/src/components/conversation/composer.tsx:187` |
 | WD-L1 | Low | Alla samtal shows at most 50 conversations, shared with recently handled work items and ordered by when they began. | `packages/db/src/threads.ts:116-138` |
-| WD-L2 | Low | Toasts with live buttons and the tab's title stay on screen after the session ends. | `apps/web/src/main.tsx:486` |
 | WD-L3 | Low | A turn the page reports as stopped or failed may already have written a work item or the answer, and a retry then asks twice. | `apps/server/src/assistant/index.ts:235-246` |
-| WD-L4 | Low | Session storage keeps what a conversation showed, view inputs included, after the session ends. | `apps/web/src/conversation-shown.ts:52-76` |
 | WD-L5 | Low | A question to another system's assistant cannot be stopped and, when answered, can pull the person back or draw one conversation under another's address. | `apps/web/src/components/conversation/conversation-context.tsx:863-912` |
 | WD-L6 | Low | The open conversation is a copy in component state that no change notice refreshes. | `apps/web/src/components/conversation/conversation-context.tsx:328` |
 | WD-L7 | Low | A refused prediction is not taken back from the list once another write has landed on it. | `apps/web/src/thread-cache.ts:61-62` |
 | WD-L8 | Low | A correction's status and a competence source's import are polled, against D33 and D46. | `apps/web/src/components/work/review-recovery.tsx:33` |
-| WD-L9 | Low | The first load asks for the session twice, in a chain, before the page's first read. | `apps/web/src/main.tsx:82-119` |
 
 ## The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA
 

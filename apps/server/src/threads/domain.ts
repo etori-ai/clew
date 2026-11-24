@@ -28,8 +28,9 @@ type Outcome = (typeof outcomes)[number];
  * A work item's "Händelser" (D112 item 4) from its audit rows: what the person did (`principal`, their own id as the
  * audit writes it) and what Clew did on its own (a `system:` or `assistant:` actor) or for them (an item the assistant
  * started at their request, `by: 'assistant'` on its row), newest first. A row anyone else wrote is left out, so no
- * other person is named, and so is a row that is not about the item's course (an index write, a lease, a check). A decision is named by the item's action for its capability, as the item names it now; the audit
- * keeps no titles or names of its own (schema: metadata only), so nothing else is read from it.
+ * other person is named, and so is a row that is not about the item's course (an index write, a lease, a check). A
+ * decision is named by the item's action for its capability, as the item names it now; the audit keeps no titles or
+ * names of its own (schema: metadata only), so nothing else is read from it.
  */
 export function itemEvents(
   rows: readonly AuditEntry[],

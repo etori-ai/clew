@@ -9,7 +9,13 @@ import type { ConnectorManifest } from '../../packages/connectors/src/protocol';
 import { createConnector } from '../../connectors/hello/connector.mjs';
 import { memoryConnectorStore } from '../../apps/server/src/connectors/adapters/memory';
 import { serviceTransport } from '../../apps/server/src/connectors/adapters/transport';
-import { CHANGED_SINCE, connectorUsecases, type AdminDeps } from '../../apps/server/src/connectors/usecases/admin';
+import {
+  CHANGED_SINCE,
+  CHANGED_WHILE_CHECKED,
+  MOVED_WHILE_READ,
+  connectorUsecases,
+  type AdminDeps,
+} from '../../apps/server/src/connectors/usecases/admin';
 import { describeBundled } from '../../apps/server/src/connectors/describe';
 import {
   applyAllRows,
@@ -40,6 +46,8 @@ const persona = (id: string, role: 'manager' | 'employee', capabilities: string[
   },
 });
 const mikael = persona('mikael', 'employee', ['admin.connectors']),
+  /** A second administrator, whose change lands while Mikael's is under way. */
+  anna = persona('anna', 'employee', ['admin.connectors']),
   hassan = persona('hassan', 'employee'),
   hillevi = persona('hillevi', 'manager');
 const SECRET = 'test-secret-test-secret';
@@ -60,7 +68,7 @@ const serving = (transport: AdminDeps['transport'], change: (m: ConnectorManifes
  * offer, the only way an approved manifest changes.
  */
 const approvedElsewhere = async (store: ReturnType<typeof memoryConnectorStore>, id: string, manifest: unknown) => {
-  await store.recordCheck(id, { served: manifest, at: T0 });
+  await store.recordCheck(id, { url: (await store.read(id))!.url!, served: manifest, at: T0 });
   const row = (await store.read(id))!;
   expect(
     await store.transaction(tx =>
@@ -129,13 +137,32 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     clewUrl: 'http://clew',
     fetch: async () => Response.json({ output: { events: [] } }),
   });
-  /** Whether the hello service answers, and what it serves in place of its own manifest when a test says so. */
-  const service = { up: options.helloUp !== false, manifest: undefined as unknown };
+  /**
+   * Whether the hello service answers, and how: `failure` is what fetch throws when it does not (under Node, "fetch
+   * failed" with the network's or the TLS library's code on its cause), `status` an error status its manifest answers
+   * with, and `serve` what it serves in place of its own manifest at each read, else `manifest` at every read.
+   */
+  const service = {
+    up: options.helloUp !== false,
+    failure: () =>
+      new TypeError('fetch failed', {
+        cause: Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:4010'), { code: 'ECONNREFUSED' }),
+      }),
+    status: undefined as number | undefined,
+    manifest: undefined as unknown,
+    serve: undefined as (() => unknown) | undefined,
+  };
   const helloFetch: FetchLike = async (input, init) => {
-    if (!service.up) throw new TypeError('fetch failed: ECONNREFUSED');
-    if (service.manifest !== undefined && input.endsWith('/clew/manifest')) return Response.json(service.manifest);
+    if (!service.up) throw service.failure();
+    if (input.endsWith('/clew/manifest')) {
+      if (service.status) return new Response('Service Unavailable', { status: service.status });
+      const served = service.serve ? service.serve() : service.manifest;
+      if (served !== undefined) return Response.json(served);
+    }
     return hello.handle(new Request(input, init));
   };
+  /** What the transport said through the connectors' log port (D91). */
+  const logged: Array<{ message: string; details: unknown[] }> = [];
   const live = {
     registered: [] as string[],
     register(source: { id: string; url: string; secret: string }, manifest: ConnectorManifest) {
@@ -167,6 +194,7 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
       assert: id => sign(SECRET, id),
       assertForeign: id => sign('another-secret-another', id),
       fetch: helloFetch,
+      log: (message, ...details) => logged.push({ message, details }),
     }),
   };
   const admin = connectorUsecases(deps);
@@ -187,6 +215,7 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     clock,
     live,
     service,
+    logged,
     transport: deps.transport,
     reconcile,
     advance: (ms: number) => {
@@ -309,11 +338,7 @@ describe('adding and governing a remote connector', () => {
     service.up = false;
     const down = await admin.test(mikael, 'hello');
     expect(down.ok).toBe(false);
-    expect(down.health).toMatchObject({
-      status: 'unreachable',
-      at: T0,
-      detail: expect.stringContaining('ECONNREFUSED'),
-    });
+    expect(down.health).toEqual({ status: 'unreachable', at: T0, detail: 'manifest: fetch failed (ECONNREFUSED)' });
     expect((await store.read('hello'))!.health.status).toBe('unreachable');
     service.up = true;
     service.manifest = { protocol: 1, id: 'hello' };
@@ -328,6 +353,74 @@ describe('adding and governing a remote connector', () => {
     expect((await store.read('hello'))!.manifest).toMatchObject({ id: 'hello', source: 'Hello' });
     service.manifest = undefined;
     expect((await admin.test(mikael, 'hello')).health.status).toBe('ok');
+  });
+  test("a failure to connect tells the administrator its cause's code and never what the other end said; the log says the rest (CB-9)", async () => {
+    const { admin, store, service, logged } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    expect(logged).toEqual([]);
+    service.up = false;
+    // Under Node a certificate that does not hold, a name that does not resolve and a refused connection are all
+    // "fetch failed"; the cause's code tells them apart, and its message is the other end's business.
+    for (const [code, said] of [
+      ['CERT_HAS_EXPIRED', 'certificate has expired; hello.kommunen.se says: call the help desk'],
+      ['ENOTFOUND', 'getaddrinfo ENOTFOUND hello.kommunen.se'],
+    ] as const) {
+      service.failure = () => new TypeError('fetch failed', { cause: Object.assign(new Error(said), { code }) });
+      const report = await admin.test(mikael, 'hello');
+      const detail = `fetch failed (${code})`;
+      expect(report.health).toEqual({ status: 'unreachable', at: T0, detail: 'manifest: ' + detail });
+      expect(report.items).toEqual([
+        { level: 'fail', group: 'connection', label: 'Systemets beskrivning kunde inte hämtas', description: detail },
+      ]);
+      expect(JSON.stringify([report, await store.read('hello')])).not.toContain('kommunen.se');
+      // The people who run Clew read what the error and its cause say, through the connectors' log port (D91).
+      expect(logged.at(-1)).toEqual({
+        message: 'A connector check could not read the manifest',
+        details: [
+          {
+            connector: 'hello',
+            url: 'http://hello',
+            health: 'unreachable',
+            failure: { name: 'TypeError', code, message: 'fetch failed', cause: said },
+          },
+        ],
+      });
+    }
+  });
+  test('a manifest that answers an error status is unreachable, and says the status (CB-9)', async () => {
+    const { admin, store, service } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    service.status = 503;
+    const report = await admin.test(mikael, 'hello');
+    expect(report.health).toEqual({
+      status: 'unreachable',
+      at: T0,
+      detail: 'manifest: GET http://hello/clew/manifest answered 503.',
+    });
+    expect((await store.read('hello'))!.health.status).toBe('unreachable');
+  });
+  test("a manifest Clew does not load at the check's own read, after the first read found one it loads, is manifest-invalid (CB-9)", async () => {
+    const { admin, store, service, logged } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    // The service is redeployed between the transport's read and the check's.
+    let reads = 0;
+    service.serve = () => (++reads === 2 ? { protocol: 1, id: 'hello' } : undefined);
+    const report = await admin.test(mikael, 'hello');
+    expect(reads).toBe(2);
+    expect(report.health).toMatchObject({
+      status: 'manifest-invalid',
+      detail: expect.stringContaining('Invalid connector manifest'),
+    });
+    expect((await store.read('hello'))!.health.status).toBe('manifest-invalid');
+    expect(logged.at(-1)).toMatchObject({
+      details: [
+        {
+          connector: 'hello',
+          health: 'manifest-invalid',
+          finding: expect.stringContaining('Invalid connector manifest'),
+        },
+      ],
+    });
   });
   test('adding a service that serves a manifest Clew does not load stores its draft, recorded as manifest-invalid (CB-9)', async () => {
     const { admin, store, service } = world();
@@ -517,6 +610,77 @@ describe('a change is made on the connector as the administrator saw it (DE-M5)'
     expect(await store.read('hello')).toMatchObject({ toolsEnabled: false, scanEnabled: true, version: 2 });
     expect(actions(store, 'hello')).toEqual(['connector.added']);
   });
+  test('a check of a connector another administrator moves while the service answers records nothing, and is asked for again', async () => {
+    const { admin, store, transport, advance } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const before = (await store.read('hello'))!;
+    advance(60_000);
+    // The old address serves another manifest; Anna moves the connector while it answers Mikael's check.
+    serving(transport, m => ({ ...m, source: 'Hello på den gamla adressen' }));
+    const check = transport.check;
+    transport.check = async input => {
+      const report = await check(input);
+      await admin.update(anna, 'hello', { url: 'http://hello-2' });
+      return report;
+    };
+    await expect(admin.test(mikael, 'hello')).rejects.toThrow(CHANGED_WHILE_CHECKED);
+    // Neither the old address's health nor its manifest is on the row: nothing of it can be approved at the new one.
+    expect(await store.read('hello')).toMatchObject({
+      url: 'http://hello-2',
+      health: before.health,
+      offered: null,
+      offeredAt: null,
+      manifest: before.manifest,
+    });
+    expect((await admin.read(mikael, 'hello')).offered).toBeNull();
+    expect(actions(store, 'hello')).toEqual(['connector.added', 'connector.url']);
+  });
+  test('a check of a connector another administrator rekeys while the service answers records nothing either', async () => {
+    const { admin, store, transport, advance } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const before = (await store.read('hello'))!;
+    advance(60_000);
+    const check = transport.check;
+    transport.check = async input => {
+      const report = await check(input);
+      await admin.rotateSecret(anna, 'hello', { secret: 'a-brand-new-secret-value' });
+      return report;
+    };
+    await expect(admin.test(mikael, 'hello')).rejects.toThrow(CHANGED_WHILE_CHECKED);
+    expect((await store.read('hello'))!.health).toEqual(before.health);
+  });
+  test('"Läs in igen" of a connector moved while the service answers offers nothing of what the old address served', async () => {
+    const { admin, store, transport } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const fetchManifest = transport.fetchManifest;
+    transport.fetchManifest = async (url, id) => {
+      const served = await fetchManifest(url, id);
+      await admin.update(anna, 'hello', { url: 'http://hello-2' });
+      return { ...served, source: 'Hello på den gamla adressen' };
+    };
+    await expect(admin.refreshManifest(mikael, 'hello', {})).rejects.toThrow(MOVED_WHILE_READ);
+    expect(await store.read('hello')).toMatchObject({ url: 'http://hello-2', offered: null, offeredAt: null });
+  });
+  test('a new address drops an offer a check recorded after the move was read, which the row read did not hold', async () => {
+    const { admin, store } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const approved = (await store.read('hello'))!.manifest as ConnectorManifest;
+    // A check of the old address records an offer between the move's read and its write; it raises no version.
+    const transaction = store.transaction;
+    store.transaction = (async (fn: Parameters<typeof transaction>[0]) => {
+      store.transaction = transaction;
+      expect(
+        await store.recordCheck('hello', {
+          url: 'http://hello',
+          served: { ...approved, source: 'Hello på den gamla adressen' },
+          at: T0,
+        }),
+      ).toBe(true);
+      return transaction(fn);
+    }) as typeof transaction;
+    await admin.update(mikael, 'hello', { url: 'http://hello-2' });
+    expect(await store.read('hello')).toMatchObject({ url: 'http://hello-2', offered: null, offeredAt: null });
+  });
 });
 
 describe('a manifest goes live only when an administrator approves it (D144)', () => {
@@ -705,7 +869,11 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
     const transaction = store.transaction;
     store.transaction = (async (fn: Parameters<typeof transaction>[0]) => {
       store.transaction = transaction;
-      await store.recordCheck('hello', { served: { ...approved, source: 'Hello 3' }, at: '2026-11-04T07:02:00.000Z' });
+      await store.recordCheck('hello', {
+        url: 'http://hello',
+        served: { ...approved, source: 'Hello 3' },
+        at: '2026-11-04T07:02:00.000Z',
+      });
       return transaction(fn);
     }) as typeof transaction;
     await expect(admin.refreshManifest(mikael, 'hello', { apply: true, offered: shown })).rejects.toThrow(

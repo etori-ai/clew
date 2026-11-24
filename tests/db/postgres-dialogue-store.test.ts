@@ -1,13 +1,16 @@
 import { afterAll } from 'bun:test';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { eq, inArray, like } from 'drizzle-orm';
-import { database, schema, type Transaction } from '../../packages/db/src/index';
-import { postgresDialogueStore } from '../../apps/server/src/modules/dialogue/adapters/postgres';
-import type { DialogueWorkItems } from '../../apps/server/src/modules/dialogue/model';
-import { openSecret, sealSecret } from '../../apps/server/src/auth-crypto';
+import { and, eq, like } from 'drizzle-orm';
+import { database, schema } from '../../packages/db/src/index';
+import { dialogueStoreWithCards } from '../../apps/server/src/composition/dialogue';
 import { dialogueStoreContract } from '../dialogue-store-contract';
+import { forgetTestWorkflows, testDurable } from './durable';
 
-/** The dialogue store contract on Postgres (D118). Run with `bun run test:db` inside the devcontainer. */
+/**
+ * The dialogue store contract on Postgres (D118), on the store composition builds: the dialogue tables and
+ * composition's card port in one thread-store transaction, its timers' workflows enqueued on the test's own queue, where
+ * no runner dequeues them. Run with `bun run test:db` inside the devcontainer.
+ */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
 process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
@@ -25,44 +28,13 @@ afterAll(async () => {
     await db.delete(schema.units).where(like(schema.units.id, p + '%'));
     await db.delete(schema.people).where(like(schema.people.id, p + '%'));
   }
+  await forgetTestWorkflows();
 });
-/**
- * A stand-in for composition's card port: `open` writes the minimal thread row the activity's foreign key needs,
- * `remove` deletes it. The real one (the owner's stream, delivery and the timer) is composition's and has its own tests.
- */
-const cards = (tx: Transaction): DialogueWorkItems => ({
-  async open(input) {
-    await tx.insert(schema.threads).values({
-      id: input.threadId,
-      personId: input.personId,
-      kind: 'pushed',
-      topic: 'dialogue:activity:' + input.activityId,
-      title: 'Aktivitet',
-      trigger: { reason: 'test', source: 'dialogue', at: input.at },
-      connector: 'dialogue',
-      area: 'dialogue',
-    });
-  },
-  async close(threadId) {
-    await tx.update(schema.threads).set({ state: 'handled' }).where(eq(schema.threads.id, threadId));
-  },
-  async reopen(threadId) {
-    await tx.update(schema.threads).set({ state: 'open' }).where(eq(schema.threads.id, threadId));
-  },
-  async retime() {},
-  async fire() {
-    return false;
-  },
-  async remove(threadIds) {
-    if (threadIds.length) await tx.delete(schema.threads).where(inArray(schema.threads.id, [...threadIds]));
-  },
-});
-
 dialogueStoreContract('postgres', async () => {
   const prefix = 'test-dialogue-' + randomUUID().slice(0, 8);
   prefixes.push(prefix);
   return {
-    store: postgresDialogueStore({ sealer: { seal: sealSecret, open: openSecret }, workItems: cards }),
+    store: dialogueStoreWithCards({ durable: testDurable, cancel: async () => {} }, { clock: () => new Date() }),
     prefix,
     async seedPerson(id, organisationId, name) {
       await database().insert(schema.people).values({ id, organisationId, name });
@@ -76,6 +48,13 @@ dialogueStoreContract('postgres', async () => {
         .from(schema.audit)
         .where(eq(schema.audit.subject, subject))
         .orderBy(schema.audit.id);
+    },
+    async removedWhy(threadId) {
+      const [row] = await database()
+        .select({ details: schema.audit.details })
+        .from(schema.audit)
+        .where(and(eq(schema.audit.subject, 'thread:' + threadId), eq(schema.audit.action, 'thread.removed')));
+      return (row?.details as { reason?: string } | undefined)?.reason;
     },
     async stored(id) {
       const [row] = await database()

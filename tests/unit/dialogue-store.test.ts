@@ -20,5 +20,10 @@ dialogueStoreContract('memory', async () => {
         .filter(a => a.subject === subject)
         .map(a => ({ actor: a.actor, action: a.action }));
     },
+    async removedWhy(threadId) {
+      for (const call of store.calls().reverse())
+        if (call.op === 'remove' && call.threadIds.includes(threadId)) return call.why;
+      return undefined;
+    },
   };
 });

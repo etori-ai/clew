@@ -7,11 +7,14 @@ import { viewWithPeople } from '../threads/usecases/keys';
 import { textOfAtMost } from '../bounded-body';
 
 /**
- * Standing actions and panel views: one capability run directly, as the person. GET answers a read, its input as JSON in
- * `input`, with how to draw it when the capability declares a view (D38), and with the people its records name by user
- * name, to their ids (D122), so a record links to `/people/<id>`. POST runs anything but an execute, which only the human
- * decision endpoint reaches. Mounted under `/api/cap` inside the API, behind its session guard and its refresh of the
- * connectors; a test passes its own guard.
+ * Standing actions and panel views: one capability run directly, as the person, with its input as the JSON body. A read
+ * answers its output with how to draw it when the capability declares a view (D38), and with the people its records name
+ * by user name, to their ids (D122), so a record links to `/people/<id>`; a propose answers its output alone. An execute
+ * is never run here: only the human decision endpoint reaches one. The input is in the body, never in the address, so
+ * what a person searched for and whom a read is about stay out of every access log on the way (the web review of
+ * 2026-11-23, M4); a read writes nothing all the same. Mounted under `/api/cap` inside the API, behind its session guard
+ * (which asks a POST for the session's origin and CSRF token) and its refresh of the connectors; a test passes its own
+ * guard.
  *
  * A capability the person may not know of, its connector switched off or leaving them out of its audience, or the
  * capability switched off, answers exactly as a name nobody registered does (D23): the one 404, settled before the input
@@ -43,33 +46,6 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
   const { registry, run, people } = deps;
   const routes = new Hono<Env>();
   if (deps.guard) routes.use('*', deps.guard);
-  routes.get('/:name', async c => {
-    const name = c.req.param('name');
-    const persona = c.get('session').context;
-    const found = registry.findFor(audiencedActorOf(persona), name);
-    if (!found || found.capability.kind !== 'read') return unknown(c);
-    let input: unknown = {};
-    const raw = c.req.query('input');
-    if (raw) {
-      try {
-        input = JSON.parse(raw);
-      } catch {
-        throw new InputError('Ogiltig förfrågan.');
-      }
-    }
-    // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
-    // As the person with the units they follow up (D117), so a view opened for a unit below them can be answered; and the
-    // person's own session asks for the read itself, so a relation they hold by grant may be resolved (D121).
-    const reader = deps.follow ? await deps.follow(persona) : persona;
-    const output = await run(reader, name, input, { direct: true });
-    const view = registry.viewFor(audiencedActorOf(reader), name);
-    // A record that names a person links to them by id (D122).
-    return c.json({
-      output,
-      source: found.connector.source,
-      ...(view ? { view: await viewWithPeople(people, reader, view, output) } : {}),
-    });
-  });
   routes.post('/:name', async c => {
     const name = c.req.param('name');
     const persona = c.get('session').context;
@@ -83,7 +59,19 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
     } catch {
       throw new InputError('Ogiltig förfrågan.');
     }
-    return c.json({ output: await run(persona, name, input) });
+    if (found.capability.kind !== 'read') return c.json({ output: await run(persona, name, input) });
+    // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
+    // As the person with the units they follow up (D117), so a view opened for a unit below them can be answered; and the
+    // person's own session asks for the read itself, so a relation they hold by grant may be resolved (D121).
+    const reader = deps.follow ? await deps.follow(persona) : persona;
+    const output = await run(reader, name, input, { direct: true });
+    const view = registry.viewFor(audiencedActorOf(reader), name);
+    // A record that names a person links to them by id (D122).
+    return c.json({
+      output,
+      source: found.connector.source,
+      ...(view ? { view: await viewWithPeople(people, reader, view, output) } : {}),
+    });
   });
   // "Okänd förmåga." raised while the capability runs gets the same answer as an unknown name: its connector switched
   // off between the check and the call, a nested call to a capability hidden from the person, or the source's own.

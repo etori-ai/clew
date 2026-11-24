@@ -254,6 +254,34 @@ describe('a column on "Alla"', () => {
     const detail = await admin.read(mikael, 'appraisals');
     expect(capability(detail, 'appraisals.plan')).toMatchObject({ column: { on: 'state' } });
   });
+  test('two connectors each adding the third column for people at once: one is refused, and only the other is stored and audited (DE-M5)', async () => {
+    const { admin, store } = await world();
+    await admin.update(mikael, 'hr', { column: { 'hr.absence': 'state' } });
+    await admin.update(mikael, 'appraisals', { column: { 'appraisals.round': 'state' } });
+    // Each change reads its own connector before either is written; the columns are counted under the store's lock,
+    // across the rows as the other change left them.
+    const [hr, appraisals] = await Promise.allSettled([
+      admin.update(mikael, 'hr', { column: { 'hr.skills': 'count' } }),
+      admin.update(mikael, 'appraisals', { column: { 'appraisals.plan': 'state' } }),
+    ]);
+    expect([hr.status, appraisals.status].sort()).toEqual(['fulfilled', 'rejected']);
+    const refused = (hr.status === 'rejected' ? hr : appraisals) as PromiseRejectedResult;
+    expect((refused.reason as Error).message).toBe(
+      'Högst 3 kolumner kan visas under Alla för personer. Ta bort en annan kolumn först.',
+    );
+    const [won, lost] =
+      hr.status === 'fulfilled'
+        ? (['hr.skills', 'appraisals.plan'] as const)
+        : (['appraisals.plan', 'hr.skills'] as const);
+    const columns = audited(store, 'connector.column').map(a => a.details?.capability);
+    expect(columns).toEqual(['hr.absence', 'appraisals.round', won]);
+    expect(columns).not.toContain(lost);
+    const stored = Object.fromEntries(
+      await Promise.all(['hr', 'appraisals'].map(async id => [id, (await store.read(id))!.capabilities] as const)),
+    );
+    const placed = Object.values(stored).flatMap(c => Object.keys(c).filter(name => c[name]?.column));
+    expect(placed.sort()).toEqual(['appraisals.round', 'hr.absence', won].sort());
+  });
 });
 
 describe('the choices and the rest of the row', () => {

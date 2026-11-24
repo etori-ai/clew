@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   COMPETENCE_GROUP_MIN,
+  COMPETENCE_IMPORT_VALIDITY_MAX,
   COMPETENCE_KINDS,
+  COMPETENCE_VALIDITY_STEP,
   type CompetenceKind,
   type CompetenceMergePreview,
   type CompetenceShownCount,
@@ -58,10 +60,11 @@ import { DOT } from '../../dot';
 
 /**
  * "Kompetens" (D108 items 2, 3 and 8): the catalogue of competence types, kept by whoever has `admin.competence`. A
- * type has a name, an area it is listed under, a kind and, where the employer sets one, how many months a holding is
- * valid from the day it was issued. A type is added and changed in a dialog over the list, named in the address
- * (`?type=new`, `?type=<id>`, D83) and opened by the type's name, and archived there: an archived type takes no new
- * holdings, is required of nobody and keeps the ones it has, so it is asked for twice; "Återställ" brings it back.
+ * type has a name, an area it is listed under, a kind and, where the employer sets one, how many whole years a holding
+ * is valid from the day it was issued (sent as months). A type is added and changed in a dialog over the list, named in
+ * the address (`?type=new`, `?type=<id>`, D83) and opened by the type's name, and archived there: an archived type
+ * takes no new holdings, is required of nobody and keeps the ones it has, so it is asked for twice; "Återställ" brings
+ * it back.
  *
  * The catalogue at scale (D120 item 7, D108 item 2): many types come in from a file on Importera
  * (`/admin/competence/import`), so the list is searched and paged in the browser. Two types that are one are merged in
@@ -70,7 +73,9 @@ import { DOT } from '../../dot';
  * merged away is archived, says what it went into, and can be neither changed nor restored.
  *
  * A change of the validity applies at once to every holding counted from the rule. Before it is saved the page asks
- * the server what it would do and says how many holdings it turns expired; the second press saves.
+ * the server what it would do and says how many holdings it turns expired, as the server says it (D118): at least a
+ * multiple of five, fewer than five, or, when the holdings are of fewer than five people, not at all. The second press
+ * saves.
  *
  * A skill (D120) is held at a level and never ends, so the validity is not asked for a type of the kind Färdighet: the
  * fields for it go when that kind is chosen, and a type made into a skill loses its rule. Whether a type may become a
@@ -106,7 +111,8 @@ const hrefWith = (list: URLSearchParams, extra?: Record<string, string>) => {
 };
 const NAME_MAX = 120;
 const AREA_MAX = 80;
-const MONTHS_MAX = 600;
+/** A validity rule is whole years (D108 item 3): asked for in years, sent as months. */
+const YEARS_MAX = COMPETENCE_IMPORT_VALIDITY_MAX / COMPETENCE_VALIDITY_STEP;
 export const kindLabel: Record<CompetenceKind, string> = {
   certificate: 'Certifikat',
   degree: 'Examen',
@@ -114,15 +120,9 @@ export const kindLabel: Record<CompetenceKind, string> = {
   authorisation: 'Behörighet',
   skill: 'Färdighet',
 };
-/** "24 månader (2 år)", "18 månader"; no rule reads "Ingen regel", and a skill, which never ends, "Går inte ut". */
+/** "2 år", "1 år"; no rule reads "Ingen regel", and a skill, which never ends, "Går inte ut". */
 const validityText = (months: number | undefined, kind?: CompetenceKind) =>
-  kind === 'skill'
-    ? 'Går inte ut'
-    : months
-      ? months % 12 === 0
-        ? `${months} månader (${months / 12} år)`
-        : `${months} månader`
-      : 'Ingen regel';
+  kind === 'skill' ? 'Går inte ut' : months ? `${months / COMPETENCE_VALIDITY_STEP} år` : 'Ingen regel';
 /**
  * What a person holds of a type, in the word for its kind (D120): a skill's holdings are "färdigheter", every other
  * kind's "intyg", one and many.
@@ -135,17 +135,21 @@ const heldWords = (skill: boolean) =>
 const countText = (n: CompetenceShownCount, one: string, many: string) =>
   n === 'few' ? `färre än ${COMPETENCE_GROUP_MIN} ${many}` : `${n} ${n === 1 ? one : many}`;
 const some = (n: CompetenceShownCount) => n === 'few' || n > 0;
-/** How many of the holdings counted from the rule a new validity changes, as the server shows it (D118). */
-const changedText = (n: CompetenceShownCount) => (n === 'few' ? `färre än ${COMPETENCE_GROUP_MIN}` : `${n}`);
+/**
+ * How many of the holdings counted from the rule a new validity changes, as the server shows it (D118): fewer than five,
+ * or at least a multiple of five, which is the number rounded down.
+ */
+const changedText = (n: CompetenceShownCount) => (n === 'few' ? `färre än ${COMPETENCE_GROUP_MIN}` : `minst ${n}`);
 /**
  * What a new validity does, before it is saved (D108 item 3): how many holdings are counted from the rule and how many
- * change status today. For holdings of a few people the server does not say how many change, and neither does this.
+ * change status today. When the holdings are of fewer than five people, however many holdings that is, the server does
+ * not say how many change, and this says why: the people are too few.
  */
 function impactText(impact: CompetenceValidityImpact): string {
   const { turnExpired, turnValid } = impact;
   const change =
     turnExpired === undefined || turnValid === undefined
-      ? 'De är för få för att visa hur många av dem som byter status.'
+      ? `De tillhör färre än ${COMPETENCE_GROUP_MIN} personer, för få för att visa hur många av dem som byter status.`
       : some(turnExpired)
         ? `Med ändringen blir ${changedText(turnExpired)} av dem utgångna i dag.`
         : some(turnValid)
@@ -237,7 +241,7 @@ function TypeDialog({
   const [area, setArea] = useState('');
   const [kind, setKind] = useState<CompetenceKind>('certificate');
   const [ruled, setRuled] = useState(false);
-  const [months, setMonths] = useState<number | null>(null);
+  const [years, setYears] = useState<number | null>(null);
   const [tried, setTried] = useState(false);
   /** What the server said a new validity would do; shown until the person saves or changes the validity again. */
   const [impact, setImpact] = useState<CompetenceValidityImpact | null>(null);
@@ -247,7 +251,7 @@ function TypeDialog({
   const [target, setTarget] = useState<Target | null>(null);
   const nameField = useRef<HTMLInputElement>(null);
   const areaField = useRef<HTMLInputElement>(null);
-  const monthsField = useRef<HTMLInputElement>(null);
+  const yearsField = useRef<HTMLInputElement>(null);
   const mergeButton = useRef<HTMLButtonElement>(null);
   /** Set when the merge is left with Avbryt: the focus goes back to what opened it once it is drawn again. */
   const backToMerge = useRef(false);
@@ -257,7 +261,7 @@ function TypeDialog({
     setArea(type?.area ?? '');
     setKind(type?.kind ?? 'certificate');
     setRuled(!!type?.validityMonths);
-    setMonths(type?.validityMonths ?? null);
+    setYears(type?.validityMonths ? type.validityMonths / COMPETENCE_VALIDITY_STEP : null);
     setTried(false);
     setImpact(null);
     setArchiving(false);
@@ -302,17 +306,17 @@ function TypeDialog({
       : null;
   // A skill has no validity (D120 item 1): its fields are not drawn, and its rule is none.
   const skill = kind === 'skill';
-  const monthsProblem =
-    !skill && ruled && (months === null || !Number.isInteger(months) || months < 1 || months > MONTHS_MAX)
-      ? `Ange antal månader, 1 till ${MONTHS_MAX}.`
+  const yearsProblem =
+    !skill && ruled && (years === null || !Number.isInteger(years) || years < 1 || years > YEARS_MAX)
+      ? `Ange antal hela år, 1 till ${YEARS_MAX}.`
       : null;
-  const validity = ruled && !skill ? months : null;
+  const validity = ruled && !skill && years !== null ? years * COMPETENCE_VALIDITY_STEP : null;
   const validityChanged = !!type && (type.validityMonths ?? null) !== validity;
   const submit = async () => {
     if (save.busy) return;
-    if (nameProblem || areaProblem || monthsProblem) {
+    if (nameProblem || areaProblem || yearsProblem) {
       setTried(true);
-      (nameProblem ? nameField : areaProblem ? areaField : monthsField).current?.focus();
+      (nameProblem ? nameField : areaProblem ? areaField : yearsField).current?.focus();
       return;
     }
     await save.run(async () => {
@@ -571,19 +575,19 @@ function TypeDialog({
               )}
               {ruled && !skill && (
                 <NumberInput
-                  ref={monthsField}
+                  ref={yearsField}
                   label="Giltigt i"
-                  units="månader"
-                  value={months}
+                  units="år"
+                  value={years}
                   onChange={value => {
-                    setMonths(value);
+                    setYears(value);
                     setImpact(null);
                   }}
                   min={1}
-                  max={MONTHS_MAX}
+                  max={YEARS_MAX}
                   isIntegerOnly
                   isWheelEnabled={false}
-                  {...status(monthsProblem)}
+                  {...status(yearsProblem)}
                 />
               )}
             </FormLayout>

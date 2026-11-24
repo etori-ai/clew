@@ -1,6 +1,6 @@
 # D143 · Clew is licensed under the AGPL, as Eneo is
 
-**Status:** accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question) · **Date:** 2026-11-23 · **Area:** platform
+**Status:** accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question; item 3 amended 2026-11-24, finding `BL-15` of the baseline review: the connector protocol's viewer script is served with the notices of every package it bundles, not Scalar's alone) · **Date:** 2026-11-23 · **Area:** platform
 
 **Decision.** Clew's own code is licensed under the GNU Affero General Public License, version 3 only.
 
@@ -20,7 +20,10 @@
    kept in `licences/` too, and a build whose stylesheets bring a typeface with no typeface licence fails. So does a
    build with a bundled module that cannot be traced to a named package, or a dependency that resolves nowhere: a
    notice with a package left out is not whole. The server image is built from the whole repository and holds `LICENSE` and its dependencies' own
-   files; Scalar's notice ships as `apps/server/licences/scalar-MIT.txt` (D60).
+   files. The one script it passes on to a browser, the connector protocol's viewer (D60), is Scalar's packaged
+   build: `/api/protocol/third-party-notices.txt` and `/api/protocol/LICENSE.txt` are served beside it, made by the same
+   code from Scalar's package and its runtime dependencies, with what Scalar's build bundled that Clew's install does
+   not hold named in `apps/server/src/routes/protocol.ts` and checked against the script's source map and banners.
 4. **Dependencies may be combined with the AGPL.** A dependency carries an OSI-approved licence that may be combined
    with the AGPL v3 (MIT, Apache-2.0, BSD, ISC, MPL-2.0, the OFL for a typeface), recorded in
    `docs/reference/licences.md`; EPL-2.0 without a secondary licence, the CDDL and GPL-2.0-only cannot be. `CLAUDE.md`

@@ -46,6 +46,7 @@ describe('Att göra as a read (clew.work)', () => {
       ref: 'thread:a',
       label: 'Ärende a',
       system: 'Ekonomisystemet',
+      connector: 'ekonomi',
       state: 'Behöver dig',
       deadline: '2026-11-12',
       late: 'försenad',
@@ -86,5 +87,18 @@ describe('Att göra as a read (clew.work)', () => {
     expect(list.pile).toBe('Behöver dig');
     expect(list.total).toBe(60);
     expect(list.rows).toHaveLength(50);
+    expect(list).not.toHaveProperty('withheld');
+  });
+  test('for the model, the items of a system closed to the assistant are left out and counted, never named (D122 item 4)', () => {
+    const threads = [
+      item({ id: 'ekonomi', deadline: '2026-11-20' }),
+      item({ id: 'hr-1', connector: 'hr', title: 'Sjukanmälan Anna', deadline: '2026-11-18' }),
+      item({ id: 'hr-2', connector: 'hr', title: 'Rehabplan Anna' }),
+    ];
+    const list = workList(threads, 'needs-you', NOW, TODAY, t => t.connector !== 'hr');
+    expect(list.rows.map(r => r.ref)).toEqual(['thread:ekonomi']);
+    expect(list.total).toBe(1);
+    expect(list.withheld).toBe(2);
+    expect(JSON.stringify(list)).not.toContain('Anna');
   });
 });

@@ -1,6 +1,6 @@
 # D135 · A person with several assignments sees the work of all of them, and a source is told every one
 
-**Status:** provisional (Oliver Borgström, 2026-11-20; accepted once a real directory has pushed people with more than one assignment and one connector that was not written for Clew answers for each of them) · **Date:** 2026-11-20 · **Area:** identity, integrations
+**Status:** provisional (Oliver Borgström, 2026-11-20; accepted once a real directory has pushed people with more than one assignment and one connector that was not written for Clew answers for each of them); amended 2026-11-24 in the fixes of the review of batch 9 of the review of 2026-11-23: the time fixture declares `assignments: true` too and answers for every unit a person manages, as the HR fixture does, so "Only the HR fixture" under the build's limits reads "Only the HR and time fixtures" · **Date:** 2026-11-20 · **Area:** identity, integrations
 
 **Decision.** A person may hold several assignments: a `unit:` membership is one as an employee, a `unit-manager:`
 membership one as a manager ([D68](D68-people-are-pushed-into-clew-through-standard-scim.md)). Clew shows the work of

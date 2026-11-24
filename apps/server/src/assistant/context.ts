@@ -4,13 +4,17 @@ import { dayLabel, shortDayLabel, timeLabel, timeRange } from '@clew/calendar/da
 /**
  * Text another system wrote, as the system prompt carries it: on one line, so nothing a source writes can stand in the
  * prompt as a line of Clew's own rules. Every line break, tab, control and format character becomes a space and a run
- * of spaces one space; a no-break space (as in "37 050 kr") stays. What is longer than `max` characters is cut and
- * ends with "…".
+ * of spaces one space; a no-break space (as in "37 050 kr") stays. A chat template's control token (`<|end|>`,
+ * `<|im_start|>`, DeepSeek's `<｜…｜>` with the full-width bar) is broken apart at its delimiters (`< |end| >`), so a
+ * server that reads such tokens out of the prompt's text cannot be told that a new turn or another role begins there.
+ * What is longer than `max` characters is cut and ends with "…".
  */
 export function sourceLine(text: string, max: number): string {
   const flat = text
     .normalize('NFC')
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, ' ')
+    .replace(/<(?=[|｜])/g, '< ')
+    .replace(/([|｜])>/g, '$1 >')
     .replace(/ {2,}/g, ' ')
     .trim();
   const chars = [...flat];

@@ -54,6 +54,34 @@ export function withViewInput(pathname: string, search: URLSearchParams | string
   }
   return address(pathname, q);
 }
+/** The input property a view's own search field writes (`input.query.key` of a table or a list), or null. */
+export function searchKeyOf(spec: { kind: string; input?: { query?: { key: string } } } | undefined): string | null {
+  return spec && (spec.kind === 'table' || spec.kind === 'list') ? (spec.input?.query?.key ?? null) : null;
+}
+/**
+ * A view's page read with another input from its own controls (D116, amended 2026-11-24 in the fixes of the web review's
+ * M4): the address it leads to and the words typed, kept apart. What the person typed into the view's search field
+ * (`key`) is never written into the address, which every access log on the way and the browser's history keep: a
+ * search is a person's name as often as not (D100 item 5, D121 item 4). A choice is written, so it can be linked and
+ * one step back undoes it; the address's own words for the search, from a link, go as soon as the person types.
+ */
+export function viewInputChange(
+  pathname: string,
+  search: URLSearchParams | string,
+  input: Record<string, unknown>,
+  key: string | null,
+): { href: string; at: string | null; words: string } {
+  const { [key ?? '']: typed, ...chosen } = input;
+  const href = withViewInput(pathname, search, key ? chosen : input);
+  const at = new URLSearchParams(href.split('?')[1] ?? '').get('input');
+  return { href, at, words: key && typeof typed === 'string' ? typed : '' };
+}
+/** The input a view is read with: the address's (`input`), with the words typed into its search field as `key`. */
+export function withSearchWords(inputJson: string | null, key: string, words: string): string | null {
+  const { [key]: _addressed, ...rest } = parse(inputJson);
+  const input = words ? { ...rest, [key]: words } : rest;
+  return Object.keys(input).length ? JSON.stringify(input) : null;
+}
 /** Whether the reads the person may open say this one answers with rows: a page, not a peek. */
 export const opensAsPage = (views: readonly ViewEntry[] | undefined, capability: string): boolean =>
   answersWithRows(views?.find(v => v.capability === capability)?.kind);

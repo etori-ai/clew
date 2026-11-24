@@ -85,14 +85,16 @@ export async function registerConnector(options: {
         health,
       });
       // What is approved is in the history (D144): what the connector reads back as the person and whose token it gets.
+      // The details are the page's (`add`, then the switch's change from the draft it stores).
       await audit('connector.added', {
         url,
         source: manifest.source,
         capabilities: manifest.capabilities.length,
         uses: manifest.uses ?? [],
         delegation: manifest.delegation?.audience ?? null,
+        health: health.status,
       });
-      if (state === 'enabled') await audit('connector.enabled');
+      if (state === 'enabled') await audit('connector.enabled', { from: 'draft' });
       return { state, changes: ['connector.added', ...(state === 'enabled' ? ['connector.enabled'] : [])] };
     }
     const changes: Array<{ action: string; details?: Record<string, unknown> }> = [];
@@ -123,8 +125,10 @@ export async function registerConnector(options: {
     return { state, changes: changes.map(c => c.action) };
   });
   // Nothing to administer: what the service serves is what is approved, so it is recorded as a check records it, after
-  // the row's lock is let go.
-  if (existing && !written.changes.length) await recordCheck(id, { health, served: manifest, at });
+  // the row's lock is let go, and only while the row is still at the address read (D144): one an administrator moved
+  // in between keeps nothing of this answer.
+  if (existing && !written.changes.length && !(await recordCheck(id, { url, health, served: manifest, at })))
+    throw new Error(`Connector ${id} was changed while this ran; run it again.`);
   return { manifest, existing: !!existing, ...written };
 }
 

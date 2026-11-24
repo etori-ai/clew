@@ -403,6 +403,7 @@ export const connectorAdmin = connectorUsecases({
     // report counts what came back and shows none of it (D23).
     assertInstallation: id => installationAssertionFor(id),
     acceptsEmptyInput,
+    log: logPort('connectors', 'warn'),
   }),
 });
 export const connectorReconcile: ConnectorReconcileDeps = {

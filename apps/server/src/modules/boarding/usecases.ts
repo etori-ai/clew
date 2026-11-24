@@ -106,7 +106,10 @@ export interface PersonStanding {
     anchorOn: string;
     done: number;
     total: number;
-    /** Open items the reader owns. */
+    /**
+     * Open items that wait for the reader: the ones they own, and, since the reader manages the person, the ones that
+     * have fallen to the plan's manager because their owner is gone or deactivated (`fallsToManager`, D124 item 7).
+     */
     waiting: number;
     state: BoardingPlanState;
   };
@@ -792,8 +795,11 @@ export function boardingUsecases(deps: BoardingDeps) {
     /**
      * `boarding.person` (D97): for each key asked about that is one of the persona's reports, their open plan with its
      * progress and what waits for the reader, or, with no plan, a start within the suggestion window that no
-     * introduction covers. `keys` are user names, compared without regard to case; a row carries the key as asked.
-     * Anyone else, a key asked twice and a report with neither are answered as no row. Reads, so no audit row.
+     * introduction covers. `keys` are what the registry hands the capability (D117, `ids`): a report's user name,
+     * compared without regard to case, whether the caller named them by it or by Clew's id, or Clew's id for a report
+     * without a user name, which no user name matches, so that report is answered as no row, as `talks.person` answers
+     * one. A row carries the key as asked. Anyone else, a key asked twice and a report with neither a plan nor a start
+     * are answered as no row. Reads, so no audit row.
      */
     async aboutPeople(persona: AuthenticatedContext, keys: readonly string[]): Promise<PersonStanding[]> {
       const { reports } = await staffing(persona);

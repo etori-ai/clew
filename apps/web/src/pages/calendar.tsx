@@ -34,6 +34,7 @@ import {
   Text,
   VStack,
   agendaItems,
+  inviteeName,
   useMediaQuery,
   type AgendaItem,
   type CalendarView,
@@ -279,7 +280,7 @@ function ProposalFacts({ item, thread }: { item: AgendaItem; thread: Thread | nu
           <Text weight="semibold">{whenOf(item)}</Text>
         </MetadataListItem>
         <MetadataListItem label="Med">
-          <Text>{p.participant.name}</Text>
+          <Text>{inviteeName(p.participant)}</Text>
         </MetadataListItem>
       </MetadataList>
       {thread?.summary && <Text as="p">{thread.summary}</Text>}
@@ -496,7 +497,13 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         ? {
             key: 'proposal:' + p.id,
             label: 'förslaget',
-            chips: [{ ref: 'proposal:' + p.id, kind: 'proposal', label: `${item.title}\u00a0· ${p.participant.name}` }],
+            chips: [
+              {
+                ref: 'proposal:' + p.id,
+                kind: 'proposal',
+                label: `${item.title}\u00a0· ${inviteeName(p.participant)}`,
+              },
+            ],
             search: '?card=' + encodeURIComponent(p.threadId),
           }
         : null;
@@ -659,7 +666,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         at.set('view', view === 'month' ? 'week' : view);
         return {
           id: p.id,
-          label: `${p.participant.name}`,
+          label: inviteeName(p.participant),
           description: `${capital(shortDayLabel(displayDate(p.start)))} ${timeRange(p.start, p.end)}`,
           href: withEntry(pathname, at, p.id),
         };

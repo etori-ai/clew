@@ -84,9 +84,12 @@ if (problem) {
 const ajv = addFormats(new Ajv({ strict: false }));
 
 // The audience must be the manifest's id; without --id it is learnt from the manifest, so the signer is built after a first fetch.
-const { fetchManifest } = await import('../packages/connectors/src/remote');
+const { failureCode, fetchManifest } = await import('../packages/connectors/src/remote');
 const manifest = await fetchManifest(url, id).catch(error => {
-  console.log('FAIL manifest: ' + (error as Error).message);
+  // The cause's code says which failure "fetch failed" was: a refused connection, a name, a certificate.
+  const said = (error as Error).message,
+    code = failureCode(error);
+  console.log('FAIL manifest: ' + (code && !said.includes(code) ? `${said} (${code})` : said));
   process.exit(1);
 });
 const audience = manifest.id;
@@ -99,8 +102,11 @@ const signer = (key: string) => (actor: Actor) =>
     .setIssuedAt()
     .setExpirationTime('2m')
     .sign(new TextEncoder().encode(key));
-/** This installation's side of `--as`: the registered connector, the person by user name, the audit row. */
+// Clew's own connectors, named by the registry alone; read here, after the options were checked and the manifest read.
+const { bundledIds, internalIds } = await import('../apps/server/src/connectors/registry');
+/** This installation's side of `--as`: Clew's own connectors, the registered connector, the person, the audit row. */
 const liveCheckAs: CheckAsDeps = {
+  own: [...internalIds, ...bundledIds],
   async registration(id) {
     const row = await readConnector(id);
     return row && { bundled: row.bundled, url: row.url };
@@ -139,8 +145,8 @@ try {
   process.exit(2);
 }
 // Whatever the service names itself, nothing is signed for a connector registered here at another address, or for one
-// of Clew's own (CB-13); `--as` has refused both already.
-const refused = await audienceProblem({ id: audience, url }, liveCheckAs.registration);
+// of Clew's own, with a row or without one (CB-13); `--as` has refused both already.
+const refused = await audienceProblem({ id: audience, url }, liveCheckAs);
 if (refused) {
   console.error(refused);
   await closeDatabase();

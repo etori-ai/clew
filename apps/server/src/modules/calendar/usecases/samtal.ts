@@ -38,7 +38,7 @@ import type {
   Team,
   UnitMember,
 } from '../model';
-import { chunks, dueLabel } from '../domain';
+import { chunks, dueLabel, proposalRow, unplacedRow } from '../domain';
 import { toEvent } from './reads';
 import {
   ALREADY_HELD,
@@ -112,7 +112,7 @@ const toProposal = (p: ProposalRecord): Proposal => ({
 /** Rows with refs for the card (D12): one per drawn proposal, all selected until the person or the conversation changes that. */
 const proposalItems = (rows: ProposalRecord[], selected?: (id: string) => boolean) =>
   rows.map(p => ({
-    ref: 'proposal:' + p.id,
+    ref: proposalRow(p.id),
     label: p.participant.name,
     detail: `${shortDayLabel(displayDate(p.start))} ${timeRange(p.start, p.end)}`,
     selectable: true,
@@ -124,7 +124,7 @@ const proposalItems = (rows: ProposalRecord[], selected?: (id: string) => boolea
  */
 const unplacedItems = (unplaced: Array<{ participant: ProposalParticipant; reason: string }>): ThreadItem[] =>
   unplaced.map(u => ({
-    ref: 'unplaced:' + u.participant.personId,
+    ref: unplacedRow(u.participant.personId),
     label: u.participant.name,
     detail: u.reason,
     selectable: false,

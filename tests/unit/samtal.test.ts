@@ -20,6 +20,7 @@ import { dayLoad, unplacedReasons, planWeek } from '../../packages/calendar/src/
 import { obligationStep, replySummary } from '../../packages/contracts/src/index';
 import { calendarUsecases, TOPIC } from '../../apps/server/src/modules/calendar/usecases/samtal';
 import { calendarDecisions, type CalendarApproval } from '../../apps/server/src/modules/calendar/usecases/decisions';
+import { INVITEE_ERASED, inviteeErasure } from '../../apps/server/src/modules/calendar/usecases/erasure';
 import { chunks, dueLabel, teamFromStaff } from '../../apps/server/src/modules/calendar/domain';
 import { talksRound } from '../../apps/server/src/modules/calendar/adapters/talks-round';
 
@@ -1068,6 +1069,67 @@ describe('a confirmation on the card the person was shown (AM-4)', () => {
       version: redrawn.updatedAt,
       actionId: 'confirm',
     });
+  });
+});
+
+describe('an invitee an erasure cleared (D123, DE-M6)', () => {
+  const ERASED_AT = '2026-11-05T07:00:00.000Z';
+  const erase = (w: ReturnType<typeof world>, personId: string) =>
+    w.store.transaction(tx => inviteeErasure(tx).invitee({ actor: 'operator:cli', personId, at: ERASED_AT }));
+  /** Anna leaves: the source deactivates her, so she is no longer in the team. */
+  const left = (w: ReturnType<typeof world>) => {
+    w.setting.team = members.filter(m => m.personId !== 'anna');
+  };
+  test('her row leaves the card and her unsent time is withdrawn, so a confirmation of the card as it was shown is refused', async () => {
+    const w = world(),
+      d = deciding(w);
+    const drawn = (await w.ensureProposalThread(hillevi))!;
+    const annas = drawn.proposals.find(p => p.participant.name === 'Anna Lindqvist')!,
+      rest = drawn.proposals.filter(p => p.id !== annas.id).map(p => p.id);
+    left(w);
+    expect(await erase(w, 'anna')).toEqual({ invitations: 1, planningRows: 1, drafts: 1 });
+    const card = (await w.store.readThread(hillevi.id, drawn.id))!;
+    expect(card.thread.items.map(i => i.ref)).toEqual(rest.map(id => 'proposal:' + id));
+    expect(card.thread.items.map(i => i.label)).not.toContain('');
+    expect(card.thread.proposals.map(p => p.id)).toEqual(rest);
+    expect(card.proposals.find(p => p.id === annas.id)).toMatchObject({
+      status: 'superseded',
+      participant: { personId: 'anna', name: '', email: '' },
+    });
+    expect(card.thread.updatedAt).toBe(ERASED_AT);
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'operator:cli',
+      action: INVITEE_ERASED,
+      subject: 'thread:' + drawn.id,
+      at: ERASED_AT,
+      details: { person: 'anna', rows: 1, drafts: [annas.id] },
+    });
+    // The card as the manager was shown it is no longer the card; her time is no longer one to send.
+    await expect(d.confirm(hillevi, drawn.id, rest, drawn.updatedAt)).rejects.toThrow(
+      'Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.',
+    );
+    await expect(d.confirm(hillevi, drawn.id, [annas.id], ERASED_AT)).rejects.toThrow(
+      'Något förslag är inte längre aktuellt. Läs om sidan.',
+    );
+    // The colleagues' times send as drawn.
+    await d.confirm(hillevi, drawn.id, rest, ERASED_AT);
+    expect(d.approved).toHaveLength(1);
+    // Nothing more names her: a second erasure changes nothing and writes no row.
+    expect(await erase(w, 'anna')).toEqual({ invitations: 0, planningRows: 0, drafts: 0 });
+    expect(actions(w.store, drawn.id).filter(a => a === INVITEE_ERASED)).toHaveLength(1);
+  });
+  test('a time whose name was cleared is refused without a name', async () => {
+    const w = world(),
+      d = deciding(w);
+    const drawn = (await w.ensureProposalThread(hillevi))!;
+    const annas = drawn.proposals.find(p => p.participant.name === 'Anna Lindqvist')!;
+    left(w);
+    // The invitations alone cleared, as a time still standing would hold it.
+    expect(await w.store.transaction(tx => tx.clearInvitee('anna'))).toBe(1);
+    await expect(d.confirm(hillevi, drawn.id, [annas.id])).rejects.toThrow(
+      'Det går inte att bekräfta adressen för en av medarbetarna i din enhet. Ta fram nya tider.',
+    );
+    expect(d.approved).toEqual([]);
   });
 });
 

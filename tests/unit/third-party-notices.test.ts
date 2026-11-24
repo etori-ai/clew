@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   collect,
+  keptPackage,
   noticesText,
   packageRoot,
   thirdPartyNotices,
@@ -99,6 +100,20 @@ describe("the third-party notices of Clew's browser builds (D143 item 3)", () =>
     expect(text).toContain('https://github.com/etori-ai/clew');
     expect(text).toContain('Carried by the packages above');
     expect(text.indexOf('pako 1.0.11 (MIT)')).toBeGreaterThan(text.indexOf('Carried by the packages above'));
+  });
+  test('a package another build put inside its files, which no install holds, is credited from its kept upstream text', () => {
+    const kept = keptPackage(
+      { name: 'base-styles', version: '4.0.0', license: 'MIT', text: 'licences/acme.txt' },
+      base,
+    );
+    expect(kept.notices).toEqual([
+      {
+        file: "LICENSE (upstream, kept in Clew's repository as licences/acme.txt)",
+        text: 'MIT License\n\nCopyright (c) Acme',
+      },
+    ]);
+    expect(unnoticed({ bundled: [kept], carried: [] })).toEqual([]);
+    expect(noticesText({ bundled: [kept], carried: [] })).toContain('base-styles 4.0.0 (MIT)');
   });
   test("the build's plugin writes what it and its workers bundle, a stylesheet's imports included, and Clew's licence", async () => {
     const { plugin, worker } = thirdPartyNotices({ vendored, base });

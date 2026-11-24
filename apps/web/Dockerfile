@@ -7,9 +7,11 @@
 # The build carries no setting and no branding (D98), so one image serves every environment. Where the server is, is
 # read when the container starts: CLEW_SERVER_URL.
 # Node's official image is MIT and Bun is MIT. nginx is BSD-2-Clause and its unprivileged image Apache-2.0.
-# The images are named with their registry: buildah and podman refuse a short name.
+# The images are named with their registry (buildah and podman refuse a short name) and pinned by digest. Bun is the
+# binary of Oven's own image of the release, copied in: the digest pins its content, which an install from npm does not.
 FROM docker.io/library/node:26.13.0-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68 AS build
-RUN npm install --global bun@1.4.4 && bun --version
+COPY --from=docker.io/oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -s bun /usr/local/bin/bunx && bun --version
 WORKDIR /app
 COPY . .
 RUN bun install --frozen-lockfile && bun run build

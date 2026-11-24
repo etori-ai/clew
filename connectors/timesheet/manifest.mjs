@@ -149,6 +149,8 @@ export const manifest = {
   source: 'Tidrapporteringen',
   uses: [],
   scan: false,
+  // D135: a manager of several units is answered for each of them (`managedUnits` in connector.mjs), as by HR.
+  assignments: true,
   areas: [
     {
       id: 'staffing',

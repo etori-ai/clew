@@ -16,7 +16,17 @@ import {
 import { previewManifest } from '../../packages/connectors/src/preview';
 import { HOLDINGS_EXAMPLE, RULES, manifestReference } from '../../packages/connectors/src/reference';
 import { ManifestError, manifestProblems, parseManifest } from '../../packages/connectors/src/remote';
-import { PROTOCOL_PAGE_HEADERS, protocolRoutes } from '../../apps/server/src/routes/protocol';
+import {
+  PROTOCOL_PAGE_HEADERS,
+  VIEWER_BUILT_IN,
+  VIEWER_SCRIPT,
+  mountProtocol,
+  protocolRoutes,
+  viewerPackages,
+} from '../../apps/server/src/routes/protocol';
+import { unnoticed } from '../../scripts/third-party-notices';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { MAX_CAPABILITIES, MAX_MANIFEST_BYTES } from '../../packages/connectors/src/protocol';
 import { MANIFEST_MAX, overManifestMax } from '../../apps/web/src/pages/protocol-preview-model';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
@@ -381,6 +391,63 @@ describe('the served protocol routes', () => {
     expect(script.status).toBe(200);
     expect(script.headers.get('content-type')).toContain('javascript');
     expect(await script.text()).toContain('@scalar/api-reference');
+  });
+  test('the viewer’s notices name every package its script bundles, with a licence text for each (D143 item 3)', async () => {
+    const found = viewerPackages();
+    expect(found.unread).toEqual([]);
+    expect(unnoticed(found)).toEqual([]);
+    const credited = new Map([...found.bundled, ...found.carried].map(p => [p.name, p.version]));
+    // The script's source map names each file Scalar's build put in it, a package's under its node_modules folder and
+    // its version in the folder above (`.pnpm/name@version/node_modules/name`); Scalar's own come from its repository.
+    const map = JSON.parse(readFileSync(`${VIEWER_SCRIPT}.map`, 'utf8')) as { sources: string[] };
+    const named = new Map<string, string>();
+    for (const source of map.sources) {
+      const at = source.lastIndexOf('node_modules/');
+      if (at < 0) continue;
+      const [scope, name] = source.slice(at + 'node_modules/'.length).split('/');
+      const pkg = scope!.startsWith('@') ? `${scope}/${name}` : scope!;
+      named.set(pkg, source.slice(0, at).match(/@(\d+\.\d+\.\d+[^/_]*)(?:_[^/]*)?\/$/)?.[1] ?? '');
+    }
+    expect(named.size).toBeGreaterThan(100);
+    expect([...named.keys()].filter(name => !credited.has(name))).toEqual([]);
+    expect(map.sources.some(source => source.includes('/workspace-store/'))).toBe(true);
+    expect(credited.has('@scalar/workspace-store')).toBe(true);
+    // The banners and `@license` comments that survive in the script name a package each, all credited.
+    const script = readFileSync(VIEWER_SCRIPT, 'utf8');
+    const banners = [...script.matchAll(/\/\*[!*]?[\s\S]{0,600}?\*\//g)]
+      .map(([comment]) => comment)
+      .filter(comment => /^\/\*!|@license/.test(comment));
+    const bannerNames = banners.map(banner => banner.match(/(@?[a-z][\w./-]*) v?(\d+\.\d+\.\d+)/)?.slice(1, 3));
+    expect(bannerNames.length).toBeGreaterThan(5);
+    expect(bannerNames.filter(found => !found || !credited.has(found[0]!))).toEqual([]);
+    // What Clew's install does not hold is credited at the version the script's build had.
+    const tailwind = bannerNames.find(found => found?.[0] === 'tailwindcss')?.[1];
+    for (const built of VIEWER_BUILT_IN)
+      expect(built.version).toBe(built.name === 'tailwindcss' ? tailwind! : named.get(built.name)!);
+  });
+  test('the notices and Clew’s licence are served beside the script, and the page answers with a trailing slash', async () => {
+    const notices = await protocolRoutes.request('http://clew.local/third-party-notices.txt');
+    expect(notices.status).toBe(200);
+    expect(notices.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    const text = await notices.text();
+    expect(text).toStartWith('Third-party software in this build of Clew');
+    for (const name of ['@scalar/api-reference 1.81.0 (MIT)', 'vue ', 'tailwindcss 4.3.5 (MIT)', 'proto-parser 0.0.9'])
+      expect(text).toContain(`\n${name}`);
+    expect(text).toContain("kept in Clew's repository as licences/scalar.txt");
+    const licence = await protocolRoutes.request('http://clew.local/LICENSE.txt');
+    expect(licence.status).toBe(200);
+    expect(await licence.text()).toBe(readFileSync(join(import.meta.dir, '../../LICENSE'), 'utf8'));
+    // Mounted as the server mounts it, before a guard that answers everything else under /api without a session, on an
+    // app of the same Hono the routes are made with: `hono` does not resolve from the repository root.
+    const app = new (protocolRoutes.constructor as new () => typeof protocolRoutes)();
+    mountProtocol(app);
+    app.use('/api/*', async c => c.json({ error: 'Sessionen har gått ut.' }, 401));
+    const slash = await app.request('http://clew.local/api/protocol/');
+    expect(slash.status).toBe(301);
+    expect(slash.headers.get('location')).toBe('/api/protocol');
+    expect((await app.request('http://clew.local/api/protocol')).status).toBe(200);
+    expect((await app.request('http://clew.local/api/protocol/third-party-notices.txt')).status).toBe(200);
+    expect((await app.request('http://clew.local/api/elsewhere')).status).toBe(401);
   });
 });
 

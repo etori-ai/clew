@@ -127,9 +127,14 @@ export interface ConnectorStore {
    * What a check or "Läs in igen" saw (D144). It is not administration: no version bump, no audit, and the approved
    * manifest is never touched. `health`, when given, is recorded. `served`, when given, is compared with the approved
    * manifest in the same write, so an approval made meanwhile is seen: the approved one clears the offer, any other is
-   * the offer, and the same offer seen again keeps the instant `at` it was first seen.
+   * the offer, and the same offer seen again keeps the instant `at` it was first seen. Written only while the row is
+   * still at `url`, the address the service was read at, and, given `secret`, still has that sealed secret, the one the
+   * check signed with: a row moved or rekeyed meanwhile keeps nothing of the answer. True when it wrote.
    */
-  recordCheck(id: string, seen: { health?: ConnectorHealth; served?: unknown; at: string }): Promise<void>;
+  recordCheck(
+    id: string,
+    seen: { url: string; secret?: string; health?: ConnectorHealth; served?: unknown; at: string },
+  ): Promise<boolean>;
   /** A bundled connector's description is its code and moves with the build; a remote row is never changed here. */
   recordDescription(id: string, manifest: unknown, at: string): Promise<void>;
   /** The audit rows about one connector, oldest first. */

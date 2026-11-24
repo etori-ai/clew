@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { Assignment, GroupRecord, UserRecord } from '../apps/server/src/modules/people/domain';
-import type { LeaverChange, LeaversTx, Provisioner, ProvisionStore } from '../apps/server/src/modules/people/ports';
+import type {
+  ErasureTx,
+  LeaverChange,
+  LeaversTx,
+  Provisioner,
+  ProvisionStore,
+} from '../apps/server/src/modules/people/ports';
 import { directoryUsecases } from '../apps/server/src/modules/people/usecases';
 
 /**
@@ -32,12 +38,10 @@ export interface ScimStoreHarness {
   /** The actor of a row of the authentication log, by its id. */
   signInActor(id: number): Promise<string | null | undefined>;
   /**
-   * An invitation `managerId` sent `participantId` from a planning card (the calendar's `proposal`), drawn with the name
-   * and the address given; its id.
+   * The same adapter built with an erasure binding (D123), as composition builds the erasure's store with the
+   * calendar's: `erasure` is the port.
    */
-  invite(managerId: string, participantId: string, name: string, email: string): Promise<string>;
-  /** Whom an invitation invites, as stored: by id, name and address. */
-  invitation(id: string): Promise<{ participantId: string; name: string; email: string } | undefined>;
+  withErasure(erasure: () => ErasureTx): ProvisionStore;
   /**
    * The same adapter built with a leavers binding (D108 item 14), as composition builds the SCIM store: `leavers` is the
    * port, and `failed` hears of a call that failed.
@@ -1306,42 +1310,48 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       await asErased();
     });
 
-    test('an erasure clears the name and the address of every invitation to the person and keeps the rows, in the transaction (D123)', async () => {
+    test('an erasure tells the erasure port bound to the store on its transaction, and one that fails fails the erasure (D123)', async () => {
       const h = await make(),
         p = h.prefix,
         org = p + '-org',
-        [boss, a, b] = [p + '-boss', p + '-a', p + '-b'];
-      await h.store.transaction(async tx => {
-        for (const id of [boss, a, b]) await tx.insertUser(userRow(id, org));
+        a = p + '-a',
+        input = { actor: 'operator:cli', personId: a, at: T },
+        told: unknown[] = [];
+      // A store built without a binding clears nothing in another domain, and says so with zero counts.
+      expect(await h.store.transaction(tx => tx.erasure.invitee(input))).toEqual({
+        invitations: 0,
+        planningRows: 0,
+        drafts: 0,
       });
-      const [first, second, hers] = [
-        await h.invite(boss, a, 'Name ' + a, a + '@example.test'),
-        await h.invite(boss, a, 'Name ' + a, 'Old.' + a + '@example.test'),
-        await h.invite(boss, b, 'Name ' + b, b + '@example.test'),
-      ];
-      // Gone with the transaction that made it.
+      let failing = false;
+      const store = h.withErasure(() => ({
+        async invitee(given) {
+          told.push(given);
+          if (failing) throw new Error('the calendar could not clear the person');
+          return { invitations: 2, planningRows: 3, drafts: 1 };
+        },
+      }));
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(a, org));
+      });
+      expect(await store.transaction(tx => tx.erasure.invitee(input))).toEqual({
+        invitations: 2,
+        planningRows: 3,
+        drafts: 1,
+      });
+      // Unlike the leavers port it is not best effort: the binding's failure fails the transaction, and what it
+      // wrote before goes with it.
+      failing = true;
       await expect(
-        h.store.transaction(async tx => {
-          expect(await tx.eraseInvitations(a)).toBe(2);
-          throw new Error('rolled back');
+        store.transaction(async tx => {
+          await tx.updateUser(a, { name: 'Before the port', updatedAt: T });
+          await tx.erasure.invitee(input);
         }),
-      ).rejects.toThrow('rolled back');
-      expect(await h.invitation(first)).toEqual({ participantId: a, name: 'Name ' + a, email: a + '@example.test' });
-      expect(await h.store.transaction(tx => tx.eraseInvitations(a))).toBe(2);
-      // The rows stay and name the person by id alone; another person's invitation is left as it was.
-      expect([await h.invitation(first), await h.invitation(second), await h.invitation(hers)]).toEqual([
-        { participantId: a, name: '', email: '' },
-        { participantId: a, name: '', email: '' },
-        { participantId: b, name: 'Name ' + b, email: b + '@example.test' },
-      ]);
-      // Once more, nothing is left; an id with no invitation, or none at all, changes nothing.
-      expect(
-        await h.store.transaction(async tx => [
-          await tx.eraseInvitations(a),
-          await tx.eraseInvitations(boss),
-          await tx.eraseInvitations(p + '-nobody'),
-        ]),
-      ).toEqual([0, 0, 0]);
+      ).rejects.toThrow('the calendar could not clear the person');
+      await store.transaction(async tx => {
+        expect(await tx.readUser(org, a)).toMatchObject({ name: userRow(a, org).name });
+      });
+      expect(told).toEqual([input, input]);
     });
   });
 }

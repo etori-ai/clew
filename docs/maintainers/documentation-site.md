@@ -52,4 +52,7 @@ Search is an index built into the site. There is no hosted search service and no
 
 Pin exact versions in [site/package.json](../../site/package.json), run `bun install` in `site/`, and record the
 licence check in the [licence record](../reference/licences.md). The site's dependencies never enter the root
-lockfile.
+lockfile. VitePress 1.6.4 asks for Vite 5, whose last releases carry advisories against its development server, so
+`overrides` in `site/package.json` pins Vite 6.4.6 under it; drop the override when a VitePress release asks for a
+Vite without them. The [audit workflow](../../.github/workflows/audit.yml) runs `bun audit` on this lockfile and the
+root's on every change to either and every Monday.

@@ -24,8 +24,6 @@ afterAll(async () => {
     await db.delete(schema.groupCapabilities).where(like(schema.groupCapabilities.groupExternalId, '%' + p + '%'));
     await db.delete(schema.groupRelations).where(like(schema.groupRelations.groupExternalId, '%' + p + '%'));
     if (people.length) {
-      // A planning card the SCIM harness made for an invitation, with its proposals.
-      await db.delete(schema.threads).where(inArray(schema.threads.personId, people));
       await db.delete(schema.identityBindings).where(inArray(schema.identityBindings.personId, people));
       await db.delete(schema.sessions).where(inArray(schema.sessions.personId, people));
       await db.delete(schema.audit).where(
@@ -169,6 +167,7 @@ import { cLocaleDatabase, type CLocaleDatabase } from './c-locale';
 const scimHarness = (prefix: string, db: () => Database = database): ScimStoreHarness => ({
   store: postgresProvisionStore({ db }),
   withLeavers: (leavers, leaverFailed) => postgresProvisionStore({ leavers: () => leavers(), leaverFailed, db }),
+  withErasure: erasure => postgresProvisionStore({ erasure: () => erasure(), db }),
   prefix,
   async seedProvisioner(p, digest, revoked, previous) {
     await db()
@@ -224,46 +223,6 @@ const scimHarness = (prefix: string, db: () => Database = database): ScimStoreHa
       .from(schema.authenticationAudit)
       .where(eq(schema.authenticationAudit.id, id));
     return row?.actor;
-  },
-  async invite(managerId, participantId, name, email) {
-    // The manager's planning card, once; the invitation hangs on it and goes with it.
-    const threadId = 'thread-' + managerId;
-    await db()
-      .insert(schema.threads)
-      .values({
-        id: threadId,
-        personId: managerId,
-        kind: 'pushed',
-        topic: 'planning:' + managerId,
-        title: 'Planering',
-        trigger: { reason: 'test', source: 'test', at: '2026-11-09T06:00:00.000Z' },
-      })
-      .onConflictDoNothing();
-    const id = 'proposal-' + randomUUID();
-    await db()
-      .insert(schema.proposals)
-      .values({
-        id,
-        threadId,
-        personId: managerId,
-        participantId,
-        participantName: name,
-        participantEmail: email,
-        start: new Date('2026-11-20T09:00:00.000Z'),
-        end: new Date('2026-11-20T10:00:00.000Z'),
-      });
-    return id;
-  },
-  async invitation(id) {
-    const [row] = await db()
-      .select({
-        participantId: schema.proposals.participantId,
-        name: schema.proposals.participantName,
-        email: schema.proposals.participantEmail,
-      })
-      .from(schema.proposals)
-      .where(eq(schema.proposals.id, id));
-    return row;
   },
 });
 scimStoreContract('postgres', async () => {
