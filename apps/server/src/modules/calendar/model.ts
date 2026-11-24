@@ -176,8 +176,12 @@ export interface ProposalStore {
   bookedProposals(participantIds: readonly string[]): Promise<ProposalRecord[]>;
   transaction<T>(fn: (tx: ProposalTx) => Promise<T>): Promise<T>;
 }
-/** A person's calendar: the provider (D11). The live one caches per authorization version. */
-export type CalendarBinder = (persona: AuthenticatedContext) => CalendarBinding;
+/**
+ * A person's calendar: the provider (D11), as the person Clew's directory holds (their address there makes an event
+ * theirs). The live one reads the address on every call and keeps the provider while the address and the authorization
+ * version stay the same.
+ */
+export type CalendarBinder = (persona: AuthenticatedContext) => CalendarBinding | Promise<CalendarBinding>;
 /**
  * A person the manager plans for and may invite (D96 item 3): who they are in Clew, the address their calendar answers
  * to, and the ref free-busy results are matched on.

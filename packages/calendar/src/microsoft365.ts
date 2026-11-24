@@ -1,5 +1,6 @@
 import {
   CalendarError,
+  FREE_BUSY_TARGETS,
   invitedParticipant,
   sameEmail,
   type Availability,
@@ -293,7 +294,8 @@ export class Microsoft365Provider implements CalendarProvider {
   }
   /** Busy periods per target over a window. A target Graph cannot answer for stays `unknown`, as does a lost reply. */
   async freeBusy(start: string, end: string, targets: { ref: string; email: string }[]): Promise<BusyPeriods[]> {
-    if (!validWindow(start, end) || targets.length > 8) throw new CalendarError('Ogiltig tillgänglighetsperiod.');
+    if (!validWindow(start, end) || targets.length > FREE_BUSY_TARGETS)
+      throw new CalendarError('Ogiltig tillgänglighetsperiod.');
     if (!targets.length) return [];
     const unknown = (ref: string): BusyPeriods => ({ ref, state: 'unknown', busy: [] });
     try {

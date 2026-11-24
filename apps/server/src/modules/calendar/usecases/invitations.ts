@@ -1,4 +1,5 @@
 import type { AuthenticatedContext, TalkCalendarDecision } from '@clew/contracts';
+import { dayStart } from '@clew/calendar/dates';
 import type { EventOccurrence } from '@clew/calendar/model';
 import { ForbiddenError, InputError } from '../../../context';
 import type { CalendarBinder, ProposalRecord, ProposalStore, ProposalTx, Team } from '../model';
@@ -33,6 +34,17 @@ const AGREES = 'Mötet i kalendern stämmer med samtalet. Läs om sidan.';
 const STILL_THERE = 'Mötet finns kvar i kalendern. Läs om sidan.';
 const IS_GONE = 'Mötet finns inte längre i kalendern. Läs om sidan.';
 const NOT_YET = 'Tiden för samtalet har inte passerat än.';
+const ALL_DAY = 'Mötet i kalendern gäller hela dagen. Ge det en tid i kalendern innan samtalet flyttas dit.';
+const RECURRING = 'Mötet i kalendern återkommer. Gör det till ett enstaka möte i kalendern innan samtalet flyttas dit.';
+const instant = (value: string) => new Date(value).toISOString();
+/**
+ * The span the calendar holds for an event, as instants: an all-day event's dates are the start of its first day and
+ * of the day after its last in Clew's zone, never midnight UTC (DE-L15).
+ */
+const spanOf = (event: EventOccurrence) =>
+  event.allDay
+    ? { start: instant(dayStart(event.start)), end: instant(dayStart(event.end)) }
+    : { start: event.start, end: event.end };
 
 export function invitationUsecases({ store, bind, team, clock }: InvitationDeps) {
   /** When each manager's invitations were last read back, in this process. */
@@ -46,12 +58,15 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
   }
   /** The invitation's event as the calendar holds it now, by the id Clew stored: null when it is gone. Throws when unreadable. */
   async function eventOf(persona: AuthenticatedContext, p: ProposalRecord): Promise<EventOccurrence | null> {
-    const { provider } = bind(persona);
+    const { provider } = await bind(persona);
     const ref = p.eventRef ?? (await provider.eventRef(p.eventUid!));
     return provider.lookup(ref);
   }
   const differs = (p: ProposalRecord, event: EventOccurrence | null) =>
-    event === null || Date.parse(event.start) !== Date.parse(p.start) || Date.parse(event.end) !== Date.parse(p.end);
+    event === null ||
+    event.allDay ||
+    Date.parse(event.start) !== Date.parse(p.start) ||
+    Date.parse(event.end) !== Date.parse(p.end);
 
   return {
     /**
@@ -91,7 +106,7 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
           await tx.invitations.observed({
             actor: 'assistant:scan',
             invitationId: p.id,
-            event: event ? { start: event.start, end: event.end } : null,
+            event: event ? spanOf(event) : null,
             at,
           });
       });
@@ -101,7 +116,8 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
     /**
      * The manager settles what the calendar holds against their booking of a person's talk. The event is read again
      * first, by its id, so the decision is about what the calendar holds now. `adopt`: the event is at another time,
-     * and the invitation and the talk take it. `remove` and `keep`: the event is gone, so the invitation is over; the
+     * and the invitation and the talk take it; an event made all-day or recurring has no one time to take, and is
+     * refused until it has one. `remove` and `keep`: the event is gone, so the invitation is over; the
      * talk then lacks a time, or keeps it as a time the manager set by hand. A decision that no longer fits what the
      * calendar holds is refused and what it holds is recorded, so the page reads right again. Nothing is written to the
      * calendar: a meeting moved by mistake is moved back there, and the next reading finds them agreeing.
@@ -168,7 +184,7 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
           tx.invitations.observed({
             actor: 'assistant:scan',
             invitationId: r.p.id,
-            event: r.event ? { start: r.event.start, end: r.event.end } : null,
+            event: r.event ? spanOf(r.event) : null,
             at,
           }),
         );
@@ -184,6 +200,12 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
         throw new InputError(event ? STILL_THERE : IS_GONE);
       }
       if (!event) return end(p, 'cancelled', decision === 'keep');
+      // A talk is one meeting at one time: a meeting made all-day or recurring in the calendar has none it could take,
+      // so it is not adopted, and the manager gives it a time there first (DE-L15).
+      if (event.allDay || event.recurring) {
+        await observe(found);
+        throw new InputError(event.allDay ? ALL_DAY : RECURRING);
+      }
       await store.transaction(async tx => {
         await locked(tx, p);
         await tx.updateProposals([p.id], {

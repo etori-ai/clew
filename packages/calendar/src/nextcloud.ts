@@ -1,8 +1,13 @@
 import ICAL from 'ical.js';
 import { XMLParser } from 'fast-xml-parser';
+import { Temporal } from 'temporal-polyfill';
 import {
   CalendarError,
+  FREE_BUSY_TARGETS,
   invitedParticipant,
+  organisedBy,
+  sameEmail,
+  type CalendarAccount,
   type CalendarProvider,
   type EventOccurrence,
   type MeetingInput,
@@ -12,7 +17,7 @@ import {
   type Availability,
   type BusyPeriods,
 } from './model';
-import { stamp, validWindow } from './dates';
+import { stamp, timeZone, validWindow } from './dates';
 import { readLimited } from './http';
 
 const xml = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false, htmlEntities: true });
@@ -55,17 +60,54 @@ function participantResponse(partstat: unknown): ParticipantResponse {
       return 'unknown';
   }
 }
+const UNREADABLE_ZONE = 'Mötet har en tidszon som kalendern inte beskriver.';
+/**
+ * The instant, or for an all-day value the date, that an iCalendar DATE or DATE-TIME holds, for an event any client
+ * wrote. ical.js reads a TZID with the VTIMEZONE of the same file, found in that file's own parsed tree, so one file's
+ * definition never reaches another's. A floating time (no TZID, no Z) is wall-clock time in Clew's zone, never in the
+ * server process's. A TZID the file does not define is the IANA zone of that name when there is one (a time zone by
+ * reference, RFC 7809); any other is refused, so that no meeting is moved by a guess. A local time that does not exist
+ * or occurs twice is read as RFC 5545 §3.3.5 says: with the offset before the change.
+ */
+function instantOf(time: ICAL.Time, tzid: string | null): string {
+  if (time.isDate) return time.toString();
+  // UTC, or a zone this file defines.
+  if (time.zone !== ICAL.Timezone.localTimezone) return new Date(time.toUnixTime() * 1000).toISOString();
+  try {
+    const local = Temporal.PlainDateTime.from({
+      year: time.year,
+      month: time.month,
+      day: time.day,
+      hour: time.hour,
+      minute: time.minute,
+      second: time.second,
+    });
+    const at = local.toZonedDateTime(tzid ?? timeZone, { disambiguation: 'compatible' }).toInstant();
+    return new Date(at.epochMilliseconds).toISOString();
+  } catch {
+    throw new CalendarError(UNREADABLE_ZONE);
+  }
+}
+const tzidOf = (property: ICAL.Property | null) => {
+  const tzid = property?.getParameter('tzid');
+  return typeof tzid === 'string' && tzid ? tzid : null;
+};
 
+/**
+ * CalDAV with iCalendar scheduling (RFC 4791, 6638). The account is the person as Clew's directory knows them: `user`
+ * signs in, and `account.email` is the address that makes an event theirs and that they organise new ones as.
+ */
 export class NextcloudProvider implements CalendarProvider {
   capabilities = { create: true, cancel: true, accept: true, recurringRead: true, exclusiveRooms: false };
-  account;
+  account: CalendarAccount;
   private discovery?: Promise<{ calendar: string; outbox: string }>;
   constructor(
     private user: string,
     private password: string,
+    account: { email: string; name: string },
     private base = 'http://calendar',
   ) {
-    this.account = { ref: `nextcloud:account:${user}`, email: `${user}@clew.test`, name: user };
+    this.account = { ref: `nextcloud:account:${user}`, email: account.email, name: account.name };
   }
   private async request(path: string, method: string, body?: string, headers: Record<string, string> = {}) {
     const url = new URL(path, this.base);
@@ -143,18 +185,18 @@ export class NextcloudProvider implements CalendarProvider {
     return path;
   }
   private events(body: string, path: string, revision: string): EventOccurrence[] {
+    // The file's VTIMEZONEs stay in this parse: nothing is registered with ical.js's zone service, which every file shares.
     const calendar = new ICAL.Component(ICAL.parse(body));
     if (calendar.name !== 'vcalendar') throw new CalendarError('Kalenderkällan svarade med ogiltiga mötesuppgifter.');
-    for (const zone of calendar.getAllSubcomponents('vtimezone')) {
-      const tzid = String(zone.getFirstPropertyValue('tzid'));
-      ICAL.TimezoneService.register(new ICAL.Timezone({ component: zone, tzid }), tzid);
-    }
     const ref = reference(path);
     return calendar
       .getAllSubcomponents('vevent')
       .filter(component => component.getFirstPropertyValue('status') !== 'CANCELLED')
       .map(component => {
         const event = new ICAL.Event(component),
+          startZone = tzidOf(component.getFirstProperty('dtstart')),
+          // An end given as a duration is in the start's zone.
+          endZone = component.hasProperty('dtend') ? tzidOf(component.getFirstProperty('dtend')) : startZone,
           start = event.startDate,
           end = event.endDate;
         const participants: Participant[] = component.getAllProperties('attendee').map(attendee => ({
@@ -175,13 +217,13 @@ export class NextcloudProvider implements CalendarProvider {
           revision,
           uid: event.uid,
           title: event.summary || 'Möte',
-          start: start.isDate ? start.toString() : start.toJSDate().toISOString(),
-          end: end.isDate ? end.toString() : end.toJSDate().toISOString(),
+          start: instantOf(start, startZone),
+          end: instantOf(end, endZone),
           allDay: start.isDate,
           recurring,
           organizer,
           organizerName,
-          canCancel: !recurring && organizer.toLowerCase() === this.account.email.toLowerCase(),
+          canCancel: !recurring && organisedBy({ organizer }, this.account),
           room: room?.name || room?.email || '',
           participants,
           roomResponse:
@@ -241,7 +283,8 @@ export class NextcloudProvider implements CalendarProvider {
     });
   }
   async availability(start: string, end: string, targets: { ref: string; email: string }[]): Promise<Availability[]> {
-    if (!validWindow(start, end) || targets.length > 8) throw new CalendarError('Ogiltig tillgänglighetsperiod.');
+    if (!validWindow(start, end) || targets.length > FREE_BUSY_TARGETS)
+      throw new CalendarError('Ogiltig tillgänglighetsperiod.');
     if (!targets.length) return [];
     const lines = [
       'BEGIN:VCALENDAR',
@@ -283,7 +326,8 @@ export class NextcloudProvider implements CalendarProvider {
   }
   /** Busy periods per target over a window. One scheduling request; a lost reply leaves that target `unknown`. */
   async freeBusy(start: string, end: string, targets: { ref: string; email: string }[]): Promise<BusyPeriods[]> {
-    if (!validWindow(start, end) || targets.length > 8) throw new CalendarError('Ogiltig tillgänglighetsperiod.');
+    if (!validWindow(start, end) || targets.length > FREE_BUSY_TARGETS)
+      throw new CalendarError('Ogiltig tillgänglighetsperiod.');
     if (!targets.length) return [];
     const lines = [
       'BEGIN:VCALENDAR',
@@ -366,7 +410,7 @@ export class NextcloudProvider implements CalendarProvider {
     if (response.status !== 201 && response.status !== 412)
       throw new CalendarError('Bokningsresultatet är osäkert. Kontrollera mötet innan du försöker igen.');
     const event = await this.lookup(ref);
-    if (!event || event.uid !== uid || event.organizer !== this.account.email)
+    if (!event || event.uid !== uid || !sameEmail(event.organizer, this.account.email))
       throw new CalendarError('Bokningsresultatet är osäkert.');
     // RoomVox removes a declined resource attendee from the organizer copy.
     if (room && !event.participants.some(p => p.email === room.email)) event.roomResponse = 'declined';
@@ -384,6 +428,10 @@ export class NextcloudProvider implements CalendarProvider {
     const components = calendar.getAllSubcomponents('vevent');
     if (components.length !== 1) throw new CalendarError('Återkommande möten stöds inte.');
     const component = components[0]!;
+    // The new times are written in UTC, so the zone they were written in goes with the old ones (a UTC value with a TZID
+    // is not iCalendar), and an end given as a length gives way to the end itself.
+    for (const name of ['dtstart', 'dtend']) component.getFirstProperty(name)?.removeParameter('tzid');
+    component.removeAllProperties('duration');
     component.updatePropertyWithValue('dtstart', ICAL.Time.fromJSDate(new Date(start), true));
     component.updatePropertyWithValue('dtend', ICAL.Time.fromJSDate(new Date(end), true));
     component.updatePropertyWithValue('dtstamp', ICAL.Time.fromJSDate(new Date(), true));

@@ -14,6 +14,7 @@ import {
 } from './support';
 
 import { manifest as communication } from '../../connectors/communication/connector.mjs';
+import { events, today } from './data';
 
 const title = (text: string) => encodeURIComponent(text);
 /** A list or a table is its view's page (D116), opened from Hem with Hem as the way back. */
@@ -258,7 +259,27 @@ test.describe("the calendar's own reads on their page", () => {
     await expect(panel.getByText('Lediga luckor: 10:30–12:00.')).toBeVisible();
     await expect(panel.getByText('events', { exact: true })).toHaveCount(0);
     await expect(panel.getByText('gaps', { exact: true })).toHaveCount(0);
+    // An entry is a link to its own place in Kalender (D126 rule 1), never a button that does nothing (WA-M2), and the
+    // summary's promise of Enter holds.
+    const entry = panel.getByRole('link', { name: /Rektorsmöte/ });
+    await expect(entry).toHaveAttribute('href', '/calendar?date=2026-11-04&view=day&entry=e1');
+    await expect(panel.getByRole('button', { name: /Rektorsmöte/ })).toHaveCount(0);
+    await expect(panel.getByText(/Retur på en post öppnar den\./)).toBeAttached();
     await expectNoAxeViolations(page);
+    // Kalender's week holds the meeting, and following the link opens it in the page's pane.
+    await page.route(
+      url => url.pathname === '/api/calendar',
+      async route => {
+        const from = new URL(route.request().url()).searchParams.get('from') ?? '2026-11-02';
+        await route.fulfill({ json: { from, events: [...events(from), ...today.events], proposals: [] } });
+      },
+    );
+    await entry.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/calendar\?date=2026-11-04&view=day&entry=e1$/);
+    await expect(
+      page.getByRole('dialog', { name: 'Rektorsmöte' }).or(page.getByRole('complementary', { name: 'Rektorsmöte' })),
+    ).toBeVisible();
   });
 
   test('Hela veckan is the list with a heading per day', async ({ page, api: _ }) => {
@@ -272,6 +293,11 @@ test.describe("the calendar's own reads on their page", () => {
     await expect(heading(week, 2)).toHaveCount(5);
     await expect(panel.getByText('Morgonmöte ledningsgrupp')).toHaveCount(5);
     await expect(panel.getByText('events', { exact: true })).toHaveCount(0);
+    // Each meeting leads to its own day in Kalender's week (WA-M2).
+    await expect(panel.getByRole('link', { name: /Morgonmöte ledningsgrupp/ }).first()).toHaveAttribute(
+      'href',
+      /^\/calendar\?date=2026-11-02&view=week&entry=v0$/,
+    );
     await expectNoAxeViolations(page);
   });
 });

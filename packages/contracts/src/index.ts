@@ -311,6 +311,11 @@ export const CalendarEventSchema = object({
   canCancel: Type.Boolean(),
   recurring: Type.Boolean(),
   organizer: Type.String(),
+  /**
+   * The meeting of an invitation to a talk that Clew sent and that still stands (D133): found by the event's id among
+   * Clew's own invitations, the reader's or one that invites the reader, never by its title. Absent for any other event.
+   */
+  talk: Type.Optional(Type.Literal(true)),
 });
 export type CalendarEvent = Static<typeof CalendarEventSchema>;
 

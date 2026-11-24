@@ -21,7 +21,6 @@ no batch.
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
 | 13 | The conversation's state | `WD-L1`, `WD-L3`, `WD-L5`, `WD-L6`, `WD-L7`, `WD-L8` | |
-| 14 | The calendar's time zones, entries and talk meetings | `DE-M8`, `DE-L14`, `DE-L15`, `DE-L16`, `WA-M2`, `WA-L5` | |
 | 15 | No installation's name or brand in the code, and Swedish where a person reads | `AM-12`, `BL-9`, `WA-L6`, `WA-L7`, `WA-L11`, `WA-L12`, `WA-L13` | |
 | 16 | The interface's theme check, spaces and measures | `WA-M1`, `WA-L4`, `WA-L8`, `WA-L9`, `WA-L10`, `WA-L14` | |
 | 17 | Tests and contracts that can see the fault | `WA-M5`, `DE-M4`, `DE-M7`, `ID-9`, `AM-13`, `BD-L6`, `DE-L3` | |
@@ -36,14 +35,14 @@ no batch.
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 0 | 1 | 1 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 0 | 0 | 0 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 0 | 2 | 2 |
-| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 3 | 11 | 14 |
+| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 2 | 8 | 10 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 2 | 2 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 0 | 6 | 6 |
-| WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
+| WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 2 | 10 | 12 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 7 | 7 |
-| | **Total** | **0** | **8** | **47** | **55** |
+| | **Total** | **0** | **6** | **43** | **49** |
 
 ## High
 
@@ -85,7 +84,6 @@ ports with no contract under M7.
 |---|---|---|---|
 | DE-M4 | Medium | The card projection, the owned domains' timer fences and the follow-up's writes are SQL in the composition root with no memory twin, so the unit suite tests a copy. | `apps/server/src/composition/execution-projection.ts:30-247` |
 | DE-M7 | Medium | Ten ports or groups of ports have behaviour that no contract case holds both adapters to. | `tests/` (the store contracts) |
-| DE-M8 | Medium | The CalDAV adapter builds a person's address as `<login>@clew.test` and reads an appointment with no organiser as someone else's. | `packages/calendar/src/nextcloud.ts:68` |
 | DE-L3 | Low | `scanInto`, the first scan implementation, is unreachable in the server, and its tests still stand as evidence. | `apps/server/src/threads/usecases/cards.ts:110-203` |
 | DE-L4 | Low | The projection's job inserts, an approved undo's end of the follow-up plan and a connector removal's cascade leave no audit row of their own. | `apps/server/src/composition/execution-projection.ts:227-236` |
 | DE-L7 | Low | A connector's `observedAt` is compared with the stored one as a string, so an offset changes which is newer. | `apps/server/src/threads/usecases/refresh.ts:117` |
@@ -94,9 +92,6 @@ ports with no contract under M7.
 | DE-L10 | Low | The change-signal triggers miss columns and tables the browser shows, and are hand-written SQL that `schema.ts` does not name. | `packages/db/migrations/0018_black_zarek.sql:46-57` |
 | DE-L12 | Low | Several queries run per page load have no index to serve them. | `apps/server/src/threads/adapters/refresh-postgres.ts:111-113` |
 | DE-L13 | Low | `bun run db:init` applies only migrations newer than the last recorded one, so a skipped migration goes unnoticed. | `scripts/db-init.ts:10-13` |
-| DE-L14 | Low | The CalDAV adapter mishandles time zones in events other clients wrote: a process-wide zone registry, floating times read in the server's zone, and invalid `TZID` with UTC. | `packages/calendar/src/nextcloud.ts:148-151` |
-| DE-L15 | Low | A meeting made all-day and then adopted books the talk from midnight UTC. | `apps/server/src/modules/calendar/usecases/invitations.ts:53-54` |
-| DE-L16 | Low | A nonexistent date gives a 500 in the calendar's reads, and an availability check for eight participants and a room is refused by both adapters. | `apps/server/src/modules/calendar/usecases/events.ts:81-84` |
 
 ## Baseline, build and supply chain
 
@@ -158,10 +153,8 @@ fixtures the server cannot produce).
 | Id | Severity | Finding | Where |
 |---|---|---|---|
 | WA-M1 | Medium | The theme check does not test the focus ring, marks, icons or success and information text against the card's ground. | `packages/contracts/src/theme-file.ts:143-169` |
-| WA-M2 | Medium | A calendar entry is a button wherever it is drawn, and in four places pressing it does nothing, while the spoken summary says Enter opens it. | `packages/ui/src/calendar.tsx:168` |
 | WA-M5 | Medium | Most pages' read failures, several empty states and loading surfaces have no spec, and twelve drawn states run no axe check. | `tests/a11y/` (the coverage map) |
 | WA-L4 | Low | An entry in the pane beside a conversation opens a dialog over the conversation page, against D126 rule 3. | `apps/web/src/pages/conversation.tsx:173` |
-| WA-L5 | Low | `agendaItems` recognises a talk's meeting by its title, which D133 forbids. | `packages/ui/src/agenda-items.ts:26` |
 | WA-L6 | Low | "Startsidan" is hard-coded in tab titles, the sign-in and error pages and several sentences, where the installation's site name belongs. | `apps/web/src/page-title.ts:7` |
 | WA-L7 | Low | Sundsvall's colours are the examples on Administration › Utseende and in the theme parser's message. | `apps/web/src/pages/admin/appearance.tsx:147` |
 | WA-L8 | Low | The calendar theme sizes and offsets several things in pixels where D27 asks for tokens. | `packages/ui/src/calendar-theme.css:155` |

@@ -12,6 +12,7 @@ import {
   addDays,
   dayStart,
   displayDate,
+  isCalendarDate,
   nextWeekStart,
   weekNumber,
   weekStart,
@@ -20,7 +21,7 @@ import {
   localClock,
 } from '@clew/calendar/dates';
 import { collides, freeGaps, planWeek, unplacedReasons, type Interval, type PlanInput } from '@clew/calendar/proposals';
-import type { CalendarProvider, ParticipantResponse } from '@clew/calendar/model';
+import { FREE_BUSY_TARGETS, type CalendarProvider, type ParticipantResponse } from '@clew/calendar/model';
 import { FOLLOW_UP, obligationPlan, returnAt, stepOf, waitingOnInvitee, type ObligationPlan } from './obligation';
 import { CalendarError } from '@clew/calendar/model';
 import { InputError } from '../../../context';
@@ -39,7 +40,7 @@ import type {
   UnitMember,
 } from '../model';
 import { chunks, dueLabel, proposalRow, unplacedRow } from '../domain';
-import { toEvent } from './reads';
+import { talkMeetings, toEvent } from './reads';
 import {
   ALREADY_HELD,
   BOOKED,
@@ -75,11 +76,9 @@ export interface CalendarDeps {
 export const TOPIC = 'utvecklingssamtal';
 export const UNDO_MS = 10 * 60_000;
 const SAMTAL_MINUTES = 60;
-/** A provider answers free-busy for at most eight people per request. */
-const FREE_BUSY_TARGETS = 8;
 /** The row reasons that a talk settled outside the card gave, which say "behöver en tid" once it no longer holds. */
 const SETTLED_REASONS: readonly string[] = [ALREADY_HELD, BOOKED_ELSEWHERE, BOOKED_ALREADY, OWN_CALENDAR];
-/** Free-busy for any number of people, asked in requests of at most eight, the answers merged in order. */
+/** Free-busy for any number of people, asked in requests of as many as an adapter takes, the answers merged in order. */
 async function freeBusyOf(provider: CalendarProvider, start: string, end: string, members: readonly UnitMember[]) {
   const answers = await Promise.all(
     chunks(members, FREE_BUSY_TARGETS).map(part =>
@@ -148,12 +147,13 @@ export function calendarUsecases(deps: CalendarDeps) {
     (await store.readThread(persona.id, threadId))!.thread;
 
   async function listWeek(persona: AuthenticatedContext, from: string, days = 7) {
-    const binding = bind(persona);
-    const [events, members] = await Promise.all([
+    const binding = await bind(persona);
+    const [events, members, talks] = await Promise.all([
       binding.provider.list(dayStart(from), dayStart(addDays(from, days))),
       team(persona),
+      talkMeetings(store, persona.id),
     ]);
-    return { binding, events, view: events.map(e => toEvent(e, binding, persona.name, members)) };
+    return { binding, events, view: events.map(e => toEvent(e, binding, persona.name, members, talks)) };
   }
   async function readToday(persona: AuthenticatedContext): Promise<TodayView> {
     const date = todayDate();
@@ -169,7 +169,8 @@ export function calendarUsecases(deps: CalendarDeps) {
   }
   /** The week's events for the agenda and the model; `from` is any date in the week, this week when absent. */
   async function weekView(persona: AuthenticatedContext, from?: string): Promise<Omit<WeekView, 'proposals'>> {
-    const start = weekStart(from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : todayDate());
+    if (from && !isCalendarDate(from)) throw new InputError('Ogiltigt datum.');
+    const start = weekStart(from || todayDate());
     return { from: start, events: (await listWeek(persona, start, 7)).view };
   }
   /** The week view with the person's live proposals for the agenda. */
@@ -202,7 +203,7 @@ export function calendarUsecases(deps: CalendarDeps) {
       ...current.booked,
     ]);
     const members = everyone.filter(m => !isHeld(m) && !bookedIds.has(m.personId));
-    return { binding: bind(persona), everyone, members, booked, isHeld, elsewhere };
+    return { binding: await bind(persona), everyone, members, booked, isHeld, elsewhere };
   }
   /**
    * Held and booked out of the team before the round's due date, each person once; nothing to plan (`members: 0`)
@@ -505,6 +506,7 @@ export function calendarUsecases(deps: CalendarDeps) {
     // Only the planning card is redrawn (DE-L6): the store reads every card of the calendar's, a follow-up, an obligation
     // or a calendar decision's too, and one handed here by its id would be rewritten as a proposal thread.
     if (current.thread.topic !== TOPIC) throw new InputError('Ärendet finns inte.');
+    if (!isCalendarDate(week)) throw new InputError('Ogiltigt datum.');
     if (Date.parse(dayStart(week)) < Date.parse(dayStart(todayDate())) || weekStartMismatch(week))
       throw new InputError('Välj en kommande vecka.');
     const open = await roundFor(persona);
@@ -554,7 +556,7 @@ export function calendarUsecases(deps: CalendarDeps) {
     if (!current) return undefined;
     const owner = current.proposals[0]?.personId;
     const persona = owner ? await people.personaFor(owner) : undefined;
-    return persona ? { current, persona, binding: bind(persona) } : undefined;
+    return persona ? { current, persona, binding: await bind(persona) } : undefined;
   }
   const responseOf = (response: ParticipantResponse | undefined): 'accepted' | 'declined-by-invitee' | null =>
     response === 'accepted' ? 'accepted' : response === 'declined' ? 'declined-by-invitee' : null;

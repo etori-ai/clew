@@ -46,7 +46,16 @@ type Props = {
   selectedId?: string;
   /** An embedded calendar: a tighter axis fitted to its entries and shorter slots. */
   compact?: boolean;
+  /**
+   * What pressing an entry does where the host shows it (the page's pane): the entry is then a button. With neither this
+   * nor `itemLink` an entry is no control at all, with no tab stop, and the summary promises nothing (WA-M2).
+   */
   onItemClick?: (item: AgendaItem) => void;
+  /**
+   * Where an entry's name leads (D126 rule 1): each entry with an address is a link there, `follow` takes a plain press
+   * inside the app, and a new tab or window is the browser's.
+   */
+  itemLink?: { href: (item: AgendaItem) => string | undefined; follow: (href: string) => void };
   /** Called when a proposal was dragged to a new time; only proposals are draggable (D27). A rejected promise puts it back. */
   onMoveProposal?: (item: AgendaItem, start: string, end: string) => Promise<unknown> | void;
   /** A span picked on the grid, for "Ny bokning" with the time filled in: dragged, or clicked, which gives an hour (D58). The button is the keyboard path. */
@@ -102,6 +111,7 @@ export function EventCalendar({
   selectedId,
   compact = false,
   onItemClick,
+  itemLink,
   onMoveProposal,
   onSelectRange,
 }: Props) {
@@ -119,9 +129,11 @@ export function EventCalendar({
         allDay: item.allDay,
         editable: item.kind === 'proposal' && !!onMoveProposal,
         durationEditable: false,
+        // FullCalendar draws an entry with an address as a link (`<a href>`).
+        ...(itemLink ? { url: itemLink.href(item) } : {}),
         extendedProps: { kind: item.kind, selected: item.id === selectedId },
       })),
-    [items, onMoveProposal, selectedId],
+    [items, onMoveProposal, selectedId, itemLink],
   );
   const shown = useMemo(() => {
     const days = shownDays(view, date);
@@ -139,9 +151,14 @@ export function EventCalendar({
     const api = ref.current?.getApi();
     if (api && displayDate(api.getDate().toISOString()) !== date) api.gotoDate(date);
   }, [date]);
+  // The summary promises Enter only where an entry does something on it (WA-M2).
+  const opens = !!onItemClick || !!itemLink;
   const summary = useMemo(
-    () => summarise(view, date, items) + (accessiblePath ? ` ${accessiblePath}` : ''),
-    [view, date, items, accessiblePath],
+    () =>
+      summarise(view, date, items) +
+      (accessiblePath ? ` ${accessiblePath}` : '') +
+      (opens ? ' Retur på en post öppnar den.' : ''),
+    [view, date, items, accessiblePath, opens],
   );
   const heading = (day: Date, narrow: boolean, today: boolean, inline = false) => (
     <DayHeading date={day} level={dayHeadingLevel} narrow={narrow} today={today} inline={inline} />
@@ -165,7 +182,8 @@ export function EventCalendar({
         headerToolbar={false}
         height="auto"
         events={events}
-        eventInteractive
+        // A button only where pressing it does something; an entry with an address is a link whatever this says.
+        eventInteractive={!!onItemClick}
         eventOrder="start,-duration,title"
         eventTimeFormat={timeFormat}
         // The start alone: a list and the month say the length in their own words, the grid draws the range under the title.
@@ -273,6 +291,15 @@ export function EventCalendar({
           );
         }}
         eventClick={info => {
+          if (info.event.url) {
+            const press = info.jsEvent as MouseEvent;
+            // A plain press, or Enter on the link, stays in the app; a new tab or window is the browser's.
+            if (press.button === 0 && !press.metaKey && !press.ctrlKey && !press.shiftKey && !press.altKey) {
+              press.preventDefault();
+              itemLink?.follow(info.event.url);
+            }
+            return;
+          }
           const item = byId.get(info.event.id);
           if (item) onItemClick?.(item);
         }}

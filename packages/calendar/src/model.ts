@@ -77,9 +77,20 @@ export interface CalendarProvider {
   reschedule(ref: string, revision: string, start: string, end: string): Promise<EventOccurrence>;
   cancel(ref: string, revision: string): Promise<void>;
 }
+/**
+ * How many calendars one free-busy request may ask about, on every adapter: a booking's eight participants and its room
+ * fit with room to spare, and a planner asks for a larger team in requests of this size.
+ */
+export const FREE_BUSY_TARGETS = 20;
 export const sameEmail = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+/**
+ * Whether the account organises the event: it names the account as its organiser, or it names none, which is how a
+ * calendar client stores an appointment without guests in the owner's own calendar.
+ */
+export const organisedBy = (event: Pick<EventOccurrence, 'organizer'>, account: CalendarAccount) =>
+  !event.organizer || sameEmail(event.organizer, account.email);
 export function invitedParticipant(event: EventOccurrence, account: CalendarAccount) {
-  if (event.recurring || !event.organizer || sameEmail(event.organizer, account.email)) return undefined;
+  if (event.recurring || organisedBy(event, account)) return undefined;
   const matches = event.participants.filter(person => !person.resource && sameEmail(person.email, account.email));
   return matches.length === 1 ? matches[0] : undefined;
 }

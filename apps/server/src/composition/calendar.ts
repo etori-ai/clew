@@ -5,7 +5,7 @@ import { durableObligations } from '../dbos/obligations';
 import type { Notifier, People, RoundReader, Team } from '../modules/calendar/model';
 import { teamFromStaff } from '../modules/calendar/domain';
 import { ForbiddenError } from '../context';
-import { staff } from './people';
+import { staff, userReads } from './people';
 import { systemContext } from '../system-context';
 import { calendarUsecases } from '../modules/calendar/usecases/samtal';
 import { eventUsecases } from '../modules/calendar/usecases/events';
@@ -28,12 +28,16 @@ import { talkInvitationsOn } from './talk-invitations';
  * The calendar's live wiring (D25). It is its own file because the registry registers the calendar connector over
  * these use cases, and `composition/index.ts` builds the stream over the registry: this file must not import either.
  */
-// Provider discovery is cached only while the person's access scope is unchanged.
-const bindings = new Map<string, { version: string; binding: CalendarBinding }>();
-const bind: CalendarBinder = (persona: AuthenticatedContext) => {
+/**
+ * The person's calendar as Clew's directory holds them (DE-M8): their address is read on every call, one row by its
+ * key, and provider discovery is cached only while that address and the person's access scope are unchanged.
+ */
+const bindings = new Map<string, { version: string; address: string | null; binding: CalendarBinding }>();
+const bind: CalendarBinder = async (persona: AuthenticatedContext) => {
+  const address = await userReads.email(persona.id);
   let cached = bindings.get(persona.id);
-  if (!cached || cached.version !== persona.authorizationVersion) {
-    cached = { version: persona.authorizationVersion, binding: bindCalendar(persona) };
+  if (!cached || cached.version !== persona.authorizationVersion || cached.address !== address) {
+    cached = { version: persona.authorizationVersion, address, binding: bindCalendar(persona, address) };
     bindings.set(persona.id, cached);
   }
   return cached.binding;

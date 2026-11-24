@@ -3,7 +3,8 @@ import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
-import type { UnitMember } from '../../apps/server/src/modules/calendar/model';
+import type { ProposalRecord, UnitMember } from '../../apps/server/src/modules/calendar/model';
+import { InputError } from '../../apps/server/src/context';
 import { calendarUsecases } from '../../apps/server/src/modules/calendar/usecases/samtal';
 import { eventUsecases } from '../../apps/server/src/modules/calendar/usecases/events';
 
@@ -223,5 +224,110 @@ describe('the day and the free-busy check', () => {
     });
     expect(await w.listMembers(hillevi)).toEqual(members.map(m => ({ name: m.name, email: m.email })));
     expect(await w.listRooms(hillevi)).toEqual([{ ref: 'room:a12', name: 'A12', capacity: 8, equipment: [] }]);
+  });
+});
+
+describe('a date that does not exist, and a meeting of eight and a room (DE-L16)', () => {
+  test('a day or a last day with the shape of a date that does not exist is the person’s mistake, not the server’s', async () => {
+    const w = world();
+    for (const work of [
+      w.dayView(hillevi, '2026-02-30'),
+      w.freeTimes(hillevi, { durationMinutes: 30, before: '2026-13-01' }),
+    ]) {
+      await expect(work).rejects.toBeInstanceOf(InputError);
+    }
+    await expect(w.dayView(hillevi, '2026-02-30')).rejects.toThrow('Ogiltigt datum.');
+    expect((await w.dayView(hillevi, '2028-02-29')).from).toBe('2028-02-29');
+  });
+  test('eight members and a room are answered in one check', async () => {
+    const w = world();
+    const eight: UnitMember[] = Array.from({ length: 8 }, (_, i) => ({
+      personId: 'p' + i,
+      ref: 'memory:account:p' + i,
+      email: `p${i}@clew.test`,
+      name: `Person ${i}`,
+    }));
+    w.setting.team = eight;
+    w.calendar.rooms.push({ ref: 'room:a12', name: 'A12', email: 'a12@clew.test', capacity: 12, equipment: [] });
+    w.calendar.options.busy['memory:account:p7'] = [{ start: booking.start, end: booking.end }];
+    const result = await w.checkAvailability(hillevi, {
+      start: booking.start,
+      end: booking.end,
+      participants: eight.map(m => m.email),
+      room: 'room:a12',
+    });
+    expect(result.participants.map(p => p.state)).toEqual([...Array(7).fill('free'), 'busy']);
+    expect(result.room).toEqual({ ref: 'room:a12', name: 'A12', state: 'free' });
+  });
+});
+
+describe('whose meeting it is, and which is a talk’s (DE-M8, WA-L5)', () => {
+  test('an appointment without an organiser is the person’s own; a talk’s meeting is marked by the id Clew stored, never by its title', async () => {
+    const w = world();
+    const day = (from: string, to: string) => ({ start: at(`2026-11-05T${from}`), end: at(`2026-11-05T${to}`) });
+    w.calendar.events.push(
+      occurrence(
+        { uid: 'alone', title: 'Tandläkare', ...day('08:00', '09:00'), organizer: '', organizerName: '' },
+        account,
+      ),
+      occurrence(
+        {
+          uid: 'theirs',
+          title: 'Möte',
+          ...day('10:00', '11:00'),
+          organizer: anna.email,
+          organizerName: 'A. L.',
+          canCancel: false,
+        },
+        account,
+      ),
+      // Clew's invitation to Anna's talk, renamed in the calendar.
+      occurrence({ uid: 'renamed', title: 'Avstämning', ...day('13:00', '14:00') }, account),
+      // A unit's own meeting that carries a talk's title.
+      occurrence({ uid: 'lookalike', title: 'Utvecklingssamtal · Anna Lindqvist', ...day('15:00', '16:00') }, account),
+    );
+    const record: ProposalRecord = {
+      id: 'invitation',
+      threadId: 'talks',
+      personId: hillevi.id,
+      status: 'confirmed',
+      participant: { personId: anna.personId, email: anna.email, name: anna.name },
+      ...day('13:00', '14:00'),
+      eventUid: 'renamed',
+      eventRef: 'memory:renamed',
+      eventRevision: 'r1',
+      confirmedAt: T0,
+      undoUntil: null,
+      reminders: 0,
+      remindedAt: null,
+    };
+    await w.store.transaction(async tx => {
+      await tx.insertThread({
+        id: 'talks',
+        personId: hillevi.id,
+        topic: 'utvecklingssamtal:talks',
+        title: 'Planera utvecklingssamtal',
+        week: '2026-11-02',
+        area: 'utvecklingssamtal',
+        summary: '',
+        trigger: { reason: 'Test', source: 'Test', at: T0 },
+        createdAt: T0,
+        updatedAt: T0,
+      });
+      await tx.insertProposals([record]);
+    });
+    const seen = (events: { title: string; mine: boolean; organizer: string; talk?: true }[]) =>
+      events.map(e => [e.title, e.mine, e.organizer, e.talk ?? false]);
+    expect(seen((await w.dayView(hillevi, '2026-11-05')).events)).toEqual([
+      ['Tandläkare', true, 'Hillevi Berg', false],
+      ['Möte', false, 'Anna Lindqvist', false],
+      ['Avstämning', true, 'Hillevi Berg', true],
+      ['Utvecklingssamtal · Anna Lindqvist', true, 'Hillevi Berg', false],
+    ]);
+    // Anna's copy of the invitation is known by the uid Clew gave the event.
+    const asAnna = { ...persona('anna', 'employee'), name: 'Anna Lindqvist' };
+    expect((await w.dayView(asAnna, '2026-11-05')).events.filter(e => e.talk).map(e => e.title)).toEqual([
+      'Avstämning',
+    ]);
   });
 });

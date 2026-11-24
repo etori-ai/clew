@@ -1,4 +1,5 @@
-import { useLocation } from 'react-router';
+import { useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import {
   answersWithRows,
   type DayView,
@@ -34,7 +35,13 @@ import { isWebAddress } from '../../web-address';
 
 type BodyProps = {
   output: unknown;
+  /** What pressing a calendar entry does where the body stands beside a conversation: the entry is then a button. */
   onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void;
+  /**
+   * Where a calendar entry's name leads on a page of its own (D126 rule 1): each entry is a link there. With neither this
+   * nor `onOpenItem` an entry is drawn and is no control (WA-M2).
+   */
+  entryHref?: (item: AgendaItem, view: 'day' | 'week') => string;
   /** The capability's declared view (D38) and what it needs to be used: its input and how to change it, and where a row's own view lives. */
   view?: PanelViewSpec | undefined;
   source?: string | undefined;
@@ -195,6 +202,7 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
 export function PanelBody({
   output,
   onOpenItem,
+  entryHref,
   view,
   source,
   input,
@@ -216,6 +224,16 @@ export function PanelBody({
       : week
         ? agendaItems(week.events, [])
         : [];
+  const navigate = useNavigate();
+  const links = useMemo(() => {
+    if (!entryHref) return undefined;
+    const follow = (href: string) => void navigate(href);
+    return {
+      day: { href: (item: AgendaItem) => entryHref(item, 'day'), follow },
+      week: { href: (item: AgendaItem) => entryHref(item, 'week'), follow },
+    };
+  }, [entryHref, navigate]);
+  const openItem = onOpenItem ? (item: AgendaItem) => onOpenItem(item, dayItems) : undefined;
   const rows =
     !declared && !calendar && !search && isRecord(output) && Array.isArray(output.rows)
       ? (output.rows as Record<string, unknown>[])
@@ -244,8 +262,8 @@ export function PanelBody({
             date={day.from}
             items={dayItems}
             dayHeadingLevel={inline ? 3 : 2}
-            accessiblePath="Retur på en post öppnar den."
-            onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined}
+            onItemClick={openItem}
+            itemLink={links?.day}
           />
         </>
       )}
@@ -256,8 +274,8 @@ export function PanelBody({
             date={todayView.date}
             items={dayItems}
             dayHeadingLevel={inline ? 3 : 2}
-            accessiblePath="Retur på en post öppnar den."
-            onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined}
+            onItemClick={openItem}
+            itemLink={links?.day}
           />
           <Text type="supporting">
             {todayView.gaps.length
@@ -272,8 +290,8 @@ export function PanelBody({
           days={5}
           items={dayItems}
           dayHeadingLevel={inline ? 3 : 2}
-          accessiblePath="Retur på en post öppnar den."
-          onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined}
+          onItemClick={openItem}
+          itemLink={links?.week}
         />
       )}
       {search && <SearchRows result={search} hrefFor={hrefFor} />}

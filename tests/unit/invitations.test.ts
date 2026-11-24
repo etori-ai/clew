@@ -449,3 +449,46 @@ describe('the manager settles what the calendar holds (D133)', () => {
     expect(await w.rowOf(boss, 'dan')).toMatchObject({ at: BOOKED.start, calendar: MOVED });
   });
 });
+
+describe('a meeting made all-day or recurring in the calendar (DE-L15)', () => {
+  test('an all-day meeting is told as the days it holds in Clew’s zone, never from midnight UTC, and is not adopted', async () => {
+    const w = world();
+    await open(w);
+    const sent = await w.invite(dan);
+    // Someone makes the meeting all-day on Monday 23 November in the calendar itself.
+    w.calendar.events = w.calendar.events.map(e =>
+      e.ref === sent.ref ? { ...e, allDay: true, start: '2026-11-23', end: '2026-11-24', revision: 'r-all-day' } : e,
+    );
+    const day = { start: '2026-11-22T23:00:00.000Z', end: '2026-11-23T23:00:00.000Z' };
+    expect(await w.invitations.follow(boss)).toBe(1);
+    expect(w.proposals.invitations.at(-1)).toMatchObject({ op: 'observed', invitationId: sent.id, event: day });
+    expect(await w.rowOf(boss, 'dan')).toMatchObject({ state: 'booked', at: BOOKED.start, calendar: day });
+    later(60_000);
+    await expect(w.invitations.settle(boss, 'dan', 'adopt')).rejects.toThrow(
+      'Mötet i kalendern gäller hela dagen. Ge det en tid i kalendern innan samtalet flyttas dit.',
+    );
+    // The talk keeps the time it was booked for, the invitation is as it was sent, and nothing is audited as moved.
+    expect(await w.proposal(sent.id, sent.threadId)).toMatchObject({ status: 'confirmed', ...BOOKED });
+    expect(await w.rowOf(boss, 'dan')).toMatchObject({ state: 'booked', at: BOOKED.start, until: BOOKED.end });
+    expect(w.proposals.audit).toEqual([]);
+    expect(w.talkStore.audit().some(a => a.action === 'talks.booking_moved')).toBe(false);
+    // Given a time again in the calendar, the meeting is adopted as any moved meeting is.
+    w.calendar.events = w.calendar.events.map(e => (e.ref === sent.ref ? { ...e, allDay: false, ...MOVED } : e));
+    await w.invitations.settle(boss, 'dan', 'adopt');
+    expect(await w.proposal(sent.id, sent.threadId)).toMatchObject({ status: 'confirmed', ...MOVED });
+  });
+
+  test('a meeting made recurring has no one time to take, and is not adopted', async () => {
+    const w = world();
+    await open(w);
+    const sent = await w.invite(dan);
+    w.calendar.events = w.calendar.events.map(e => (e.ref === sent.ref ? { ...e, recurring: true, ...MOVED } : e));
+    await w.invitations.follow(boss);
+    await expect(w.invitations.settle(boss, 'dan', 'adopt')).rejects.toThrow(
+      'Mötet i kalendern återkommer. Gör det till ett enstaka möte i kalendern innan samtalet flyttas dit.',
+    );
+    expect(await w.proposal(sent.id, sent.threadId)).toMatchObject({ status: 'confirmed', ...BOOKED });
+    expect(await w.rowOf(boss, 'dan')).toMatchObject({ state: 'booked', at: BOOKED.start, calendar: MOVED });
+    expect(w.proposals.audit).toEqual([]);
+  });
+});

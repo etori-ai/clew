@@ -1,5 +1,6 @@
 import {
   CalendarError,
+  FREE_BUSY_TARGETS,
   type BusyPeriods,
   type CalendarAccount,
   type CalendarProvider,
@@ -61,7 +62,9 @@ export function memoryCalendar(account: CalendarAccount, seed: EventOccurrence[]
       return calendar.rooms;
     },
     // Busy when a seeded busy period overlaps the window; a target without an entry is free, 'unknown' stays unknown.
+    // As many targets per request as the adapters take, and no more.
     async availability(start, end, targets) {
+      if (targets.length > FREE_BUSY_TARGETS) throw new CalendarError('Ogiltig tillgänglighetsperiod.');
       return targets.map(t => {
         const busy = calendar.options.busy[t.ref];
         return {
@@ -76,6 +79,7 @@ export function memoryCalendar(account: CalendarAccount, seed: EventOccurrence[]
       });
     },
     async freeBusy(start, end, targets): Promise<BusyPeriods[]> {
+      if (targets.length > FREE_BUSY_TARGETS) throw new CalendarError('Ogiltig tillgänglighetsperiod.');
       return targets.map(t => {
         const busy = calendar.options.busy[t.ref] ?? [];
         return busy === 'unknown'

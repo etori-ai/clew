@@ -23,6 +23,7 @@ export interface AgendaItem {
   proposal?: Proposal;
 }
 
+/** The title a proposal is drawn with: what the invitation will be called, never how a talk is recognised. */
 const SAMTAL = 'Utvecklingssamtal';
 const live = new Set<Proposal['status']>(['proposed', 'confirmed', 'final', 'accepted']);
 /** The assistant's mark (D71, artboard 6): before a proposal's title on every calendar surface, never before a meeting's. */
@@ -51,8 +52,10 @@ const meta = (span: { start: string; end: string; allDay: boolean }, ...rest: (s
 
 /**
  * The one mapping from what the API returns to what every calendar surface draws (D32): a meeting is an `event`, a drawn
- * proposal a `proposal`, a sent samtal (its own event, or a confirmed proposal) a `booked` entry. A samtal event already
- * covered by a proposal is drawn once, as the proposal, so the week never shows the same hour twice. A proposal carries
+ * proposal a `proposal`, a sent samtal (the meeting of Clew's invitation, `CalendarEvent.talk`, or a confirmed proposal)
+ * a `booked` entry. A talk is known by the ids Clew holds, never by a title (D133): a renamed meeting is still the
+ * talk's, and a meeting that only carries a talk's title is a meeting. A talk's meeting already covered by a proposal is
+ * drawn once, as the proposal, so the week never shows the same hour twice. A proposal carries
  * the assistant's mark; every entry carries its meta line. The day's free gaps, when given (I dag on Hem), become `gap`
  * rows, the longest one saying that nothing is booked there without asking; the grid and the week agenda draw no gap.
  * The time a person is choosing in the action dialog (D112 item 10), when given, is a `proposal` of theirs: drawn as the
@@ -72,7 +75,7 @@ export function agendaItems(
   );
   return [
     ...events
-      .filter(e => !e.title.startsWith(SAMTAL))
+      .filter(e => !e.talk)
       .map(e => ({
         id: e.id,
         title: e.title,
@@ -87,7 +90,7 @@ export function agendaItems(
         event: e,
       })),
     ...events
-      .filter(e => e.title.startsWith(SAMTAL) && !covered(e))
+      .filter(e => e.talk && !covered(e))
       .map(e => ({
         id: e.id,
         title: e.title,

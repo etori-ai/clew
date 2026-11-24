@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { NextcloudProvider } from '../../packages/calendar/src/nextcloud';
+import { invitedParticipant } from '../../packages/calendar/src/model';
 
 const home = '/remote.php/dav/calendars/hillevi/';
 const primary = `${home}personal/`;
@@ -42,7 +43,14 @@ async function withProvider(
     },
   });
   try {
-    await check(new NextcloudProvider('hillevi', 'synthetic-test-password', server.url.href));
+    await check(
+      new NextcloudProvider(
+        'hillevi',
+        'synthetic-test-password',
+        { email: 'hillevi@clew.test', name: 'Hillevi Berg' },
+        server.url.href,
+      ),
+    );
   } finally {
     await server.stop(true);
   }
@@ -164,6 +172,177 @@ describe('the CalDAV contract through XML and iCalendar dependencies', () => {
         { ref: 'anna', state: 'known', busy: [{ start: '2026-11-09T09:00:00.000Z', end: '2026-11-09T10:00:00.000Z' }] },
         { ref: 'hassan', state: 'unknown', busy: [] },
       ]);
+    });
+  });
+});
+
+/** A calendar of `.ics` files the provider reads with GET and writes with PUT, each with its own ETag. */
+async function withCalendar(
+  files: Record<string, string>,
+  account: { email: string; name: string },
+  check: (provider: NextcloudProvider, written: string[]) => Promise<void>,
+) {
+  const stored = new Map(Object.entries(files).map(([uid, body]) => [`${primary}${uid}.ics`, { body, etag: '"1"' }]));
+  const written: string[] = [];
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      const listing = discovery[`${request.method} ${path}` as keyof typeof discovery];
+      if (listing) return new Response(listing, { status: 207, headers: { 'Content-Type': 'application/xml' } });
+      const file = stored.get(path);
+      if (request.method === 'GET' && file) return new Response(file.body, { headers: { ETag: file.etag } });
+      if (request.method === 'PUT' && file && request.headers.get('If-Match') === file.etag) {
+        const body = await request.text();
+        written.push(body);
+        stored.set(path, { body, etag: `"${Number(file.etag.slice(1, -1)) + 1}"` });
+        return new Response(null, { status: 204 });
+      }
+      return new Response('Unknown DAV resource', { status: 404 });
+    },
+  });
+  try {
+    await check(new NextcloudProvider('hillevi', 'synthetic-test-password', account, server.url.href), written);
+  } finally {
+    await server.stop(true);
+  }
+}
+const ics = (event: string[], ...zones: string[][]) =>
+  [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Another client//EN',
+    ...zones.flat(),
+    'BEGIN:VEVENT',
+    'DTSTAMP:20261104T080000Z',
+    'SUMMARY:Avstämning',
+    ...event,
+    'END:VEVENT',
+    'END:VCALENDAR',
+    '',
+  ].join('\r\n');
+/** A zone with one fixed offset, under a name no zone database has. */
+const fixedZone = (tzid: string, offset: string) => [
+  'BEGIN:VTIMEZONE',
+  `TZID:${tzid}`,
+  'BEGIN:STANDARD',
+  'DTSTART:19700101T000000',
+  `TZOFFSETFROM:${offset}`,
+  `TZOFFSETTO:${offset}`,
+  'END:STANDARD',
+  'END:VTIMEZONE',
+];
+const hillevi = { email: 'hillevi.berg@kommun.example', name: 'Hillevi Berg' };
+
+describe('whose event it is (DE-M8)', () => {
+  test('the account is the address Clew’s directory has, never the sign-in name at a fixed domain', async () => {
+    const files = {
+      own: ics([
+        'UID:own',
+        'DTSTART:20261109T090000Z',
+        'DTEND:20261109T100000Z',
+        'ORGANIZER:mailto:HILLEVI.BERG@kommun.example',
+      ]),
+      guessed: ics([
+        'UID:guessed',
+        'DTSTART:20261109T090000Z',
+        'DTEND:20261109T100000Z',
+        'ORGANIZER:mailto:hillevi@clew.test',
+      ]),
+      invited: ics([
+        'UID:invited',
+        'DTSTART:20261109T090000Z',
+        'DTEND:20261109T100000Z',
+        'ORGANIZER:mailto:anna@kommun.example',
+        'ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:hillevi.berg@kommun.example',
+      ]),
+    };
+    await withCalendar(files, hillevi, async provider => {
+      expect(provider.account).toEqual({ ref: 'nextcloud:account:hillevi', ...hillevi });
+      const read = async (uid: string) => (await provider.lookup(await provider.eventRef(uid)))!;
+      const own = await read('own'),
+        guessed = await read('guessed'),
+        invited = await read('invited');
+      expect(own.canCancel).toBe(true);
+      expect(guessed.canCancel).toBe(false);
+      expect(invited.canCancel).toBe(false);
+      expect(invitedParticipant(invited, provider.account)).toMatchObject({ email: 'hillevi.berg@kommun.example' });
+    });
+  });
+  test('an appointment without an organiser is the owner’s own, not someone else’s invitation', async () => {
+    const files = { alone: ics(['UID:alone', 'DTSTART:20261109T090000Z', 'DTEND:20261109T100000Z']) };
+    await withCalendar(files, hillevi, async provider => {
+      const event = (await provider.lookup(await provider.eventRef('alone')))!;
+      expect(event).toMatchObject({ organizer: '', canCancel: true });
+      expect(invitedParticipant(event, provider.account)).toBeUndefined();
+    });
+  });
+});
+
+describe('time zones as each file writes them (DE-L14)', () => {
+  const at = async (provider: NextcloudProvider, uid: string) => {
+    const event = (await provider.lookup(await provider.eventRef(uid)))!;
+    return [event.start, event.end];
+  };
+  test('a zone a file defines is read with that file’s definition and never reaches another file', async () => {
+    const files = {
+      first: ics(
+        ['UID:first', 'DTSTART;TZID=Kontoret:20261109T090000', 'DTEND;TZID=Kontoret:20261109T100000'],
+        fixedZone('Kontoret', '+0100'),
+      ),
+      second: ics(
+        ['UID:second', 'DTSTART;TZID=Kontoret:20261109T090000', 'DTEND;TZID=Kontoret:20261109T100000'],
+        fixedZone('Kontoret', '+0300'),
+      ),
+      third: ics(['UID:third', 'DTSTART;TZID=Kontoret:20261109T090000', 'DTEND;TZID=Kontoret:20261109T100000']),
+    };
+    await withCalendar(files, hillevi, async provider => {
+      expect(await at(provider, 'first')).toEqual(['2026-11-09T08:00:00.000Z', '2026-11-09T09:00:00.000Z']);
+      expect(await at(provider, 'second')).toEqual(['2026-11-09T06:00:00.000Z', '2026-11-09T07:00:00.000Z']);
+      // The third names the zone without defining it, and no zone database has the name: it is refused, never guessed.
+      await expect(provider.lookup(await provider.eventRef('third'))).rejects.toThrow(
+        'Mötet har en tidszon som kalendern inte beskriver.',
+      );
+    });
+  });
+  test('a floating time is Clew’s zone, and a zone named by reference is the IANA zone, whatever the server’s zone', async () => {
+    const files = {
+      floating: ics(['UID:floating', 'DTSTART:20261109T090000', 'DTEND:20261109T093000']),
+      summer: ics(['UID:summer', 'DTSTART:20260609T090000', 'DURATION:PT30M']),
+      reference: ics(['UID:reference', 'DTSTART;TZID=America/New_York:20261109T090000', 'DURATION:PT1H']),
+      // 02:30 on the last Sunday of March does not exist in Stockholm: read with the offset before the change.
+      gap: ics(['UID:gap', 'DTSTART:20270328T023000', 'DTEND:20270328T040000']),
+    };
+    await withCalendar(files, hillevi, async provider => {
+      expect(await at(provider, 'floating')).toEqual(['2026-11-09T08:00:00.000Z', '2026-11-09T08:30:00.000Z']);
+      expect(await at(provider, 'summer')).toEqual(['2026-06-09T07:00:00.000Z', '2026-06-09T07:30:00.000Z']);
+      expect(await at(provider, 'reference')).toEqual(['2026-11-09T14:00:00.000Z', '2026-11-09T15:00:00.000Z']);
+      expect(await at(provider, 'gap')).toEqual(['2027-03-28T01:30:00.000Z', '2027-03-28T02:00:00.000Z']);
+    });
+  });
+  test('a move writes the new times in UTC without the old zone, and the end itself instead of a length', async () => {
+    const files = {
+      zoned: ics(
+        [
+          'UID:zoned',
+          'DTSTART;TZID=Kontoret:20261109T090000',
+          'DURATION:PT30M',
+          'ORGANIZER:mailto:hillevi.berg@kommun.example',
+          'ATTENDEE;PARTSTAT=ACCEPTED:mailto:anna@kommun.example',
+        ],
+        fixedZone('Kontoret', '+0100'),
+      ),
+    };
+    await withCalendar(files, hillevi, async (provider, written) => {
+      const ref = await provider.eventRef('zoned');
+      const moved = await provider.reschedule(ref, '"1"', '2026-11-10T08:00:00.000Z', '2026-11-10T09:00:00.000Z');
+      expect([moved.start, moved.end]).toEqual(['2026-11-10T08:00:00.000Z', '2026-11-10T09:00:00.000Z']);
+      const lines = written[0]!.split('\r\n');
+      expect(lines).toContain('DTSTART:20261110T080000Z');
+      expect(lines).toContain('DTEND:20261110T090000Z');
+      expect(lines.filter(line => /^(DTSTART|DTEND);/.test(line) || line.startsWith('DURATION'))).toEqual([]);
+      expect(lines).toContain('ATTENDEE;PARTSTAT=ACCEPTED:mailto:anna@kommun.example');
     });
   });
 });

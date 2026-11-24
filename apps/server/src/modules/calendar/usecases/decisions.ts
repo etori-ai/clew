@@ -127,7 +127,7 @@ export function calendarDecisions({
     return (await required(p, `calendar:${p.id}:${input.decisionId}`)).thread;
   }
   async function ownEvent(p: AuthenticatedContext, input: { ref: string; revision: string }) {
-    const e = await bind(p).provider.lookup(input.ref);
+    const e = await (await bind(p)).provider.lookup(input.ref);
     if (!e) throw new InputError('Mötet finns inte längre.');
     if (!e.canCancel || e.recurring || e.allDay)
       throw new CalendarError('Du kan bara ändra egna enstaka möten med klockslag.');
@@ -159,7 +159,7 @@ export function calendarDecisions({
     window(input.start, input.end);
     const title = input.title.trim();
     if (!title) throw new InputError('Ge mötet en rubrik.');
-    const b = bind(p);
+    const b = await bind(p);
     if (!b.provider.capabilities.create) throw new CalendarError('Din kalender tar inte emot bokningar härifrån.');
     const participants = [...new Set(input.participants.map(e => e.toLowerCase()))];
     const members = await team(p);
@@ -333,7 +333,7 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewh
    */
   async function unsendable(
     p: AuthenticatedContext,
-    b: ReturnType<CalendarBinder>,
+    b: Awaited<ReturnType<CalendarBinder>>,
     item: Extract<CalendarItem, { action: 'create' }>,
     uid: string,
   ): Promise<string | undefined> {
@@ -375,7 +375,7 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewh
     const command = value as CalendarCommand;
     if (!Array.isArray(command?.items) || !command.items.length || command.items.length > 32)
       throw new InputError('Ogiltigt kalenderbeslut.');
-    const b = bind(p),
+    const b = await bind(p),
       members = command.items.some(i => i.action === 'create') ? await team(p) : [];
     for (const item of command.items) {
       if (!item.id || !['create', 'move', 'cancel'].includes(item.action))
@@ -401,7 +401,7 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewh
     e: { id: string; operation: string; payload: unknown; result?: ExecuteResult | null },
     write: boolean,
   ): Promise<ExecuteResult> {
-    const b = bind(p),
+    const b = await bind(p),
       command = e.payload as CalendarCommand;
     const rows: ExecuteResult['rows'] = [],
       undo: CalendarItem[] = [];

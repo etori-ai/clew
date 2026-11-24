@@ -7,6 +7,7 @@ import { directoryUsecases } from '../../apps/server/src/modules/people/usecases
 import {
   USER_READ_ORGANISATION,
   userReadActors,
+  userReadAddresses,
   userReadColleague,
   userReadNames,
   userReadOthers,
@@ -57,6 +58,7 @@ userReadsContract('postgres', async () => {
         name: a.name,
         organisationId: USER_READ_ORGANISATION,
         userName: userReadNames(actors)[a.id],
+        email: userReadAddresses(actors)[a.id],
       })),
       { id: colleague.id, name: colleague.name, organisationId: USER_READ_ORGANISATION },
       ...others,

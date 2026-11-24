@@ -56,6 +56,33 @@ describe('agendaItems', () => {
     expect(items[1]!.marker).toBeUndefined();
     expect(PROPOSAL_MARK).toBe('✦');
   });
+  test('a talk’s meeting is known by Clew’s mark on it, never by its title (D133, WA-L5)', () => {
+    const items = agendaItems(
+      [
+        // Clew's invitation, renamed in the calendar: still the talk's meeting.
+        { ...event('e1', 'Avstämning', '2026-11-10T09:00:00Z', '2026-11-10T10:00:00Z'), talk: true },
+        // A unit's own meeting that carries a talk's title is a meeting.
+        event('e2', 'Utvecklingssamtal – genomgång', '2026-11-10T13:00:00Z', '2026-11-10T14:00:00Z'),
+      ],
+      [],
+    );
+    expect(items.map(i => [i.id, i.kind])).toEqual([
+      ['e2', 'event'],
+      ['e1', 'booked'],
+    ]);
+  });
+  test('a talk’s meeting covered by its proposal is drawn once, as the proposal', () => {
+    const items = agendaItems(
+      [
+        {
+          ...event('e1', 'Utvecklingssamtal · Hassan Ali', '2026-11-12T10:00:00Z', '2026-11-12T11:00:00Z'),
+          talk: true,
+        },
+      ],
+      [{ ...proposal('p2', 'confirmed', '2026-11-12T10:00:00Z', '2026-11-12T11:00:00Z'), eventRef: 'e1' }],
+    );
+    expect(items.map(i => [i.id, i.kind])).toEqual([['p2', 'booked']]);
+  });
   test('the day’s gaps are rows, and only the longest says that nothing is booked there without asking', () => {
     const items = agendaItems(
       [],

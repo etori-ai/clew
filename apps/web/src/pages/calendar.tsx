@@ -43,6 +43,7 @@ import {
   addDays,
   dayLabel,
   displayDate,
+  isCalendarDate,
   monthLabel,
   occursOn,
   rangeLabel,
@@ -76,7 +77,6 @@ import { SilentNotice, useSaySilent, useSilentSources } from '../components/shel
 type View = 'day' | 'week' | 'month';
 const views: View[] = ['day', 'week', 'month'];
 const viewLabels: Record<View, string> = { day: 'Dag', week: 'Vecka', month: 'Månad' };
-const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 const monthStart = (date: string) => date.slice(0, 8) + '01';
 const addMonths = (date: string, months: number) => {
   const d = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1 + months, 1));
@@ -378,7 +378,8 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const requested = params.get('date') ?? params.get('week');
-  const date = requested && isoDate.test(requested) ? requested : today();
+  // A date of the right shape that does not exist (2026-02-30) is no date either: the page opens on today (DE-L16).
+  const date = requested && isCalendarDate(requested) ? requested : today();
   const view: View = views.includes(params.get('view') as View) ? (params.get('view') as View) : 'week';
   const anchor = view === 'week' ? weekStart(date) : view === 'month' ? monthStart(date) : date;
   const go = (next: { date?: string; view?: View }) =>
@@ -795,11 +796,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
                 items={items}
                 label={capital(title)}
                 dayHeadingLevel={2}
-                accessiblePath={
-                  proposed.length
-                    ? 'Förslag i sidhuvudet leder till varje förslag; Retur på en post öppnar den.'
-                    : 'Retur på en post öppnar den.'
-                }
+                accessiblePath={proposed.length ? 'Förslag i sidhuvudet leder till varje förslag.' : undefined}
                 selectedId={entryId ?? undefined}
                 onItemClick={item => navigate(withEntry(pathname, search, item.id))}
                 onMoveProposal={proposed.length ? moveProposal : undefined}
