@@ -108,7 +108,8 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   // directory, as their page names them (D121, the review of 2026-11-13): a person's name never rides in the address.
   // The directory is asked by Clew's key, the person's id (D122): the address's `of` where the opener knew it, else the
   // input's own key, which is the id of a person without a user name. Until both have answered the heading waits; a
-  // person the directory does not answer for keeps the read's own name.
+  // person the directory does not answer for keeps the read's own name. A read that fails is still named for the person
+  // once the directory has answered, by the read's own name, so the tab and the heading say whose view could not be read.
   const whose = !entry && search.get('title') === null ? (search.get('of') ?? personOf(inputJson)) : null;
   const person = useQuery({ ...entityDetailQuery('person', whose ?? ''), enabled: whose !== null });
   const noun = main.shown?.capability === capability ? nounOf(main.shown.spec) : undefined;
@@ -117,9 +118,11 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
       ? named
       : person.data && noun
         ? `${noun} för ${person.data.entity.name}`
-        : person.isError || (person.data && main.shown)
-          ? named
-          : '';
+        : person.data && main.failed && named
+          ? `${named} för ${person.data.entity.name}`
+          : person.isError || (person.data && main.shown)
+            ? named
+            : '';
   const missing = unlisted || (!!main.failed && refused(main.failed));
   const ready = areasQ.data !== undefined && !missing;
   const from = insideClew(search.get('from'));
@@ -306,7 +309,8 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                   )}
                 </ContentArrival>
               ) : (
-                !failed && <ContentSkeleton heading={false} />
+                // While the view of one person waits for their name, the page is named by the read's own name.
+                !failed && <ContentSkeleton heading={false} name={title ? undefined : named || 'Vy'} />
               )}
             </>
           )}

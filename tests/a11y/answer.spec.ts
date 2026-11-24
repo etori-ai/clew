@@ -10,6 +10,7 @@ import {
   narrow,
   open,
   reflowProblems,
+  searchButton,
   test,
 } from './support';
 import { NOW, competenceConversation, conversation } from './data';
@@ -58,7 +59,8 @@ test.describe('the answer on its way', () => {
       .toContainEqual(expect.stringContaining('Tio personer är på plats i dag.'));
   });
 
-  // That a stopped turn writes nothing is the server's promise, tested in tests/unit/conversation.test.ts; here the page lets go of it.
+  // A turn stopped before it wrote anything writes nothing, the server's promise tested in tests/unit/conversation.test.ts;
+  // here the page lets go of it. One the server wrote before the stop reached it is read back and drawn (below, WD-L3).
   test('Stoppa puts the question back in the box, says so, and an answer that arrives later is not drawn', async ({
     page,
     api,
@@ -101,6 +103,39 @@ test.describe('the answer on its way', () => {
     await expect
       .poll(() => announcements(page))
       .toContainEqual(expect.stringContaining('Tio personer är på plats i dag.'));
+  });
+
+  test('Stoppa after the turn was written draws the written turn and says it was written before the stop; nothing goes back in the box', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/');
+    const release = api.holdAnswer();
+    await composer(page).fill('Vem är på plats?');
+    await composer(page).press('Enter');
+    const stop = page.getByRole('button', { name: 'Stoppa' });
+    await expect(stop).toBeEnabled();
+    await expect.poll(() => api.turnKeys.length).toBe(1);
+    // The model had made a proposal into an item before the stop reached the server: the turn is written whole under
+    // the question's key, and the page reads it back before it says anything.
+    const written = conversation(api.threads, 'Vem är på plats?');
+    api.threads = [...api.threads.filter(t => t.id !== written.conversationId), written.thread];
+    api.written.set(api.turnKeys[0]!, written);
+    await stop.focus();
+    await page.keyboard.press('Enter');
+    const log = page.getByRole('log');
+    await expect(log).toContainText('Tio personer är på plats i dag.');
+    await expect(page).toHaveURL('/conversations/konversation');
+    await expect(log.getByText('Vem är på plats?', { exact: true })).toHaveCount(1);
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Svaret hann skrivas innan frågan stoppades. Det står i samtalet.'));
+    expect(await announcements(page)).not.toContainEqual(expect.stringContaining('Frågan avbröts'));
+    await expect(composer(page)).toHaveText('');
+    await expect(composer(page)).toBeFocused();
+    expect(api.asked).toHaveLength(1);
+    await expectNoAxeViolations(page);
+    release();
   });
 
   test('a question stopped and sent again goes with the same key, so a turn written after Stoppa is drawn, not asked twice', async ({
@@ -623,6 +658,82 @@ test.describe('the open conversation as the server has it', () => {
       .toContainEqual(expect.stringContaining(elsewhere.answer.body.slice(0, 40)));
     // Nothing moved under the person: the box keeps the focus.
     await expect(composer(page)).toBeFocused();
+    await expectNoAxeViolations(page);
+  });
+
+  /** A conversation of its own title: the fixture's answer names every other one after Hem's question. */
+  const first = () => {
+    const turn = conversation([], 'Vem har jour i helgen?', 'samtal-a');
+    return { ...turn, thread: { ...turn.thread, title: 'Vem har jour i helgen?' } };
+  };
+  const second = () => conversation([], 'Hur många semesterdagar har jag?', 'samtal-b');
+  /** Another conversation from the header's search: the person moves on without leaving the page. */
+  async function viaSearch(page: Page, words: string, title: RegExp) {
+    await searchButton(page).click();
+    await page.getByRole('combobox', { name: 'Sök i samtal och ärenden' }).fill(words);
+    await page.getByRole('option', { name: title }).click();
+  }
+  test('a conversation asked for is the one on the page at once: while it is read its shape is drawn, and a question written meanwhile continues it', async ({
+    page,
+    api,
+  }) => {
+    const a = first(),
+      b = second();
+    api.threads = [...api.threads, a.thread, b.thread];
+    await open(page, '/conversations/samtal-b');
+    const log = page.getByRole('log');
+    await expect(log).toContainText('Du har 18 semesterdagar kvar i år.');
+    api.threadDelay['samtal-a'] = 2_000;
+    await viaSearch(page, 'jour', /Vem har jour i helgen/);
+    await expect(page).toHaveURL('/conversations/samtal-a');
+    // Nothing of the conversation before is drawn under this one's address while it is read.
+    await expect(page.getByText('Hämtar samtalet …')).toBeAttached();
+    await expect(page.getByText('Du har 18 semesterdagar kvar i år.')).toHaveCount(0);
+    await composer(page).fill('Och i morgon?');
+    await composer(page).press('Enter');
+    await expect.poll(() => api.asked.at(-1)).toMatchObject({ text: 'Och i morgon?', conversationId: 'samtal-a' });
+    await expect(log.getByText('Och i morgon?', { exact: true })).toBeVisible();
+    await expect(log.getByText('Vem har jour i helgen?', { exact: true })).toBeVisible();
+    await expect(page.getByText('Du har 18 semesterdagar kvar i år.')).toHaveCount(0);
+  });
+  test('a conversation asked for while another is still read is the one drawn and asked in; the other, answered late or failing, never takes its place or says its error there', async ({
+    page,
+    api,
+  }) => {
+    const a = first(),
+      b = second();
+    api.threads = [...api.threads, a.thread, b.thread];
+    await open(page, '/');
+    api.threadDelay['samtal-a'] = 1_500;
+    await viaSearch(page, 'jour', /Vem har jour i helgen/);
+    await expect(page).toHaveURL('/conversations/samtal-a');
+    // By the time its read is answered the first can no longer be read.
+    api.threads = api.threads.filter(t => t.id !== 'samtal-a');
+    await viaSearch(page, 'semester', /Hur många semesterdagar/);
+    await expect(page).toHaveURL('/conversations/samtal-b');
+    const log = page.getByRole('log');
+    await expect(log).toContainText('Du har 18 semesterdagar kvar i år.');
+    await page.waitForTimeout(2_000);
+    await expect(heading(page, 1, 'Hur många semesterdagar har jag?')).toBeVisible();
+    await expect(log).toContainText('Du har 18 semesterdagar kvar i år.');
+    await expect(page.getByText('Ärendet finns inte.')).toHaveCount(0);
+    await expect(page.getByText('Samtalet kunde inte öppnas.')).toHaveCount(0);
+    await composer(page).fill('Och nästa år?');
+    await composer(page).press('Enter');
+    await expect.poll(() => api.asked.at(-1)).toMatchObject({ text: 'Och nästa år?', conversationId: 'samtal-b' });
+    await expectNoAxeViolations(page);
+  });
+  test('a conversation that can no longer be read says so in place of its transcript, and its shape is not drawn for ever', async ({
+    page,
+    api,
+  }) => {
+    api.threads = [...api.threads, second().thread];
+    await open(page, '/conversations/samtal-a');
+    // Said at the box, where the next question would be written; the first of the two is the box's, the other its
+    // announcement.
+    await expect(page.getByText('Ärendet finns inte.').first()).toBeVisible();
+    await expect(page.getByText('Hämtar samtalet …')).toHaveCount(0);
+    await expect(page.getByRole('log').getByText('Du har 18 semesterdagar kvar i år.')).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
 });

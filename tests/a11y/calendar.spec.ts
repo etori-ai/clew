@@ -39,6 +39,25 @@ test.describe('the three views', () => {
         await open(page, path);
         await expectNoAxeViolations(page);
       });
+  test('a week with nothing in it is still read by keyboard: its column scrolls with a tab stop of its own', async ({
+    page,
+    api: _,
+  }) => {
+    // No meeting and no proposal: the grid holds nothing focusable, so the column it scrolls in has to take the stop
+    // (axe: scrollable-region-focusable, WCAG 2.1.1).
+    await page.route('**/api/calendar?*', route =>
+      route.fulfill({
+        json: { from: new URL(route.request().url()).searchParams.get('from'), events: [], proposals: [] },
+      }),
+    );
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    await expect(heading(page, 1, 'Vecka 45')).toBeVisible();
+    const column = page.getByRole('main').locator('.astryx-scrollable-area');
+    await expect(column).toHaveAttribute('tabindex', '0');
+    await expect(column).toHaveAccessibleName(/^Vecka 45/);
+    await expectNoAxeViolations(page);
+  });
   for (const [name, path] of views)
     test(`${name} reflows at 320 px`, async ({ page, api: _ }) => {
       await page.setViewportSize(narrow);
@@ -84,7 +103,8 @@ test.describe('the three views', () => {
     }) => {
       await page.setViewportSize(viewport);
       await open(page, '/calendar?view=day');
-      // The column's inset is padding of the scroller; a header stuck under it let the meetings show through above it.
+      // The column scrolls in Astryx's ScrollableArea, which pads its inner box and not the scroller, so a header stuck
+      // at the scroller's top closes against it and no meeting shows through above it.
       const gap = await page.evaluate(() => {
         const header = document.querySelector('.clew-cal-table-header') as HTMLElement;
         let scroller: HTMLElement | null = header.parentElement;

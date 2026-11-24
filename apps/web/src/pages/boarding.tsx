@@ -101,7 +101,7 @@ import { StartPlanDialog } from '../components/people/boarding-start';
 import { PageFrame } from '../components/shell/page-frame';
 
 /** The page's heading when the plan cannot be read, in the browser's tab too. */
-const FAILED_TITLE = 'Planen kunde inte hämtas';
+const FAILED_TITLE = 'Planen kunde inte läsas';
 
 /**
  * One person's introduction or leaving as a page (D124, D116 rule 11: a list a person works through is a page), at
@@ -186,7 +186,15 @@ function Plan({
     (planQ.isError && refused(planQ.error)) ||
     (personQ.isError && refused(personQ.error) && !chosen) ||
     (!!person && !planId && !person.canStart);
-  const failed = !missing && (personQ.isError && !chosen ? personQ : planQ.isError ? planQ : null);
+  // The page fails on a read it has nothing drawn from: a drawn plan whose refetch fails keeps its content, as a person's
+  // page does, and the tab and the heading then say the same.
+  const failed = missing
+    ? null
+    : personQ.isError && !person && !chosen
+      ? personQ
+      : planQ.isError && !detail
+        ? planQ
+        : null;
   const name = detail?.plan.name ?? person?.person.name ?? '';
   const userName = detail?.plan.userName ?? person?.person.userName ?? null;
   const access: BoardingAccess | undefined = detail?.plan.access;
@@ -206,7 +214,7 @@ function Plan({
   const entityAction = useEntityAction();
   const title = detail ? planTitle(detail.plan.event, name) : person ? `Introduktion och avslut för ${name}` : null;
   // On the person's own page the page names the tab.
-  usePageTitle(frame === 'tab' ? null : missing ? 'Planen finns inte' : failed && !title ? FAILED_TITLE : title);
+  usePageTitle(frame === 'tab' ? null : missing ? 'Planen finns inte' : failed ? FAILED_TITLE : title);
 
   // The way back (D116 rule 11): the page in `from` when Clew can name it (the person's own page by their id, the list
   // Introduktion och avslut), else where the reader works from: Personal for the manager, Att göra for an item's owner,
@@ -349,7 +357,7 @@ function Plan({
             person's page has it. */}
         {frame !== 'tab' && <Heading level={1}>{FAILED_TITLE}</Heading>}
         <Text as="p" role="alert">
-          {errorMessage(failed.error, 'Planen kunde inte hämtas just nu.')}
+          {errorMessage(failed.error, 'Tjänsten kunde inte nås. Försök igen.')}
         </Text>
         <HStack>
           <Button
@@ -362,7 +370,8 @@ function Plan({
         </HStack>
       </VStack>
     ) : (
-      <ContentSkeleton />
+      // In the person's tab the person's page has the level-1 heading; on a page of its own the plan names its kind.
+      <ContentSkeleton name={frame === 'tab' ? undefined : 'Plan'} />
     );
     body = frame === 'tab' ? state : <PageFrame>{state}</PageFrame>;
   } else {
@@ -589,7 +598,6 @@ function Plan({
           </HStack>
           {meta}
           {tickError && <Banner status="error" title={tickError} collapsible={false} />}
-          {entityAction.error && <Banner status="error" title={entityAction.error} collapsible={false} />}
           {sections.length ? sections.map(s => <Fragment key={s.key}>{s.node}</Fragment>) : empty}
           {details}
         </VStack>
@@ -603,7 +611,6 @@ function Plan({
             <>
               {meta}
               {tickError && <Banner status="error" title={tickError} collapsible={false} />}
-              {entityAction.error && <Banner status="error" title={entityAction.error} collapsible={false} />}
             </>
           }
           sections={sections}
@@ -909,7 +916,7 @@ function Redirecting({
   if (to) return <Navigate replace to={to} />;
   return (
     <Shell user={user} nav={nav}>
-      <PageFrame>{missing ? <PlanMissing /> : <ContentSkeleton />}</PageFrame>
+      <PageFrame>{missing ? <PlanMissing /> : <ContentSkeleton name="Plan" />}</PageFrame>
     </Shell>
   );
 }

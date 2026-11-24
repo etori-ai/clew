@@ -20,7 +20,7 @@ import { AskClew } from '../components/conversation/thing-panel';
 import { PageFrame } from '../components/shell/page-frame';
 
 /** The page's heading when the item cannot be read, in the browser's tab too. */
-const FAILED_TITLE = 'Ärendet kunde inte hämtas';
+const FAILED_TITLE = 'Ärendet kunde inte läsas';
 
 /**
  * A work item as a page (D126 rule 1, board Ärende, `/items/<threadId>`): the item's own address, reached by its name
@@ -49,7 +49,11 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
   const thread: Thread | undefined = listed ?? oneQ.data;
   const missing =
     (oneQ.isError && oneQ.error instanceof ApiError && oneQ.error.status === 404) || (oneQ.isSuccess && !oneQ.data);
-  const failed = (listQ.isError && !listQ.data) || (oneQ.isError && !missing);
+  // The page fails on a read it has no answer from: the stream with nothing in it, or the item on its own. A stream that
+  // keeps its rows while a refetch fails is no failure of the page.
+  const listFailed = listQ.isError && !listQ.data;
+  const oneFailed = oneQ.isError && !missing;
+  const failed = listFailed || oneFailed;
   const origin = originOf(from, useQuery(areasQuery).data?.menu);
   // The way back names the place it leads to: a page Clew cannot name is "Tillbaka", never Att göra's name on it.
   const back = origin ?? (from ? { label: 'Tillbaka', href: from } : { label: 'Att göra', href: todoHref({}) });
@@ -105,19 +109,23 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
             {/* The page keeps its one level-1 heading when the item cannot be read: what is missing, the alert why. */}
             <Heading level={1}>{FAILED_TITLE}</Heading>
             <Text as="p" role="alert">
-              {errorMessage(oneQ.error ?? listQ.error, 'Ärendet kunde inte hämtas just nu.')}
+              {errorMessage(oneFailed ? oneQ.error : listQ.error, 'Tjänsten kunde inte nås. Försök igen.')}
             </Text>
             <HStack>
               <Button
                 size="sm"
                 variant="secondary"
                 label="Försök igen"
-                onClick={() => void (listQ.isError ? listQ.refetch() : oneQ.refetch())}
+                // Every read the page failed on is asked again, by the same terms as `failed`.
+                onClick={() => {
+                  if (listFailed) void listQ.refetch();
+                  if (oneFailed) void oneQ.refetch();
+                }}
               />
             </HStack>
           </VStack>
         ) : (
-          <ContentSkeleton />
+          <ContentSkeleton name="Ärende" />
         )}
       </PageFrame>
     );

@@ -8,6 +8,7 @@ import {
   ChatComposerDrawer,
   ChatComposerInput,
   ChatDictationButton,
+  ChatSendButton,
   DropdownMenu,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -208,7 +209,11 @@ export function Composer({
   const announced = useAddedAnnouncement(talk.chips);
   // While an answer is on its way the send button is Stoppa and the field stays open, so the person can write the next
   // question meanwhile (D36); Enter waits until the answer is written (the input empties itself on a submit, so it is
-  // held back through the input's own key seam). Acting on a card's verbs still rests the whole box.
+  // held back through the input's own key seam). Acting on a card's verbs still rests the whole box. While the panel's
+  // question starts the conversation (WD-L5) the box waits the same way, its send button resting, and its warning says
+  // why; what is typed stays.
+  const holds = !!talk.pending || !!talk.waiting;
+  const waits = !!talk.waiting && !talk.pending;
   return (
     <ChatComposer
       value={talk.value}
@@ -244,7 +249,7 @@ export function Composer({
           triggers={[trigger]}
           placeholder={placeholder}
           onKeyDown={e => {
-            if (talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault();
+            if (holds && e.key === 'Enter' && !e.shiftKey) e.preventDefault();
           }}
         />
       }
@@ -270,7 +275,12 @@ export function Composer({
         </HStack>
       }
       sendActions={<Dictation onResult={text => talk.setValue((talk.value + ' ' + text).trim())} />}
-      {...(talk.error ? { status: { type: 'error' as const, message: talk.error } } : {})}
+      {...(waits ? { sendButton: <ChatSendButton isDisabled /> } : {})}
+      {...(talk.error
+        ? { status: { type: 'error' as const, message: talk.error } }
+        : waits
+          ? { status: { type: 'warning' as const, message: talk.waiting! } }
+          : {})}
     />
   );
 }

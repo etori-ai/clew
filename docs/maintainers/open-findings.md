@@ -74,7 +74,7 @@ ports with no contract under M7.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| DE-L4 | Low | The projection's job inserts, an approved undo's end of the follow-up plan and a connector removal's cascade leave no audit row of their own. | `apps/server/src/composition/execution-projection.ts:227-236` |
+| DE-L4 | Low | The projection's job inserts, an approved undo's end of the follow-up plan and a connector removal's cascade leave no audit row of their own. | `apps/server/src/threads/usecases/projection.ts` (the job inserts), `apps/server/src/modules/calendar/usecases/obligation.ts` |
 | DE-L7 | Low | A connector's `observedAt` is compared with the stored one as a string, so an offset changes which is newer. | `apps/server/src/threads/usecases/refresh.ts:117` |
 | DE-L8 | Low | `activeByUserName` in the competence store folds a user name's case with a plain `lower`, not ICU, and cannot use the index. | `apps/server/src/modules/competence/adapters/postgres.ts:710-726` |
 | DE-L9 | Low | One open card per topic is enforced on insert only by the memory adapter, and a reopen can violate the PostgreSQL index. | `apps/server/src/threads/adapters/memory.ts:111-118` |

@@ -111,7 +111,10 @@ export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean 
   const notFound =
     (oneQ.isError && oneQ.error instanceof ApiError && oneQ.error.status === 404) || (oneQ.isSuccess && !oneQ.data);
   const missing = (!!live && !action) || (!live && notFound);
-  const failed = !live && ((listQ.isError && !listQ.data) || (oneQ.isError && !notFound));
+  // As the item's page: the page fails on a read it has no answer from, and asks each of those again.
+  const listFailed = listQ.isError && !listQ.data;
+  const oneFailed = oneQ.isError && !notFound;
+  const failed = !live && (listFailed || oneFailed);
   const origin = originOf(from, useQuery(areasQuery).data?.menu);
   // The way back names the place it leads to: the item by its title, another page by its name, or "Tillbaka" to a page
   // Clew cannot name.
@@ -170,19 +173,22 @@ export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean 
         <Heading level={1}>{FAILED_TITLE}</Heading>
         <Banner
           status="error"
-          title={errorMessage(oneQ.error ?? listQ.error, 'Granskningen kunde inte läsas.')}
+          title={errorMessage(oneFailed ? oneQ.error : listQ.error, 'Tjänsten kunde inte nås. Försök igen.')}
           endContent={
             <Button
               label="Försök igen"
               size="sm"
               variant="secondary"
-              onClick={() => void (listQ.isError ? listQ.refetch() : oneQ.refetch())}
+              onClick={() => {
+                if (listFailed) void listQ.refetch();
+                if (oneFailed) void oneQ.refetch();
+              }}
             />
           }
         />
       </VStack>,
     );
-  else body = message(<ContentSkeleton />);
+  else body = message(<ContentSkeleton name="Granskning" />);
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       {body}
