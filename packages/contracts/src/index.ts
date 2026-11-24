@@ -4507,6 +4507,8 @@ export const RefreshManifestInput = object({
   apply: Type.Optional(Type.Boolean()),
   /** With `apply`: the revision of the offer the administrator reviewed, so another offer is never applied in its place (D144). */
   offered: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$', maxLength: 64 })),
+  /** The add dialog may accept an offer only on the draft version it opened. */
+  draftVersion: Type.Optional(Type.Integer({ minimum: 1 })),
 });
 export type RefreshManifestInput = Static<typeof RefreshManifestInput>;
 export const PreviewQuery = object({

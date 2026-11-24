@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
 import type { CheckReport, ConnectorAudience, ConnectorDetail } from '@clew/contracts';
 import {
   Button,
@@ -38,6 +39,7 @@ type Props = {
   groups: GroupsRead;
 };
 export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
+  const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [id, setId] = useState('');
   const [url, setUrl] = useState('');
@@ -76,6 +78,10 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
     reset();
     onClose(added);
   };
+  const openConnector = (connector: ConnectorDetail) => {
+    close(true);
+    navigate(`/admin/connectors/${connector.id}`);
+  };
   const check = () =>
     run(async () => {
       setResult(await api.admin.add({ id, url, secret }));
@@ -88,9 +94,21 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
       if (!result) return;
       const report = await api.admin.test(result.connector.id);
       let connector = await api.admin.connector(result.connector.id);
-      if (connector.offered)
-        connector = (await api.admin.refresh(connector.id, true, connector.offered.revision)).connector;
-      setResult({ connector, report });
+      if (connector.state !== 'draft' || connector.version !== result.connector.version) {
+        openConnector(connector);
+        return;
+      }
+      if (connector.offered) {
+        connector = (
+          await api.admin.refresh(connector.id, {
+            apply: true,
+            offered: connector.offered.revision,
+            draftVersion: result.connector.version,
+          })
+        ).connector;
+      }
+      if (connector.state !== 'draft') openConnector(connector);
+      else setResult({ connector, report });
     });
   const finish = (state: 'draft' | 'enabled') =>
     run(async () => {
@@ -107,7 +125,8 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
         });
       } catch (refused) {
         const connector = await api.admin.connector(result.connector.id).catch(() => null);
-        if (connector) setResult({ ...result, connector });
+        if (connector && connector.state !== 'draft') openConnector(connector);
+        else if (connector) setResult({ ...result, connector });
         throw refused;
       }
       close(true);
