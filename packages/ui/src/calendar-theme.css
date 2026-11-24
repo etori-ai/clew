@@ -278,8 +278,9 @@
 .clew-cal-now-dot {
   width: 0;
   height: 0;
-  margin: calc(-2.5 * var(--spacing-1));
-  border: calc(2.5 * var(--spacing-1)) solid var(--color-accent);
+  /* 5 px: --spacing-1 is 4 px, so the dot is 10 px across, as it was drawn in pixels. */
+  margin: calc(-1.25 * var(--spacing-1));
+  border: calc(1.25 * var(--spacing-1)) solid var(--color-accent);
   border-radius: var(--radius-full);
 }
 

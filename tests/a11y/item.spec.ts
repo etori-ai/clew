@@ -235,6 +235,42 @@ test.describe('the work item as a page', () => {
     await expect(page.locator('.astryx-badge').filter({ hasText: 'Påminnelse' })).toHaveCount(0);
   });
 
+  test('Berör links whom the item is about by the directory’s name; the row’s label stands without a link while the name is read, and for someone the reader may not open', async ({
+    page,
+    api,
+  }) => {
+    let release!: () => void;
+    api.entityNamesHold = new Promise<void>(resolve => (release = resolve));
+    // Not `open`, which waits for the network to rest: the held read keeps it busy.
+    await page.goto('/items/ledighet');
+    const main = page.getByRole('main');
+    // The row's label says what the row is ("Ansökan"), never whom: until the name is read it is no link (2.4.4).
+    const about = main.getByRole('definition').filter({ hasText: /^(Ansökan|Johan Byström)$/ });
+    await expect(about).toHaveText('Ansökan');
+    await expect(about.getByRole('link')).toHaveCount(0);
+    release();
+    const johan = about.getByRole('link', { name: 'Johan Byström', exact: true });
+    await expect(johan).toHaveAttribute('href', /^\/people\/johan(\?|$)/);
+    await expect(about.getByRole('link')).toHaveCount(1);
+    await expect(about).not.toContainText('Ansökan');
+    expect(api.entityNamesAsked).toEqual([[{ entity: 'person', key: 'johan' }]]);
+    await expectNoAxeViolations(page);
+    // Someone the directory does not give this reader: the label alone, and no link to a page that would not open.
+    api.threads = api.threads.map(t =>
+      t.id === 'ledighet'
+        ? {
+            ...t,
+            items: t.items.map(i => (i.subject ? { ...i, subject: { entity: 'person' as const, key: 'okand' } } : i)),
+          }
+        : t,
+    );
+    await open(page, '/items/ledighet');
+    await expect(main.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect.poll(() => api.entityNamesAsked.length).toBe(2);
+    await expect(about).toHaveText('Ansökan');
+    await expect(about.getByRole('link')).toHaveCount(0);
+  });
+
   test('an item that is not the person’s says so as the page', async ({ page, api: _ }) => {
     await open(page, '/items/okand');
     await expect(page.getByRole('heading', { level: 1, name: 'Ärendet finns inte' })).toBeVisible();

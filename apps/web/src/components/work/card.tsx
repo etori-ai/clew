@@ -29,7 +29,6 @@ import {
   IconButton,
   Link,
   MoreMenu,
-  StackItem,
   StatusNotice,
   Text,
   TextInput,
@@ -736,15 +735,12 @@ const reopenable = (thread: Thread) =>
  * mig while it waits on someone, Ta upp nu while it is set aside (D28), Återöppna after Avfärda). Under it stand "Fråga
  * Clew" and ⋯ with the moves the notice does not carry and the item's reads. While the person's own action settles the
  * buttons keep their look, the pressed one loading (D64), and the notice comes when the item has come to rest; the focus
- * that was on a button the notice replaced goes to the item's title, which the notice stands under (2.4.3).
- *
- * `pinned` is a bar at the foot of a phone's page: the decisions side by side the width of the screen, everything else
- * under ⋯. An action the item draws elsewhere (`omit`: a notice's link out, after its text) is not drawn here too.
+ * that was on a button the notice replaced goes to the item's title, which the notice stands under (2.4.3). An action
+ * the item draws elsewhere (`omit`: a notice's link out, after its text) is not drawn here too.
  */
 export function ActionRow({
   thread,
   actions,
-  pinned = false,
   readHref,
   omit,
   ask,
@@ -754,7 +750,6 @@ export function ActionRow({
 }: {
   thread: Thread;
   actions: Actions;
-  pinned?: boolean;
   /**
    * The item stands in a pane beside a list or a transcript. Beside a conversation it is what the conversation is about
    * and goes with every question, so "Lägg till i samtalet" is not offered on it.
@@ -802,7 +797,6 @@ export function ActionRow({
   // "Attestera 2 valda" on an item whose rows are chosen (boards WorkItem and Inbox).
   const primaryLabel = primary && selectable ? `${primary.label} ${count} valda` : primary?.label;
   const due = streamGroup(thread, today()) === 'nu';
-  const width = pinned ? '100%' : undefined;
   // Back from the review's page (by Back, its trail, or once it is sent), the focus is on the control that led there,
   // wherever the item is drawn: a row under Rader, else "Granska N" (now perhaps "Fortsätt granska" or "Visa
   // granskning"). The page puts the focus on its heading or the item's as it is drawn, a frame after the item's own
@@ -831,7 +825,6 @@ export function ActionRow({
         ref={review}
         variant={due ? 'primary' : 'secondary'}
         label={going ? 'Fortsätt granska' : `Granska ${rows.length}`}
-        width={width}
         href={reviewLink}
       />
     ) : (
@@ -840,7 +833,6 @@ export function ActionRow({
         label={primaryLabel ?? ''}
         isDisabled={selectable && count === 0}
         isLoading={settling && pressed === primary.id}
-        width={width}
         {...pressOrLink(primary)}
         data-action={primary.id}
         data-thread={thread.id}
@@ -1024,31 +1016,12 @@ export function ActionRow({
         variant="secondary"
         label={a.label}
         isLoading={settling && pressed === a.id}
-        width={width}
         {...pressOrLink(a)}
         data-action={a.id}
         data-thread={thread.id}
         {...leavingMark(a)}
       />
     );
-    // The phone's bar: the decisions side by side the width of the screen (two opposed decisions are never parted),
-    // everything else under ⋯, so their words are never cut at 320 px (1.4.10).
-    if (pinned)
-      return (
-        <HStack gap={2} vAlign="center">
-          {primaryButton && <StackItem size="fill">{primaryButton}</StackItem>}
-          {decisions.slice(0, primaryButton ? 1 : 2).map(a => (
-            <StackItem key={a.id} size="fill">
-              {decisionButton(a)}
-            </StackItem>
-          ))}
-          {more({
-            items: [...decisions.slice(primaryButton ? 1 : 2), ...reads, ...rest],
-            time: snoozeRows,
-            extra: moves,
-          })}
-        </HStack>
-      );
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
         {primaryButton}

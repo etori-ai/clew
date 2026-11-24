@@ -787,3 +787,60 @@ test.describe('I dag when the calendar does not answer, and for a person with no
     }
   });
 });
+
+test.describe('the way back from Kalender (D126 rule 7)', () => {
+  test.use({ viewport: desktop });
+  /** Kalender reached without a link, as a search hit or a button leads there: the address changes, nothing is pressed. */
+  const reachKalender = (page: Page) =>
+    page.evaluate(() => {
+      history.pushState(history.state, '', '/calendar');
+      dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+    });
+
+  test('I dag’s Kalender, then Back: the focus is on the link pressed, not on the pages’ Kalender ahead of it; the pages’ own is given back as well', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/');
+    const ours = today(page).getByRole('link', { name: 'Kalender', exact: true });
+    const pages = rail(page).getByRole('link', { name: 'Kalender', exact: true });
+    await expect(pages).toBeVisible();
+    await ours.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/calendar');
+    await expect(heading(page, 1, 'Vecka 45')).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL('/');
+    await expect(ours).toBeFocused();
+    await expect(pages).not.toBeFocused();
+    // The pages' Kalender pressed: it has the focus back.
+    await pages.click();
+    await expect(heading(page, 1, 'Vecka 45')).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL('/');
+    await expect(pages).toBeFocused();
+  });
+
+  test('Kalender reached without a link: Back gives the focus to a link to it in the page’s own content, never to the pages’ Kalender', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/');
+    const ours = today(page).getByRole('link', { name: 'Kalender', exact: true });
+    await expect(ours).toBeVisible();
+    await reachKalender(page);
+    await expect(heading(page, 1, 'Vecka 45')).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL('/');
+    await expect(ours).toBeFocused();
+    // Att göra has no link to Kalender but the pages': the focus is left to the page.
+    await open(page, '/todo');
+    await expect(heading(page, 1, 'Att göra')).toBeVisible();
+    await reachKalender(page);
+    await expect(heading(page, 1, 'Vecka 45')).toBeVisible();
+    await page.goBack();
+    await expect(heading(page, 1, 'Att göra')).toBeVisible();
+    await page.waitForTimeout(600);
+    await expect(rail(page).getByRole('link', { name: 'Kalender', exact: true })).not.toBeFocused();
+  });
+});

@@ -502,7 +502,7 @@
       "number": 32,
       "path": "docs/decisions/D32-one-calendar-family-and-the-persons-own-bookings.md",
       "title": "D32 · One calendar family, and a person's own bookings as use cases",
-      "status": "accepted",
+      "status": "accepted; item 2 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`WA-L4`, batch 16 and its review): the `DayStrip` of a calendar read beside a conversation opens no event dialog, each entry is a link to its place in Kalender, as on the read's own page ([D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) rules 1 and 3)",
       "date": "2026-11-04",
       "area": "ui"
     },
@@ -646,7 +646,7 @@
       "number": 44,
       "path": "docs/decisions/D44-the-connector-check-reads-as-a-result-not-a-log.md",
       "title": "D44 · The connector check reads as a result, not a log",
-      "status": "accepted, built 2026-11-05; a manual pass with a screen reader is not done",
+      "status": "accepted, built 2026-11-05; a manual pass with a screen reader is not done; item 5 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`WA-L9`, batch 16 and its review): the buttons wrap below the app's one phone line, `mobileQuery` in `apps/web/src/media.ts` (767 px and below), not at 720 px",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -1168,7 +1168,7 @@
       "number": 98,
       "path": "docs/decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
       "title": "D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
-      "status": "accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet; item 5's check of an SVG amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the file is read as XML, held to what a drawing needs and to UTF-8, so a namespace prefix, a character reference, a CSS escape or another encoding hides nothing)",
+      "status": "accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet; item 5's check of an SVG amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the file is read as XML, held to what a drawing needs and to UTF-8, so a namespace prefix, a character reference, a CSS escape or another encoding hides nothing); rule 3 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`WA-M1`, batch 16 and its review): a colour the file leaves alone is the base theme's except a status icon (`icon-info`, `icon-success`), which Astryx draws in its status's text colour until it is set, so it is checked in the file's text colour and a refusal names that colour once, never the icon; text is held at 4.5:1 and the accent (the focus ring), the icons and the status marks at 3:1 on the page, a surface, a card and a popover, the secondary words, a link, the secondary icon and the accent on the muted ground too; the words on `info-muted`, `success-muted` and a selected item's `accent-muted` at 4.5:1, a translucent base tint laid over the surface before it is measured; and the template a file starts from (`THEME_TEMPLATE`) pins neither status icon",
       "date": "2026-11-10",
       "area": "ui"
     },

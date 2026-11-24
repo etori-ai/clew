@@ -25,9 +25,8 @@ import { localClock, localInstant, shortDayLabel, timeRange } from '@clew/calend
 import { api } from '../../api';
 import { membersQuery, roomsQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
-import { keys } from '../../query-keys';
 import { mobileQuery } from '../shell/shell';
-import { applyThread } from '../../thread-cache';
+import { applyThread, invalidateCalendar } from '../../thread-cache';
 import { DialogFrame } from '../shell/dialog-frame';
 
 const EMPTY_MEMBERS: CalendarMember[] = [];
@@ -104,7 +103,7 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
     try {
       const thread = await api.createEvent({ decisionId, title: title.trim(), ...input() });
       await applyThread(client, thread);
-      void client.invalidateQueries({ queryKey: keys.calendarAll });
+      void invalidateCalendar(client);
       toast({
         body: 'Bokningsbeslutet är sparat. Ärendet visar när kalendern har bekräftat bokningen.',
         uniqueID: 'booking:' + thread.id,
