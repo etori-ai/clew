@@ -1,6 +1,6 @@
 # D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end
 
-**Status:** accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too; items 4 and 5 amended 2026-11-13 in the fixes of the gaps that review left: a holder that fails, a 401 for Clew's key or assertion included, leaves the last good header in place for up to an hour, a holder that refuses the person with a 403 takes their places away at that answer, which the conformance check takes as an answer, and who may have the header is decided at every read; Start and the row under it are Clew's since [D116](D116-start-and-the-row-under-it-are-clews.md) (provisional, 2026-11-13), the connector gives the other places · **Date:** 2026-11-09 · **Area:** ui, product, integrations
+**Status:** accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too; items 4 and 5 amended 2026-11-13 in the fixes of the gaps that review left: a holder that fails, a 401 for Clew's key or assertion included, leaves the last good header in place for up to an hour, a holder that refuses the person with a 403 takes their places away at that answer, which the conformance check takes as an answer, and who may have the header is decided at every read; Start and the row under it are Clew's since [D116](D116-start-and-the-row-under-it-are-clews.md) (provisional, 2026-11-13), the connector gives the other places; items 2 and 4 amended 2026-11-24 in batch 15 of the fixes of the review of 2026-11-23 (`BL-9`, `WA-L6`): the web app has no public folder and its image carries no logo, so Sundsvall's white dragon is the dark variant of the example in `themes/sundsvall/`, drawn on the band when an installation applies that example through its saved appearance (D98); Clew's default header names the installation by its saved name and falls back to its saved logo; and the intranet fixture names its site Intranätet and gives no logo · **Date:** 2026-11-09 · **Area:** ui, product, integrations
 
 **Amended 2026-11-12.** Since A2 of the
 [review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
@@ -77,7 +77,8 @@ a connector is allowed to manage the links, or potentially the entire header. Th
    place and a secondary button stand on a lighter wash of the band (`color-mix`), so white text keeps 4.5:1. Neutral's
    bar is Neutral's accent, a near-black. The proof of concept's `#003c69` is not in the published Sundsvall palette, so
    the band is Vattjom (`#005595`, D38) until a published darker blue is agreed. On the band the logo's dark variant is
-   drawn (Sundsvall's white dragon), 28 px tall with its own width. The rows of places and pages wrap when there are
+   drawn (Sundsvall's white dragon where an installation applies `themes/sundsvall/` through its saved appearance, D98,
+   as amended 2026-11-24), 28 px tall with its own width. The rows of places and pages wrap when there are
    more than fit on one line (1.4.10), inside an `HStack wrap="wrap"` in the `TopNav`'s start slot. The header's
    breakpoint is `md` (768 px), the line every phone decision in the web app follows (D87's `xl` was for one row that
    held heading, places and person together): below it `AppShell` draws the heading row as its bar, without the band
@@ -113,15 +114,15 @@ a connector is allowed to manage the links, or potentially the entire header. Th
    order, as the first build did, was invisible to an administrator and flipped when a connector was added or removed,
    the silent behaviour D23 removed. `GET /api/header`
    (`apps/server/src/connectors/header.ts`, platform code beside the registry like the menu and the tools) answers the
-   signed-in person's header, or Clew's default, the site's name and Start, when no connector gives one; the logo falls
-   back to the build's (D37/D38). Who gets which header is therefore the connector's audience and the content system's
+   signed-in person's header, or Clew's default, the installation's saved name and Start, when no connector gives one;
+   the logo falls back to the installation's saved one (D98, as amended 2026-11-24). Who gets which header is therefore the connector's audience and the content system's
    own listing (a manager sees sections an employee does not), administered through the holder switch and the existing
    connector governance (on or off, who sees it); the conformance check and the connector's page show a candidate as
    "Kan ge sidhuvudet" whether or not it holds the header, as they show scan and figures. `connectors/intranet` is the
    fixture of the development stack: its menu is a file, `connectors/intranet/menu.json` (or `INTRANET_MENU_FILE`), in
    the protocol's shape plus an optional `roles` per place or page that the connector resolves for the acting person,
-   with the site's name, the logo (Sundsvall's white dragon, served from the web app's public folder) and the stand-in
-   tree's four sections under `/intranat/`, port 4049, registered by `bun run dev:connectors`. The product owner's
+   with the site's name, Intranätet, no logo of its own (as amended 2026-11-24: the band shows the installation's saved
+   logo, and the dragon is in `themes/sundsvall/`, not in the web app) and the stand-in tree's four sections under `/intranat/`, port 4049, registered by `bun run dev:connectors`. The product owner's
    direction (2026-11-09, evening): the band keeps the installation's Neutral black in the development stack, and the
    header's content is mocked in that file until a content system's connector answers it. A real installation writes the
    same capability over Sitevision's, SharePoint's or WordPress's API and returns absolute addresses.

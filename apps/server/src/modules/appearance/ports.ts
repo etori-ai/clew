@@ -12,10 +12,12 @@ export interface StoredLogo {
 }
 /**
  * The installation's appearance as stored (D98): one record for the whole installation. An installation nobody has
- * configured has no row and reads as revision 0 with no theme and no logo, which is Astryx Neutral.
+ * configured has no row and reads as revision 0 with no name, no theme and no logo: Clew, in Astryx Neutral.
  */
 export interface AppearanceRecord {
   revision: number;
+  /** The name an administrator gave the installation, or null for none (`SITE_NAME_DEFAULT`). */
+  name: string | null;
   theme: InstallationTheme | null;
   logo: StoredLogo | null;
   updatedAt: string | null;
@@ -35,10 +37,13 @@ export interface AppearanceTx {
 }
 export interface AppearanceStore {
   read(): Promise<AppearanceRecord>;
+  /** The saved name alone, or null for none: what the header asks on every read, without the logos' bytes. */
+  readName(): Promise<string | null>;
   transaction<T>(fn: (tx: AppearanceTx) => Promise<T>): Promise<T>;
 }
 export const EMPTY_APPEARANCE: AppearanceRecord = {
   revision: 0,
+  name: null,
   theme: null,
   logo: null,
   updatedAt: null,

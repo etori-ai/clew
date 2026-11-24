@@ -18,6 +18,8 @@ the address or the session lives in the web app (`apps/web/src/components`, grou
 | `CompletionMark`, `CompletionFeedback` | `completion.tsx` | `Icon`, `Text`, `HStack`, `VStack` | That something was done |
 | `MetricView`, `SeriesView`, `ActivityView` | `presentation.tsx` | `Card`, `Grid`, `List`, `Table`, `Badge`, `Text` | A connector's declared presentation (D38) |
 | `UntrustedMarkdown` | `untrusted-markdown.tsx` | `Markdown` with its `components.image` | Markdown Clew did not write (an answer, another system's assistant's, a source's text view): an image is drawn as its alternative text, so nothing is fetched from an address the text names |
+| `EnglishWords` | `../index.tsx` | `InternationalizationProvider` (`locale="en"`) | A page Clew writes in English (the protocol pages, D60): Astryx's own words in it, a copy button's or a tab list's, are English too (WA-L13) |
+| `SwedishPart` | `../index.tsx` | `InternationalizationProvider` with Clew's Swedish catalogue, around a `span` or `div` that carries only `lang="sv"` | A Swedish part of an English page (a sample of what Clew draws, a word of its interface quoted in a sentence): read as Swedish (3.1.2), with Astryx's words in it in Swedish. The element draws nothing: Astryx has no component that marks a part's language (`bun run astryx search lang`) |
 
 `FigureTile` and `KeyFigure` draw the same kind of thing from two models. They become one when the unit's page is
 gone through against the prototype.

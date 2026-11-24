@@ -352,7 +352,7 @@ export function AddProviderDialog({ isOpen, onClose }: { isOpen: boolean; onClos
                   setIdTouched(true);
                   setId(v);
                 }}
-                description="Startsidans namn på leverantören. Föreslås från namnet."
+                description="Ett kort namn som systemet känner leverantören under. Föreslås från namnet."
                 isRequired
                 autoComplete="off"
                 hasAutoCorrect={false}

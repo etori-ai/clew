@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import type { MockApi } from './support';
 import {
+  SITE,
   announcements,
   composer,
   desktop,
@@ -136,7 +137,7 @@ test.describe('the item’s page is the review of its rows, one address before a
     // the tab's, and the way back names Att göra, where it was opened.
     await expect(page).toHaveURL(FROM_TODO);
     await expect(title(page, INVOICES)).toBeVisible();
-    await expect(page).toHaveTitle(`${INVOICES} · Startsidan`);
+    await expect(page).toHaveTitle(`${INVOICES} · ${SITE}`);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('main')).toContainText('Inget skrivs förrän du skickar');
     await expect(page.getByRole('main').getByRole('link', { name: 'Att göra' })).toHaveAttribute(
@@ -537,7 +538,7 @@ test.describe('the item’s page is the review of its rows, one address before a
     await open(page, '/items/okand/review');
     await expect(page).toHaveURL('/items/okand');
     await expect(title(page, 'Ärendet finns inte')).toBeVisible();
-    await expect(page).toHaveTitle('Ärendet finns inte · Startsidan');
+    await expect(page).toHaveTitle(`Ärendet finns inte · ${SITE}`);
   });
 
   test('a card without a review has nothing to review: the address of the review’s page from before is its own page', async ({

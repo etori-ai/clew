@@ -45,6 +45,8 @@ import {
   siteHeader,
 } from './data';
 import { newsItemOutput, newsItemSpec, newsSpec } from './data';
+import { SITE } from './branding-fixtures';
+export { SITE } from './branding-fixtures';
 import { ENTITY_NAMES_MAX, providerAddressProblem } from '@clew/contracts';
 import type { AssistantReach, NewsResult, RecordAction } from '@clew/contracts';
 import {
@@ -129,7 +131,13 @@ import type {
   RelationGrant,
   UsersAdminQueryType,
 } from '@clew/contracts';
-import { THEME_TEMPLATE, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
+import {
+  SITE_NAME_DEFAULT,
+  THEME_TEMPLATE,
+  checkSiteName,
+  parseThemeFile,
+  themeFileOf,
+} from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
 import { fixtureViews, manifestView } from './view-catalogue';
@@ -442,10 +450,17 @@ export class MockApi {
   /** Organisation: the tree and every unit's people fail to be read (503, after the page's one retry). */
   organisationFails = false;
   /**
-   * The installation's appearance (D98): Astryx Neutral with no logo until a test saves or sets one. The public read
-   * every page makes and Administration › Utseende share it, as they share the one row on the server.
+   * The installation's appearance (D98): named `SITE`, in Astryx Neutral with no logo until a test saves or sets one.
+   * The public read every page makes and Administration › Utseende share it, as they share the one row on the server.
    */
-  appearance: AppearanceAdminView = { revision: 0, theme: null, logo: null, updatedAt: null, updatedBy: null };
+  appearance: AppearanceAdminView = {
+    revision: 0,
+    name: SITE,
+    theme: null,
+    logo: null,
+    updatedAt: null,
+    updatedBy: null,
+  };
   /** The logo images a test has uploaded, by variant, as the mock would serve them. */
   logos: Partial<Record<'light' | 'dark', { mediaType: string; data: string }>> = {};
   /** Utseende for someone without `admin.appearance`: the server refuses. */
@@ -911,10 +926,10 @@ export class MockApi {
     if (path === '/auth/activity') return json({ expiresAt: session.expiresAt });
     if (path === '/auth/dev')
       return this.devAccounts ? json({ accounts: this.devAccounts }) : route.fulfill({ status: 404, body: '' });
-    // The installation's appearance (D98), public: the theme and the logo's address, and the logo itself.
+    // The installation's appearance (D98), public: its name, the theme and the logo's address, and the logo itself.
     if (path === '/appearance') {
-      const { revision, theme, logo } = this.appearance;
-      return json({ revision, theme, logo });
+      const { revision, name, theme, logo } = this.appearance;
+      return json({ revision, name, theme, logo });
     }
     if (path === '/appearance/theme-file') return json(themeFileOf(this.appearance.theme ?? THEME_TEMPLATE));
     if (path.startsWith('/appearance/logo/')) {
@@ -959,6 +974,14 @@ export class MockApi {
           return json(this.appearance);
         };
         if (path === '/admin/appearance' && method === 'GET') return json(this.appearance);
+        if (path === '/admin/appearance/name' && method === 'PUT') {
+          // The server's own check of the name, so a spec sees its refusal of a name the page let through.
+          const checked = checkSiteName((request.postDataJSON() as { name: unknown }).name);
+          return 'problem' in checked
+            ? route.fulfill({ status: 400, json: { error: checked.problem } })
+            : saved({ name: checked.name });
+        }
+        if (path === '/admin/appearance/name' && method === 'DELETE') return saved({ name: SITE_NAME_DEFAULT });
         if (path === '/admin/appearance/theme' && method === 'PUT') {
           // The same check the server makes, so a spec sees the server's refusal for a file the page let through.
           const parsed = parseThemeFile((request.postDataJSON() as { file: unknown }).file);
@@ -1463,19 +1486,18 @@ export class MockApi {
     // The calendar's rooms (D69, amended): the one calendar read with a declared view, drawn by the one renderer.
     if (path === '/cap/calendar.rooms') return json({ output: { rows: rooms }, source: 'Kalendern', view: roomsSpec });
     // The combined errand list (D35 item 4, D89) and one errand in the system a row came from.
-    if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Startsidan', view: errandsSpec });
+    if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Clew', view: errandsSpec });
     if (path === '/cap/sm.errand')
       return json({ output: smErrandOutput, source: 'Ärendesystemet', view: smErrandSpec });
     // What the person ordered or reported (D123), and one request in the service desk a row came from.
-    if (path === '/cap/clew.requests')
-      return json({ output: requestsOutput, source: 'Startsidan', view: requestsSpec });
+    if (path === '/cap/clew.requests') return json({ output: requestsOutput, source: 'Clew', view: requestsSpec });
     if (path === '/cap/servicedesk.request')
       return json({ output: deskRequestOutput, source: 'IT-servicedesken', view: deskRequestSpec });
     // The combined news list (D112, amended 2026-11-11), refused without a news source as the registry refuses an
     // out-of-scope read, and one piece of news opened in the source it came from.
     if (path === '/cap/clew.news')
       return this.news
-        ? json({ output: this.news, source: 'Startsidan', view: newsSpec })
+        ? json({ output: this.news, source: 'Clew', view: newsSpec })
         : route.fulfill({ status: 400, json: { error: 'Du saknar behörighet för åtgärden.' } });
     if (path === '/cap/communication.newsItem')
       return json({ output: newsItemOutput, source: 'Kommunikation', view: newsItemSpec });
@@ -2991,7 +3013,7 @@ export class MockApi {
       // As the talks module refuses it (D132 item 4): never a talk marked held, nor a booking an invitation carries.
       if (row.state === 'held') return fail(400, 'Samtalet är redan markerat som hållet.');
       if (row.state === 'booked' && row.invited !== false)
-        return fail(400, 'Samtalet är bokat genom en inbjudan från Clew, så tiden kan inte ändras här.');
+        return fail(400, `Samtalet är bokat genom en inbjudan från ${SITE}, så tiden kan inte ändras här.`);
       const { at: _at, until: _until, invited: _invited, own: _own, ...bare } = row;
       if (method === 'PUT') {
         const { start, end } = body as TalkBookingBody;

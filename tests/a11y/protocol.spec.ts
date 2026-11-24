@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -30,8 +31,11 @@ test.describe('the manifest reference', () => {
     await page.setViewportSize(desktop);
     await open(page, page_);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Clew manifest reference');
-    await expect(page).toHaveTitle('Clew manifest reference · Startsidan');
+    await expect(page).toHaveTitle(`Clew manifest reference · ${SITE}`);
     expect(await page.evaluate(() => document.documentElement.lang)).toBe('en');
+    // Astryx's own words speak the page's language (EnglishWords, WA-L13): a code block's copy button is English here.
+    await expect(page.getByRole('button', { name: 'Copy code' }).first()).toBeAttached();
+    await expect(page.getByRole('button', { name: 'Kopiera kod' })).toHaveCount(0);
     const outline = page.getByRole('navigation', { name: 'On this page' });
     await expect(outline).toBeVisible();
     await expect(outline.getByRole('link')).toHaveCount(
@@ -113,7 +117,7 @@ test.describe('the manifest preview', () => {
     await page.setViewportSize(desktop);
     await open(page, preview);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Manifest preview');
-    await expect(page).toHaveTitle('Clew manifest preview · Startsidan');
+    await expect(page).toHaveTitle(`Clew manifest preview · ${SITE}`);
     expect(await page.evaluate(() => document.documentElement.lang)).toBe('en');
     await expect(page.getByRole('link', { name: 'the manifest reference' })).toHaveAttribute(
       'href',
@@ -143,6 +147,11 @@ test.describe('the manifest preview', () => {
     // The places drawn with the product's components and sample values: the mark, the section, the menu.
     await expect(page.getByText('Samtal saknas', { exact: true })).toBeVisible();
     await expect(heading(page, 3, 'Utvecklingssamtal')).toBeVisible();
+    // What Clew draws is Swedish inside the English page, and marked so (SwedishPart, 3.1.2): the row mark and the
+    // section each stand in a part of their own, and the page's own words around them stay English.
+    await expect(page.locator('[lang="sv"]').filter({ hasText: 'Samtal saknas' }).first()).toBeVisible();
+    await expect(page.locator('[lang="sv"]').filter({ has: heading(page, 3, 'Utvecklingssamtal') })).toHaveCount(1);
+    await expect(page.locator('[lang="sv"]').filter({ hasText: 'Row mark' })).toHaveCount(0);
     await page.getByRole('combobox', { name: 'Sample row' }).click();
     await page.getByRole('option', { name: /^2: Bokat/ }).click();
     await expect(page.getByText('Samtal saknas', { exact: true })).toHaveCount(0);
@@ -192,6 +201,13 @@ test.describe('the manifest preview', () => {
     await expect(input.getByRole('row', { name: /^message / })).toContainText(
       '“Meddelande till medarbetaren”, optional: a text area',
     );
+    // A word of Clew's interface quoted in an English sentence is marked Swedish, the sentence around it is not.
+    await expect(
+      input.getByRole('row', { name: /^message / }).locator('[lang="sv"]', { hasText: 'Meddelande till medarbetaren' }),
+    ).toHaveText('Meddelande till medarbetaren');
+    await expect(
+      input.getByRole('row', { name: /^message / }).locator('[lang="sv"]', { hasText: 'optional' }),
+    ).toHaveCount(0);
     // A propose about a person starts on its page; its effect step is never an execute's.
     const prepare = page.getByRole('region', { name: 'hr.prepareAbsence · propose' });
     await expect(

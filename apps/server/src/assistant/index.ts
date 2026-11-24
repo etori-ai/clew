@@ -27,7 +27,7 @@ import type {
 } from '@clew/contracts';
 import { OPEN_THING_INPUT_MAX, viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
-import { audiencedActorOf, answersOf, modelReading, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
+import { audiencedActorOf, answersOf, CLEW_SOURCE, modelReading, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import { cardRows, namedItems, type CardRows } from './card';
@@ -440,7 +440,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         id: `steg-${++n}`,
         capability: name,
         title: info?.title ?? name,
-        source: info?.source ?? 'Startsidan',
+        source: info?.source ?? CLEW_SOURCE,
       };
       const started = clock().getTime();
       const took = () => Math.max(0, clock().getTime() - started);
@@ -686,7 +686,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     const connector = registry.find(started.capability)?.connector.id;
     return {
       body: `Jag har förberett "${tool?.title ?? 'ärendet'}" som ett ärende. Fyll i uppgifterna och skicka när du är klar. Inget är skickat.`,
-      source: tool?.source ?? 'Startsidan',
+      source: tool?.source ?? CLEW_SOURCE,
       shape: 'forslag',
       assistant,
       clewActions: [],
@@ -702,7 +702,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (!verb) return undefined;
     // Every answer here names the card; why now and the choice of rows quote its own text too.
     const base = {
-      source: 'Startsidan',
+      source: CLEW_SOURCE,
       assistant: 'router' as const,
       clewActions: [] as ClewAction[],
       followUps: [] as string[],
@@ -873,7 +873,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     const near = nearest(text, tools).map(t => t.title);
     return {
       body: `Det där kan jag inte svara på ännu. Jag kan svara om ${near.length ? near.map(t => t.toLowerCase()).join(', ') : 'dagen, utvecklingssamtalen, frånvaron, budgeten och HME'}.`,
-      source: 'Startsidan',
+      source: CLEW_SOURCE,
       shape: 'svar',
       assistant,
       clewActions: [],
@@ -1107,12 +1107,12 @@ export function assistantUsecases(deps: AssistantDeps) {
         ...(standing.record ? [standing.record.source] : []),
         ...answered
           .filter(c => c.capability !== PERSON_TOOL)
-          .map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan'),
+          .map(c => tools.find(t => t.name === c.capability)?.source ?? CLEW_SOURCE),
       ];
       const source = sourced.length ? [...new Set(sourced)].join(', ') : 'Assistenten';
       const searched = answered.find(c => c.capability === SEARCH_TOOL && isSearchResult(c.output));
       // A source and a time the model wrote at the end anyway are cut: they stand under the answer, from the turn.
-      const parsed = parseAnswer(answer.body, [...registry.list().map(c => c.source), 'Startsidan', 'Assistenten']);
+      const parsed = parseAnswer(answer.body, [...registry.list().map(c => c.source), CLEW_SOURCE, 'Assistenten']);
       const sources = searched ? citationsOf(searched.output as SearchResult) : undefined;
       // A document answer's view is its sources, named so; follow-ups come from the model's trailer, else the document's headings, else the nearest capabilities.
       const view =

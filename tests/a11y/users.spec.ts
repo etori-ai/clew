@@ -1,5 +1,6 @@
 import { manyPeople, usersPeople } from './data';
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -189,7 +190,7 @@ test.describe('users administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/users');
-      await expect(page).toHaveTitle('Användare · Startsidan');
+      await expect(page).toHaveTitle(`Användare · ${SITE}`);
       // The rail has one row for Administration (D126 rule 10), marked; the section is marked in Administration's panel.
       await expect(
         page
@@ -945,6 +946,8 @@ test.describe('users administration', () => {
       await expect(page.getByRole('option', { name: /^Rektorer/ })).toBeVisible();
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
+      // The chosen group takes the focus the frame after it is chosen; moved on before that, the focus goes back to it.
+      await expect(form.getByRole('button', { name: 'Grupp Rektorer' })).toBeFocused();
       const gives = form.getByRole('combobox', { name: 'Ger behörigheten' });
       await gives.focus();
       await page.keyboard.press('Enter');

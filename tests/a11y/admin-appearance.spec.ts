@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -16,7 +17,8 @@ import {
 import { savedBranding } from './branding-fixtures';
 
 /**
- * Utseende (D98): the installation's theme and logo, chosen by an administrator. A theme file is read and checked in the
+ * Utseende (D98): the installation's name, theme and logo, chosen by an administrator. The name is checked at the field
+ * and is at once every tab's title and the band's name. A theme file is read and checked in the
  * page, shown in both appearances and saved, and the whole app is redrawn at once; a file that does not hold names every
  * problem and saves nothing; a logo is uploaded with the name a screen reader reads. Keyboard, structure, announcements,
  * axe and reflow, at desktop, phone and 320 px.
@@ -84,7 +86,7 @@ test.describe('appearance administration', () => {
     test('a theme file is previewed, saved, and the whole app is redrawn without a reload', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/appearance');
-      await expect(page).toHaveTitle('Utseende · Startsidan');
+      await expect(page).toHaveTitle(`Utseende · ${SITE}`);
       // The section is marked in the administration's own panel (D126), on its row.
       await expect(
         page
@@ -197,6 +199,60 @@ test.describe('appearance administration', () => {
       await expect(page.getByRole('button', { name: 'Återställ till Neutral' })).toHaveCount(0);
     });
 
+    test('the installation’s name is written by keyboard, refused at the field when it does not hold, and is at once the tab’s title and the band’s name', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/appearance');
+      const field = page.getByRole('textbox', { name: 'Installationens namn' });
+      const save = page.getByRole('button', { name: 'Spara namnet' });
+      await expect(field).toHaveValue(SITE);
+      // The name it has is no change: the button says so and stays a focus stop (aria-disabled, not removed).
+      await expect(save).toHaveAttribute('aria-disabled', 'true');
+      // An empty name is refused where it is written: the focus goes to the field, which says why.
+      await field.fill('   ');
+      await save.focus();
+      await page.keyboard.press('Enter');
+      await expect(field).toBeFocused();
+      await expect(field).toHaveAttribute('aria-invalid', 'true');
+      await expect(drawn(page, 'Skriv ett namn.')).toBeVisible();
+      expect(api.appearance.name).toBe(SITE);
+      // A character that turns the text's direction is refused the same way, with the server's own words (D98 item 11).
+      await field.fill('Intra‮nätet');
+      await save.focus();
+      await page.keyboard.press('Enter');
+      await expect(field).toBeFocused();
+      await expect(field).toHaveAttribute('aria-invalid', 'true');
+      await expect(
+        drawn(page, 'Namnet får inte ha osynliga tecken eller tecken som vänder textens riktning.'),
+      ).toBeVisible();
+      expect(api.appearance.name).toBe(SITE);
+
+      await field.fill('Intranätet Norr');
+      await save.focus();
+      await page.keyboard.press('Enter');
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Installationen heter nu Intranätet Norr'));
+      expect(api.appearance.name).toBe('Intranätet Norr');
+      await expect(page).toHaveTitle('Utseende · Intranätet Norr');
+      await expect(page.getByRole('banner').getByRole('link', { name: 'Intranätet Norr' })).toHaveAttribute(
+        'href',
+        '/',
+      );
+      await expect(page.getByText(/Senast ändrat av Mikael Lund/)).toBeVisible();
+      await expectNoAxeViolations(page);
+
+      // Back to Clew's own name; the button goes with it and the focus is put in the field.
+      await page.getByRole('button', { name: 'Återställ till Clew' }).click();
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('återställt till Clew'));
+      await expect(page).toHaveTitle('Utseende · Clew');
+      await expect(field).toHaveValue('Clew');
+      await expect(field).toBeFocused();
+      await expect(page.getByRole('button', { name: 'Återställ till Clew' })).toHaveCount(0);
+    });
+
     test('the theme file is there to fetch: a template before anything is saved, the saved theme after', async ({
       page,
       api,
@@ -220,7 +276,7 @@ test.describe('appearance administration', () => {
       api.admin = true;
       await open(page, '/admin/appearance');
       // Without a header connector the installation's own logo stands in the band's heading, the link home (D98, D130).
-      const header = page.getByRole('banner').getByRole('link', { name: /Startsidan/ });
+      const header = page.getByRole('banner').getByRole('link', { name: SITE });
       await expect(page.getByText('Ingen logotyp är vald.')).toBeVisible();
       await expect(header.getByRole('img')).toHaveCount(0);
       const save = page.getByRole('button', { name: 'Spara logotypen' });
@@ -261,7 +317,9 @@ test.describe('appearance administration', () => {
       Object.assign(api, savedBranding('custom'));
       api.signedIn = false;
       await page.goto('/login');
-      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      // The sign-in page is headed by the installation's own name (WA-L6).
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(SITE);
+      await expect(page).toHaveTitle(`Logga in · ${SITE}`);
       expect(await page.evaluate(() => getComputedStyle(document.body).getPropertyValue('--color-accent'))).toContain(
         '#5b1f78',
       );
@@ -278,6 +336,11 @@ test.describe('appearance administration', () => {
       expect(await reflowProblems(page)).toEqual([]);
       await themeFile(page, Buffer.from('{}'));
       await expect(page.getByRole('list', { name: 'Fel i temat' })).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+      // A long name refused at its field reflows too.
+      await page.getByRole('textbox', { name: 'Installationens namn' }).fill('Medarbetarwebben '.repeat(4));
+      await page.getByRole('button', { name: 'Spara namnet' }).click();
+      await expect(drawn(page, 'Namnet får vara högst 60 tecken.')).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
     });
   });

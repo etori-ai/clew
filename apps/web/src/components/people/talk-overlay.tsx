@@ -22,6 +22,7 @@ import {
 } from '@clew/ui';
 import { localClock, today } from '@clew/calendar/dates';
 import { api } from '../../api';
+import { useBranding } from '../../branding';
 import { commitmentsQuery, staffQuery, talksQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { useTalkAction } from '../../mutations';
@@ -129,6 +130,7 @@ export function TalkTab({
 function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
   const ids = useId();
   const row = talkFor(person.id, talks);
+  const site = useBranding().name;
   const round = talks.round;
   const canWrite = talks.writable && !!round && !!row;
   const pointsQ = useQuery(commitmentsQuery(personKey(person)));
@@ -149,7 +151,7 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
     if (!(await action.run(fn, done))) want.current = null;
   };
   const when = row ? talkSpanText(row) : null;
-  const note = row ? bookingNote(row) : null;
+  const note = row ? bookingNote(row, site) : null;
   // The meeting in the calendar is not where the talk says: the talk stands, and the manager whose booking it is chooses.
   const differs = row ? calendarDifference(row) : null;
   const settles = canWrite && !!differs && row.own === true;

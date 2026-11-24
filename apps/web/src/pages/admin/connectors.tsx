@@ -31,10 +31,11 @@ import { keys } from '../../query-keys';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { AddConnectorDialog } from './add';
-import { audienceLabel, kindLabel, statusOf } from './labels';
+import { audienceLabel, inLine, kindLabel, statusOf } from './labels';
 import { AdminShell } from './shell';
 import { mobileQuery } from '../../media';
 import { DOT } from '../../dot';
+import { useBranding } from '../../branding';
 
 /**
  * "Anslutna system" (D23): every connector, bundled and remote, with its status, its audience and an on/off switch, in
@@ -65,12 +66,17 @@ interface Row extends Record<string, unknown> {
 /** The list in registration order (D71), so the colours read from the top; Clew's own systems last, by name. */
 const byOrdinal = (a: ConnectorSummary, b: ConnectorSummary) =>
   (a.ordinal ?? Infinity) - (b.ordinal ?? Infinity) || a.source.localeCompare(b.source, 'sv');
-/** The words under a system's name: its id, and "Clews egen" on the house's rows. */
-const idLine = (c: ConnectorSummary) => `${c.id}${c.ordinal === null ? '\u00a0· Clews egen' : ''}`;
+/**
+ * The words under a system's name: its id, then what kind of source it is in `labels.ts`'s words, which say a source of
+ * the installation's own with the installation's name. Whose the row is otherwise is the swatch's ("Vit, Clews egen").
+ */
+const idLine = (c: ConnectorSummary, site: string) =>
+  [c.id, c.kind ? inLine(kindLabel(c.kind, site)) : null].filter(Boolean).join('\u00a0· ');
 const EMPTY_CONNECTORS: ConnectorSummary[] = [];
 
 export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   const mobile = useMediaQuery(mobileQuery);
+  const site = useBranding().name;
   const client = useQueryClient();
   const list = useQuery(adminQueries.connectors);
   const units = useQuery(adminQueries.units);
@@ -115,10 +121,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
       <SystemSwatch ordinal={c.ordinal} />
       <VStack gap={0}>
         <Text weight="semibold">{c.source}</Text>
-        <Text type="supporting">
-          {idLine(c)}
-          {c.kind ? `\u00a0· ${kindLabel[c.kind].toLowerCase()}` : ''}
-        </Text>
+        <Text type="supporting">{idLine(c, site)}</Text>
       </VStack>
     </HStack>
   );
@@ -138,7 +141,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
               {r.c.source}
             </Link>
             <Text type="supporting" color="secondary">
-              {idLine(r.c)}
+              {idLine(r.c, site)}
             </Text>
           </VStack>
         </HStack>

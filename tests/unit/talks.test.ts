@@ -141,6 +141,7 @@ beforeEach(() => {
           u.people.filter(p => p.id !== managerId && p.enabled !== false).map(p => p.id),
         ),
       ),
+    siteName: async () => 'Medarbetarwebben',
     clock: () => now,
     ids: () => 'id-' + ++n,
   });
@@ -530,7 +531,8 @@ describe('the booking (D132)', () => {
     expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', at: DAN.start, until: DAN.end, invited: true });
     // Told again of the same invitation: nothing more is written.
     await invitations(port => port.established(invitation('p1', 'boss', 'dan')));
-    const sentence = 'Samtalet är bokat genom en inbjudan från Clew, så tiden kan inte ändras här.';
+    // Who sent the invitation is the installation, by its saved name (D98), never Clew's own name.
+    const sentence = 'Samtalet är bokat genom en inbjudan från Medarbetarwebben, så tiden kan inte ändras här.';
     await expect(talks.book(boss, 'dan', DAN)).rejects.toThrow(sentence);
     await expect(talks.unbook(boss, 'dan')).rejects.toThrow(sentence);
     // An invitation that carries nothing ends nothing; this one's end takes the booking with it, once.

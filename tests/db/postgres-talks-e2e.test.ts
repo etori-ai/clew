@@ -85,6 +85,7 @@ const usecases = (s: TalkStore) =>
     store: s,
     staff: async p => (p.id === manager ? overview : { units: [] }),
     reports: async managerId => new Set(managerId === manager ? [employee] : []),
+    siteName: async () => 'Medarbetarwebben',
     clock,
     ids,
   });

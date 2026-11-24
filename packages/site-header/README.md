@@ -1,6 +1,6 @@
 # Shared header (`@clew/site-header`)
 
-One header for Clew's web app and the intranet, so a person moving between Startsidan and `/intranat` sees the same
+One header for Clew's web app and the intranet, so a person moving between Clew and `/intranat` sees the same
 bar ([D87](../../docs/decisions/D87-one-header-shared-by-the-portal-and-the-intranet.md),
 [D88](../../docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)). In the
 web app the header's content comes from the connector whose manifest declares a `header` capability, served to the

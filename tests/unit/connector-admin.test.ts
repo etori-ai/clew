@@ -370,7 +370,14 @@ describe('adding and governing a remote connector', () => {
       const detail = `fetch failed (${code})`;
       expect(report.health).toEqual({ status: 'unreachable', at: T0, detail: 'manifest: ' + detail });
       expect(report.items).toEqual([
-        { level: 'fail', group: 'connection', label: 'Systemets beskrivning kunde inte hämtas', description: detail },
+        {
+          level: 'fail',
+          group: 'connection',
+          label: 'Systemets beskrivning kunde inte hämtas',
+          description: 'Adressen svarade inte, eller inte med en beskrivning i protokollets form.',
+          // What the runtime said stays apart from the Swedish words, for the page to show as a technical cause (WA-L12).
+          cause: detail,
+        },
       ]);
       expect(JSON.stringify([report, await store.read('hello')])).not.toContain('kommunen.se');
       // The people who run Clew read what the error and its cause say, through the connectors' log port (D91).
@@ -992,7 +999,7 @@ describe('users are core entities, not connected systems (D62)', () => {
         url: null,
         secret: null,
         state: 'disabled',
-        manifest: { ...describeBundled(users()), source: 'Startsidan' },
+        manifest: { ...describeBundled(users()), source: 'Clew' },
         health: { status: 'ok', at: T0 },
         createdBy: 'old:boot',
         at: T0,

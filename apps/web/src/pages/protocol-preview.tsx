@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   DropdownMenu,
+  EnglishWords,
   FileInput,
   Grid,
   HStack,
@@ -20,6 +21,8 @@ import {
   MetadataListItem,
   Section,
   Selector,
+  SelectorOption,
+  SwedishPart,
   Table,
   Text,
   TextArea,
@@ -55,6 +58,7 @@ import {
   schemaText,
   sourceOf,
   stateWords,
+  swedishQuotes,
   type ManifestPreview,
   type PreviewCapability,
   type PreviewIssue,
@@ -251,6 +255,33 @@ const PlaceLabel = ({ children }: { children: string }) => (
   </Text>
 );
 
+/** An English sentence with the words of Clew's Swedish interface it quotes marked as Swedish (`swedishQuotes`). */
+function Quoted({ text }: { text: string }) {
+  return (
+    <>
+      {swedishQuotes(text).map((part, i) =>
+        part.swedish ? (
+          <SwedishPart key={i} inline>
+            {part.text}
+          </SwedishPart>
+        ) : (
+          part.text
+        ),
+      )}
+    </>
+  );
+}
+/** A sample row's choice, "2: Anna Lindqvist": the number is the page's English, the sample's title Swedish. */
+function SampleTitle({ label }: { label: string }) {
+  const at = label.indexOf(': ');
+  return (
+    <>
+      {label.slice(0, at + 2)}
+      <SwedishPart inline>{label.slice(at + 2)}</SwedishPart>
+    </>
+  );
+}
+
 /** One read about an entity, drawn with its samples: the row mark and the section, one sample row at a time. */
 function DrawnRead({
   manifest,
@@ -279,11 +310,14 @@ function DrawnRead({
           options={samples.map((s, i) => ({ value: String(i), label: `${i + 1}: ${String(s[title] ?? s.key)}` }))}
           value={chosen}
           onChange={setChosen}
+          // A sample row's title is Swedish sample data: its number stays English, its words are marked (3.1.2).
+          renderOption={option => <SelectorOption label={<SampleTitle label={String(option.label)} />} />}
+          renderValue={option => <SampleTitle label={String(option.label)} />}
         />
       )}
       <PlaceLabel>Row mark</PlaceLabel>
       <HStack gap={2} vAlign="center" wrap="wrap">
-        <div lang="sv">
+        <SwedishPart>
           <HStack gap={2} vAlign="center" wrap="wrap">
             <Text weight="semibold">{name}</Text>
             {marks.map(m => (
@@ -291,15 +325,15 @@ function DrawnRead({
             ))}
             <Text type="supporting">{manifest.source}</Text>
           </HStack>
-        </div>
+        </SwedishPart>
         {marks.length === 0 && <Text type="supporting">No mark: nothing in this sample row needs the reader.</Text>}
       </HStack>
       <PlaceLabel>Section</PlaceLabel>
-      <div lang="sv">
+      <SwedishPart>
         <SectionFrame title={c.title} caption={manifest.source} headingLevel={3}>
           <SectionRow source={sourceOf(manifest, c, view)} row={row} />
         </SectionFrame>
-      </div>
+      </SwedishPart>
     </VStack>
   );
 }
@@ -346,7 +380,7 @@ function Drawn({ manifest, document }: { manifest: Manifest; document: unknown }
               })}
               <PlaceLabel>Menu</PlaceLabel>
               {actions.length > 0 ? (
-                <div lang="sv">
+                <SwedishPart>
                   <DropdownMenu
                     renderTrigger={trigger => (
                       <Button {...trigger} variant="secondary" label="Åtgärder" aria-label={`Åtgärder för ${name}`} />
@@ -358,7 +392,7 @@ function Drawn({ manifest, document }: { manifest: Manifest; document: unknown }
                       ),
                     )}
                   />
-                </div>
+                </SwedishPart>
               ) : (
                 <Text type="supporting">No action is about a {entity}.</Text>
               )}
@@ -469,7 +503,11 @@ function WritePath({ c, path, mobile }: { c: PreviewCapability; path: PreviewPat
                 header: 'Clew draws',
                 weight: 4,
                 minWidth: 180,
-                cell: r => <Text>{START_WORDS[r.place].draws}</Text>,
+                cell: r => (
+                  <Text>
+                    <Quoted text={START_WORDS[r.place].draws} />
+                  </Text>
+                ),
               },
               {
                 key: 'state',
@@ -518,7 +556,11 @@ function WritePath({ c, path, mobile }: { c: PreviewCapability; path: PreviewPat
                 header: 'Drawn as',
                 weight: 3,
                 minWidth: 160,
-                cell: r => <Text>{STEP_WORDS[r.step].drawn}</Text>,
+                cell: r => (
+                  <Text>
+                    <Quoted text={STEP_WORDS[r.step].drawn} />
+                  </Text>
+                ),
               },
               {
                 key: 'state',
@@ -546,7 +588,18 @@ function WritePath({ c, path, mobile }: { c: PreviewCapability; path: PreviewPat
               },
               { key: 'schema', header: 'Schema', weight: 3, minWidth: 150, cell: r => <Text>{schemaText(r)}</Text> },
               { key: 'by', header: 'Filled by', weight: 3, minWidth: 160, cell: r => <Text>{fillerText(r)}</Text> },
-              { key: 'drawn', header: 'Drawn as', weight: 4, minWidth: 200, cell: r => <Text>{drawnText(r)}</Text> },
+              {
+                key: 'drawn',
+                header: 'Drawn as',
+                weight: 4,
+                minWidth: 200,
+                // The field's label is the dialog's Swedish, quoted in the English sentence and marked so (3.1.2).
+                cell: r => (
+                  <Text>
+                    <Quoted text={drawnText(r)} />
+                  </Text>
+                ),
+              },
             ]}
           />
         </VStack>
@@ -753,9 +806,12 @@ function Page() {
 
 export function ManifestPreviewPage() {
   const [client] = useState(createQueryClient);
+  // The page is English, Astryx's own words with it; the samples of what Clew draws are Swedish parts (3.1.2, WA-L13).
   return (
     <QueryClientProvider client={client}>
-      <Page />
+      <EnglishWords>
+        <Page />
+      </EnglishWords>
     </QueryClientProvider>
   );
 }

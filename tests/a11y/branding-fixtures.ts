@@ -3,6 +3,12 @@ import { resolve } from 'node:path';
 import type { AppearanceAdminView } from '@clew/contracts';
 import { parseThemeFile, themeFromAccent, type InstallationTheme } from '../../packages/contracts/src/theme-file';
 
+/**
+ * The installation's name as the suite's appearance has it saved (D98, amended 2026-11-24): a name of its own, not
+ * Clew's default, so a page that names the site shows it read from the appearance and not written into the code.
+ */
+export const SITE = 'Medarbetarwebben';
+
 export type A11yBrandProfile = 'sundsvall' | 'neutral' | 'custom';
 type Image = { mediaType: string; data: string };
 type BrandingFixture = Readonly<{
@@ -30,8 +36,8 @@ export const brandingFixtures: Readonly<Record<A11yBrandProfile, BrandingFixture
     theme: exampleTheme('themes/sundsvall/theme.tokens.json'),
     logo: {
       alt: 'Sundsvalls kommun',
-      light: { mediaType: 'image/png', data: base64('apps/web/public/branding/sundsvall-dragon.png') },
-      dark: { mediaType: 'image/png', data: base64('apps/web/public/branding/sundsvall-dragon-white.png') },
+      light: { mediaType: 'image/png', data: base64('themes/sundsvall/sundsvall-dragon.png') },
+      dark: { mediaType: 'image/png', data: base64('themes/sundsvall/sundsvall-dragon-white.png') },
     },
     accent: '#005595',
   },
@@ -67,6 +73,7 @@ export function savedBranding(profile: A11yBrandProfile): {
   return {
     appearance: {
       revision,
+      name: SITE,
       theme,
       logo: logo
         ? {

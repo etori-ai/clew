@@ -1,6 +1,6 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { dayLabel, displayDate, timeRange, weekNumber, nextWeekStart } from '@clew/calendar/dates';
-import { audiencedActorOf } from '@clew/connectors';
+import { CLEW_SOURCE, audiencedActorOf } from '@clew/connectors';
 import type { AssistantDeps } from './ports';
 
 /**
@@ -96,7 +96,7 @@ export async function routeFixed(
       title: 'Varför ser du detta?',
       body: 'Varje ärende kommer från en utlösare: en nattlig genomgång, en händelse i ett källsystem eller en fråga från dig. Källa och tid står på varje ärende, och "Varför ser jag detta?" i ärendet visar skälet. Du får högst tre avbrott per dag; resten samlas till lunch eller nästa morgon.',
       reason: 'Du frågade om sidan',
-      source: 'Startsidan',
+      source: CLEW_SOURCE,
       connectors: [],
     };
   }

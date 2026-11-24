@@ -3,6 +3,7 @@ import type { DialogueUnit, EntityDetail, EntitySource } from '@clew/contracts';
 import { ENTITY_UNIT } from './data';
 import { SICK_UNIT, Units } from './unit-data';
 import {
+  SITE,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -224,7 +225,7 @@ for (const [layout, viewport] of [
       const dialog = drawer(page);
       await expect(dialog).toBeVisible();
       await expect(page.getByRole('dialog')).toHaveCount(0);
-      await expect(page).toHaveTitle(`Dialog · ${ENTITY_UNIT.label} · Startsidan`);
+      await expect(page).toHaveTitle(`Dialog · ${ENTITY_UNIT.label} · ${SITE}`);
       const tabs = dialog.getByRole('tablist', { name: 'Områden' });
       await expect(tabs.getByRole('tab')).toHaveCount(2);
       // Each tab says its area's state, and the drawer opens on the area that needs a conversation most.

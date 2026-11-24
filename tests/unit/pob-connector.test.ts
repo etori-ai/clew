@@ -1191,7 +1191,7 @@ describe('POB in Clew’s combined lists', () => {
     registry.register({
       id: SEARCH_CONNECTOR,
       kind: 'core',
-      source: 'Startsidan',
+      source: 'Clew',
       areas: [...errandPart.areas, ...requestPart.areas],
       capabilities: [...errandPart.capabilities, ...requestPart.capabilities],
       uses: ['*'],

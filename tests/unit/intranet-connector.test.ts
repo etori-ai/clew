@@ -108,7 +108,7 @@ describe('the intranet connector and the shared header (D88)', () => {
     const employee = await registry.header(hassan);
     if (employee.status !== 'answered') throw new Error(`the header was ${employee.status}`);
     expect(employee.connector.id).toBe('intranet');
-    expect(employee.output.site).toEqual({ name: 'Startsidan', href: '/' });
+    expect(employee.output.site).toEqual({ name: 'Intranätet', href: '/' });
     // Start is Clew's (D116), so the intranet lists only its own places.
     expect(employee.output.items.map(i => i.id)).toEqual([
       'anstallning-arbetsmiljo',
@@ -116,12 +116,13 @@ describe('the intranet connector and the shared header (D88)', () => {
       'kompetensforsorjning',
       'organisation',
     ]);
-    // The same four sections the stand-in's tree lists for a signed-in visitor, so both sites read the same; the logo is the file's.
+    // The same four sections the stand-in's tree lists for a signed-in visitor, so both sites read the same. The file gives
+    // no logo, so the band shows the installation's own (D98).
     expect(await registry.header(hillevi)).toMatchObject({
       status: 'answered',
       output: { items: employee.output.items },
     });
-    expect(employee.output.logo).toEqual({ src: '/branding/sundsvall-dragon-white.png', alt: 'Sundsvalls kommun' });
+    expect(employee.output.logo).toBeUndefined();
     expect(headerFor(hassan).items.map(i => i.href)).toContain('/intranat/organisation');
     // The menu is a file: a place or a page with `roles` is listed to those roles only, and `roles` never leaves the connector.
     const menu = loadMenu();
@@ -333,15 +334,16 @@ describe('the intranet connector and the shared header (D88)', () => {
     const header = report.items.filter(i => i.label === 'Sidhuvud');
     expect(header.map(i => i.level)).toEqual(['ok', 'ok']);
     expect(header.map(i => i.description)).toEqual([
-      'Kan ge sidhuvudet: för chef 4 platser och en logotyp.',
-      'Kan ge sidhuvudet: för medarbetare 4 platser och en logotyp.',
+      // The fixture names no logo (BL-9): the installation's own shows, and the check says none came along.
+      'Kan ge sidhuvudet: för chef 4 platser.',
+      'Kan ge sidhuvudet: för medarbetare 4 platser.',
     ]);
-    expect(report.findings.map(f => f.text)).toContain('header as manager: 4 places, a logo');
+    expect(report.findings.map(f => f.text)).toContain('header as manager: 4 places');
     expect(JSON.stringify(report)).not.toContain('Kompetensförsörjning');
   });
   test("the conformance check takes a holder's denied as its answer for that person, and fails only a failure", async () => {
     // The fixture lists a place for managers alone, and answers `denied` (403) for an employee, as the guide says.
-    const site = { name: 'Startsidan', href: '/' };
+    const site = { name: 'Intranätet', href: '/' };
     const check = (fetch: FetchLike) =>
       checkConnector({
         key: secret,
@@ -436,6 +438,23 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     expiresAt: '2099-01-01T00:00:00.000Z',
     authorize: async () => ({ version: 'v1' }),
   });
+  test("Clew's default header names the installation as it is called now; a connector's header keeps its own site", async () => {
+    let name = 'Intranätet';
+    const PLACES = { site: { name: 'Portalen', href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] };
+    const registry = new Registry().register(answering('portal', 0, PLACES));
+    const headers = siteHeaders({ registry, clock: () => new Date(0), siteName: async () => name });
+    // No connector gives the header: the default, under the name an administrator saved (D98 as amended 2026-11-24).
+    expect(await headers.read(signedIn([]))).toEqual({
+      ...DEFAULT_HEADER,
+      menu: { ...DEFAULT_HEADER.menu, site: { name: 'Intranätet', href: '/' } },
+    });
+    // A new name is in the next read, kept default or not.
+    name = 'Medarbetarwebben';
+    expect((await headers.read(signedIn([]))).menu.site.name).toBe('Medarbetarwebben');
+    // A connector that gives the header names its own site.
+    registry.govern('portal', { ...openGovernance(), header: true });
+    expect((await headers.read(signedIn([]))).menu.site).toEqual({ name: 'Portalen', href: '/' });
+  });
   test('a header for one provisioned group stops at once for a person who leaves the group, though the grant is unchanged (D68)', async () => {
     let asked = 0;
     const answer = { site: { name: 'Portalen', href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] };
@@ -454,7 +473,7 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     });
     registry.govern('portal', { ...openGovernance(), header: true, audience: { mode: 'selected', groups: [GROUP] } });
     let now = Date.parse('2026-11-12T08:00:00Z');
-    const headers = siteHeaders({ registry, clock: () => new Date(now) });
+    const headers = siteHeaders({ registry, clock: () => new Date(now), siteName: async () => 'Clew' });
 
     expect((await headers.read(signedIn([GROUP, 'S-1-5-21-annan']))).source).toEqual({ id: 'portal', label: 'portal' });
     // Kept: the same person a second later, whatever order the groups come in, is not asked for again.
@@ -505,7 +524,7 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     registry.govern('portal', { ...openGovernance(), header: true });
     const start = Date.parse('2026-11-13T08:00:00Z');
     let now = start;
-    const headers = siteHeaders({ registry, clock: () => new Date(now) });
+    const headers = siteHeaders({ registry, clock: () => new Date(now), siteName: async () => 'Clew' });
     return { registry, state, headers, at: (ms: number) => (now = start + ms) };
   }
   /** A refresh started in the background has settled. */
@@ -602,7 +621,7 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     // header is served while the intranet is asked again, and after it failed.
     outage = undefined;
     let now = Date.parse('2026-11-13T08:00:00Z');
-    const headers = siteHeaders({ registry, clock: () => new Date(now) });
+    const headers = siteHeaders({ registry, clock: () => new Date(now), siteName: async () => 'Clew' });
     const hassanIn = signedIn([]);
     const good = await headers.read(hassanIn);
     expect(good.source).toEqual({ id: 'intranet', label: 'Intranätet' });

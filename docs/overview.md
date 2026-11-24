@@ -2,7 +2,7 @@
 
 Clew is an open-source workspace that brings an employee's work across systems into one place. It answers four practical questions: **What needs me? What do I need to know? What can I do? What happened after I did it?**
 
-An employee's day crosses calendars, HR, finance, case systems and directories. Clew connects that work through a consistent interface, while the systems that own the records continue to own them. It is built for public-sector employees, including people on a phone, managers responsible for a unit and operators connecting systems. The Swedish employee interface is called **Startsidan**; identifiers, contracts and documentation are English.
+An employee's day crosses calendars, HR, finance, case systems and directories. Clew connects that work through a consistent interface, while the systems that own the records continue to own them. It is built for public-sector employees, including people on a phone, managers responsible for a unit and operators connecting systems. The Swedish employee interface carries the installation's own name, Clew until an administrator names it on Administration › Utseende (D98; it began as Startsidan); identifiers, contracts and documentation are English.
 
 This page explains the product and its concepts. Continue with the [architecture overview](architecture/overview.md) for how the components implement them. The [status matrix](reference/status.md) distinguishes delivered behavior from product direction.
 

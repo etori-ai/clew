@@ -1,6 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 import type { Thread } from '@clew/contracts';
 import {
+  SITE,
   announcements,
   composer,
   desktop,
@@ -440,7 +441,7 @@ test.describe('Hem’s line', () => {
     await hemLine(page).fill('Vem är på plats?');
     for (const home of [
       rail(page).getByRole('link', { name: 'Start', exact: true }),
-      page.getByRole('banner').getByRole('link', { name: /Startsidan/ }),
+      page.getByRole('banner').getByRole('link', { name: SITE }),
     ]) {
       await rail(page)
         .getByRole('link', { name: /^Att göra/ })
