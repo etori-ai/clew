@@ -291,6 +291,22 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(await store.openThread(a, first.topic)).toBeUndefined();
       expect(await store.transaction(tx => tx.insertThread(draft(a, { topic: first.topic })))).toBe(true);
     });
+    test('a thread whose id is taken is no new thread: the insert answers false and the first stays as it was', async () => {
+      const {
+        store,
+        people: [a, b],
+      } = await make();
+      const first = draft(a);
+      expect(await store.transaction(tx => tx.insertThread(first))).toBe(true);
+      // Another person, another topic and a closed state: only the id is the same.
+      expect(
+        await store.transaction(tx =>
+          tx.insertThread(draft(b, { id: first.id, title: 'Någon annans', state: 'handled' })),
+        ),
+      ).toBe(false);
+      expect(await store.readThread(a, first.id)).toMatchObject({ title: first.title, state: 'open' });
+      expect(await store.readThread(b, first.id)).toBeUndefined();
+    });
     test('messages keep their order and move updatedAt; a patch changes only what it names', async () => {
       const {
         store,

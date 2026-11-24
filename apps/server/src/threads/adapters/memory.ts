@@ -126,6 +126,8 @@ export function memoryThreadStore(): MemoryThreadStore {
           r.thread.kind === 'pushed',
       );
       if (rest.kind === 'pushed' && rest.state === 'open' && clash) return false;
+      // An id already taken is no new thread, as the primary key refuses it on PostgreSQL: the first stays as it was.
+      if (threads.has(rest.id)) return false;
       threads.set(rest.id, {
         personId,
         thread: {

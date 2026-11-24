@@ -55,7 +55,12 @@ export interface ThreadDeps {
   registry: Pick<Registry, 'areas' | 'connector' | 'visible' | 'find' | 'viewFor' | 'allowed'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
   run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
-  /** The calendar's proposal path, the one coupling the stream has to a module (recorded as debt in D20). */
+  /**
+   * The calendar's proposal path: one of the stream's two couplings to modules, recorded as the D20 debt item (amended
+   * in D25's status). The other is the ledger projection's imports (`projection.ts`, `projection-model.ts` and their
+   * adapters): the executions module's model and error, and the calendar's decision command, booking rules
+   * (`booked.ts`), follow-up policy and obligation schedule (`nextCheck`), types and pure rules only.
+   */
   calendar: {
     replan(persona: AuthenticatedContext, threadId: string, week: string): Promise<Thread>;
     dismiss(persona: AuthenticatedContext, threadId: string): Promise<Thread>;

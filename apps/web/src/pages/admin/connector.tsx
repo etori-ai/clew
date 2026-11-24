@@ -144,7 +144,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const missing = detail.isError && detail.error instanceof ApiError && detail.error.status === 400;
   const readError =
     detail.isError && !missing && detail.data === undefined
-      ? errorMessage(detail.error, 'Anslutningen kunde inte läsas.')
+      ? errorMessage(detail.error, 'Tjänsten kunde inte nås. Försök igen.')
       : null;
   const [tab, setTab] = useState<TabId>('oversikt');
   const [report, setReport] = useState<CheckReport | null>(null);
@@ -180,14 +180,24 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     );
   if (!c)
     return (
-      <AdminShell pending={!error} user={user} section="anslutningar" title={null} thing={{}}>
+      <AdminShell pending={!error} name="Anslutning" user={user} section="anslutningar" title={null} thing={{}}>
         {error ? (
           <>
             {/* The page keeps its one level-1 heading when the connector cannot be read: what is missing, the alert why. */}
             <Heading level={1}>Anslutningen kunde inte läsas</Heading>
+            {/* The heading names the page, the alert what happened and what to do, and the button does it. */}
             <Text as="p" role="alert" color="accent">
               {error}
             </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Försök igen"
+                isLoading={detail.isFetching}
+                onClick={() => void detail.refetch()}
+              />
+            </HStack>
           </>
         ) : (
           <Text type="supporting" role="status">

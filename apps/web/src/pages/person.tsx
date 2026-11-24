@@ -74,7 +74,7 @@ import { employmentLabel, employmentPercent, employmentTitles } from './person-m
 import { PageFrame } from '../components/shell/page-frame';
 
 /** The page's heading when the person cannot be read, in the browser's tab too. */
-const FAILED_TITLE = 'Personen kunde inte hämtas';
+const FAILED_TITLE = 'Personen kunde inte läsas';
 
 /** The rail's width and the facts' panel beside the column (`EntityPage`). */
 const SIDE_NAV = 260,
@@ -329,6 +329,9 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   const detail = read.data;
   const own = key === user.id || detail?.relation === 'self';
   const missing = read.isError && read.error instanceof ApiError && read.error.status === 404;
+  // The tab and the heading say the same: the page fails on a read it has nothing drawn from. A drawn page whose
+  // refetch fails keeps its content, as the administration's pages do.
+  const failed = read.isError && !missing && !detail;
   const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? []);
   const areas = useQuery(areasQuery).data;
   // The person's own plans, for their own page's tab (D124): a plan the server lists as theirs.
@@ -381,20 +384,20 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   const tab = tabs.some(t => t.value === section) || pendingTab ? section : OVERVIEW;
   const tabName = tabs.find(t => t.value === tab)?.label;
   usePageTitle(
-    detail
-      ? tab === OVERVIEW || !tabName
-        ? detail.entity.name
-        : `${tabName} · ${detail.entity.name}`
-      : missing
-        ? 'Personen finns inte'
-        : read.isError
+    missing
+      ? 'Personen finns inte'
+      : detail
+        ? tab === OVERVIEW || !tabName
+          ? detail.entity.name
+          : `${tabName} · ${detail.entity.name}`
+        : failed
           ? FAILED_TITLE
           : null,
   );
   const tabHref = (value: string) => personPageHref(key, { ...(value === OVERVIEW ? {} : { section: value }), from });
 
   let body: ReactNode;
-  if (missing || read.isError || !detail)
+  if (missing || !detail)
     body = (
       <PageFrame>
         {missing ? (
@@ -404,12 +407,12 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
             description="Det finns ingen sådan person, eller så har du inte tillgång till uppgifterna om hen. Adressen kan också ha ändrats."
             actions={<Button label="Till startsidan" href="/" />}
           />
-        ) : read.isError ? (
+        ) : failed ? (
           <VStack gap={3}>
             {/* The page keeps its one level-1 heading when the person cannot be read: what is missing, the alert why. */}
             <Heading level={1}>{FAILED_TITLE}</Heading>
             <Text as="p" role="alert">
-              {errorMessage(read.error, 'Uppgifterna kunde inte hämtas just nu.')}
+              {errorMessage(read.error, 'Tjänsten kunde inte nås. Försök igen.')}
             </Text>
             <HStack>
               <Button
@@ -422,7 +425,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
             </HStack>
           </VStack>
         ) : (
-          <ContentSkeleton />
+          <ContentSkeleton name="Person" />
         )}
       </PageFrame>
     );

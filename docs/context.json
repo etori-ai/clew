@@ -439,7 +439,7 @@
       "number": 25,
       "path": "docs/decisions/D25-use-cases-over-ports-fast-tests.md",
       "title": "D25 · Use cases take their ports from a composition root; the unit suite runs on memory adapters held to a store contract",
-      "status": "accepted",
+      "status": "accepted; the Replaces paragraph amended 2026-11-24 in the review of the fixes of batch 17 of the review of 2026-11-23: the D20 debt item is no longer one coupling in one place. Since the ledger's card projection moved into the stream (DE-M4), the stream reaches modules in two ways: the `deps.calendar` port of `threads/usecases/cards.ts`, and the imports of the projection (`threads/usecases/projection.ts`, its port `threads/projection-model.ts` and its two adapters), which take the executions module's model and error, the calendar's decision command, booking rules (`booked.ts`), follow-up policy and obligation schedule (`nextCheck`). They are types and pure rules, no module's use case; the comment on `deps.calendar` names them",
       "date": "2026-11-04",
       "area": "platform"
     },

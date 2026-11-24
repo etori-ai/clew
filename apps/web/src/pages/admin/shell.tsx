@@ -34,6 +34,7 @@ export function AdminShell({
   action,
   thing,
   pending = false,
+  name,
   scrollTabStop = false,
   children,
 }: {
@@ -46,6 +47,11 @@ export function AdminShell({
   /** A thing's page in the section: where it stands, its mark and state, its actions; the way back is its section's. */
   thing?: AdminThing;
   pending?: boolean;
+  /**
+   * A thing's page while its thing is read: the kind of thing ("Anslutning"), its level-1 heading until the thing's
+   * own name is known (`ContentSkeleton`'s `name`).
+   */
+  name?: string;
   scrollTabStop?: boolean;
   children: ReactNode;
 }) {
@@ -63,7 +69,7 @@ export function AdminShell({
         label={title ?? own.label}
         scrollTabStop={scrollTabStop}
       >
-        <AsyncContent pending={pending} fallback={<ContentSkeleton heading={false} />} gap={5}>
+        <AsyncContent pending={pending} fallback={<ContentSkeleton heading={false} name={name} />} gap={5}>
           {children}
         </AsyncContent>
       </AdminFrame>

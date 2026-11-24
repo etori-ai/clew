@@ -9,8 +9,9 @@ dialogueStoreContract('memory', async () => {
     store,
     prefix: 'm-' + randomUUID().slice(0, 8),
     async seedPerson(id, _organisationId, name, extra = {}) {
-      // The memory store keys a person by id alone: it has no user name to confuse with one.
-      store.addPerson(id, name, extra.enabled ?? true);
+      // The memory store keeps the user name beside the id, as the directory does, so a lock that read a person by their
+      // user name would find one here too and the contract would see it.
+      store.addPerson(id, name, extra.enabled ?? true, extra.userName ?? null);
     },
     async seedUnit(id, _organisationId, label) {
       store.addUnit(id, label);
