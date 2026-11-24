@@ -1034,6 +1034,7 @@ export const changeSignals: ReadonlyArray<{ table: string; trigger: string; fn: 
 /** The tables with no change signal, and why: none is drawn by the browser except through a row that has one. */
 export const unsignalledTables: Readonly<Record<string, string>> = {
   thread_message: 'written with its thread, whose updated_at moves',
+  handover_turn: 'reserves an external question before delivery; a completed answer is drawn through its thread',
   thread_subject: "an index of a thread's rows, written with the thread",
   audit: 'written in the transaction of the change it records, which has its own signal',
   auth_audit: 'a log of sign-ins and provisioning; no page follows it as it grows',
