@@ -92,6 +92,7 @@ test.describe('Att göra: the piles', () => {
     await open(page, '/todo');
     await expect(page.getByRole('main').getByRole('alert')).toBeVisible();
     await expect(page.getByRole('link', { name: /^Försenade:/ })).toHaveCount(0);
+    await expectNoAxeViolations(page);
     // No pile says a number it does not know: the tabs carry no counts.
     const piles = page.getByRole('navigation', { name: 'Urval' });
     for (const name of ['Behöver dig', 'Väntar på andra', 'Klart'])

@@ -423,7 +423,9 @@ export function AddModelDialog({
   const [attempted, setAttempted] = useState(false);
   const confirmRef = useRef<HTMLInputElement>(null);
   const listing = useQuery({ ...adminQueries.listed(provider?.id ?? ''), enabled: !!provider });
-  const existing = (useQuery(adminQueries.models).data?.models ?? [])
+  // Read only while the dialog is open: closed, it stands in the models page's content, and an observer mounting there
+  // would ask again each time a failed read draws the page, so the page would never stop reading.
+  const existing = (useQuery({ ...adminQueries.models, enabled: !!provider }).data?.models ?? [])
     .filter(m => m.providerId === provider?.id)
     .map(m => m.model);
   const { run, busy, error, reset } = useAdminAction({ toastId: 'model:new' });

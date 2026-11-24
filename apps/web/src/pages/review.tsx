@@ -56,6 +56,8 @@ import { itemPageSubject } from '../components/conversation/page-conversation';
 import { DocumentReader } from '../components/views/document-reader';
 import { ReviewRecovery } from '../components/work/review-recovery';
 
+/** The page's heading when the review cannot be read, in the browser's tab too. */
+const FAILED_TITLE = 'Granskningen kunde inte läsas';
 const decisionWord: Record<Decision, string> = { approve: 'Vald för godkännande', leave: 'Lämnas kvar' };
 /** The verb of the action, for its buttons: "Attestera valda" is "Attestera" on one row. */
 const verbOf = (action: ThreadAction) => action.label.replace(/\s+valda$/i, '');

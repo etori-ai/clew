@@ -276,6 +276,13 @@ export function unitRelation(reach: Reach, key: string): UnitRelation | undefine
   if (!memberUnit(reach, key)) return belowUnit(reach, key) ? 'below' : undefined;
   return manages(reach, key) ? 'manages' : 'member';
 }
+/** The managed and followed units the assistant may name on an open page (D136). */
+export function assistantUnits(reach: Reach): { id: string; name: string }[] {
+  return followedUnits(reach)
+    .filter(unit => unitRelation(reach, unit.unitId) !== 'member')
+    .map(unit => ({ id: unit.unitId, name: unit.unitLabel }));
+}
+
 /**
  * How the reader stands to a person of the directory (D97 item 8, D117), by Clew's key, the person's id (D122): the
  * reader themself (`self`); a direct report on D99's line (`managed`, `reportsTo`); anyone else (`colleague`), a

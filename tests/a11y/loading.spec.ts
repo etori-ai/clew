@@ -149,6 +149,7 @@ for (const tab of ['waiting', 'done']) {
     await page.goto('/todo?tab=' + tab);
     await expect(page.getByText('Hämtar ärendena …')).toBeAttached();
     await expect(page.getByText('Tomt här', { exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
     release();
     await expect(page.getByText('Hämtar ärendena …')).toHaveCount(0);
   });
@@ -171,6 +172,9 @@ for (const [path, endpoint, label] of [
     const status = main.getByRole('status').filter({ hasText: label });
     await expect(status).toBeAttached();
     await expect(main.locator('.astryx-skeleton').nth(3)).toBeVisible();
+    // A thing's page whose thing is not yet read is named by its kind: every page has its level-1 heading.
+    await expect(main.getByRole('heading', { level: 1 })).toHaveCount(1);
+    await expectNoAxeViolations(page);
     release();
     await expect(status).toHaveCount(0);
     await expect(main.getByRole('heading', { level: 1 })).toBeVisible();
@@ -190,6 +194,7 @@ test('loading finishes on failure, including the optional day', async ({ page, a
   await expect(page.getByText('Hämtar i dag …')).toHaveCount(0);
   await expect(page.getByText('Hämtar sedan i går …')).toHaveCount(0);
   await expect(page.getByRole('alert').filter({ hasText: 'Områden kunde inte läsas.' })).toBeVisible();
+  await expectNoAxeViolations(page);
 });
 
 test('reduced motion disables the content entrance', async ({ page, api: _ }) => {

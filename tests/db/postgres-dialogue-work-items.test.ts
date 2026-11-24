@@ -181,6 +181,20 @@ describe('the activity card (D118 item 4)', () => {
     expect(r.messages.at(-1)?.body).toBe('Aktiviteten skulle vara klar 12 mars.');
     expect(r.deliveries.map(d => d.kind)).toEqual(['automatic', 'reminder']);
     expect(r.timer).toMatchObject({ state: 'fired', generation: 2 });
+    // Close, reopen and the one fire that counted each wrote their rows; the late, stale and early workflows none.
+    const timerId = dialogueDueTimerId(id);
+    expect(r.audit.map(a => [a.actor, a.action, a.subject, a.details])).toEqual([
+      ['dialogue:activity', 'thread.pushed', `thread:${id}`, expect.anything()],
+      ['dialogue:activity', 'thread.handled', `thread:${id}`, { owner: personId, timer: timerId, cancelled: true }],
+      ['dialogue:activity', 'thread.reopened', `thread:${id}`, { owner: personId, timer: timerId, generation: 2 }],
+      ['dialogue:activity', 'timer.fired', `timer:${timerId}`, { generation: 2, owner: personId }],
+      [
+        'dialogue:activity',
+        'thread.reminded',
+        `thread:${id}`,
+        { reason: 'due', generation: 2, wasState: 'open', owner: personId },
+      ],
+    ]);
     // Only the dialogue's own cards are removed.
     const foreign = `dialogue-card-foreign-${crypto.randomUUID()}`;
     threadsMade.push(foreign);

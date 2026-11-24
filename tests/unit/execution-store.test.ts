@@ -9,5 +9,10 @@ executionStoreContract('memory', async () => {
     auditCount: async (action = 'execution.approved') => store.audit().filter(e => e.action === action).length,
     enqueued: async prefix => store.enqueued().filter(s => s.id.startsWith(prefix)),
     watches: async jobId => store.watches().filter(w => w.jobId === jobId),
+    cards: async personId =>
+      store
+        .cards()
+        .filter(c => c.personId === personId)
+        .map(({ jobId: _, stepId: __, ...card }) => card),
   };
 });

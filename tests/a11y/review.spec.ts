@@ -689,6 +689,7 @@ test.describe('confirmed review completion', () => {
     await expect(page.getByRole('main')).toContainText('2 av 3 skickas, 1 lämnas kvar');
     await expect(rows(page).getByRole('listitem')).toHaveCount(4);
     expect(await draftOf(page)).not.toBeNull();
+    await expectNoAxeViolations(page);
   });
 });
 

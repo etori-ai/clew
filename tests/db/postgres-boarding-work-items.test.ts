@@ -244,6 +244,12 @@ describe('the card of a plan’s item (D124)', () => {
     expect(r.thread).toMatchObject({ state: 'handled' });
     expect(r.timer).toMatchObject({ state: 'cancelled', generation: 1 });
     expect(r.messages.at(-1)?.body).toBe('Uppgiften är klar.');
+    expect(r.audit.at(-1)).toMatchObject({
+      actor: 'boarding:item',
+      action: 'thread.handled',
+      subject: `thread:${id}`,
+      details: { owner, timer: boardingTimerId(id), cancelled: true, why: 'done' },
+    });
     await run(items => items.close('boarding-card-missing', '2026-03-05T10:00:00.000Z', 'closed'));
     await run(items => items.reopen(id, '2026-03-12', '2026-03-06T10:00:00.000Z'));
     r = await rows(id);
@@ -260,8 +266,22 @@ describe('the card of a plan’s item (D124)', () => {
       [`boarding:${id}:2`, 'reminder'],
       [`delivery:${id}`, 'automatic'],
     ]);
+    // The stale and early workflows wrote nothing; the one that fired wrote the timer's row and the card's.
+    expect(r.audit.map(a => [a.actor, a.action, a.subject, a.details])).toEqual([
+      ['boarding:item', 'thread.pushed', `thread:${id}`, expect.anything()],
+      ['boarding:item', 'thread.handled', `thread:${id}`, expect.anything()],
+      ['boarding:item', 'thread.reopened', `thread:${id}`, expect.anything()],
+      ['boarding:item', 'timer.fired', `timer:${boardingTimerId(id)}`, { generation: 2, owner }],
+      ['boarding:item', 'thread.reminded', `thread:${id}`, { reason: 'due', generation: 2, wasState: 'open', owner }],
+    ]);
     await run(items => items.close(id, '2026-03-14T08:00:00.000Z', 'closed'));
-    expect((await rows(id)).messages.at(-1)?.body).toBe('Planen är avslutad.');
+    r = await rows(id);
+    expect(r.messages.at(-1)?.body).toBe('Planen är avslutad.');
+    // The fired timer is not active, so nothing is cancelled; the card is still handed over, and says why.
+    expect(r.audit.at(-1)).toMatchObject({
+      action: 'thread.handled',
+      details: { owner, timer: boardingTimerId(id), cancelled: false, why: 'closed' },
+    });
   });
 
   test('a card whose due day’s next morning has passed gets no timer and no workflow, opened or opened again', async () => {

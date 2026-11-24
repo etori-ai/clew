@@ -32,7 +32,7 @@ on the page and in the documentation:
 4. **A move or a cancellation made in Clew needs no second decision.** When a person moves or cancels a meeting on
    Clew's calendar page and the meeting is an invitation's, found by its ref, the execution's projection moves or
    ends the invitation and tells the talks module in the same transaction (`followOwnEvents` in
-   `composition/execution-projection.ts`; the port's `moved`, and `ended` with `cancelled`). An undo of the move is a
+   `threads/usecases/projection.ts`; the port's `moved`, and `ended` with `cancelled`). An undo of the move is a
    move back and takes the same path.
 5. **The manager is told by a card the scan derives.** The talks connector declares a `scan`
    (`modules/talks/capabilities.ts`): for the manager whose booking it is, one card per person and round when the

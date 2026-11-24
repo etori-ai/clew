@@ -21,7 +21,10 @@ const make = async () => {
   await database()
     .insert(schema.people)
     .values({ id: personId, organisationId: 'test', name: 'Synthetic execution test' });
-  const store = postgresExecutionStore(sealer, testDurable);
+  // The card sink composition binds, so an ended watch's card is the thread it writes (DE-M7).
+  const store = postgresExecutionStore(sealer, testDurable, {
+    pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' }), testDurable),
+  });
   return {
     personId,
     store,
@@ -41,6 +44,18 @@ const make = async () => {
         nextAt: r.nextAt.toISOString(),
         leaseUntil: r.leaseUntil?.toISOString() ?? null,
         deliveredAt: r.deliveredAt?.toISOString() ?? null,
+      })),
+    cards: async (person: string) =>
+      (await database().select().from(schema.threads).where(eq(schema.threads.personId, person))).map(t => ({
+        sourceAuthorization: t.sourceAuthorization!,
+        id: t.id,
+        personId: t.personId,
+        connector: t.connector,
+        topic: t.topic,
+        title: t.title,
+        summary: t.summary,
+        reason: t.trigger.reason,
+        at: t.createdAt.toISOString(),
       })),
   };
 };
@@ -474,6 +489,19 @@ afterAll(async () => {
     );
   await database().delete(schema.watchIntents).where(inArray(schema.watchIntents.personId, people));
   await database().delete(schema.executionJobs).where(inArray(schema.executionJobs.personId, people));
+  const cards = await database()
+    .select({ id: schema.threads.id })
+    .from(schema.threads)
+    .where(inArray(schema.threads.personId, people));
+  if (cards.length)
+    await database()
+      .delete(schema.audit)
+      .where(
+        inArray(
+          schema.audit.subject,
+          cards.map(c => 'thread:' + c.id),
+        ),
+      );
   await database().delete(schema.threads).where(inArray(schema.threads.personId, people));
   await database().delete(schema.people).where(inArray(schema.people.id, people));
   await forgetTestWorkflows();

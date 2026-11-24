@@ -24,8 +24,9 @@ import { parseRetentionArguments } from '../../scripts/competence-retention-argu
  * The erasure of a person's competence a set time after the directory deactivates them (D108 item 14), on the memory
  * adapters. The SCIM use cases tell the people module's leavers port, which the test binds to the competence module's
  * leavers on the competence memory store as composition binds them on the SCIM transaction (the test mirrors the
- * person's `active` into the competence store, which on Postgres reads the same row; the memory stores commit apart, so
- * one transaction across both is shown in `tests/db`). The period is an operator's setting with no default; the timer is
+ * person's `active` into the competence store, which on Postgres reads the same row; the memory people store tells the
+ * binding when its change commits, so a change that rolls back reaches neither store, as one transaction across both
+ * does in `tests/db`). The period is an operator's setting with no default; the timer is
  * the intents and the hourly sweep (`sweepErasures`), each erasure fenced by the intent's spell. Every branch asserts the
  * state the stores end in and the audit rows written.
  */
@@ -256,9 +257,10 @@ describe('the leavers port is told on every path that changes active (D68, D108 
     });
   });
 
-  test('a SCIM change that fails takes back the people store’s record of the call (on memory only; tests/db shows both stores roll back together)', async () => {
+  test('a SCIM change that fails takes back the people store’s record of the call and never reaches the competence module (DE-M7)', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
+    const before = w.intent(anna);
     const failing = scimUsecases({
       store: {
         transaction: fn =>
@@ -281,6 +283,8 @@ describe('the leavers port is told on every path that changes active (D68, D108 
     ).rejects.toThrow('after the use case');
     expect(w.provision.state.leavers).toEqual([]);
     expect(w.provision.state.users.get(anna)?.enabled).toBe(true);
+    // The binding is told when the change commits: the competence module's intent for her is as it was.
+    expect(w.intent(anna)).toEqual(before);
   });
 
   test('a port that fails never fails the deactivation: it is reported, and the sweep records it once a period is set', async () => {
