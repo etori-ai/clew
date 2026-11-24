@@ -1618,7 +1618,7 @@
       "number": 143,
       "path": "docs/decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md",
       "title": "D143 · Clew is licensed under the AGPL, as Eneo is",
-      "status": "accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question; item 3 amended 2026-11-24, finding `BL-15` of the baseline review: the connector protocol's viewer script is served with the notices of every package it bundles, not Scalar's alone)",
+      "status": "accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question; item 3 amended 2026-11-24, finding `BL-15` of the baseline review: the connector protocol's viewer script is served with the notices of every package it bundles, not Scalar's alone, each at the version the script holds, and one package Clew's install does not hold, `unist-util-find-after`, credited from a kept text)",
       "date": "2026-11-23",
       "area": "platform"
     },
@@ -3407,6 +3407,7 @@
       "headings": [
         "Run it",
         "A stack made before PostgreSQL 18 and Nextcloud 35",
+        "Moving to the stack's Keycloak",
         "Utvecklingssamtal: the round, and switching the answering system",
         "Reset fixture data deliberately",
         "The learning platform (Moodle)",

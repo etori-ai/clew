@@ -4,11 +4,13 @@ import { dirname, join, resolve } from 'node:path';
 /**
  * The licence notices of what a browser build passes on (D143 item 3), shared by every Vite build Clew publishes: the
  * web app and its workers, the header embed and the documentation site. Each writes `third-party-notices.txt` and
- * Clew's own `LICENSE.txt` beside its files.
+ * Clew's own `LICENSE.txt` beside its files. The server reads the notices of the connector protocol's viewer, which it
+ * serves, through `./viewer.ts`.
  */
 
 const REPOSITORY = 'https://github.com/etori-ai/clew';
-const ROOT = resolve(import.meta.dirname, '..');
+// The repository's root, where `LICENSE` and the kept texts in `licences/` are.
+const ROOT = resolve(import.meta.dirname, '../../..');
 // LICENSE, LICENCE, COPYING, NOTICE and OFL, also as a suffix (MIT-LICENSE) or with an extension; files only, and no
 // code: a script named `license-update.mjs` is no licence.
 const NOTICE_FILE = /^(licen[cs]e|copying|notice|ofl)|[-_](licen[cs]e|notice)(\.|$)/i;
@@ -98,6 +100,8 @@ export interface Package {
   notices: Array<{ file: string; text: string }>;
   root: string;
   dependencies: string[];
+  /** The peer dependencies the package needs, not those it marks optional: the install provides them beside it. */
+  peers?: string[];
 }
 
 /** The folder of the package a bundled file comes from, or none for Clew's own sources and virtual modules. */
@@ -140,6 +144,8 @@ export function readPackage(root: string, kept: Kept = {}): Package | undefined 
     version?: string;
     license?: string | { type?: string };
     dependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
+    peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   };
   if (!json.name) return undefined;
   const license = typeof json.license === 'string' ? json.license : (json.license?.type ?? 'not declared');
@@ -171,6 +177,9 @@ export function readPackage(root: string, kept: Kept = {}): Package | undefined 
     notices,
     root,
     dependencies: Object.keys(json.dependencies ?? {}).sort(),
+    peers: Object.keys(json.peerDependencies ?? {})
+      .filter(name => !json.peerDependenciesMeta?.[name]?.optional)
+      .sort(),
   };
 }
 
@@ -199,8 +208,11 @@ const byName = (a: Package, b: Package) =>
 /**
  * The packages a build bundles, and every runtime dependency they reach. A package built ahead of time can carry its
  * dependencies inside its own files (jszip's browser build carries pako), so each is credited whether or not its code
- * reached these files; a package already bundled is listed once. `unread` names the folders a bundled file came from
- * that hold no named package, and the dependencies that resolve nowhere: a notice that leaves them out is not whole.
+ * reached these files; a package already bundled is listed once. A peer dependency the install provides is followed as
+ * well, since such a build can carry it too (Scalar's viewer carries Tailwind's base styles, a peer of
+ * `@headlessui/tailwindcss`); one the install leaves out is no part of the build. `unread` names the folders a bundled
+ * file came from that hold no named package, and the dependencies that resolve nowhere: a notice that leaves them out
+ * is not whole.
  */
 export function collect(
   roots: Iterable<string>,
@@ -220,10 +232,11 @@ export function collect(
   const queue = [...bundled];
   while (queue.length) {
     const from = queue.shift()!;
-    for (const name of from.dependencies) {
+    const peers = (from.peers ?? []).filter(name => !from.dependencies.includes(name));
+    for (const name of [...from.dependencies, ...peers]) {
       const root = dependencyRoot(from.root, name);
       const p = root ? readPackage(root, kept) : undefined;
-      if (!p) unread.push(`${name} (a dependency of ${from.name} ${from.version})`);
+      if (!p && from.dependencies.includes(name)) unread.push(`${name} (a dependency of ${from.name} ${from.version})`);
       if (!p || seen.has(`${p.name}@${p.version}`)) continue;
       seen.set(`${p.name}@${p.version}`, p);
       carried.push(p);
@@ -262,6 +275,9 @@ export function noticesText({ bundled, carried }: { bundled: readonly Package[];
   }
   return parts.join('\n') + '\n';
 }
+
+/** Clew's own licence, the repository's `LICENSE`, which every build writes as `LICENSE.txt` beside its notices. */
+export const clewLicence = (base: string = ROOT) => readFileSync(join(base, 'LICENSE'), 'utf8');
 
 /** The packages whose notice would be empty: no licence file and no kept upstream text. */
 export const unnoticed = ({ bundled, carried }: { bundled: readonly Package[]; carried: readonly Package[] }) =>
@@ -367,15 +383,15 @@ export function thirdPartyNotices(options: { fileName?: string } & Kept = {}): {
       const missing = unnoticed(found);
       if (missing.length)
         this.error(
-          `Third-party notices: no licence file for ${missing.join(', ')}. Keep the upstream licence text in licences/ and name it in VENDORED (scripts/third-party-notices.ts).`,
+          `Third-party notices: no licence file for ${missing.join(', ')}. Keep the upstream licence text in licences/ and name it in VENDORED (packages/notices/src/index.ts).`,
         );
       const typefaces = typefaceUnnoticed(found.bundled, withTypeface);
       if (typefaces.length)
         this.error(
-          `Third-party notices: ${typefaces.join(', ')} brings a typeface with no typeface licence. Keep the typeface's licence text in licences/ and name it in TYPEFACES (scripts/third-party-notices.ts).`,
+          `Third-party notices: ${typefaces.join(', ')} brings a typeface with no typeface licence. Keep the typeface's licence text in licences/ and name it in TYPEFACES (packages/notices/src/index.ts).`,
         );
       this.emitFile({ type: 'asset', fileName, source: noticesText(found) });
-      this.emitFile({ type: 'asset', fileName: 'LICENSE.txt', source: readFileSync(join(base, 'LICENSE'), 'utf8') });
+      this.emitFile({ type: 'asset', fileName: 'LICENSE.txt', source: clewLicence(base) });
     },
   };
   return { plugin, worker };
