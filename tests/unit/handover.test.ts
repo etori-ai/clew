@@ -472,7 +472,7 @@ describe("Clew's own assistant hands a question over (D125 item 11)", () => {
         toolCalls: [{ capability: 'clew.handOver', input: { assistant }, output }],
       };
     };
-  test('the model is told of the assistants and given the tool; its choice is a suggestion, and nothing leaves Clew or is saved', async () => {
+  test('the model is told of the assistants and given the tool; its choice is a suggestion, nothing leaves Clew or is saved, and the audit row says the model was asked', async () => {
     const seen: { system?: string; tools?: string[] } = {};
     const w = world({ generate: handing(GUIDE, seen) });
     const events: TurnEvent[] = [];
@@ -495,7 +495,21 @@ describe("Clew's own assistant hands a question over (D125 item 11)", () => {
       source: 'Hello',
     });
     expect(asks(w)).toEqual([]);
-    expect(w.store.audit).toEqual([]);
+    // No conversation is saved; the audit row says the model was sent the question and what it offered (D91), never
+    // a word of the question.
+    expect(w.store.audit).toEqual([
+      expect.objectContaining({
+        action: 'conversation.offered',
+        subject: 'person:hillevi',
+        details: {
+          chips: [],
+          model: expect.any(String),
+          modelCall: expect.objectContaining({ durationMs: 0 }),
+          offered: GUIDE,
+        },
+      }),
+    ]);
+    expect(JSON.stringify(w.store.audit)).not.toContain('semester');
     // What the model wrote on the way is taken back.
     expect(events.filter(e => e.type === 'text')).toEqual([
       { type: 'text', delta: 'Jag lämnar' },
@@ -766,7 +780,7 @@ describe('an assistant beside the conversation, and a source that still hands ba
 });
 
 describe('a question on its way to another assistant is held when it names the person\u2019s staff or cards (D125 item 13)', () => {
-  const managed = [{ key: 'anna', name: 'Anna Lindqvist', unit: 'Skönsmons skola' }];
+  const managed = [{ key: 'anna', userName: 'anna', name: 'Anna Lindqvist', unit: 'Skönsmons skola' }];
   test('a managed person\u2019s name holds it: nothing is sent or saved, and the person\u2019s yes sends it and is recorded', async () => {
     const w = world({ people: managed });
     const held = await w.assistant

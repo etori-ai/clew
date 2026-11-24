@@ -140,8 +140,11 @@ export interface ModelWire {
   generator(endpoint: Endpoint, model: string, reasoning: ModelReasoning): ModelGenerate;
 }
 /**
- * Which endpoints answer, per provider, in this process. A failed generation marks the provider down and the router
- * answers until a probe or a test brings it back (D8). A provider nobody has checked yet counts as worth trying.
+ * Which endpoints answer, per provider, in this process. A generation the endpoint did not answer, or whose key it
+ * refused (a `WireError` of kind `unreachable` or `key-rejected`), marks the provider down and the router answers until
+ * a probe or a test brings it back (D8). A turn that failed for reasons of its own (it ran out of time, the endpoint
+ * refused that one request, the model wrote no answer) marks nothing. A provider nobody has checked yet counts as worth
+ * trying.
  */
 export interface ModelHealth {
   available(providerId: string): boolean;
@@ -163,11 +166,14 @@ export interface ModelResolver {
 }
 /**
  * A person the asker manages (D94, D99), as the people module lists them on Personal: Clew's key for them (their id,
- * which card rows and the index from entity to cards name them by, D122), their name and the unit they are on. Only
- * people who can be asked about (active, with a user name, D97) are listed, each once.
+ * which card rows and the index from entity to cards name them by, D122), the user name a read about them takes (the
+ * registry resolves a person a read names by it, D117), their name and the unit they are on. Only people who can be
+ * asked about (active, with a user name, D97) are listed, each once. The model is told the user name, never the key
+ * (`managedPeople` binds the port).
  */
 export interface ManagedPerson {
   key: string;
+  userName: string;
   name: string;
   unit: string;
 }
@@ -175,7 +181,7 @@ export interface AssistantDeps {
   store: ThreadStore;
   registry: Pick<
     Registry,
-    'tools' | 'areas' | 'list' | 'find' | 'allowed' | 'visible' | 'capabilitiesFor' | 'connector'
+    'tools' | 'areas' | 'list' | 'find' | 'allowed' | 'visible' | 'capabilitiesFor' | 'connector' | 'forModel'
   >;
   /**
    * Run a read through the registry as the person, on the assistant's behalf: every call the assistant makes says so
@@ -193,7 +199,10 @@ export interface AssistantDeps {
   clock: () => Date;
   ids: () => string;
   log: (message: string, ...details: unknown[]) => void;
-  /** The active trace's id (D91), written on a model turn's message and audit row so the record finds its trace; absent when nothing traces. */
+  /**
+   * The active trace's id (D91), written on a model turn's message and audit row so the record finds its trace, the
+   * turns the model did not answer included; absent when nothing traces.
+   */
   trace?: () => string | undefined;
   /**
    * The people the asker manages, read on every turn (D115): a name in a question is resolved among them and nobody
@@ -220,12 +229,13 @@ export interface AssistantDeps {
    * as the person, its draft becomes the item, and the item and its audit row commit together. Nothing is sent to a
    * source: the item's execute runs only through the human decision. `same: 'topic'` makes the propose's own topic
    * the item's identity, so what the model happened to pass does not make a second item while the first is open.
+   * `by` says the assistant started it, and with which model when a model's tool call did, for the item's audit row.
    * Absent, a propose the model calls is run as any capability and makes no work item.
    */
   start?: (
     persona: AuthenticatedContext,
     capability: string,
     input: Record<string, unknown>,
-    context: { reason: string; same?: 'topic' },
+    context: { reason: string; same?: 'topic'; by: { assistant: true; model?: string } },
   ) => Promise<{ threadId: string }>;
 }

@@ -2748,7 +2748,16 @@ export class MockApi {
       return json({ removed: true });
     }
     if (method === 'PATCH') {
-      const next = { ...p, ...(body() as Partial<ProviderSummary>), updatedAt: new Date().toISOString() };
+      const patch = body() as Partial<ProviderSummary>;
+      // As the server does (D24): an address on another host takes the key with it.
+      const origin = (url: string) => new URL(url).origin;
+      const moved = !!patch.baseUrl && p.hasKey && origin(patch.baseUrl) !== origin(p.baseUrl);
+      const next = {
+        ...p,
+        ...patch,
+        ...(moved ? { hasKey: false, keyChangedAt: NOW } : {}),
+        updatedAt: new Date().toISOString(),
+      };
       this.providers = this.providers.map(x => (x.id === id ? next : x));
       return json(providerDetail(next));
     }

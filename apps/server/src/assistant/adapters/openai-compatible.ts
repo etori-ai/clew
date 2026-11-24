@@ -1,3 +1,4 @@
+import { APICallError } from 'ai';
 import { createGenerator } from '../model';
 import { WireError, type Endpoint, type ModelWire } from '../ports';
 import { boundedText } from '../../bounded-body';
@@ -100,10 +101,42 @@ export function openAICompatibleWire(
         fetchImpl,
       );
     },
-    // A turn's requests follow no redirect either: the key is sent with every one of them.
-    generator: (e, model, reasoning) =>
-      createGenerator(e, model, (input, init) => fetchImpl(input, { ...init, redirect: 'error' }), reasoning, {
-        recordContent: options.recordModelContent === true,
-      }),
+    // A turn's requests follow no redirect either: the key is sent with every one of them. A request that got no answer
+    // at all (the address does not connect, a redirect refused) and was not stopped or out of time is the endpoint's.
+    generator: (e, model, reasoning) => {
+      const generate = createGenerator(
+        e,
+        model,
+        (input, init) =>
+          fetchImpl(input, { ...init, redirect: 'error' }).catch((error: unknown) => {
+            if (init?.signal?.aborted) throw error;
+            throw new WireError('unreachable', error instanceof Error ? error.message.slice(0, 200) : String(error));
+          }),
+        reasoning,
+        { recordContent: options.recordModelContent === true },
+      );
+      return async request => {
+        try {
+          return await generate(request);
+        } catch (error) {
+          throw turnError(error);
+        }
+      };
+    },
   };
+}
+/**
+ * A turn's failure as the wire names it, so the assistant marks a provider down only when the endpoint itself did not
+ * answer or refused the key (D8): a 5xx, or a call the SDK could not make, is `unreachable` (a request that got no answer
+ * at all is named so where it is sent), a 401 or 403 is `key-rejected`, and any other answer of the endpoint (a 4xx: the
+ * request too long for the model, a model id it does not know) is `unsupported`. A turn that ran out of time or was
+ * stopped is not the endpoint's failure and passes as it is; so does anything that is not the wire's.
+ */
+export function turnError(error: unknown): unknown {
+  if (!APICallError.isInstance(error)) return error;
+  const status = error.statusCode;
+  const message = (status ? `HTTP ${status}: ` : '') + error.message.slice(0, 200);
+  if (status === 401 || status === 403) return new WireError('key-rejected', message);
+  if (status === undefined || status >= 500) return new WireError('unreachable', message);
+  return new WireError('unsupported', message);
 }

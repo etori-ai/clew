@@ -1868,6 +1868,16 @@ export class Registry implements HoldingsReader {
       }));
   }
   /**
+   * Whether the administrator lets the model have what a connector holds (D122 item 4): its assistant switch on
+   * Administration › Anslutna system, and, with a read named, that read's own switch. `tools` asks it of every read, and
+   * the assistant asks it of everything else it would hand the model from the connector: a work item pointed at or named,
+   * a meeting, a passage, an earlier answer written from it. A connector the registry does not govern is closed.
+   */
+  forModel(connectorId: string, capability?: string): boolean {
+    const g = this.governance(connectorId);
+    return g.toolsEnabled && (capability === undefined || g.capabilities[capability]?.model !== false);
+  }
+  /**
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).
    * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
    * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4), the
@@ -1889,10 +1899,7 @@ export class Registry implements HoldingsReader {
     );
     return this.capabilitiesFor(actor)
       .filter(c => !effects.has(c.capability.name))
-      .filter(c => {
-        const g = this.governance(c.connector.id);
-        return c.capability.model && g.toolsEnabled && g.capabilities[c.capability.name]?.model !== false;
-      })
+      .filter(c => c.capability.model && this.forModel(c.connector.id, c.capability.name))
       .filter(c => !(composite && isSearchSource(c.capability, c.connector.id)))
       .filter(c => !(errands && isErrandSource(c.capability, c.connector.id)))
       .filter(c => !(requests && isRequestSource(c.capability, c.connector.id)))

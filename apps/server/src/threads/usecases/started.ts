@@ -58,6 +58,12 @@ export interface StartContext {
    * request with other input is the same card. Without it the input is part of what makes two requests the same card.
    */
   same?: 'topic';
+  /**
+   * The assistant started the card in a conversation, at the person's request (`'assistant'`), and `model` is the
+   * administered model whose tool call it was, absent when the router started it. The audit row says so, and the item's
+   * "Händelser" says Clew created it (D91, D112 item 4): the person asked, the assistant chose what to start.
+   */
+  by?: { assistant: true; model?: string };
 }
 
 export function startedCards({ store, registry, run, digest, clock, ids, people }: StartedDeps) {
@@ -182,6 +188,7 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
           owner: persona.id,
           ...(context.about ? { about: context.about } : {}),
           ...(context.asked && Object.keys(context.asked).length ? { asked: context.asked } : {}),
+          ...(context.by ? { by: 'assistant', ...(context.by.model ? { model: context.by.model } : {}) } : {}),
         },
       });
       return true;
