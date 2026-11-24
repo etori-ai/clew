@@ -14,7 +14,7 @@ profiles, and nothing relates the two lists:
 A request that waits for the person's own answer becomes a card. When the installation switches it on, the assistant
 can prepare a fault report that the person sends. Its id is `pob`.
 
-**It has not met a POB.** By default it runs on made-up data. The adapter for POB's own API (`pob.mjs`) is a draft
+**It has not met a POB.** In development it runs on made-up data (`POB_ADAPTER=fixture`). The adapter for POB's own API (`pob.mjs`) is a draft
 written from an endpoint catalogue that names no field and from public code that calls one installation's POB; what it
 assumes is listed under [The API adapter's assumptions](#the-api-adapters-assumptions). Everything around it is built
 and tested: the identity check, the rule for which errands are a person's, the row, the access log and the
@@ -193,7 +193,7 @@ are kept is the operator's; they are personal data.
 | `CLEW_CONNECTOR_SECRET` | The secret shared with Clew, 16 characters or more. Required |
 | `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks`. Required; HTTPS outside the local development allowlist |
 | `PORT` | Default 4055 |
-| `POB_ADAPTER` | `fixture` (default), the made-up POB, or `api`, the draft adapter for POB's own API |
+| `POB_ADAPTER` | `api`, the draft adapter for POB's own API, or `fixture`, the made-up POB, for development and tests only. Required: without it the connector does not start, and `fixture` beside a POB address or credential is refused |
 | `POB_IDP_ISSUER` | The identity provider the person's token must come from. Required, with the fixture too |
 | `POB_IDP_JWKS_URL` | Where that provider's keys are. Required. HTTPS, unless its host is in `POB_INSECURE_HTTP_HOSTS` |
 | `POB_INSECURE_HTTP_HOSTS` | Hosts the keys may be fetched from over plain HTTP, for development. Default `localhost,127.0.0.1` |
@@ -305,6 +305,7 @@ With the local Clew stack running, inside the devcontainer:
 ```sh
 docker exec -w /workspace clew-app-1 bun scripts/auth-setup.ts
 docker exec -d -w /workspace -e CLEW_CONNECTOR_SECRET=local-docs-only-transport-key -e CLEW_URL=http://127.0.0.1:3000 \
+  -e POB_ADAPTER=fixture \
   -e POB_IDP_ISSUER=http://keycloak.orb.local:8090/realms/clew \
   -e POB_IDP_JWKS_URL=http://keycloak.orb.local:8090/realms/clew/protocol/openid-connect/certs \
   -e POB_INSECURE_HTTP_HOSTS=keycloak.orb.local \

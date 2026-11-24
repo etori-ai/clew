@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { allExtensions } from 'dependency-cruiser';
 
 /**
@@ -37,4 +39,19 @@ test('the rules as configured follow imports between TypeScript files', () => {
       m.dependencies.some(d => d.resolved.endsWith('.ts') && !d.resolved.includes('node_modules')),
   );
   expect(followed.length).toBeGreaterThan(0);
+});
+
+test('`bun run deps` cruises every app, package, connector, script and test that a rule is written for', () => {
+  // A rule written for `apps/` judges only the folders the script names: until 2026-11-24 it named the server's source
+  // alone, and a test in apps/web imported a connector unseen (BL-13 of the review of 2026-11-23).
+  const root = new URL('../..', import.meta.url).pathname;
+  const script = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> })
+    .scripts.deps!;
+  const cruised = script.split(/\s+/).slice(3);
+  const apps = readdirSync(join(root, 'apps'), { withFileTypes: true })
+    .filter(e => e.isDirectory())
+    .flatMap(e => ['src', 'tests'].map(folder => `apps/${e.name}/${folder}`))
+    .filter(folder => existsSync(join(root, folder)));
+  expect(apps).toContain('apps/web/tests');
+  expect(cruised).toEqual(expect.arrayContaining([...apps, 'packages', 'connectors', 'scripts', 'tests']));
 });

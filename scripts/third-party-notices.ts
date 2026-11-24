@@ -61,6 +61,17 @@ export const VENDORED: Readonly<Record<string, string>> = {
   '@algolia/autocomplete-plugin-algolia-insights': 'licences/algolia-autocomplete.txt',
   '@algolia/autocomplete-preset-algolia': 'licences/algolia-autocomplete.txt',
   '@algolia/autocomplete-shared': 'licences/algolia-autocomplete.txt',
+  // github.com/scalar/scalar, LICENSE: the connector protocol's viewer, which the server serves (D60).
+  '@scalar/api-reference': 'licences/scalar.txt',
+  '@scalar/openapi-types': 'licences/scalar.txt',
+  '@scalar/schemas': 'licences/scalar.txt',
+  '@scalar/workspace-store': 'licences/scalar.txt',
+  // github.com/tailwindlabs/headlessui, LICENSE
+  '@headlessui/vue': 'licences/headlessui.txt',
+  // github.com/vercel/ai, LICENSE
+  '@ai-sdk/provider-utils': 'licences/vercel-ai.txt',
+  // Its repository holds no licence file; the file says what its package.json and README name.
+  'proto-parser': 'licences/proto-parser.txt',
 };
 /**
  * Typefaces a package ships inside its own files under a licence of their own, with the upstream text kept in
@@ -160,6 +171,25 @@ export function readPackage(root: string, kept: Kept = {}): Package | undefined 
     notices,
     root,
     dependencies: Object.keys(json.dependencies ?? {}).sort(),
+  };
+}
+
+/**
+ * A package that a dependency's own build put inside its files and that no install brings, credited from its upstream
+ * licence kept in `licences/`: Scalar's standalone script is built from Scalar's lockfile, not Clew's.
+ */
+export function keptPackage(
+  p: { name: string; version: string; license: string; text: string },
+  base: string = ROOT,
+): Package {
+  const text = readFileSync(join(base, p.text), 'utf8').trim();
+  return {
+    name: p.name,
+    version: p.version,
+    license: p.license,
+    notices: [{ file: `LICENSE (upstream, kept in Clew's repository as ${p.text})`, text }],
+    root: '',
+    dependencies: [],
   };
 }
 

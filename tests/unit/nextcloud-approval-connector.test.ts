@@ -8,7 +8,7 @@ import type { Actor, ThreadDraft } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { ExecuteResultSchema, ScanResponseSchema, ThreadDraftSchema } from '../../packages/connectors/src/protocol';
-import { createConnector, createManifest } from '../../connectors/nextcloud-approval/connector.mjs';
+import { adapterOf, createConnector, createManifest } from '../../connectors/nextcloud-approval/connector.mjs';
 import {
   SourceDenied,
   SourceLost,
@@ -650,6 +650,19 @@ function sentAsRecorded(
     if (name !== 'Authorization') expect(call.headers[name.toLowerCase()]).toBe(value);
   if (request.body !== undefined) expect(call.body).toBe(request.body);
 }
+
+describe('the adapter (CS-L7)', () => {
+  test('is always named: no default, and the stand-in never starts beside an address', () => {
+    expect(adapterOf({ NEXTCLOUD_ADAPTER: 'nextcloud', NEXTCLOUD_URL: 'https://moln.example' })).toBe('nextcloud');
+    expect(adapterOf({ NEXTCLOUD_ADAPTER: 'fixture', NEXTCLOUD_URL: '' })).toBe('fixture');
+    expect(() => adapterOf({ NEXTCLOUD_URL: 'https://moln.example' })).toThrow('NEXTCLOUD_ADAPTER is not set');
+    expect(() => adapterOf({})).toThrow('NEXTCLOUD_ADAPTER is not set');
+    expect(() => adapterOf({ NEXTCLOUD_ADAPTER: 'owncloud' })).toThrow('Unknown NEXTCLOUD_ADAPTER "owncloud"');
+    expect(() => adapterOf({ NEXTCLOUD_ADAPTER: 'fixture', NEXTCLOUD_URL: 'https://moln.example' })).toThrow(
+      'NEXTCLOUD_ADAPTER is "fixture" but NEXTCLOUD_URL is set',
+    );
+  });
+});
 
 describe("the Nextcloud API adapter, against Nextcloud's recorded answers", () => {
   test('reads the account behind the token (01)', async () => {

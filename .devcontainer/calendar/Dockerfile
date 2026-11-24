@@ -1,4 +1,4 @@
-FROM nextcloud:35.0.2-apache@sha256:786c102155d2717ba0f53a62b3fdd7a1354edc48e800b94dbe32294d9a5752a2
+FROM docker.io/library/nextcloud:35.0.2-apache@sha256:786c102155d2717ba0f53a62b3fdd7a1354edc48e800b94dbe32294d9a5752a2
 
 # Published AGPL app archives; do not resolve versions at container startup.
 # user_oidc validates the development Keycloak's bearer tokens and approval is the first real integration (D101).

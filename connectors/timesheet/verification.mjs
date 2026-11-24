@@ -10,27 +10,32 @@ export const bodyDigest = text => createHash('sha256').update(text, 'utf8').dige
  * verifier a request whose URL has the prefix taken off.
  */
 const ROUTE = /^\/clew\/(capabilities|installation)\/([^/]+)$/;
-const ROUTES = ['/clew/capabilities/', '/clew/installation/'];
+/** The routes Clew posts to without naming a capability, exactly: a scan, a figure, a document, a question. */
+const UNNAMED = ['/clew/scan', '/clew/figure', '/clew/documents', '/clew/ask'];
 /** The subject and the `caller` claim of the installation's own assertion (D119): never a person's. */
 export const INSTALLATION_SUBJECT = 'clew:installation';
 export const INSTALLATION_CALLER = 'installation';
 /**
- * What a request binds an assertion to (D117): the digest of its exact body and, on a capability's route or an
- * installation read's (D119), the name in the route and which of the two routes it is. A path that names one of them
- * anywhere but exactly (nested, prefixed, with more after the name) binds to nothing an assertion can match. Reads a
- * clone, so the handler can still read the body after verifying.
+ * What a request binds an assertion to (D117): the digest of its exact body, the operation id it carries in
+ * `X-Clew-Operation-Id` (an approved write's), and, on a capability's route or an installation read's (D119), the name
+ * in the route and which of the two routes it is. An assertion that names no capability holds only on the four routes
+ * that name none; any other path (one that names a route anywhere but exactly, nested, prefixed or with more after the
+ * name, or one Clew never posts to) binds to nothing an assertion can match, so a connector that routes on less than
+ * the exact path still runs no capability an assertion was not issued for. Reads a clone, so the handler can still read
+ * the body after verifying.
  */
 export async function bindingOf(request) {
   const path = new URL(request.url).pathname;
   const body = bodyDigest(await request.clone().text());
+  const operationId = request.headers.get('x-clew-operation-id') ?? undefined;
   const route = ROUTE.exec(path);
   if (route)
     try {
-      return { body, capability: decodeURIComponent(route[2]), route: route[1] };
+      return { body, operationId, capability: decodeURIComponent(route[2]), route: route[1] };
     } catch {
-      return { body, capability: null };
+      return { body, operationId, capability: null };
     }
-  return { body, capability: ROUTES.some(r => path.includes(r)) ? null : undefined };
+  return { body, operationId, capability: UNNAMED.includes(path) ? undefined : null };
 }
 /** The claims of an assertion Clew signed for this audience and that is still valid, or null. */
 function verifiedClaims(token, jwks, audience, now) {
@@ -66,9 +71,11 @@ function verifiedClaims(token, jwks, audience, now) {
 }
 /**
  * The verified actor, or null. With `binding`, the assertion must have been issued for exactly that request: its
- * `body` claim the digest of the body received, and its `capability` claim the capability of the route (absent on any
- * other route). The body's `input` and `about` are then Clew's, and an assertion cannot be replayed with another body.
- * The installation's own assertion (D119) is never a person's: it has no actor, and is refused here.
+ * `body` claim the digest of the body received, its `capability` claim the capability of the route (absent on the
+ * routes that name none), and its `operationId` claim the request's `X-Clew-Operation-Id` (absent when it has none).
+ * The body's `input` and `about` are then Clew's, and an assertion cannot be replayed with another body, on another
+ * capability or as another operation. The installation's own assertion (D119) is never a person's: it has no actor,
+ * and is refused here.
  */
 export function verifyAssertion(token, jwks, audience, now = Date.now(), binding) {
   try {
@@ -87,6 +94,7 @@ export function verifyAssertion(token, jwks, audience, now = Date.now(), binding
       binding &&
       (claims.body !== binding.body ||
         (claims.capability ?? undefined) !== binding.capability ||
+        (claims.operationId ?? undefined) !== (binding.operationId ?? undefined) ||
         binding.route === 'installation')
     )
       return null;
@@ -98,8 +106,8 @@ export function verifyAssertion(token, jwks, audience, now = Date.now(), binding
 /**
  * Whether the assertion is the installation's own, for exactly this request (D119): Clew reading as itself, with no
  * person behind the call. Its subject is `clew:installation`, its `caller` claim `installation`, it carries no `actor`
- * and no `callback`, and it is bound to the request: `binding` is required, and its `body` and `capability` must match.
- * A person's assertion, however valid, is never the installation's.
+ * and no `callback`, and it is bound to the request: `binding` is required, and its `body` and `capability` must match,
+ * with no operation id on either. A person's assertion, however valid, is never the installation's.
  */
 export function verifyInstallationAssertion(token, jwks, audience, now = Date.now(), binding) {
   try {
@@ -119,7 +127,8 @@ export function verifyInstallationAssertion(token, jwks, audience, now = Date.no
       claims.actor === undefined &&
       claims.callback === undefined &&
       claims.body === binding.body &&
-      claims.capability === binding.capability
+      claims.capability === binding.capability &&
+      (claims.operationId ?? undefined) === (binding.operationId ?? undefined)
     );
   } catch {
     return false;
@@ -128,6 +137,9 @@ export function verifyInstallationAssertion(token, jwks, audience, now = Date.no
 /**
  * The verifier a connector calls on every request: `verify(token, key, request)` is the person behind it, or null;
  * `verify.installation(token, key, request)` is whether the installation itself sent it (D119). Each refuses the other.
+ * An assertion verifies once: Clew signs one for every request it sends, so the same `jti` again is a copy, refused for
+ * as long as the assertion would otherwise hold. The record is this process's; an approved write's operation id is
+ * bound besides, so a copy that reaches another process of the same connector cannot run as another operation.
  */
 export function createVerifier(
   { secret, jwks, clewUrl = process.env.CLEW_URL ?? '', fetch: fetchImpl = globalThis.fetch },
@@ -136,6 +148,21 @@ export function createVerifier(
   let cached,
     until = 0,
     lastFetch = 0;
+  // jti -> exp (seconds), oldest first: Clew signs every assertion for the same two minutes, so the ones that have run out
+  // are at the front and are dropped as each new one is recorded.
+  const used = new Map();
+  /** Records a verified assertion's `jti`; false when it was recorded already. Synchronous, so no two requests race. */
+  const once = token => {
+    const { jti, exp } = JSON.parse(b64(String(token).split('.')[1]));
+    const now = Date.now() / 1000;
+    for (const [seen, expires] of used) {
+      if (expires > now) break;
+      used.delete(seen);
+    }
+    if (used.has(jti)) return false;
+    used.set(jti, exp);
+    return true;
+  };
   const transport = suppliedKey => {
     const expected = Buffer.from(secret ?? ''),
       supplied = Buffer.from(suppliedKey ?? '');
@@ -170,7 +197,8 @@ export function createVerifier(
       if (!transport(suppliedKey)) return null;
       const binding = request ? await bindingOf(request) : undefined;
       const keys = await keysFor(token);
-      return keys ? verifyAssertion(token, keys, audience, Date.now(), binding) : null;
+      const actor = keys ? verifyAssertion(token, keys, audience, Date.now(), binding) : null;
+      return actor && once(token) ? actor : null;
     } catch {
       return null;
     }
@@ -181,7 +209,7 @@ export function createVerifier(
       if (!request || !transport(suppliedKey)) return false;
       const binding = await bindingOf(request);
       const keys = await keysFor(token);
-      return keys ? verifyInstallationAssertion(token, keys, audience, Date.now(), binding) : false;
+      return !!keys && verifyInstallationAssertion(token, keys, audience, Date.now(), binding) && once(token);
     } catch {
       return false;
     }

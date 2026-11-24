@@ -143,7 +143,7 @@ so that a connector could find the person's account without relying on the user 
 | `CLEW_CONNECTOR_SECRET` | The secret shared with Clew, 16 characters or more. Required |
 | `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks`. Required; HTTPS outside the local development allowlist |
 | `PORT` | Default 4052 |
-| `NEXTCLOUD_ADAPTER` | `fixture` (default, the stand-in) or `nextcloud` (the real API) |
+| `NEXTCLOUD_ADAPTER` | `nextcloud` (the real API) or `fixture` (the stand-in, development and tests only). Required: without it the connector does not start, and `fixture` beside `NEXTCLOUD_URL` is refused |
 | `NEXTCLOUD_URL` | Nextcloud's base address as the connector reaches it. Required for `nextcloud`; HTTPS unless localhost |
 | `NEXTCLOUD_ALLOW_HTTP` | `true` lets `NEXTCLOUD_URL` be plain http on a private development network (`http://calendar`) |
 | `NEXTCLOUD_AUDIENCE` | The audience Clew exchanges the person's token for, the user_oidc client id. Default `nextcloud`. Part of the manifest |

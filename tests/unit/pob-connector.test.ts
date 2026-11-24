@@ -578,11 +578,12 @@ describe('the rule for which errands are a person’s', () => {
 describe('the configuration', () => {
   const env = {
     CLEW_CONNECTOR_SECRET: secret,
+    POB_ADAPTER: 'fixture',
     POB_IDP_ISSUER: issuer,
     POB_IDP_JWKS_URL: 'https://idp.test/certs',
   };
 
-  test('reads the made-up POB’s settings by default and what an operator sets', () => {
+  test('reads the made-up POB’s settings and what an operator sets', () => {
     expect(readConfig(env)).toMatchObject({
       adapter: 'fixture',
       port: 4055,
@@ -617,6 +618,22 @@ describe('the configuration', () => {
     expect(bad({ POB_WRITES: 'reply' })).toThrow('POB_WRITES');
     expect(bad({ POB_CREATE: '{"caseType":"Incident"}' })).toThrow('POB_CREATE');
     expect(bad({ POB_ADAPTER: 'soap' })).toThrow('POB_ADAPTER');
+  });
+
+  test('the adapter is always named, and the made-up POB never starts beside a POB address or credential (CS-L7)', () => {
+    const bad = (over: Record<string, string | undefined>) => () => readConfig({ ...env, ...over });
+    expect(bad({ POB_ADAPTER: undefined })).toThrow('POB_ADAPTER is not set');
+    expect(bad({ POB_ADAPTER: ' ' })).toThrow('POB_ADAPTER is not set');
+    // An address and a credential without the adapter named used to start the made-up POB.
+    expect(bad({ POB_ADAPTER: undefined, POB_URL: 'https://pob.test/api', POB_USER: 'clew' })).toThrow(
+      'POB_ADAPTER is not set',
+    );
+    expect(bad({ POB_URL: 'https://pob.test/api', POB_AUTHORIZATION: 'Bearer x' })).toThrow(
+      'POB_ADAPTER is "fixture" but POB_URL and POB_AUTHORIZATION are set',
+    );
+    expect(bad({ POB_PASSWORD_FILE: '/run/secrets/pob' })).toThrow('but POB_PASSWORD_FILE is set');
+    // What compose passes for an unset variable is the empty string.
+    expect(readConfig({ ...env, POB_URL: '', POB_USER: '', POB_PASSWORD: '' })).toMatchObject({ adapter: 'fixture' });
   });
 
   test('the fault report is switched on by the installation, and only on the made-up POB', () => {

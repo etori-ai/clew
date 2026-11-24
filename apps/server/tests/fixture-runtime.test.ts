@@ -112,7 +112,7 @@ async function harness(t: TestContext) {
     operationId?: string,
     actor = manager,
   ) {
-    // Bound to the exact body and, on a capability's route, to the capability, as Clew signs it (D117).
+    // Bound to the exact body, on a capability's route to the capability, and to the operation id, as Clew signs it (D117).
     const body = JSON.stringify({ actor, input });
     const capability = route.startsWith('/clew/capabilities/') ? route.slice('/clew/capabilities/'.length) : undefined;
     return fetch(url + route, {
@@ -120,7 +120,12 @@ async function harness(t: TestContext) {
       headers: {
         'content-type': 'application/json',
         authorization:
-          'Bearer ' + (await authority.assert(id, actor, [], [], { body, ...(capability ? { capability } : {}) })),
+          'Bearer ' +
+          (await authority.assert(id, actor, [], [], {
+            body,
+            ...(capability ? { capability } : {}),
+            ...(operationId ? { operationId } : {}),
+          })),
         'x-clew-connector-key': secret,
         ...(operationId ? { 'x-clew-operation-id': operationId } : {}),
       },
