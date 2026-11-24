@@ -398,7 +398,7 @@ test.describe('the action dialog on a work item', () => {
 
   test('a refused selection returns to the card before the remaining rows can be confirmed', async ({ page, api }) => {
     const card = api.threads.find(t => t.id === 'ledighet')!;
-    card.items = ['first', 'second'].map(ref => ({ ref, label: ref, selectable: true, selected: true }));
+    card.items = ['first', 'second'].map(ref => ({ ref, label: ref, detail: '', selectable: true, selected: true }));
     card.actions = card.actions.map(a => (a.id === 'decide' ? { ...a, usesItems: true } : a));
     const sent = sentTo(page, card.id);
     await open(page, '/todo?item=ledighet');
