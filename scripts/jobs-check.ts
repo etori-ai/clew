@@ -127,9 +127,8 @@ ok(
   done.steps.filter((s: any) => s.kind === 'execute').every((s: any) => s.result?.rows?.[0]?.outcome === 'done'),
   'the HR system and time reporting confirm their writes row by row',
 );
-const payroll: any = await api(
-  `/api/cap/payroll.absenceStatus?input=${encodeURIComponent(JSON.stringify({ person, date: today }))}`,
-);
+// A read is a POST with its input as the body (WD-M4): whom it is about never travels in the address.
+const payroll: any = await api('/api/cap/payroll.absenceStatus', { person, date: today });
 ok(
   (payroll.output ?? payroll).status === 'pending',
   'payroll has not read the report yet (it reads the HR system at night)',

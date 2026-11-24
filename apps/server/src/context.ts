@@ -30,11 +30,17 @@ export class ForbiddenError extends Error {
   }
 }
 
-/** Every protected route: a live session from the opaque cookie; mutations also need same-origin and the per-session CSRF token. */
-export function protectedRoute(): MiddlewareHandler<Env> {
+/**
+ * Every protected route: a live session from the opaque cookie; anything but a GET or a HEAD also needs same-origin and
+ * the per-session CSRF token, a read posted with its input as the body included. `read` is how the session is read: the
+ * database's `authenticate`, or a test's own.
+ */
+export function protectedRoute(
+  read: (raw: string | undefined) => Promise<Session> = authenticate,
+): MiddlewareHandler<Env> {
   return async (c, next) => {
     try {
-      const session = await authenticate(sessionCookie(c));
+      const session = await read(sessionCookie(c));
       if (c.req.method !== 'GET' && c.req.method !== 'HEAD') verifyMutation(c.req.raw, session.csrfToken);
       c.set('session', session);
       await next();
