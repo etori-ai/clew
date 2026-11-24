@@ -62,6 +62,8 @@ import {
   confirmed,
   counts,
   coverageOf,
+  positionHolders,
+  type ComparedTarget,
   isSkill,
   leastLevels,
   levelOf,
@@ -75,6 +77,7 @@ import {
   isCalendarDay,
   mergeFigures,
   mergePlan,
+  validityFigures,
   leaseUntil,
   matrixCsv,
   decidingRevocation,
@@ -109,7 +112,6 @@ import {
   SOURCE_KEY_MAX,
   safeText,
   sourceReadError,
-  statusOn,
   summarise,
   swedishDay,
   teamCard,
@@ -787,20 +789,35 @@ export function competenceUsecases(deps: CompetenceDeps) {
    * How a unit's branch is covered today (D108 items 6 and 8, D99 item 5), for its manager: the active people assigned
    * to the unit or a unit below it, against the requirements that apply to each of them, and the share targets set on
    * this unit, each measured over this branch once. `reports` are the reader's own reports, whom they know; the rest of
-   * the branch is counted only where it is large enough (`coverageOf`). Counts only.
+   * the branch is counted only where it is large enough (`coverageOf`), also set against the targets of the same types
+   * on the other units the reader manages (`managed`), each over its own branch, whose figures the reader reads too (a
+   * unit and a unit below it, CO-M1 of the review of 2026-11-23). Counts only.
    */
   async function coverageIn(
     tx: CompetenceTx,
     persona: AuthenticatedContext,
     reports: ReadonlySet<string>,
     unitId: string,
+    managed: readonly string[],
     today: string,
   ): Promise<Omit<UnitCoverageResult, 'unitId' | 'unitLabel'>> {
     const organisationId = persona.organisationId;
-    const personIds = await tx.placedOn(organisationId, branchOf(await tx.units(organisationId), unitId));
+    const tree = await tx.units(organisationId);
+    const personIds = await tx.placedOn(organisationId, branchOf(tree, unitId));
     const people = await tx.placesOf(organisationId, personIds);
     const requirements = await tx.requirements(organisationId);
-    const targets = (await tx.shareTargets(organisationId)).filter(t => t.unitId === unitId);
+    const all = await tx.shareTargets(organisationId);
+    const targets = all.filter(t => t.unitId === unitId);
+    const typesHere = new Set(targets.map(t => t.typeId));
+    const elsewhere = all.filter(
+      t => t.unitId !== null && t.unitId !== unitId && managed.includes(t.unitId) && typesHere.has(t.typeId),
+    );
+    const against: ComparedTarget[] = [];
+    for (const other of new Set(elsewhere.map(t => t.unitId!))) {
+      const placed = await tx.placesOf(organisationId, await tx.placedOn(organisationId, branchOf(tree, other)));
+      for (const target of elsewhere.filter(t => t.unitId === other))
+        against.push({ target, holders: positionHolders(placed, target.positionCode) });
+    }
     const holdings = await tx.holdingsOf(personIds);
     const typeIds = new Set([
       ...holdings.flatMap(h => (h.typeId === null ? [] : [h.typeId])),
@@ -814,6 +831,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
       reports,
       requirements,
       targets,
+      against,
       types,
       standings: deciding(holdings, types, today),
     });
@@ -1755,8 +1773,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
       insertType(actor, organisationId, body),
 
     /**
-     * What a new validity would do to the holdings counted from this type's rule (D108 item 3): how many there are and
-     * how many are expired today under the current rule and under the new one. Nothing is written.
+     * What a new validity would do to the holdings counted from this type's rule (D108 item 3): how many active people's
+     * holdings there are and how many of them the new one turns expired today or valid again, as an administrator may
+     * see it (`validityFigures`, D118). Nothing is written.
      */
     async validityImpact(
       persona: AuthenticatedContext,
@@ -1770,13 +1789,13 @@ export function competenceUsecases(deps: CompetenceDeps) {
         const [type] = await tx.typesById([typeId]);
         if (!type || type.organisationId !== persona.organisationId) throw new CompetenceError(NO_TYPE);
         const ruled = (await tx.holdingsOfType(typeId)).filter(h => counts(h) && h.expiresOn === null);
-        const expired = (months: number | null) =>
-          ruled.filter(h => statusOn(endOf(h, { validityMonths: months }), today) === 'expired').length;
-        return {
-          holdings: ruled.length,
-          expiredBefore: expired(type.validityMonths),
-          expiredAfter: expired(validityMonths),
-        };
+        const active = await tx.activeIds([...new Set(ruled.map(h => h.personId))]);
+        return validityFigures({
+          ruled: ruled.filter(h => active.has(h.personId)),
+          before: type.validityMonths,
+          after: validityMonths,
+          today,
+        });
       });
     },
 
@@ -3046,7 +3065,14 @@ export function competenceUsecases(deps: CompetenceDeps) {
       if (!unit) throw new ForbiddenError(NOT_YOUR_UNIT);
       const today = swedishDay(now());
       const covered = await deps.store.transaction(tx =>
-        coverageIn(tx, persona, new Set(people.keys()), unitId, today),
+        coverageIn(
+          tx,
+          persona,
+          new Set(people.keys()),
+          unitId,
+          units.map(u => u.unitId),
+          today,
+        ),
       );
       return { unitId, unitLabel: unit.unitLabel, ...covered };
     },
@@ -3068,7 +3094,14 @@ export function competenceUsecases(deps: CompetenceDeps) {
       return deps.store.transaction(async tx => {
         const rows: UnitCoverageResult[] = [];
         for (const unit of units) {
-          const covered = await coverageIn(tx, persona, own, unit.unitId, today);
+          const covered = await coverageIn(
+            tx,
+            persona,
+            own,
+            unit.unitId,
+            managed.units.map(u => u.unitId),
+            today,
+          );
           if (covered.under || covered.targets.length)
             rows.push({ unitId: unit.unitId, unitLabel: unit.unitLabel, ...covered });
         }

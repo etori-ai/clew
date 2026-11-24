@@ -257,6 +257,7 @@ function world(
   const jobs = jobUsecases({
     bindings: bindingStore,
     followers: (a, k) => registry.followers(a, k),
+    visible: (a, id) => registry.visible(a, id),
     offered: k => registry.offered(k),
     refresh: () => registry.refreshGovernance(),
     digest: JSON.stringify,
@@ -344,7 +345,7 @@ describe('a job across systems is assembled from what connectors follow', () => 
     expect(p.steps.map(s => s.connector)).toEqual(['timesheet', 'payroll']);
     expect(p.sources.find(s => s.connector === 'hr')?.status).toBe('ok');
   });
-  test('an unbound offer runs nothing; a switched-off or out-of-audience binding is named as disabled, never silently missing', async () => {
+  test('an unbound offer runs nothing; a switched-off binding is named as disabled, never silently missing, and one made for others is not there', async () => {
     const w = world();
     await w.jobs.bind(admin, { kind: 'hr:absence', capability: 'hr.proposeAbsence', audience: { mode: 'all' } });
     const ts = await w.jobs.bind(admin, {
@@ -360,11 +361,14 @@ describe('a job across systems is assembled from what connectors follow', () => 
     });
     const p = await w.jobs.assemble(manager, fact, w.call);
     expect(p.steps.map(s => s.connector)).toEqual(['hr']);
-    expect(p.sources.filter(s => s.status === 'disabled').map(s => [s.connector, s.reason])).toEqual([
-      ['timesheet', 'switched-off'],
-      ['payroll', 'audience'],
+    // The payroll binding is for Omsorgen's people: to Hillevi it is not there, so it is neither named nor asked.
+    expect(p.sources.map(s => [s.connector, s.status, s.reason])).toEqual([
+      ['timesheet', 'disabled', 'switched-off'],
+      ['hr', 'ok', undefined],
     ]);
     expect(p.partial).toBe(false);
+    // And approving what she was shown is not stale for it.
+    expect((await w.approve(p)).id).toBeTruthy();
     await w.jobs.bind(admin, {
       id: ts.id,
       kind: ts.kind,
@@ -396,7 +400,15 @@ describe('a job across systems is assembled from what connectors follow', () => 
         capabilities: timesheetConnector.capabilities.filter(c => c.name !== 'timesheet.followAbsence'),
       })
       .govern('timesheet', openGovernance());
-    w.registry.govern('payroll', { ...openGovernance(), state: 'disabled' });
+    // Payroll's follower is for employees only now: Hillevi still sees payroll, but may not call it.
+    w.registry
+      .replace({
+        ...payrollConnector,
+        capabilities: payrollConnector.capabilities.map(c =>
+          c.name === 'payroll.followAbsence' ? { ...c, scope: { roles: ['employee' as const] } } : c,
+        ),
+      })
+      .govern('payroll', openGovernance());
     const p = await w.jobs.assemble(manager, fact, w.call);
     expect(p.steps.map(s => s.connector)).toEqual(['hr']);
     expect(p.partial).toBe(true);
@@ -404,6 +416,40 @@ describe('a job across systems is assembled from what connectors follow', () => 
       ['timesheet', 'not-a-follower'],
       ['payroll', 'capability-unavailable'],
     ]);
+  });
+  test('a bound system the person cannot see is never named to them: not its id, its name nor its capability (CB-7)', async () => {
+    const w = world();
+    await w.bindAll();
+    // Payroll is for managers only, and switched off for a while; an employee posts the fact.
+    w.registry.govern('payroll', { ...openGovernance(), audience: { mode: 'selected', roles: ['manager'] } });
+    const employee: AuthenticatedContext = {
+      ...manager,
+      id: 'hassan',
+      name: 'Hassan',
+      role: 'employee',
+      principal: { id: 'person:hassan', kind: 'person' },
+    };
+    const seen = (p: JobProposal) => JSON.stringify(p);
+    const asEmployee = await w.jobs.assemble(employee, fact, w.call);
+    expect(asEmployee.sources.map(s => s.connector)).toEqual(['hr', 'timesheet']);
+    expect(asEmployee.steps.map(s => s.connector)).toEqual(['hr', 'timesheet']);
+    for (const word of ['payroll', 'Lönesystemet']) expect(seen(asEmployee)).not.toContain(word);
+    expect(w.registry.followers(employee, fact.kind).map(f => f.connectorId)).toEqual(['hr', 'timesheet']);
+    // The manager, in its audience, is still asked; switched off, the connector is there for nobody.
+    expect((await w.jobs.assemble(manager, fact, w.call)).sources.map(s => s.connector)).toEqual([
+      'hr',
+      'timesheet',
+      'payroll',
+    ]);
+    w.registry.govern('payroll', { ...openGovernance(), state: 'disabled' });
+    const off = await w.jobs.assemble(manager, fact, w.call);
+    for (const word of ['payroll', 'Lönesystemet']) expect(seen(off)).not.toContain(word);
+    // A proposal assembled before the connector was hidden is stale at approval: what it names is no longer there.
+    w.registry.govern('payroll', openGovernance());
+    const before = await w.jobs.assemble(manager, fact, w.call);
+    w.registry.govern('payroll', { ...openGovernance(), audience: { mode: 'selected', roles: ['employee'] } });
+    await expect(w.approve(before)).rejects.toThrow('Förslaget har ändrats');
+    expect(w.store.audit()).toEqual([]);
   });
   test('a follower that names another system, or answers off contract, is unavailable and its steps are dropped', async () => {
     const rogue: Connector = {

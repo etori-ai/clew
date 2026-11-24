@@ -336,19 +336,43 @@ describe('the catalogue', () => {
       'Kompetensen finns inte i katalogen.',
     );
   });
-  test('a new validity is counted before it is confirmed, over the holdings that end by the rule', async () => {
+  test('a new validity is counted before it is confirmed, over active people’s holdings that end by the rule, and says how many change only over five people (CO-L1)', async () => {
     const { hlr } = await catalogue();
     // Issued 18 months ago: valid under 24 months, expired under 12. Bo's has the issuer's own date and is not counted.
     await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-05-10' });
     await competence.registerHolding(boss, 'bo', { typeId: hlr, issuedOn: '2025-05-10', expiresOn: '2030-01-01' });
     const written = audits().length;
-    expect(await competence.validityImpact(admin, hlr, 12)).toEqual({ holdings: 1, expiredBefore: 0, expiredAfter: 1 });
+    // One person's holding: fewer than five, and nothing of what changes, whatever the months asked, so asking month by
+    // month never dates it.
+    for (const months of [1, 12, 20, 600, null])
+      expect(await competence.validityImpact(admin, hlr, months)).toEqual({ holdings: 'few' });
+    // Five more people, Olle's: four issued 10 months ago, one 34 months ago and expired under 24.
+    const five = ['e1', 'e2', 'e3', 'e4', 'e5'];
+    for (const id of five) store.addPerson({ id, organisationId: ORG, name: 'Person ' + id, userName: id });
+    staff.get('other')!.units[0]!.people.push(...five.map(id => person(id, 'Person ' + id, id)));
+    for (const id of five)
+      await competence.registerHolding(other, id, { typeId: hlr, issuedOn: id === 'e5' ? '2024-01-10' : '2026-01-10' });
+    const registered = audits().length;
+    // Six people: how many change is given, a count below five as "few".
+    expect(await competence.validityImpact(admin, hlr, 12)).toEqual({ holdings: 6, turnExpired: 'few', turnValid: 0 });
+    expect(await competence.validityImpact(admin, hlr, 6)).toEqual({ holdings: 6, turnExpired: 5, turnValid: 0 });
     expect(await competence.validityImpact(admin, hlr, null)).toEqual({
-      holdings: 1,
-      expiredBefore: 0,
-      expiredAfter: 0,
+      holdings: 6,
+      turnExpired: 0,
+      turnValid: 'few',
     });
-    expect(audits()).toHaveLength(written);
+    // A deactivated person's holding is not counted: two gone leave four people, too few to say what changes.
+    deactivate('e5');
+    expect(await competence.validityImpact(admin, hlr, 6)).toEqual({ holdings: 5, turnExpired: 5, turnValid: 0 });
+    deactivate('e4');
+    expect(await competence.validityImpact(admin, hlr, 6)).toEqual({ holdings: 'few' });
+    for (const id of ['anna', 'e1', 'e2', 'e3']) deactivate(id);
+    expect(await competence.validityImpact(admin, hlr, 6)).toEqual({ holdings: 0 });
+    for (const id of ['anna', 'e1', 'e2', 'e3', 'e4', 'e5'])
+      store.addPerson({ ...store.state.persons.get(id)!, enabled: true });
+    // Asking writes nothing.
+    expect(audits()).toHaveLength(registered);
+    expect(registered - written).toBe(five.length);
     // Confirmed, the status follows at once: nothing about the holding was rewritten.
     await competence.updateType(admin, hlr, { validityMonths: 12 });
     expect((await competence.holdings(asAnna)).rows.map(r => [r.competence, r.status, r.expiresOn])).toEqual([
@@ -1763,6 +1787,63 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         meeting: 4,
         share: 50,
         met: false,
+      });
+    });
+
+    test('targets of one type on a unit and on a unit below it that the reader manages too are judged together, so their difference never singles anyone out (CO-M1)', async () => {
+      directory();
+      const { hlr } = await catalogue();
+      // Karin leads förvaltning X and is acting head of avdelning Z under it; under Z, enhet W has five undersköterskor,
+      // and under X, enhet Y has one, Yan. Karin has one report on each of her units.
+      store.addUnit({ id: 'x', organisationId: ORG, label: 'Förvaltning X', parentId: null });
+      store.addUnit({ id: 'z', organisationId: ORG, label: 'Avdelning Z', parentId: 'x' });
+      store.addUnit({ id: 'w', organisationId: ORG, label: 'Enhet W', parentId: 'z' });
+      store.addUnit({ id: 'y', organisationId: ORG, label: 'Enhet Y', parentId: 'x' });
+      const usk = (id: string, unitId: string) => {
+        store.addPerson({ id, organisationId: ORG, name: 'Person ' + id, userName: id });
+        store.assign(id, unitId);
+        store.holdPosition(id, 'pos-usk');
+        return person(id, 'Person ' + id, id);
+      };
+      const rx = usk('rx', 'x'),
+        rz = usk('rz', 'z');
+      for (const id of ['w1', 'w2', 'w3', 'w4', 'w5']) usk(id, 'w');
+      const yan = usk('yan', 'y');
+      staff.set('boss', {
+        units: [
+          { unitId: 'x', unitLabel: 'Förvaltning X', people: [rx] },
+          { unitId: 'z', unitLabel: 'Avdelning Z', people: [rz] },
+        ],
+      });
+      staff.set('yman', { units: [{ unitId: 'y', unitLabel: 'Enhet Y', people: [yan] }] });
+      const onX = await competence.addShareTarget(admin, { typeId: hlr, positionCode: USK, unitId: 'x', minShare: 80 });
+      const onZ = await competence.addShareTarget(admin, { typeId: hlr, positionCode: USK, unitId: 'z', minShare: 80 });
+      const figures = async () => {
+        const read = async (unit: string) =>
+          (await competence.coverage(boss, unit)).targets.map(t => [t.target.id, t.holders, t.meeting, t.withheld]);
+        return {
+          x: await read('x'),
+          z: await read('z'),
+          about: (await competence.aboutUnits(boss, ['x', 'z'])).flatMap(u => u.targets.map(t => t.withheld)),
+        };
+      };
+      // Each alone counts five or more people Karin does not know, but X less Z is her report on X and Yan: both are
+      // withheld, on the unit's read and on the read about her units alike.
+      const before = await figures();
+      expect(before).toEqual({
+        x: [[onX, 0, 0, true]],
+        z: [[onZ, 0, 0, true]],
+        about: [true, true],
+      });
+      // Yan's manager registers her HLR: nothing Karin reads moves.
+      await competence.registerHolding(personaOf('yman', 'manager'), 'yan', { typeId: hlr, issuedOn: '2026-01-10' });
+      expect(await figures()).toEqual(before);
+      // With five people on Y the part of X outside Z is safe to count, and both figures are given.
+      for (const id of ['y2', 'y3', 'y4', 'y5']) usk(id, 'y');
+      expect(await figures()).toEqual({
+        x: [[onX, 12, 1, false]],
+        z: [[onZ, 6, 0, false]],
+        about: [false, false],
       });
     });
 

@@ -55,7 +55,7 @@ A job prepares independent steps across several systems. The current example is 
 | Binding | Administrator configuration permitting a particular follower for a fact kind and audience, with an optional watch-window cap. Default is deny. |
 | Step | An execute with approved input or a bounded watch over a read. It names the follower's own connector only. |
 
-Assembly asks bound followers concurrently as the person. Each answers with zero or more steps; Clew reports every bound system's outcome and marks partial proposals. Preparing the proposal performs no source writes.
+Assembly asks bound followers concurrently as the person. Each answers with zero or more steps; Clew reports the outcome of every binding that is there for the person and marks partial proposals. A binding whose audience leaves the person out, or whose connector they cannot see (switched off, or outside its audience), is not in their proposal at all, so no connector is named to someone it is hidden from (D23). Preparing the proposal performs no source writes.
 
 Approval commits the job, execution rows, watch intent, audit and outbox in one transaction. Each execute then uses its own operation identity, source guarantees and receipt. Each watch has committed check times and a deadline; the durable workflow calls the authorized read and settles it as seen, blocked or expired. An expired watch can create a card for the person. Undo records separate compensations for supported steps.
 

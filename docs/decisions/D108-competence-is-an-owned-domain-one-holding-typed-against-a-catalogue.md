@@ -268,7 +268,8 @@ address opens nothing.
 `admin.competence` and while the module is off, and the page then says which and links to Anslutna system. A type is
 added and changed in a dialog over the list (`?type=new`, `?type=<id>`). A changed validity is not saved at the first
 press: the page asks `validityImpact` and says how many holdings are counted from the rule and how many the change
-turns expired, and the second press saves. Archiving is asked for twice, since there is no way back. `NumberInput` is
+turns expired, and the second press saves. Since 2026-11-24 (CO-L1 of the review of 2026-11-23) it counts active
+people's holdings only, says "färre än 5" below five, and says how many change only over five people or more. Archiving is asked for twice, since there is no way back. `NumberInput` is
 exported from `@clew/ui` for it.
 
 *What was thrown away.* The branch first built its own half of D97 (a composite `clew.about`, a mark column and a
@@ -460,7 +461,9 @@ What each does, its limits and its tests are in [implementation status](../refer
 kept current; this paragraph is not.
 
 Where the build is narrower than the items: a small group is never counted on its own in coverage (fewer than five
-is not shown), and the same rule holds for the numbers an administrator sees before a merge; a manager's people are
+is not shown), nor in the difference between two share targets of one type that one manager reads, on one unit or on
+two of theirs, and the same rule holds for the numbers an administrator sees before a merge and before a change of
+validity; a manager's people are
 their direct reports ([D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)
 item 4), not everyone on a unit they lead; item 15's row per unit for coverage is not written, and of a manager's
 reads only one report's holdings and the matrix export are logged (D121, "As built"); a person who reports to nobody

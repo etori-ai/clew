@@ -133,7 +133,7 @@ export const ActorSchema = object(
       Type.Array(object({ unitId: Type.String({ minLength: 1, maxLength: 256 }), unitLabel: Type.String() }), {
         maxItems: 200,
         description:
-          "The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone.",
+          "The units a manager follows up (D117): the ones they manage and those of the managers who report to them (D99), never one they are only placed on (D135). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone.",
       }),
     ),
     assignments: Type.Optional(

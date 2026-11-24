@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
 import { manifest, CONNECTOR } from './manifest.mjs';
-import { dateIn, seed, shortDate, substitutesOf } from './fixture.mjs';
+import { dateIn, seed, shortDate, staffOf, substitutesOf } from './fixture.mjs';
 import { memoryState } from './state.mjs';
 
 export { manifest };
@@ -42,8 +42,11 @@ export function createConnector({
   const personKey = actor => unitOf(actor) + ':' + personOf(actor);
   /** The days marked as absence through Clew, keyed by the operation that marked them. */
   const marked = () => state.get('absences', {});
-  const shiftOf = (person, date) => {
-    const s = shifts().find(s => s.employee === person && s.date === date);
+  /** Whether the person is on the staff of the manager's unit, as the time system registers it. */
+  const inUnit = (actor, person) => (staffOf[unitOf(actor)] ?? []).includes(person);
+  /** The person's shift on a day in the manager's unit; a shift in another unit is not theirs to see. */
+  const shiftOf = (actor, person, date) => {
+    const s = shifts().find(s => s.employee === person && s.date === date && s.unitId === unitOf(actor));
     return s ? `${s.start}–${s.end} på ${s.ward}` : null;
   };
   const receipt = row => ({
@@ -85,10 +88,10 @@ export function createConnector({
   };
 
   const proposals = {
-    'timesheet.followAbsence': (_actor, input) => {
+    'timesheet.followAbsence': (actor, input) => {
       const a = input.fact.attributes;
       if (typeof a.person !== 'string' || typeof a.from !== 'string') return { steps: [] };
-      const shift = shiftOf(a.person, a.from);
+      const shift = shiftOf(actor, a.person, a.from);
       return {
         steps: [
           {
@@ -104,19 +107,25 @@ export function createConnector({
   };
 
   const writes = {
-    'timesheet.markAbsence': (_actor, input, operationId) => {
+    // A write answers for the manager's own unit, as the roster does: someone outside it is a failed row, no shift told.
+    'timesheet.markAbsence': (actor, input, operationId) => {
+      const failed = (headline, detail) => ({
+        headline,
+        rows: [
+          {
+            ref: `timesheet:shift:${input.person.split(':').pop()}:${input.date}`,
+            label: 'Frånvaro',
+            outcome: 'failed',
+            detail,
+          },
+        ],
+      });
       if (fault === 'conflict')
-        return {
-          headline: 'Schemaraden har ändrats i tidrapporteringen.',
-          rows: [
-            {
-              ref: `timesheet:shift:${input.person.split(':').pop()}:${input.date}`,
-              label: 'Frånvaro',
-              outcome: 'failed',
-              detail: 'ändrad av någon annan, läs tillbaka och försök igen',
-            },
-          ],
-        };
+        return failed(
+          'Schemaraden har ändrats i tidrapporteringen.',
+          'ändrad av någon annan, läs tillbaka och försök igen',
+        );
+      if (!inUnit(actor, input.person)) return failed('Passet kunde inte markeras som frånvaro.', 'inte i din enhet');
       const rows = marked();
       const key = operationId ?? `${input.person}:${input.date}`;
       if (rows[key]) return receipt(rows[key]);
@@ -124,26 +133,26 @@ export function createConnector({
         ref: `timesheet:absence:${input.person.split(':').pop()}:${input.date}`,
         person: input.person,
         date: input.date,
-        shift: shiftOf(input.person, input.date),
+        shift: shiftOf(actor, input.person, input.date),
         at: now(),
       };
       rows[key] = row;
       state.set('absences', rows);
       return receipt(row);
     },
-    'timesheet.unmarkAbsence': (_actor, input) => {
+    'timesheet.unmarkAbsence': (actor, input) => {
       const rows = marked();
-      for (const [key, row] of Object.entries(rows)) if (input.refs.includes(row.ref)) delete rows[key];
+      const answered = input.refs.map(ref => {
+        const keys = Object.keys(rows).filter(key => rows[key].ref === ref && inUnit(actor, rows[key].person));
+        // A mark outside the unit answers as one that does not exist, so whether it does is not told.
+        if (keys.length === 0)
+          return { ref, label: 'Frånvaro', outcome: 'failed', detail: 'finns inte i tidrapporteringen' };
+        for (const key of keys) delete rows[key];
+        return { ref, label: 'Frånvaro', outcome: 'done', detail: 'borttagen i tidrapporteringen' };
+      });
       state.set('absences', rows);
-      return {
-        headline: 'Markeringen är borttagen.',
-        rows: input.refs.map(ref => ({
-          ref,
-          label: 'Frånvaro',
-          outcome: 'done',
-          detail: 'borttagen i tidrapporteringen',
-        })),
-      };
+      const any = answered.some(r => r.outcome === 'done');
+      return { headline: any ? 'Markeringen är borttagen.' : 'Markeringen kunde inte tas bort.', rows: answered };
     },
   };
 

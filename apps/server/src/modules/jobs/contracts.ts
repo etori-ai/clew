@@ -29,7 +29,11 @@ export interface FollowBinding extends FollowBindingInput {
   updatedAt: string;
 }
 export type JobSourceStatus = 'ok' | 'timeout' | 'unavailable' | 'degraded' | 'disabled';
-/** Every bound follower is reported: a system that did not answer or can no longer follow is named, never silently missing. */
+/**
+ * Every binding that is there for the person is reported: a system that did not answer or can no longer follow is named,
+ * never silently missing. A binding made for others, or whose connector the person cannot see, is not there for them and
+ * is never named (D23).
+ */
 export interface JobSource {
   binding: string;
   bindingRevision: string;

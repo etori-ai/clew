@@ -445,10 +445,31 @@ describe('activities', () => {
     const id = await dialogue.addActivity(ingrid, 'u-skola', { area: 'operations', text: 'Plan' });
     await expect(dialogue.completeActivity(olle, id)).rejects.toThrow('Du kan inte ändra den här aktiviteten.');
     await expect(dialogue.completeActivity(olle, 'nope')).rejects.toThrow('Du kan inte ändra den här aktiviteten.');
-    // The owner keeps their own activity even after the unit is no longer theirs to follow up.
+    // The owner may still mark their own activity done after the unit is no longer theirs to follow up (D118 item 5),
+    // and nothing else: what the unit's managers read now is theirs to change, open again or remove (BD-L2).
     followed.set('hillevi', []);
+    const written = store.audit().length;
+    await expect(dialogue.editActivity(hillevi, id, { text: 'Omskriven', dueOn: null })).rejects.toThrow(
+      'Du kan inte ändra den här aktiviteten.',
+    );
     await dialogue.completeActivity(hillevi, id);
     expect(store.state.activities.get(id)!.doneBy).toBe('hillevi');
+    expect(store.audit().slice(written)).toEqual([
+      {
+        actor: 'person:hillevi',
+        action: 'dialogue.activity_done',
+        subject: 'dialogue-activity:' + id,
+        at: at(),
+        details: { unitId: 'u-skola', area: 'operations', by: 'owner', note: false },
+      },
+    ]);
+    await expect(dialogue.reopenActivity(hillevi, id)).rejects.toThrow('Du kan inte ändra den här aktiviteten.');
+    await expect(dialogue.removeActivity(hillevi, id)).rejects.toThrow('Du kan inte ändra den här aktiviteten.');
+    expect(store.state.activities.get(id)).toMatchObject({ text: 'Plan', doneBy: 'hillevi' });
+    expect(store.audit()).toHaveLength(written + 1);
+    // Ingrid, who follows the unit up, still may.
+    await dialogue.reopenActivity(ingrid, id);
+    expect(store.state.activities.get(id)!.doneAt).toBeNull();
   });
 
   test('the timer brings an open dated activity back; a done one stays put', async () => {

@@ -53,7 +53,7 @@ An execute returns `ExecuteResult` inside `{ output }`:
 - Optional `undoCapability` and `undoMinutes`: a compensating execute of this same connector and the allowed window.
 - Optional `undoInput`: source-supplied input for that compensation, when the current contract requires more than the original refs (for example, the resulting revision). Validate it as part of the approved undo path; it does not grant authority.
 
-`done` needs source evidence. A timeout after sending a write is an unknown effect, not a known failure and not permission to retry. Lookup/reconciliation must establish the original result before a safe replay decision. Avoid putting entire source payloads or credentials in receipts. Undo is another authorized, auditable source effect; only offer it when the source supports it.
+`done` needs source evidence. A timeout after sending a write is an unknown effect, not a known failure and not permission to retry. Lookup/reconciliation must establish the original result before a safe replay decision. Avoid putting entire source payloads or credentials in receipts. Undo is another authorized, auditable source effect; only offer it when the source supports it. Check who may make it as the write it takes back is checked: Clew validates only the payload's schema, so a ref outside the person's reach is a failed row and nothing is undone.
 
 ## Test the failure cases
 

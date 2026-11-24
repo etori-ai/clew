@@ -435,19 +435,18 @@ export function createConnector({
         undoMinutes: TALK_UNDO_MINUTES,
       };
     },
-    'hr.unbookTalk': (_actor, input) => {
+    // An undo answers for the manager's own unit as the write it takes back does: a ref outside it is a failed row.
+    'hr.unbookTalk': (actor, input) => {
       const talks = booked();
-      for (const ref of input.refs) delete talks[ref];
+      const unit = managedStaff(actor).map(e => e.ref);
+      const rows = input.refs.map(ref => {
+        if (!unit.includes(ref)) return { ref, label: 'Omtankesamtal', outcome: 'failed', detail: 'inte i din enhet' };
+        delete talks[ref];
+        return { ref, label: 'Omtankesamtal', outcome: 'done', detail: 'borttaget i personalsystemet' };
+      });
       state.set('talks', talks);
-      return {
-        headline: 'Bokningen är borttagen.',
-        rows: input.refs.map(ref => ({
-          ref,
-          label: 'Omtankesamtal',
-          outcome: 'done',
-          detail: 'borttaget i personalsystemet',
-        })),
-      };
+      const any = rows.some(r => r.outcome === 'done');
+      return { headline: any ? 'Bokningen är borttagen.' : 'Bokningen kunde inte tas bort.', rows };
     },
     'hr.decideLeave': (actor, input) => {
       if (fault === 'conflict') return conflictRows(input.refs, 'Ansökan');
@@ -475,27 +474,26 @@ export function createConnector({
         undoMinutes: 10,
       };
     },
-    'hr.undecideLeave': (_actor, input) => {
+    'hr.undecideLeave': (actor, input) => {
       const done = decided();
-      for (const ref of input.refs) delete done[ref];
+      const unit = managedStaff(actor).map(e => e.ref);
+      const rows = input.refs.map(ref => {
+        if (!records().leaveRequests.some(r => r.ref === ref && unit.includes(r.employee)))
+          return { ref, label: 'Ansökan', outcome: 'failed', detail: 'finns inte i personalsystemet' };
+        delete done[ref];
+        return { ref, label: 'Ansökan', outcome: 'done', detail: 'väntar igen i personalsystemet' };
+      });
       state.set('leave-decisions', done);
-      return {
-        headline: 'Beslutet är återtaget; ansökan väntar igen.',
-        rows: input.refs.map(ref => ({
-          ref,
-          label: 'Ansökan',
-          outcome: 'done',
-          detail: 'väntar igen i personalsystemet',
-        })),
-      };
+      const any = rows.some(r => r.outcome === 'done');
+      return { headline: any ? 'Beslutet är återtaget; ansökan väntar igen.' : 'Beslutet kunde inte återtas.', rows };
     },
     'hr.reportAbsence': (actor, input, operationId) => {
       if (fault === 'conflict') return conflictRows([input.person], 'Sjukanmälan');
+      if (!managedStaff(actor).some(e => e.ref === input.person))
+        throw new Invalid('Medarbetaren finns inte i din enhet.');
       const all = reported();
       const key = operationId ?? `${input.person}:${input.from}`;
       if (all[key]) return absenceReceipt(all[key]);
-      if (!managedStaff(actor).some(e => e.ref === input.person))
-        throw new Invalid('Medarbetaren finns inte i din enhet.');
       const row = {
         ref: `hr:absence:${input.person.split(':').pop()}:${input.from}`,
         person: input.person,
@@ -508,19 +506,20 @@ export function createConnector({
       state.set('reported-absences', all);
       return absenceReceipt(row);
     },
-    'hr.withdrawAbsence': (_actor, input) => {
+    'hr.withdrawAbsence': (actor, input) => {
       const all = reported();
-      for (const [key, row] of Object.entries(all)) if (input.refs.includes(row.ref)) delete all[key];
+      const unit = managedStaff(actor).map(e => e.ref);
+      const rows = input.refs.map(ref => {
+        const keys = Object.keys(all).filter(key => all[key].ref === ref && unit.includes(all[key].person));
+        // A report of someone outside the unit answers as one that does not exist, so whether it does is not told.
+        if (keys.length === 0)
+          return { ref, label: 'Sjukanmälan', outcome: 'failed', detail: 'finns inte i personalsystemet' };
+        for (const key of keys) delete all[key];
+        return { ref, label: 'Sjukanmälan', outcome: 'done', detail: 'borttagen i personalsystemet' };
+      });
       state.set('reported-absences', all);
-      return {
-        headline: 'Sjukanmälan är borttagen.',
-        rows: input.refs.map(ref => ({
-          ref,
-          label: 'Sjukanmälan',
-          outcome: 'done',
-          detail: 'borttagen i personalsystemet',
-        })),
-      };
+      const any = rows.some(r => r.outcome === 'done');
+      return { headline: any ? 'Sjukanmälan är borttagen.' : 'Sjukanmälan kunde inte tas bort.', rows };
     },
     'hr.renewDelegation': (actor, input) => {
       const me = own(actor);

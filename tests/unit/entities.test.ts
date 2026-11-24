@@ -11,7 +11,14 @@ import {
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
-import { checkRows, chunk, isKey, listedKeys, managedPerson } from '../../apps/server/src/modules/entities/domain';
+import {
+  checkRows,
+  chunk,
+  followedUnits,
+  isKey,
+  listedKeys,
+  managedPerson,
+} from '../../apps/server/src/modules/entities/domain';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
 import type { DirectoryPerson, EntityBudget } from '../../apps/server/src/modules/entities/model';
@@ -338,6 +345,42 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
         lineReports: [],
       }),
     ).toEqual([{ key: 'a', sourceKey: 'a' }]);
+  });
+  test('a source is told as followed the units the reader manages and those below, never one they are only placed on (D117, D135 item 5)', () => {
+    // Anna leads A, below which Bo leads C, and is a teacher on B as well.
+    const reach = {
+      units: [
+        { unitId: 'a', unitLabel: 'A', role: 'manager' as const },
+        { unitId: 'b', unitLabel: 'B', role: 'employee' as const },
+      ],
+      managed: [
+        {
+          unitId: 'a',
+          unitLabel: 'A',
+          people: [
+            {
+              id: 'bo',
+              name: 'Bo',
+              userName: 'bo',
+              enabled: true,
+              below: [{ unitId: 'c', unitLabel: 'C', role: 'manager' as const }],
+            },
+          ],
+        },
+      ],
+      above: [],
+      lineReports: [],
+    };
+    expect(followedUnits(reach)).toEqual([
+      { unitId: 'a', unitLabel: 'A' },
+      { unitId: 'c', unitLabel: 'C' },
+    ]);
+    // The list still has B, where she is a member, and a read that admits a member is asked about it.
+    expect(listedKeys('unit', reach).map(u => u.key)).toEqual(['a', 'b', 'c']);
+    // A manager's role on a unit not on her cards is still one she manages.
+    expect(followedUnits({ ...reach, units: [{ unitId: 'd', unitLabel: 'D', role: 'manager' }], managed: [] })).toEqual(
+      [{ unitId: 'd', unitLabel: 'D' }],
+    );
   });
   /** A reader who manages nobody else's line: no units, nobody above, no co-manager reporting to them. */
   const NO_LINE = { units: [], managed: [], above: [], lineReports: [] };

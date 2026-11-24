@@ -3,22 +3,30 @@ import type { FollowBinding, JobSource, JobStepDraft, StepDraft } from './contra
 import type { LedgerStep } from './model';
 
 /**
- * The pure part of jobs (D55): whether a binding may run for this actor now, whether a follower's step is its own, how a
- * watch window becomes committed check times, and how the fan-out is reported. No I/O, no clock of its own.
+ * The pure part of jobs (D55): whether a binding is there for this actor and may run now, whether a follower's step is
+ * its own, how a watch window becomes committed check times, and how the fan-out is reported. No I/O, no clock of its
+ * own.
  */
 export type BindingVerdict =
   | { status: 'ok' }
-  | { status: 'disabled'; reason: 'switched-off' | 'audience' }
+  | { status: 'disabled'; reason: 'switched-off' }
   | { status: 'degraded'; reason: 'kind-not-offered' | 'not-a-follower' | 'capability-unavailable' };
-/** D37's rule applied to a binding: the kind must still be created, the follower must still exist, follow the kind and be callable by this person. */
-export function classify(
-  binding: FollowBinding,
-  actor: AudiencedActor,
-  offered: boolean,
-  follower: FollowerRef | undefined,
-): BindingVerdict {
+/** The connector a binding's follower belongs to: a capability's name begins with its connector's id. */
+export const connectorOf = (binding: Pick<FollowBinding, 'capability'>) => binding.capability.split('.')[0]!;
+/**
+ * Whether a binding is there at all for this person: they are in its audience, and the connector of its follower exists
+ * for them (`visible`: registered, switched on, they are in its audience, D23). Any other binding is left out of their
+ * proposal as if it were not bound, so a proposal never names a connector to someone outside its audience, nor a binding
+ * the administrator made for others; every binding that is there is named with its outcome (D55 item 10).
+ */
+export const applies = (binding: FollowBinding, actor: AudiencedActor, visible: (connectorId: string) => boolean) =>
+  inAudience(binding.audience, actor) && visible(connectorOf(binding));
+/**
+ * D37's rule applied to a binding that is there for the person (`applies`): it must be switched on, the kind must still
+ * be created, the follower must still exist, follow the kind and be callable by this person.
+ */
+export function classify(binding: FollowBinding, offered: boolean, follower: FollowerRef | undefined): BindingVerdict {
   if (!binding.enabled) return { status: 'disabled', reason: 'switched-off' };
-  if (!inAudience(binding.audience, actor)) return { status: 'disabled', reason: 'audience' };
   if (!offered) return { status: 'degraded', reason: 'kind-not-offered' };
   if (!follower || !follower.follows.includes(binding.kind)) return { status: 'degraded', reason: 'not-a-follower' };
   if (!follower.available) return { status: 'degraded', reason: 'capability-unavailable' };

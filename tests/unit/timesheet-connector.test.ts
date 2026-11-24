@@ -24,6 +24,13 @@ const hassan: Actor = {
   unitLabel: 'Skönsmons skola',
   role: 'employee',
 };
+const karin: Actor = {
+  id: 'karin',
+  name: 'Karin Holm',
+  unitId: 'enhet-17',
+  unitLabel: 'Hemtjänst Norr',
+  role: 'manager',
+};
 type Today = { date: string; rows: Array<{ person: string; absent: boolean }> };
 type Result = { rows: Array<{ ref: string; outcome: string; detail: string }> };
 
@@ -102,6 +109,46 @@ describe('the time-reporting fixture connector', () => {
       { refs: ['timesheet:absence:1005:2026-11-04'] },
       { operationId: 'step-2' },
     );
+    expect((await registry.run<Today>(hillevi, 'timesheet.today', {})).rows[0]!.absent).toBe(false);
+  });
+  test("a mark and its undo answer for the manager's own unit, and another unit's shift is never told (CS-M2)", async () => {
+    const { registry } = stack();
+    const payload = { person: 'hr:emp:1005', date: '2026-11-04' };
+    const marked = await registry.run<Result>(hillevi, 'timesheet.markAbsence', payload, { operationId: 'h1' });
+    const ref = marked.rows[0]!.ref;
+    // Karin manages a unit with no shifts here.
+    const proposed = await registry.run<{ steps: Array<{ detail?: string }> }>(karin, 'timesheet.followAbsence', {
+      fact: { kind: 'hr:absence', attributes: { person: 'hr:emp:1006', from: '2026-11-04' } },
+    });
+    expect(proposed.steps[0]!.detail).toBe('4 nov., ingen schemarad den dagen');
+    const foreign = await registry.run<Result & { headline: string }>(
+      karin,
+      'timesheet.markAbsence',
+      { person: 'hr:emp:1006', date: '2026-11-04' },
+      { operationId: 'k1' },
+    );
+    expect([foreign.headline, foreign.rows.map(r => [r.outcome, r.detail])]).toEqual([
+      'Passet kunde inte markeras som frånvaro.',
+      [['failed', 'inte i din enhet']],
+    ]);
+    const undo = await registry.run<Result & { headline: string }>(
+      karin,
+      'timesheet.unmarkAbsence',
+      { refs: [ref] },
+      { operationId: 'k2' },
+    );
+    expect([undo.headline, undo.rows.map(r => [r.outcome, r.detail])]).toEqual([
+      'Markeringen kunde inte tas bort.',
+      [['failed', 'finns inte i tidrapporteringen']],
+    ]);
+    const roster = (await registry.run<Today>(hillevi, 'timesheet.today', {})).rows;
+    expect(roster.map(r => [r.person, r.absent])).toEqual([
+      ['hr:emp:1005', true],
+      ['hr:emp:1006', false],
+      ['hr:emp:1007', false],
+      ['hr:emp:1012', false],
+    ]);
+    await registry.run(hillevi, 'timesheet.unmarkAbsence', { refs: [ref] }, { operationId: 'h2' });
     expect((await registry.run<Today>(hillevi, 'timesheet.today', {})).rows[0]!.absent).toBe(false);
   });
   test('a fact without a person or a day gives no step; a crash after the commit is found by the lookup', async () => {

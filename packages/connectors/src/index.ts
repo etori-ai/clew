@@ -1512,12 +1512,19 @@ export class Registry implements HoldingsReader {
     };
   }
   /**
-   * Every registered `propose` that follows a fact kind (D55), whether or not this person may call it: the job assembler
-   * classifies an administrator's binding against it, so a follower that went away or out of scope is named, never silently skipped.
+   * Every registered `propose` that follows a fact kind (D55) on a connector that exists for this person (`visible`),
+   * whether or not they may call it: the job assembler classifies an administrator's binding against it, so a follower
+   * out of scope or switched off is named, never silently skipped. A follower of a connector hidden from the person is
+   * not answered, so its id, name and capability never reach them (D23).
    */
-  followers(actor: Actor, kind: string): FollowerRef[] {
+  followers(actor: AudiencedActor, kind: string): FollowerRef[] {
     return [...this.capabilities.values()]
-      .filter(c => c.capability.kind === 'propose' && c.capability.follows?.includes(kind))
+      .filter(
+        c =>
+          c.capability.kind === 'propose' &&
+          c.capability.follows?.includes(kind) &&
+          this.visible(actor, c.connector.id),
+      )
       .map(c => ({
         name: c.capability.name,
         connectorId: c.connector.id,

@@ -1122,84 +1122,104 @@ export function usersAdminUsecases(deps: {
     };
   }
   /**
-   * D121: a group gives, or stops giving, a relation to people by grant: as `change` does for a capability, in one
-   * transaction with its audit row (`group-relation.added`, `group-relation.removed`) and every current member re-derived,
-   * so the relation is held exactly while the row and the membership are.
+   * D85, D121: a group gives, or stops giving, a capability or a relation to people, in one transaction with its audit
+   * row (`group-capability.added`/`.removed`, `group-relation.added`/`.removed`) and every current member of the group
+   * re-derived, so what the row gives is held exactly while the row and the membership are. Both mappings are decided
+   * alike (ID-7 of the review of 2026-11-23). True when a row changed, false when none did, and undefined, with nothing
+   * written, for an addition no group of the organisation holds the key for.
    */
-  async function changeRelation(persona: AuthenticatedContext, input: GroupRelationInputType, present: boolean) {
+  async function mapWithin(
+    tx: ProvisionTx,
+    actor: string,
+    organisationId: string,
+    groupExternalId: string,
+    present: boolean,
+    mapping: { capability: Capability } | { relation: RelationGrant },
+  ): Promise<boolean | undefined> {
+    // An id that holds a NUL names no group and no row, and the store is never handed it.
+    const named = !holdsNul(groupExternalId);
+    // D101: another organisation's group does not exist for this administrator, throughout. A row is the organisation's
+    // that wrote it (migration 0051), so a row on an id that another organisation's group took over is a row whose
+    // group is gone, and it may be removed as any such row may (D85). Only adding needs the group.
+    const ownGroup = async () => {
+      const found = named ? await tx.findGroup('externalId', groupExternalId) : undefined;
+      return found?.organisationId === organisationId ? found : undefined;
+    };
+    const seen = await ownGroup();
+    if (!seen && present) return undefined;
+    // Locked as a SCIM write of the group locks it, and before its members are read: a member added while the row is
+    // being taken away is derived after this change, and does not keep what no row gives. A write of the group that
+    // holds the row now commits first, and what it left is read below.
+    if (seen) await tx.readGroup(organisationId, seen.id, true);
+    // Then the organisation's rows, before one is written. A group write derives from the rows it read until it commits,
+    // so this waits for it and derives the members as it left them; a group write that comes later waits for this change
+    // and reads the rows it leaves. That holds for a row whose group is gone and is pushed again meanwhile, which no
+    // group lock covers: its members are read after the push commits, or the push reads the rows after this.
+    await tx.lockGroupCapabilities(organisationId, 'change');
+    // The organisation's group that holds the key now that both are held, which decides the change: a group re-keyed or
+    // removed while this change waited holds it no longer, so adding is refused as it would have been after that write,
+    // and nothing is written; a group pushed again under the key meanwhile holds it, with its members and name.
+    const holder = await ownGroup();
+    if (!holder && present) return undefined;
+    const changed =
+      named &&
+      (await ('capability' in mapping
+        ? tx.setGroupCapability(organisationId, groupExternalId, mapping.capability, present)
+        : tx.setGroupRelation(organisationId, groupExternalId, mapping.relation, present)));
+    if (!changed) return false;
+    await tx.audit({
+      actor,
+      action: `${'capability' in mapping ? 'group-capability' : 'group-relation'}.${present ? 'added' : 'removed'}`,
+      subject: 'group:' + groupExternalId,
+      details: { ...mapping, groupLabel: holder?.label ?? null },
+    });
+    // The organisation's rows as this change leaves them, read once for every member of the group: they are held, so no
+    // other change to them and no group write that reads them runs until this one commits. The row applies to the
+    // members of the organisation's own group alone; a key another organisation's group holds names none of this
+    // organisation's people (D101).
+    if (holder)
+      await derivation.deriveAll(
+        tx,
+        actor,
+        await tx.members(groupExternalId),
+        await organisationRules(tx, organisationId),
+      );
+    return true;
+  }
+  /**
+   * The page's change of either mapping, by an administrator with `admin.users`, the name checked against the closed
+   * list once they are known to hold it; the overview as the change leaves it.
+   */
+  async function change(
+    persona: AuthenticatedContext,
+    groupExternalId: string,
+    present: boolean,
+    mappingOf: () => { capability: Capability } | { relation: RelationGrant },
+  ) {
     require(persona);
     await persona.authorize();
-    if (!isRelationGrant(input.relation)) throw new InputError('Okänd behörighet.');
+    const mapping = mappingOf();
     return deps.store.transaction(async tx => {
-      const group = await tx.findGroup('externalId', input.groupExternalId);
-      if (group ? group.organisationId !== persona.organisationId : present)
-        throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
-      if (group) await tx.readGroup(persona.organisationId, group.id, true);
-      await tx.lockGroupCapabilities(persona.organisationId, 'change');
-      const changed = await tx.setGroupRelation(persona.organisationId, input.groupExternalId, input.relation, present);
-      if (changed) {
-        await tx.audit({
-          actor: 'person:' + persona.id,
-          action: present ? 'group-relation.added' : 'group-relation.removed',
-          subject: 'group:' + input.groupExternalId,
-          details: { relation: input.relation, groupLabel: group?.label ?? null },
-        });
-        await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId));
-      }
+      const done = await mapWithin(
+        tx,
+        'person:' + persona.id,
+        persona.organisationId,
+        groupExternalId,
+        present,
+        mapping,
+      );
+      if (done === undefined) throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
       return overviewWithin(tx, persona);
     });
   }
-  async function change(persona: AuthenticatedContext, input: GroupCapabilityInputType, present: boolean) {
-    require(persona);
-    await persona.authorize();
+  const capabilityOf = (input: GroupCapabilityInputType) => {
     if (!isCapability(input.capability)) throw new InputError('Okänd behörighet.');
-    // An id that holds a NUL names no group and no row.
-    const named = !holdsNul(input.groupExternalId);
-    return deps.store.transaction(async tx => {
-      // D101: another organisation's group does not exist for this administrator, throughout. A row is the
-      // organisation's that wrote it (migration 0051), so a row on an id that another organisation's group took over
-      // is a row whose group is gone, and it may be removed as any such row may (D85). Only adding needs the group.
-      const ownGroup = async () => {
-        const found = named ? await tx.findGroup('externalId', input.groupExternalId) : undefined;
-        return found?.organisationId === persona.organisationId ? found : undefined;
-      };
-      const seen = await ownGroup();
-      if (!seen && present) throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
-      // Locked as a SCIM write of the group locks it, and before its members are read: a member added while the row
-      // is being taken away is derived after this change, and does not keep a capability no row gives. A write of the
-      // group that holds the row now commits first, and what it left is read below.
-      if (seen) await tx.readGroup(persona.organisationId, seen.id, true);
-      // Then the organisation's rows, before one is written. A group write derives from the rows it read until it
-      // commits, so this waits for it and derives the members as it left them; a group write that comes later waits for
-      // this change and reads the rows it leaves. That holds for a row whose group is gone and is pushed again meanwhile,
-      // which no group lock covers: its members are read after the push commits, or the push reads the rows after this.
-      await tx.lockGroupCapabilities(persona.organisationId, 'change');
-      // The organisation's group that holds the key now that both are held, which decides the change: a group re-keyed
-      // or removed while this change waited holds it no longer, so adding is refused as it would have been after that
-      // write, and nothing is written; a group pushed again under the key meanwhile holds it, with its members and name.
-      const holder = await ownGroup();
-      if (!holder && present) throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
-      const changed =
-        named &&
-        (await tx.setGroupCapability(persona.organisationId, input.groupExternalId, input.capability, present));
-      if (changed) {
-        await tx.audit({
-          actor: 'person:' + persona.id,
-          action: present ? 'group-capability.added' : 'group-capability.removed',
-          subject: 'group:' + input.groupExternalId,
-          details: { capability: input.capability, groupLabel: holder?.label ?? null },
-        });
-        // The organisation's rows as this change leaves them, read once for every member of the group: they are held, so
-        // no other change to them and no group write that reads them runs until this one commits.
-        const known = await organisationRules(tx, persona.organisationId);
-        // The row applies to the members of the organisation's own group alone; a key another organisation's group
-        // holds names none of this organisation's people (D101).
-        if (holder)
-          await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId), known);
-      }
-      return overviewWithin(tx, persona);
-    });
-  }
+    return { capability: input.capability };
+  };
+  const relationOf = (input: GroupRelationInputType) => {
+    if (!isRelationGrant(input.relation)) throw new InputError('Okänd behörighet.');
+    return { relation: input.relation };
+  };
   /** An active provisioner of the administrator's own organisation; another organisation's does not exist here. */
   const ownProvisioner = async (tx: ProvisionTx, persona: AuthenticatedContext, id: string) => {
     const held = await tx.provisionerById(id);
@@ -1338,34 +1358,22 @@ export function usersAdminUsecases(deps: {
       }));
     },
     addGroupCapability: (persona: AuthenticatedContext, input: GroupCapabilityInputType) =>
-      change(persona, input, true),
+      change(persona, input.groupExternalId, true, () => capabilityOf(input)),
     removeGroupCapability: (persona: AuthenticatedContext, input: GroupCapabilityInputType) =>
-      change(persona, input, false),
+      change(persona, input.groupExternalId, false, () => capabilityOf(input)),
     addGroupRelation: (persona: AuthenticatedContext, input: GroupRelationInputType) =>
-      changeRelation(persona, input, true),
+      change(persona, input.groupExternalId, true, () => relationOf(input)),
     removeGroupRelation: (persona: AuthenticatedContext, input: GroupRelationInputType) =>
-      changeRelation(persona, input, false),
+      change(persona, input.groupExternalId, false, () => relationOf(input)),
     /**
      * D121, for the development seed: an operator maps a group of an organisation to a relation, as the page does, with
      * the same audit row and derivation and the operator as the actor. The group must be provisioned in that organisation.
      */
     async seedGroupRelation(actor: string, organisationId: string, input: GroupRelationInputType): Promise<boolean> {
-      if (!isRelationGrant(input.relation)) throw new InputError('Okänd behörighet.');
-      return deps.store.transaction(async tx => {
-        const group = await tx.findGroup('externalId', input.groupExternalId);
-        if (!group || group.organisationId !== organisationId) return false;
-        await tx.readGroup(organisationId, group.id, true);
-        await tx.lockGroupCapabilities(organisationId, 'change');
-        if (!(await tx.setGroupRelation(organisationId, input.groupExternalId, input.relation, true))) return false;
-        await tx.audit({
-          actor,
-          action: 'group-relation.added',
-          subject: 'group:' + input.groupExternalId,
-          details: { relation: input.relation, groupLabel: group.label },
-        });
-        await derivation.deriveAll(tx, actor, await tx.members(input.groupExternalId));
-        return true;
-      });
+      const mapping = relationOf(input);
+      return deps.store.transaction(
+        async tx => (await mapWithin(tx, actor, organisationId, input.groupExternalId, true, mapping)) === true,
+      );
     },
   };
 }

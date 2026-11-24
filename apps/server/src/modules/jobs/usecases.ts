@@ -11,7 +11,7 @@ import {
   type JobSource,
   type JobStepDraft,
 } from './contracts';
-import { classify, ledgerSteps, partial, stepProblem } from './domain';
+import { applies, classify, connectorOf, ledgerSteps, partial, stepProblem } from './domain';
 import { DEFAULT_BUDGET, type JobCall, type JobDeps } from './model';
 
 export const ADMIN_CAPABILITY = 'admin.connectors';
@@ -33,6 +33,9 @@ export function jobUsecases(deps: JobDeps) {
     });
     return Promise.race([work, late]).finally(() => clearTimeout(timer));
   };
+  /** The bindings of a fact kind that are there for this person (`applies`); the rest are not named to them. */
+  const bindingsFor = async (actor: AudiencedActor, kind: string) =>
+    (await deps.bindings.list(kind)).filter(b => applies(b, actor, id => deps.visible(actor, id)));
   const requireAdmin = (persona: AuthenticatedContext) => {
     if (!persona.capabilities.includes(ADMIN_CAPABILITY)) throw new JobError('Du saknar behörighet.');
   };
@@ -71,19 +74,22 @@ export function jobUsecases(deps: JobDeps) {
       return { source: { ...base, status: 'unavailable' }, steps: [] };
     }
   }
-  /** The job proposal for one fact, as the actor with their provisioned groups: nothing is written, every bound system is reported. */
+  /**
+   * The job proposal for one fact, as the actor with their provisioned groups: nothing is written, every binding that is
+   * there for them (`applies`) is reported, and no other is named.
+   */
   async function assemble(actor: AudiencedActor, fact: Fact, call: JobCall): Promise<JobProposal> {
     await deps.refresh();
-    const bindings = await deps.bindings.list(fact.kind);
+    const bindings = await bindingsFor(actor, fact.kind);
     const followers = deps.followers(actor, fact.kind),
       offered = deps.offered(fact.kind);
     const sources: JobSource[] = [],
       pending: Array<Promise<{ source: JobSource; steps: JobStepDraft[] }>> = [];
     for (const b of bindings) {
       const follower = followers.find(f => f.name === b.capability);
-      const connectorId = follower?.connectorId ?? b.capability.split('.')[0]!,
+      const connectorId = follower?.connectorId ?? connectorOf(b),
         source = follower?.source ?? connectorId;
-      const verdict = classify(b, actor, offered, follower);
+      const verdict = classify(b, offered, follower);
       if (verdict.status !== 'ok') {
         sources.push({
           binding: b.id,
@@ -131,8 +137,8 @@ export function jobUsecases(deps: JobDeps) {
     const validate = async () => {
       await persona.authorize();
       await deps.refresh();
-      const bindings = await deps.bindings.list(proposal.fact.kind);
       const actor = audiencedActorOf(persona),
+        bindings = await bindingsFor(actor, proposal.fact.kind),
         followers = deps.followers(actor, proposal.fact.kind);
       const offered = deps.offered(proposal.fact.kind);
       const stale = (): never => {
@@ -148,9 +154,9 @@ export function jobUsecases(deps: JobDeps) {
         if (!binding || source.bindingRevision !== bindingRevision(binding) || source.capability !== binding.capability)
           stale();
         const follower = followers.find(f => f.name === binding!.capability);
-        const connector = follower?.connectorId ?? binding!.capability.split('.')[0]!;
+        const connector = follower?.connectorId ?? connectorOf(binding!);
         if (source.connector !== connector || source.source !== (follower?.source ?? connector)) stale();
-        const verdict = classify(binding!, actor, offered, follower);
+        const verdict = classify(binding!, offered, follower);
         if (
           ['disabled', 'degraded'].includes(source.status) ? verdict.status !== source.status : verdict.status !== 'ok'
         )
