@@ -819,6 +819,62 @@ describe('an assistant beside the conversation, and a source that still hands ba
     expect(again.thread.messages).toHaveLength(2);
     expect(w.store.audit.map(r => r.action)).toEqual(['conversation.handed']);
   });
+  test('two sends of one question to another system’s assistant that race are written once, and the one that lost is on record as failed in a transaction of its own (WD-L3)', async () => {
+    const source = scripted([
+      [
+        { type: 'text', delta: 'Ja, även på deltid.' },
+        { type: 'done', session: 's-1' },
+      ],
+      [
+        { type: 'text', delta: 'Ja, på deltid också.' },
+        { type: 'done', session: 's-2' },
+      ],
+    ]);
+    // Both sends are past the check for their key before the source answers either.
+    let release!: () => void;
+    const held = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const ask = source.assistants!.ask;
+    source.assistants = {
+      ...source.assistants!,
+      ask: async function* (...args: Parameters<typeof ask>) {
+        await held;
+        yield* ask(...args);
+      },
+    };
+    const w = world({ extra: [source] });
+    const key = '7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918';
+    const send = () =>
+      w.assistant.converse(hillevi, { text: 'Gäller det på deltid?', assistant: HR, side: true, turn: key });
+    const both = Promise.all([send(), send()]);
+    await Bun.sleep(0);
+    release();
+    const [a, b] = await both;
+    // The question went to the source twice; one turn is written, and both sends answer with it.
+    expect(b.conversationId).toBe(a.conversationId);
+    expect(b.answer.body).toBe(a.answer.body);
+    const conversations = (await w.store.listThreads('hillevi', T0)).filter(t => t.kind === 'question');
+    expect(conversations.map(t => t.messages.length)).toEqual([2]);
+    expect(w.store.audit.map(r => r.action).sort()).toEqual(['conversation.failed', 'conversation.handed']);
+    expect(w.store.audit.find(r => r.action === 'conversation.failed')).toEqual({
+      actor: 'person:hillevi',
+      action: 'conversation.failed',
+      subject: 'person:hillevi',
+      at: T0,
+      details: {
+        assistant: HR,
+        connector: 'kunskap',
+        session: 'new',
+        chips: [],
+        ms: expect.any(Number),
+        side: true,
+        failure: 'Error',
+      },
+    });
+    // Neither word of the question nor of either answer is on record.
+    expect(JSON.stringify(w.store.audit)).not.toContain('deltid');
+  });
   test('a conversation keeps one exchange with each assistant asked in it, and a question to one asked before continues its own', async () => {
     const w = world({
       extra: [

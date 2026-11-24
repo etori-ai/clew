@@ -1,11 +1,12 @@
 import { eq } from 'drizzle-orm';
+import type { Capability } from '@clew/contracts';
 import { database, schema } from '@clew/db';
 
 /**
  * The installation-wide content counters a person's stream folds in, by the capability that lets them see what each
  * counts (WD-L8): a competence source's read, which Administration › Kompetens › Källor draws, for `admin.competence`.
  */
-const SHARED_CONTENT: ReadonlyArray<{ id: string; capability: string }> = [
+const SHARED_CONTENT: ReadonlyArray<{ id: string; capability: Capability }> = [
   { id: 'competence-source', capability: 'admin.competence' },
 ];
 
