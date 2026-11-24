@@ -19,6 +19,7 @@ import { ExecutionError, type ExecutionSource } from '../../apps/server/src/modu
 import { InputError } from '../../apps/server/src/context';
 import { Registry } from '../registry';
 import { fixtureConnectors } from '../fixture-connectors';
+import { refreshScan } from '../refresh-scan';
 
 /**
  * The one path a write passes (D112 item 10): what a capability asks the person (`asks`) and what it says beforehand that
@@ -317,7 +318,6 @@ function world() {
     registry,
     run,
     calendar: {
-      ensureProposalThread: async () => undefined,
       replan: async () => {
         throw new Error('not here');
       },
@@ -351,13 +351,15 @@ function world() {
     digest: value => createHash('sha256').update(JSON.stringify(value)).digest('hex'),
   });
   const decisions = cardDecisions({ read: threads.threadFor, registry, run, approve: executions.approve, clock });
-  return { registry, threads, decisions, ledger, store, states: fixtures.states };
+  // The person's scan as the server runs it (D47).
+  const scan = refreshScan({ store, registry, clock });
+  return { registry, threads, scan, decisions, ledger, store, states: fixtures.states };
 }
 async function rehabCard(w: ReturnType<typeof world>, p = persona()) {
-  await w.threads.ensureThreads(p);
+  await w.scan(p);
   const cards = await w.threads.listThreadsFor(p);
   return {
-    rehab: cards.find(t => t.topic === 'hr:rehab:hr:emp:1001')!,
+    rehab: cards.find(t => t.topic.startsWith('hr:rehab:hr:emp:1001:'))!,
     leave: cards.find(t => t.topic.startsWith('hr:leave:'))!,
   };
 }
@@ -560,7 +562,6 @@ describe('an execute about a person that asks (D112)', () => {
       registry,
       run: async <O>() => undefined as O,
       calendar: {
-        ensureProposalThread: async () => undefined,
         replan: async () => {
           throw new Error('not here');
         },

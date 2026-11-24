@@ -508,7 +508,7 @@ describe('an action about a person, started from the menu', () => {
     const first = w.approvals[0] as { decisionId: string };
     // Dispatch found 'anna.l' no longer Anna's and failed the execution without sending it (D122); the card shows that.
     w.people.state.users.get('anna')!.userName = 'anna.lindqvist';
-    // The ledger's projection writes the settled execution onto the card (composition/execution-projection.ts).
+    // The ledger's projection writes the settled execution onto the card (threads/usecases/projection.ts).
     const settled = (reason: string, at: string) =>
       w.store.transaction(tx =>
         tx.updateThread(threadId, {
@@ -521,7 +521,7 @@ describe('an action about a person, started from the menu', () => {
             compensates: null,
           },
           updatedAt: at,
-        } as never),
+        }),
       );
     await settled(SUBJECT_CHANGED, '2026-11-12T08:05:00.000Z');
     await w.decisions.act(hillevi, threadId, 'decide');

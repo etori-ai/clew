@@ -80,9 +80,7 @@ const outcomeNotice: Record<CompetenceReadOutcome, (source: string) => string> =
   partial: source => `${source} är delvis inläst.`,
   failed: source => `${source} kunde inte läsas in.`,
 };
-/** How often the sources are asked for again while a read is followed. */
-const FOLLOW_EVERY_MS = 2000;
-/** How long a read asked for here is waited for before the page stops asking: one that never started shows nothing new. */
+/** How long a read asked for here is followed for its toast: one that never started shows nothing new. */
 const FOLLOW_FOR_MS = 10 * 60_000;
 const count = (n: number, one: string, other: string) => `${n} ${n === 1 ? one : other}`;
 const holdingsText = (n: number) => count(n, 'intyg', 'intyg');
@@ -238,16 +236,11 @@ function SourceCard({
   const finishedAt = source.lastRead?.finishedAt ?? null;
   const outcome = source.lastRead?.outcome;
   // The read asked for from this card, by when the source's last read had finished at that moment: it is followed
-  // until a later read shows. The request is answered when the read is queued, before it has claimed the source, so
-  // `reading` alone does not say it is under way.
+  // until a later read shows, for its toast. The request is answered when the read is queued, before it has claimed
+  // the source, so `reading` alone does not say it is under way. Nothing polls (D33, D46; WD-L8): the read's claim and
+  // its end move the change revision of everyone who may see this page, and the notice reads the sources again.
   const [asked, setAsked] = useState<{ before: string | null } | null>(null);
   const following = source.reading || asked !== null;
-  // A second observer of the page's own query, only for the interval: the card is drawn from the page's data.
-  useQuery({
-    ...competenceSourcesQuery,
-    refetchInterval: following ? FOLLOW_EVERY_MS : false,
-    notifyOnChangeProps: [],
-  });
   useEffect(() => {
     if (!asked || source.reading || finishedAt === asked.before) return;
     setAsked(null);

@@ -30,7 +30,7 @@ import { memoryModelHealth } from '../assistant/adapters/memory';
 import { modelUsecases } from '../assistant/usecases/models';
 import type { KeySealer } from '../assistant/ports';
 import { assistantUsecases } from '../assistant';
-import { managedPeople } from '../assistant/people';
+import { assistantFunctions } from '../assistant/functions';
 import { personKey } from '../modules/entities/domain';
 import { staff } from './people';
 import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres';
@@ -88,10 +88,7 @@ const threadCore = threadUsecases({
   run: runCapability,
   clock,
   ids,
-  // A row names a person by user name; the card keeps their id (D122).
-  people: personKeys,
   calendar: {
-    ensureProposalThread: calendar.ensureProposalThread,
     replan: calendar.replan,
     dismiss: calendar.dismiss,
     todayEvents: persona =>
@@ -334,32 +331,18 @@ export const models = modelUsecases({
 export const assistant = assistantUsecases({
   store,
   registry,
-  run: runCapability,
   calendar,
   models: { resolve: models.resolve, health: modelHealth },
   clock,
   ids,
   log: logPort('assistant', 'error'),
   trace: currentTraceId,
-  // The assistants of other systems (the assistants profile): listed and asked through the registry as the person, with
-  // their live authority and their own token for the source, so the registry's checks hold on every question.
-  handover: {
-    list: persona =>
-      registry.assistantsFor(audiencedActorOf(persona), {
-        authorize: () => persona.authorize(),
-        delegate: persona.delegate,
-      }),
-    ask: (persona, assistant, ask, signal) =>
-      registry.ask(audiencedActorOf(persona), assistant, ask, {
-        authorize: () => persona.authorize(),
-        delegate: persona.delegate,
-        ...(signal ? { signal } : {}),
-      }),
-  },
-  // The people the asker manages (D115): Personal's list, read on every turn, by Clew's key (D122) and the user name a
-  // read takes (D117); only people who can be asked about (D97).
-  people: async persona => managedPeople((await staff.reach(persona)).managed, personKey),
-  start: (persona, capability, input, context) => threads.startCard(persona, capability, input, context),
+  // `run`, `handover`, `people` and `start` as the unit suite binds them too (`assistantFunctions`, AM-13).
+  ...assistantFunctions({
+    registry,
+    people: { reach: staff.reach, userNameOf: personKey },
+    start: (persona, capability, input, context) => threads.startCard(persona, capability, input, context),
+  }),
 });
 /** The models' health probe (D8), started by main.ts beside the server: once at boot, then every minute. */
 export const startAssistantProbe = (intervalMs = 60_000) => {

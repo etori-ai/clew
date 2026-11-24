@@ -12,9 +12,11 @@ import {
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 import { fixtureConnectors } from '../fixture-connectors';
+import { refreshScan } from '../refresh-scan';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
+import { draft } from '../store-contract';
 import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
 import { startedCards } from '../../apps/server/src/threads/usecases/started';
@@ -33,7 +35,7 @@ import {
 } from '../../apps/server/src/assistant/model';
 import { WireError, type ManagedPerson } from '../../apps/server/src/assistant/ports';
 import { openAICompatibleWire } from '../../apps/server/src/assistant/adapters/openai-compatible';
-import { capabilityRunner } from '../../apps/server/src/connectors/run';
+import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import { DRAFT_TOOL, draftableActions, draftTool } from '../../apps/server/src/assistant/drafts';
 import { parseManifest, remoteConnector } from '../../packages/connectors/src/remote';
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
@@ -122,16 +124,22 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
   const threads = threadUsecases({
     store,
     registry,
-    // Whose a source's user name is (D122): in this world every person's id is their user name.
+    run,
+    calendar: { ...calendar, todayEvents: async () => [] },
+    clock,
+    ids,
+  });
+  // The person's scan as the server runs it (D47). Whose a source's user name is (D122): in this world every person's
+  // id is their user name.
+  const scan = refreshScan({
+    store,
+    registry,
+    clock,
     people: {
       holders: async (_reader: string, names: readonly string[]) =>
         new Map(names.filter(n => directory.some(d => d.key === n)).map(n => [n, n])),
       userName: async (id: string) => (directory.some(d => d.key === id) ? id : null),
     },
-    run,
-    calendar: { ...calendar, todayEvents: async () => [] },
-    clock,
-    ids,
   });
   const reminders = reminderUsecases({ store, clock });
   // A work item a propose becomes when the assistant is asked for it: the same use case as one the person starts.
@@ -179,7 +187,8 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
   const deps = {
     store,
     registry,
-    run,
+    // `run`, `handover` and `start` as composition binds them (AM-13); the people are this world's own directory.
+    ...assistantFunctions({ registry, start: started.startCard }),
     calendar,
     models: {
       resolve: async (p: AuthenticatedContext) => {
@@ -191,7 +200,6 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     clock,
     ids,
     trace: () => '0af7651916cd43dd8448eb211c80319c',
-    start: started.startCard,
     log: (...args: unknown[]) => {
       logged.push(args);
     },
@@ -208,6 +216,7 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     cal,
     registry,
     threads,
+    scan,
     reminders,
     calendar,
     assistant,
@@ -215,6 +224,9 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     status,
     logged,
     deps,
+    // The person's own run and start, apart from the assistant's ports.
+    run,
+    started,
     advance: (ms: number) => {
       time += ms;
     },
@@ -348,8 +360,8 @@ describe('a question without the model', () => {
   });
   test('the @ objects come from the open cards in scope', async () => {
     const w = world();
-    await w.threads.ensureThreads(hillevi);
-    const invoices = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
+    await w.scan(hillevi);
+    const invoices = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('finance:invoices:'))!;
     // With nothing typed, `@` offers the context alone, never everything open.
     expect(await w.assistant.listObjects(hillevi, '')).toEqual([]);
     const near = await w.assistant.listObjects(hillevi, '', ['thread:' + invoices.id]);
@@ -384,8 +396,8 @@ describe('a question without the model', () => {
 describe('the answer is the card (D34, H1)', () => {
   test('a question that names an open card is answered with that card without the model, audited, and the card is drawn once', async () => {
     const w = world();
-    await w.threads.ensureThreads(hillevi);
-    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
+    await w.scan(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('finance:invoices:'))!;
     const first = await w.assistant.converse(hillevi, { text: 'attestera en faktura' });
     expect(first).toMatchObject({ assistant: 'router', shape: 'svar', answer: { source: 'Ekonomisystemet' } });
     expect(first.answer.body).toContain(card.summary.replace(/\.$/, ''));
@@ -409,8 +421,8 @@ describe('the answer is the card (D34, H1)', () => {
   });
   test('a chipped card is drawn in the turn that asks about it', async () => {
     const w = world();
-    await w.threads.ensureThreads(hillevi);
-    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
+    await w.scan(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('finance:invoices:'))!;
     const why = await w.assistant.converse(hillevi, {
       text: 'varför ser jag detta?',
       chips: [{ ref: 'thread:' + card.id, kind: 'thread', label: card.title }],
@@ -422,8 +434,8 @@ describe('the answer is the card (D34, H1)', () => {
 
 describe('a chipped card', () => {
   async function invoices(w: ReturnType<typeof world>) {
-    await w.threads.ensureThreads(hillevi);
-    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
+    await w.scan(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('finance:invoices:'))!;
   }
   const chip = (t: Thread) => [{ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title }];
   test('proposes Clew actions instead of acting, and answers why', async () => {
@@ -740,9 +752,9 @@ describe('with a model', () => {
       return { text: 'Det gick inte att läsa.', toolCalls: [] };
     };
     const w = world({ generate, extra: [payroll] });
-    // The server's runner: a refusal becomes an InputError in the registry's words, with its code as the cause.
-    const assistant = assistantUsecases({ ...w.deps, run: capabilityRunner(w.registry) });
-    const turn = await assistant.converse(hillevi, { text: 'Visa mitt lönebesked' });
+    // The world's runner is the server's (`assistantFunctions`): a refusal becomes an InputError in the registry's words,
+    // with its code as the cause.
+    const turn = await w.assistant.converse(hillevi, { text: 'Visa mitt lönebesked' });
     expect(told).toEqual([{ error: TOOL_INVALID }, { error: TOOL_UNANSWERED }]);
     expect(JSON.stringify(told)).not.toContain('lon_2026');
     expect(turn.thread.messages.at(-1)!.meta?.reads).toEqual([
@@ -1077,7 +1089,7 @@ describe('a declared view is the answer, with and without the model (D38)', () =
     const kept = JSON.stringify([await w.store.readThread('hassan', r.conversationId), w.store.audit]);
     expect(kept).not.toMatch(/Anna|0980|070-|kommun\.example/);
     // The view itself is read from the source when it is opened, as the person.
-    expect(await w.deps.run<{ rows: unknown[] }>(hassan, r.view!.capability, r.view!.input)).toMatchObject({
+    expect(await w.run<{ rows: unknown[] }>(hassan, r.view!.capability, r.view!.input)).toMatchObject({
       rows: [{ name: 'Anna Lindqvist', phone: '0980-319 203' }],
     });
     const team = await w.assistant.converse(hassan, { text: 'mitt team' });
@@ -1136,7 +1148,7 @@ test('a transferred person cannot use old source cards through chips, object sug
       return { text: 'Här är svaret.', toolCalls: [] };
     },
   });
-  await w.threads.ensureThreads(hillevi);
+  await w.scan(hillevi);
   const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
   const transferred = {
     ...hillevi,
@@ -1173,8 +1185,8 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
   const LATER = '2026-11-12T13:15:00.000Z';
   type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
   async function rehab(w: ReturnType<typeof world>) {
-    await w.threads.ensureThreads(hillevi);
-    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'hr:rehab:hr:emp:1001')!;
+    await w.scan(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('hr:rehab:hr:emp:1001:'))!;
   }
   test('a draft of the item’s action is checked, kept in the conversation with its audit row, and nothing is sent', async () => {
     const offered: string[][] = [];
@@ -1293,9 +1305,9 @@ describe('the thing open beside the transcript is told to the model as that', ()
       return { text: 'Det är fakturorna från Skolgrossisten.', toolCalls: [] };
     };
     const w = world({ generate });
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     const cards = await w.threads.listThreadsFor(hillevi);
-    const invoices = cards.find(t => t.topic === 'finance:invoices')!;
+    const invoices = cards.find(t => t.topic.startsWith('finance:invoices:'))!;
     const other = cards.find(t => t.id !== invoices.id && t.kind === 'pushed' && t.state === 'open')!;
     const chip = (t: typeof invoices) => ({ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title });
     const turn = await w.assistant.converse(hillevi, {
@@ -1354,8 +1366,8 @@ describe('a question about a person the asker manages (D115)', () => {
   /** What a source holds about Anna's health, as the rehab card's summary and row say it: never handed to the model. */
   const HEALTH = ['Namnet visas i personalsystemet', 'korta perioder sedan', 'Sjuk ·', '"periods"', 'hr:emp:1001'];
   async function rehab(w: ReturnType<typeof world>) {
-    await w.threads.ensureThreads(hillevi);
-    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'hr:rehab:hr:emp:1001')!;
+    await w.scan(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('hr:rehab:hr:emp:1001:'))!;
   }
   /** A tool-using model the test plays: it calls the tools named in `script` in order, and everything it is handed is kept. */
   function scripted(script: Array<[tool: string, input: Record<string, unknown>]>, text: string) {
@@ -1705,7 +1717,7 @@ describe('the assistant switch keeps a connector from the model, not only its to
   test('a chipped card, a card the question names, an earlier answer and its reads are kept from the model once the connector is closed', async () => {
     const model = reading(['Tre fakturor väntar på attest.']);
     const w = world({ generate: model.generate });
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
     const chip = { ref: 'thread:' + card.id, kind: 'thread' as const, label: card.title };
     const first = await w.assistant.converse(hillevi, { text: 'Vad står det här?', chips: [chip] });
@@ -1741,7 +1753,7 @@ describe('the assistant switch keeps a connector from the model, not only its to
       return { text: texts.shift()!, toolCalls: [] };
     };
     const w = world({ generate });
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
     const chip = { ref: 'thread:' + card.id, kind: 'thread' as const, label: card.title };
     const first = await w.assistant.converse(hillevi, { text: 'Vad står det här?', chips: [chip] });
@@ -1788,7 +1800,7 @@ describe('the assistant switch keeps a connector from the model, not only its to
   test('the work about a named person in a closed connector is not told of, and is no draft', async () => {
     const model = reading();
     const w = world({ generate: model.generate });
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     w.registry.govern('hr', { ...openGovernance(), toolsEnabled: false });
     await w.assistant.converse(hillevi, { text: 'Anna har varit sjuk i två veckor, vad gör jag?' });
     expect(model.systems[0]).toContain(
@@ -2174,7 +2186,7 @@ describe('the assistant starts a work item from a propose, the person sends it',
   test('the propose’s topic is what makes it one item for the assistant; started by the person, the input tells two apart', async () => {
     const w = world({ extra: [desk([])] });
     const start = (input: Record<string, unknown>, same?: 'topic') =>
-      w.deps.start!(hassan, 'desk.reportFault', input, { reason: 'Du valde', ...(same ? { same } : {}) });
+      w.started.startCard(hassan, 'desk.reportFault', input, { reason: 'Du valde', ...(same ? { same } : {}) });
     const a = await start({ problem: 'Skärmen är svart' }, 'topic');
     const b = await start({ problem: 'Skärmen är svart', place: 'Sal 12' }, 'topic');
     expect(b.threadId).toBe(a.threadId);
@@ -2185,7 +2197,7 @@ describe('the assistant starts a work item from a propose, the person sends it',
     for (const id of [a.threadId, c.threadId, d.threadId]) expect(audit(w.store, id)).toEqual(['thread.started']);
   });
 
-  test('a turn stopped after its propose became an item writes conversation.stopped on the conversation, naming the item and the model (AM-6)', async () => {
+  test('a turn stopped after its propose became an item is written whole, the item its answer, and its row says it was stopped (WD-L3, AM-6)', async () => {
     const stop = new AbortController();
     let proposing = false;
     const generate: ModelGenerate = async ({ tools, signal }) => {
@@ -2198,24 +2210,45 @@ describe('the assistant starts a work item from a propose, the person sends it',
     const w = world({ generate, extra: [desk([])] });
     const first = await w.assistant.converse(hassan, { text: 'Min dator krånglar' });
     proposing = true;
-    await expect(
-      w.assistant.converse(
-        hassan,
-        { text: 'Felanmäl den', conversationId: first.conversationId },
-        { signal: stop.signal },
-      ),
-    ).rejects.toBeInstanceOf(TurnStopped);
-    const [card] = await deskCards(w);
-    // The item stays the person's, with its own row; the turn's row is about the conversation and names it.
+    const turn = await w.assistant.converse(
+      hassan,
+      { text: 'Felanmäl den', conversationId: first.conversationId, turn: 'stopped-turn-1' },
+      { signal: stop.signal },
+    );
+    const [card, ...more] = await deskCards(w);
+    expect(more).toEqual([]);
+    // The item stays the person's, with its own row, and the conversation says so in Clew's own words: the page that
+    // pressed Stoppa reads the turn back by its key and draws it.
     expect(audit(w.store, card!.id)).toEqual(['thread.started']);
+    expect(turn).toMatchObject({
+      conversationId: first.conversationId,
+      shape: 'forslag',
+      assistant: 'router',
+      answer: {
+        body: 'Jag har förberett "Felanmäl dator" som ett ärende. Fyll i uppgifterna och skicka när du är klar. Inget är skickat.',
+      },
+      draft: { kind: 'action', threadId: card!.id, actionId: 'send', values: said },
+    });
+    expect(turn.thread.messages.map(m => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
+    expect((await w.assistant.writtenTurn(hassan, 'stopped-turn-1')).written).toMatchObject({
+      conversationId: first.conversationId,
+      answer: { body: turn.answer.body },
+      draft: { threadId: card!.id },
+    });
     expect(w.store.audit.at(-1)).toEqual({
       actor: 'person:hassan',
-      action: 'conversation.stopped',
+      action: 'conversation.replied',
       subject: 'thread:' + first.conversationId,
       at: T0,
       details: {
+        assistant: 'router',
+        shape: 'forslag',
         chips: [],
+        tools: [],
+        drafted: { thread: card!.id, action: 'send', asks: ['problem', 'place'] },
+        cards: [card!.id],
         started: { thread: card!.id, capability: 'desk.reportFault' },
+        stopped: true,
         model: 'open-model',
         modelCall: { providerId: 'llm', durationMs: 0, traceId: '0af7651916cd43dd8448eb211c80319c' },
       },
@@ -2263,5 +2296,122 @@ describe('the assistant starts a work item from a propose, the person sends it',
     expect(turn.forslag).toBeUndefined();
     expect(heard).toEqual([{ error: TOOL_UNANSWERED }]);
     expect(JSON.stringify(heard)).not.toContain('anmälare');
+  });
+});
+
+describe('a question sent again under its key (WD-L3)', () => {
+  test('a question sent again under its key is answered with the turn as written: nothing asked, written or recorded twice (WD-L3)', async () => {
+    let calls = 0;
+    const generate: ModelGenerate = async () => {
+      calls++;
+      return { text: 'Tre är på plats.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    const key = 'b0f6a9c2-4d1e-4f7a-9c3b-2e8d5a1f6c70';
+    const first = await w.assistant.converse(hillevi, { text: 'vem är här?', turn: key });
+    // The answer broke on its way, or the person pressed Stoppa as it was written: the question is sent again.
+    const again = await w.assistant.converse(hillevi, { text: 'vem är här?', turn: key });
+    expect(calls).toBe(1);
+    expect(again).toMatchObject({
+      conversationId: first.conversationId,
+      shape: first.shape,
+      assistant: 'model',
+      answer: first.answer,
+      clewActions: [],
+    });
+    expect(again.thread.messages).toEqual(first.thread.messages);
+    expect(first.thread.messages[0]!.meta?.turn).toBe(key);
+    expect(audit(w.store, first.conversationId)).toEqual(['conversation.asked']);
+    expect(w.store.audit).toHaveLength(1);
+    // The page's read after a stop or a broken answer: what the key came to, or nothing.
+    expect((await w.assistant.writtenTurn(hillevi, key)).written).toMatchObject({
+      conversationId: first.conversationId,
+    });
+    expect(await w.assistant.writtenTurn(hillevi, 'a1b2c3d4-0000-4000-8000-000000000000')).toEqual({ written: null });
+    expect(await w.assistant.writtenTurn(hassan, key)).toEqual({ written: null });
+    await expect(w.assistant.writtenTurn(hillevi, 'inte en nyckel')).rejects.toThrow('Ogiltig förfrågan.');
+    // A follow-up is a question of its own, with a key of its own.
+    const next = await w.assistant.converse(hillevi, {
+      text: 'och i morgon?',
+      conversationId: first.conversationId,
+      turn: 'c7d8e9f0-1a2b-4c3d-8e4f-5a6b7c8d9e0f',
+    });
+    expect(next.thread.messages).toHaveLength(4);
+    expect(calls).toBe(2);
+  });
+  test('two sends of one question that race are written once: the later one answers with the first one’s turn (WD-L3)', async () => {
+    let release!: () => void;
+    const held = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    let calls = 0;
+    const generate: ModelGenerate = async () => {
+      calls++;
+      await held;
+      return { text: 'Tre är på plats.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    const key = 'e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b';
+    const both = Promise.all([
+      w.assistant.converse(hillevi, { text: 'vem är här?', turn: key }),
+      w.assistant.converse(hillevi, { text: 'vem är här?', turn: key }),
+    ]);
+    await Bun.sleep(0);
+    release();
+    const [a, b] = await both;
+    expect(calls).toBe(2);
+    expect(b.conversationId).toBe(a.conversationId);
+    const conversations = (await w.store.listThreads('hillevi', T0)).filter(t => t.kind === 'question');
+    expect(conversations.map(t => t.messages.length)).toEqual([2]);
+    // Both model calls are on record (D91): the one written, and the one whose turn could not be written.
+    expect(w.store.audit.map(r => r.action).sort()).toEqual(['conversation.asked', 'conversation.failed']);
+  });
+});
+
+describe('Alla samtal (WD-L1)', () => {
+  test('Alla samtal pages through every conversation, the latest activity first, passing over those the person may not see (WD-L1)', async () => {
+    const w = world();
+    const at = (s: number) => new Date(Date.parse(T0) + s * 1000).toISOString();
+    const seen = Array.from({ length: 120 }, (_, i) =>
+      draft('hillevi', {
+        id: `samtal-${String(i).padStart(3, '0')}`,
+        kind: 'question',
+        createdAt: at(i),
+        updatedAt: at(i),
+      }),
+    );
+    // Written under an access Hillevi no longer has: stored, never listed.
+    const unseen = Array.from({ length: 30 }, (_, i) =>
+      draft('hillevi', { id: `dolt-${i}`, kind: 'question', createdAt: at(200 + i), updatedAt: at(200 + i) }),
+    );
+    await w.store.transaction(async tx => {
+      for (const t of [...seen, ...unseen, draft('hillevi'), draft('hassan', { kind: 'question' })])
+        await tx.insertThread(t);
+      for (const t of unseen)
+        await tx.addMessage(t.id, {
+          role: 'assistant',
+          body: 'Svar',
+          at: t.updatedAt,
+          meta: { access: { connectors: [], capabilities: [], authorizationVersion: 'v0' } },
+        });
+      // The first conversation, begun first, is continued last.
+      await tx.addMessage(seen[0]!.id, { role: 'user', body: 'Och nu?', at: at(500) });
+    });
+    const order = [seen[0]!, ...seen.slice(1).reverse()].map(t => t.id);
+    const pages = [];
+    let after: string | undefined;
+    do {
+      const page = await w.threads.listConversationsFor(hillevi, after);
+      pages.push(page.conversations.map(t => t.id));
+      after = page.next ?? undefined;
+    } while (after);
+    expect(pages.map(p => p.length)).toEqual([50, 50, 20]);
+    expect(pages.flat()).toEqual(order);
+    await expect(w.threads.listConversationsFor(hillevi, 'inte en markör')).rejects.toThrow('Ogiltig förfrågan.');
+    await expect(w.threads.listConversationsFor(hillevi, '2026-13-99T00:00:00Z~x')).rejects.toThrow(
+      'Ogiltig förfrågan.',
+    );
+    // Reading pages writes nothing.
+    expect(w.store.audit).toEqual([]);
   });
 });

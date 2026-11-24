@@ -8,6 +8,7 @@ import {
   Button,
   EmptyState,
   HStack,
+  Heading,
   Link,
   MetadataList,
   MetadataListItem,
@@ -71,6 +72,9 @@ import { OwnCompetence } from './competence';
 import { PlanTab } from './boarding';
 import { employmentLabel, employmentPercent, employmentTitles } from './person-model';
 import { PageFrame } from '../components/shell/page-frame';
+
+/** The page's heading when the person cannot be read, in the browser's tab too. */
+const FAILED_TITLE = 'Personen kunde inte hämtas';
 
 /** The rail's width and the facts' panel beside the column (`EntityPage`). */
 const SIDE_NAV = 260,
@@ -383,7 +387,9 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
         : `${tabName} · ${detail.entity.name}`
       : missing
         ? 'Personen finns inte'
-        : null,
+        : read.isError
+          ? FAILED_TITLE
+          : null,
   );
   const tabHref = (value: string) => personPageHref(key, { ...(value === OVERVIEW ? {} : { section: value }), from });
 
@@ -400,6 +406,8 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
           />
         ) : read.isError ? (
           <VStack gap={3}>
+            {/* The page keeps its one level-1 heading when the person cannot be read: what is missing, the alert why. */}
+            <Heading level={1}>{FAILED_TITLE}</Heading>
             <Text as="p" role="alert">
               {errorMessage(read.error, 'Uppgifterna kunde inte hämtas just nu.')}
             </Text>

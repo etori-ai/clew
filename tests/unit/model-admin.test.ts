@@ -540,6 +540,74 @@ describe('models', () => {
     await w.models.updateModel(w.mikael, small, { state: 'disabled', title: 'Snabb (lokal)' });
     expect(w.store.audit.length).toBe(before);
   });
+  test("each changed field is its own audit row with what it was, a clash on the endpoint's id writes nothing, and a removal says what went (AM-13)", async () => {
+    const w = world();
+    const { big, small } = await installed(w);
+    w.advance(60_000);
+    const by = { actor: 'person:mikael', at: '2026-11-05T07:01:00.000Z' };
+    const rowsOf = (id: string) => w.store.audit.filter(a => a.subject === 'model:' + id);
+    const earlier = rowsOf(small).length;
+    await w.models.updateModel(w.mikael, small, {
+      title: '  Snabb  ',
+      description: 'Korta frågor.',
+      model: 'gpt-oss:7b',
+      audience: { mode: 'all' },
+      tools: false,
+    });
+    const subject = 'model:' + small;
+    expect(rowsOf(small).slice(earlier)).toEqual([
+      { ...by, subject, action: 'model.title', details: { from: 'Snabb (lokal)', to: 'Snabb' } },
+      { ...by, subject, action: 'model.description', details: { from: 'Korta frågor om dagen.', to: 'Korta frågor.' } },
+      { ...by, subject, action: 'model.model', details: { from: 'gpt-oss:20b', to: 'gpt-oss:7b' } },
+      {
+        ...by,
+        subject,
+        action: 'model.audience',
+        details: { from: { mode: 'selected', roles: ['manager'] }, to: { mode: 'all' } },
+      },
+      { ...by, subject, action: 'model.tools', details: { to: false } },
+    ]);
+    expect(await w.store.readModel(small)).toMatchObject({
+      title: 'Snabb',
+      description: 'Korta frågor.',
+      model: 'gpt-oss:7b',
+      audience: { mode: 'all' },
+      tools: false,
+    });
+    // The same values again are no change, and nothing is written.
+    const written = w.store.audit.length;
+    await w.models.updateModel(w.mikael, small, {
+      title: 'Snabb',
+      model: 'gpt-oss:7b',
+      audience: { mode: 'all' },
+      tools: false,
+    });
+    expect(w.store.audit.length).toBe(written);
+    // Another model's endpoint id on the same provider is refused before anything is written, the new title with it.
+    await expect(w.models.updateModel(w.mikael, small, { title: 'Ny', model: 'gpt-oss:120b' })).rejects.toThrow(
+      'Modellen finns redan hos leverantören.',
+    );
+    expect(w.store.audit.length).toBe(written);
+    expect((await w.store.readModel(small))?.title).toBe('Snabb');
+    // A removal names the provider, the endpoint's id and whether the model was the default.
+    await w.models.removeModel(w.mikael, small);
+    await w.models.removeModel(w.mikael, big);
+    expect(w.store.audit.filter(a => a.action === 'model.removed')).toEqual([
+      {
+        ...by,
+        subject,
+        action: 'model.removed',
+        details: { provider: 'kommunen', model: 'gpt-oss:7b', wasDefault: false },
+      },
+      {
+        ...by,
+        subject: 'model:' + big,
+        action: 'model.removed',
+        details: { provider: 'kommunen', model: 'gpt-oss:120b', wasDefault: true },
+      },
+    ]);
+    expect(await w.store.listModels()).toEqual([]);
+  });
 });
 
 describe("the person's model", () => {

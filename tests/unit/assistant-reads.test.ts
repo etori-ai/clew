@@ -28,7 +28,7 @@ import { workCapabilities } from '../../apps/server/src/modules/work/capabilitie
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { assistantUsecases, type AssistantDeps } from '../../apps/server/src/assistant';
 import { TOOL_REFUSED, type ModelGenerate } from '../../apps/server/src/assistant/model';
-import { managedPeople } from '../../apps/server/src/assistant/people';
+import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import { CARD_MARKS_MAX, cardRows, namedItems } from '../../apps/server/src/assistant/card';
 import { fixtureConnectors } from '../fixture-connectors';
 
@@ -274,8 +274,6 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
   const deps: AssistantDeps = {
     store: threads,
     registry,
-    // The server's `runCapability`: the registry as the person, with what the assistant says about the call.
-    run: (persona, name, input, context) => registry.run(actorOf(persona), name, input, context),
     calendar: {} as AssistantDeps['calendar'],
     models: {
       resolve: async () => ({
@@ -292,9 +290,10 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
     log: (...args) => {
       logged.push(args);
     },
-    // Composition's binding (D115): the people Personal lists for the asker, co-managers included, by Clew's key and
-    // the user name a read takes.
-    people: async persona => managedPeople((await d.staff.reach(persona)).managed, personKey),
+    // `run`, `handover` and `people` as composition binds them (AM-13): the registry as the person, with what the
+    // assistant says about the call, and the people Personal lists for the asker, co-managers included, by Clew's key
+    // and the user name a read takes (D115).
+    ...assistantFunctions({ registry, people: { reach: d.staff.reach, userNameOf: personKey } }),
   };
   const assistant = assistantUsecases(deps);
   /** One question as this person, in a conversation of its own or one going on; the turn, its audit row and its message. */

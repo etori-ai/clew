@@ -149,6 +149,7 @@ for (const tab of ['waiting', 'done']) {
     await page.goto('/todo?tab=' + tab);
     await expect(page.getByText('Hämtar ärendena …')).toBeAttached();
     await expect(page.getByText('Tomt här', { exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
     release();
     await expect(page.getByText('Hämtar ärendena …')).toHaveCount(0);
   });
@@ -162,6 +163,10 @@ for (const [path, endpoint, label] of [
   ['/admin/models', '**/api/admin/models', 'Hämtar innehåll …'],
 ] as const) {
   test(`${path} keeps a loading surface until its first response`, async ({ page, api }) => {
+    // Known (WA-M5): the calendar's scrolling content holds nothing focusable while it loads and takes no tab stop of
+    // its own (axe: scrollable-region-focusable). The calendar's page is not changed here; when it is, this passes and
+    // the mark must go.
+    test.fail(path === '/calendar', 'the calendar’s loading surface scrolls without a tab stop');
     api.admin = true;
     api.menu = menuRows;
     const release = await hold(page, endpoint);
@@ -171,6 +176,11 @@ for (const [path, endpoint, label] of [
     const status = main.getByRole('status').filter({ hasText: label });
     await expect(status).toBeAttached();
     await expect(main.locator('.astryx-skeleton').nth(3)).toBeVisible();
+    // A thing's page has no name for its level-1 heading until the thing is read: the heading is checked as it arrives.
+    await expectNoAxeViolations(
+      page,
+      path === '/admin/connectors/finance' ? { without: ['page-has-heading-one'] } : {},
+    );
     release();
     await expect(status).toHaveCount(0);
     await expect(main.getByRole('heading', { level: 1 })).toBeVisible();
@@ -190,6 +200,7 @@ test('loading finishes on failure, including the optional day', async ({ page, a
   await expect(page.getByText('Hämtar i dag …')).toHaveCount(0);
   await expect(page.getByText('Hämtar sedan i går …')).toHaveCount(0);
   await expect(page.getByRole('alert').filter({ hasText: 'Områden kunde inte läsas.' })).toBeVisible();
+  await expectNoAxeViolations(page);
 });
 
 test('reduced motion disables the content entrance', async ({ page, api: _ }) => {

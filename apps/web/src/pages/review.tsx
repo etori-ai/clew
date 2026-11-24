@@ -58,6 +58,8 @@ import { PageFrame, WayBack, narrowPageQuery } from '../components/shell/page-fr
 import { DocumentReader } from '../components/views/document-reader';
 import { ReviewRecovery } from '../components/work/review-recovery';
 
+/** The page's heading when the review cannot be read, in the browser's tab too. */
+const FAILED_TITLE = 'Granskningen kunde inte läsas';
 const decisionWord: Record<Decision, string> = { approve: 'Vald för godkännande', leave: 'Lämnas kvar' };
 /** The verb of the action, for its buttons: "Attestera valda" is "Attestera" on one row. */
 const verbOf = (action: ThreadAction) => action.label.replace(/\s+valda$/i, '');
@@ -122,7 +124,17 @@ export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean 
   const step = live && action ? stepOf(search, rows.length + 1) : null;
   const reviewing = !!live && !!action && step !== null;
   // The review names the tab itself while it is drawn (`Review`); the page's other states name it here.
-  usePageTitle(reviewing ? null : missing ? 'Ärendet finns inte' : live && action ? 'Steget finns inte' : null);
+  usePageTitle(
+    reviewing
+      ? null
+      : missing
+        ? 'Ärendet finns inte'
+        : live && action
+          ? 'Steget finns inte'
+          : failed
+            ? FAILED_TITLE
+            : null,
+  );
   const message = (content: ReactNode) => <PageFrame>{content}</PageFrame>;
   let body: ReactNode;
   if (reviewing) body = <Review key={threadId} live={live} action={action} step={step} from={from} back={back} />;
@@ -152,15 +164,23 @@ export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean 
       />,
     );
   else if (failed)
+    // The page keeps its one level-1 heading, and "Försök igen" stands in the notice, not behind its toggle.
     body = message(
-      <Banner status="error" title={errorMessage(oneQ.error ?? listQ.error, 'Granskningen kunde inte läsas.')}>
-        <Button
-          label="Försök igen"
-          size="sm"
-          variant="secondary"
-          onClick={() => void (listQ.isError ? listQ.refetch() : oneQ.refetch())}
+      <VStack gap={4}>
+        <Heading level={1}>{FAILED_TITLE}</Heading>
+        <Banner
+          status="error"
+          title={errorMessage(oneQ.error ?? listQ.error, 'Granskningen kunde inte läsas.')}
+          endContent={
+            <Button
+              label="Försök igen"
+              size="sm"
+              variant="secondary"
+              onClick={() => void (listQ.isError ? listQ.refetch() : oneQ.refetch())}
+            />
+          }
         />
-      </Banner>,
+      </VStack>,
     );
   else body = message(<ContentSkeleton />);
   return (

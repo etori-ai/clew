@@ -3,6 +3,7 @@ import { Registry } from '../registry';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { audiencedActorOf } from '../../packages/connectors/src/index';
 import { fixtureConnectors } from '../fixture-connectors';
+import { refreshScan } from '../refresh-scan';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
@@ -51,7 +52,6 @@ function world() {
     registry,
     run: (p, name, input) => registry.run(audiencedActorOf(p), name, input),
     calendar: {
-      ensureProposalThread: async () => undefined,
       replan: async (_p, id) => (await store.readThreadById(id))!,
       dismiss: async (_p, id) => (await store.readThreadById(id))!,
       todayEvents: async () => [],
@@ -60,13 +60,15 @@ function world() {
     ids: () => `thread-${++n}`,
   });
   const reminders = reminderUsecases({ store, clock, authorized: async () => true });
-  return { store, clock, threads, reminders };
+  // The person's scan as the server runs it (D47).
+  const scan = refreshScan({ store, registry, clock });
+  return { store, clock, threads, reminders, scan };
 }
 
 describe("a work item's Händelser (D112 item 4)", () => {
   test('the person and Clew, newest first, from the rows the item’s own mutations wrote; a read writes nothing', async () => {
     const w = world();
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
     const approve = card.actions.find(a => a.kind === 'execute')!;
     w.clock.advance(MINUTE);
@@ -119,7 +121,7 @@ describe("a work item's Händelser (D112 item 4)", () => {
 
   test('only for an item the person may see: another person is refused as if it did not exist', async () => {
     const w = world();
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
     await expect(w.threads.itemHistory(hassan, card.id)).rejects.toThrow('Ärendet finns inte.');
     await expect(w.threads.itemHistory(hillevi, 'no-such-item')).rejects.toThrow('Ärendet finns inte.');

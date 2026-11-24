@@ -341,16 +341,20 @@ function Page() {
           <VStack gap={4}>
             <Heading level={1}>Clew manifest reference</Heading>
             {query.isError ? (
-              <Banner status="error" title={errorMessage(query.error, 'The reference could not be read.')}>
-                <Button
-                  label="Try again"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    void query.refetch();
-                  }}
-                />
-              </Banner>
+              <Banner
+                status="error"
+                title={errorMessage(query.error, 'The reference could not be read.')}
+                endContent={
+                  <Button
+                    label="Try again"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      void query.refetch();
+                    }}
+                  />
+                }
+              />
             ) : (
               <Skeleton height={320} width="100%" />
             )}

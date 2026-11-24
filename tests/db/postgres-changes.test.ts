@@ -22,20 +22,20 @@ test('change revisions commit with the business mutation, survive rollback and d
         area: 'reference',
         trigger: { reason: 'Test', source: 'Test', at: at.toISOString() },
       });
-    const before = await changesFor(id);
+    const before = await changesFor({ id, capabilities: [] });
     await expect(
       database().transaction(async tx => {
         await tx.update(schema.threads).set({ title: 'Rolled back' }).where(eq(schema.threads.id, thread));
         throw new Error('rollback');
       }),
     ).rejects.toThrow();
-    expect(await changesFor(id)).toEqual(before);
+    expect(await changesFor({ id, capabilities: [] })).toEqual(before);
     await database().update(schema.threads).set({ title: 'Committed' }).where(eq(schema.threads.id, thread));
-    const changed = await changesFor(id);
+    const changed = await changesFor({ id, capabilities: [] });
     expect(Number(changed.revision)).toBe(Number(before.revision) + 1);
     expect(changed.policy).toBe(before.policy);
     await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, id));
-    expect((await changesFor(id)).policy).not.toBe(before.policy);
+    expect((await changesFor({ id, capabilities: [] })).policy).not.toBe(before.policy);
     // A second business mutation must not lock the shared revision before it
     // reaches a card already locked by the first transaction.
     let firstLocked!: () => void, secondWritten!: () => void;
@@ -77,7 +77,7 @@ test('a talk and an action point bump the change revision of every person they c
     talk = base + '-talk',
     commitment = base + '-commitment',
     people = [employee, manager, other];
-  const revision = async (id: string) => Number((await changesFor(id)).revision);
+  const revision = async (id: string) => Number((await changesFor({ id, capabilities: [] })).revision);
   const revisions = async () => Object.fromEntries(await Promise.all(people.map(async p => [p, await revision(p)])));
   const bumped = async (before: Record<string, number>, expected: string[]) => {
     const after = await revisions();
@@ -158,5 +158,57 @@ test('a talk and an action point bump the change revision of every person they c
       await database().delete(schema.people).where(eq(schema.people.id, id));
       await database().delete(schema.personChanges).where(eq(schema.personChanges.personId, id));
     }
+  }
+});
+
+test('a competence source read moves the revision of those who may see Källor, and a renewed lease moves nothing (WD-L8)', async () => {
+  const connector = 'changes-source-' + randomUUID(),
+    admin = { id: 'changes-admin-' + randomUUID(), capabilities: ['admin.competence'] },
+    other = { id: 'changes-other-' + randomUUID(), capabilities: ['admin.users'] },
+    at = Date.now();
+  const where = eq(schema.competenceSources.connectorId, connector);
+  await database()
+    .insert(schema.connectors)
+    .values({ id: connector, bundled: true, createdBy: 'test', updatedBy: 'test' });
+  try {
+    const before = { admin: await changesFor(admin), other: await changesFor(other) };
+    // A read claims the source: the page draws it as under way.
+    await database()
+      .insert(schema.competenceSources)
+      .values({
+        connectorId: connector,
+        source: 'Kompetenskällan',
+        run: 'run-1',
+        claimedAt: new Date(at),
+        leaseUntil: new Date(at + 60_000),
+      });
+    const claimed = await changesFor(admin);
+    expect(claimed.revision).not.toBe(before.admin.revision);
+    expect(claimed.policy).toBe(before.admin.policy);
+    expect((await changesFor(other)).revision).toBe(before.other.revision);
+    // The lease renewed between pages: nothing the page draws has changed.
+    await database()
+      .update(schema.competenceSources)
+      .set({ leaseUntil: new Date(at + 120_000) })
+      .where(where);
+    expect((await changesFor(admin)).revision).toBe(claimed.revision);
+    // The read ends.
+    await database()
+      .update(schema.competenceSources)
+      .set({
+        run: null,
+        claimedAt: null,
+        leaseUntil: null,
+        startedAt: new Date(at),
+        finishedAt: new Date(at + 90_000),
+        outcome: 'complete',
+        counts: { total: 0 },
+      })
+      .where(where);
+    expect((await changesFor(admin)).revision).not.toBe(claimed.revision);
+    expect((await changesFor(other)).revision).toBe(before.other.revision);
+  } finally {
+    await database().delete(schema.competenceSources).where(where);
+    await database().delete(schema.connectors).where(eq(schema.connectors.id, connector));
   }
 });

@@ -11,7 +11,23 @@ import {
   type ThreadAction,
   type ThreadItem,
 } from '@clew/contracts';
-import type { AuditEntry, SubjectErasure, TimerIntent, WorkflowStart } from './model';
+import type { AuditEntry, ConversationCursor, SubjectErasure, TimerIntent, WorkflowStart } from './model';
+
+/** How many conversations one page of Alla samtal holds (WD-L1). */
+export const CONVERSATION_PAGE = 50;
+const CURSOR_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
+/** A page's end as the browser carries it (`ConversationPage.next`): the latest activity, a tilde, the id. */
+export const cursorText = (cursor: ConversationCursor) => `${cursor.at}~${cursor.id}`;
+/** The cursor a page's `after` names; undefined for one this server did not write. */
+export function cursorOf(text: string): ConversationCursor | undefined {
+  const cut = text.indexOf('~');
+  if (cut < 0) return undefined;
+  const at = text.slice(0, cut),
+    id = text.slice(cut + 1);
+  return CURSOR_AT.test(at) && !Number.isNaN(Date.parse(at)) && id.length > 0 && id.length <= 80
+    ? { at, id }
+    : undefined;
+}
 
 /** The audit subjects a work item's own history is written under: the item, and the person's two timers on it. */
 export const historySubjects = (threadId: string) => [

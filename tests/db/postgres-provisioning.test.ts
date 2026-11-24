@@ -1,8 +1,9 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray, like, or, sql } from 'drizzle-orm';
-import { database, schema, type Database } from '../../packages/db/src/index';
+import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { database, schema, type Database, type Transaction } from '../../packages/db/src/index';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
+import type { LeaverChange } from '../../apps/server/src/modules/people/ports';
 import { provisioningContract, type ProvisioningHarness } from '../provisioning-store-contract';
 
 /** The provisioning contract on Postgres (D68, D85). Run with `bun run test:db` inside the devcontainer. */
@@ -112,13 +113,6 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
           await tx.insert(schema.groupCapabilities).values(rows.map(row => ({ organisationId: 'org', ...row })));
       });
     },
-    async setGroupRelations(rows) {
-      await db.transaction(async tx => {
-        await tx.delete(schema.groupRelations).where(like(schema.groupRelations.groupExternalId, '%' + prefix + '%'));
-        if (rows.length)
-          await tx.insert(schema.groupRelations).values(rows.map(row => ({ organisationId: 'org', ...row })));
-      });
-    },
     async relations(id) {
       const [row] = await db
         .select({ relations: schema.accessGrants.relations })
@@ -167,6 +161,32 @@ import { cLocaleDatabase, type CLocaleDatabase } from './c-locale';
 const scimHarness = (prefix: string, db: () => Database = database): ScimStoreHarness => ({
   store: postgresProvisionStore({ db }),
   withLeavers: (leavers, leaverFailed) => postgresProvisionStore({ leavers: () => leavers(), leaverFailed, db }),
+  withWritingLeavers: () => {
+    // A row on the transaction the store hands the binding, as the competence module's port writes its own.
+    const keep = (tx: Transaction, kind: string) => async (change: LeaverChange) => {
+      await tx.insert(schema.audit).values({
+        actor: change.actor,
+        action: 'test.leaver_' + kind,
+        subject: 'person:' + change.personId,
+        createdAt: new Date(change.at),
+      });
+    };
+    return {
+      store: postgresProvisionStore({
+        leavers: tx => ({ deactivated: keep(tx, 'deactivated'), reactivated: keep(tx, 'reactivated') }),
+        db,
+      }),
+      async written(personId) {
+        return (
+          await db()
+            .select({ action: schema.audit.action })
+            .from(schema.audit)
+            .where(and(eq(schema.audit.subject, 'person:' + personId), like(schema.audit.action, 'test.leaver_%')))
+            .orderBy(schema.audit.id)
+        ).map(r => r.action.slice('test.leaver_'.length));
+      },
+    };
+  },
   withErasure: erasure => postgresProvisionStore({ erasure: () => erasure(), db }),
   prefix,
   async seedProvisioner(p, digest, revoked, previous) {

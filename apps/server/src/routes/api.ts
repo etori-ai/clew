@@ -70,6 +70,7 @@ const {
   effect,
   ensureThreads,
   listAreas,
+  listConversationsFor,
   listThreadsFor,
   preview,
   reopenThread,
@@ -80,7 +81,7 @@ const {
 } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
-const { ask, converse, listAssistants, listObjects, reply } = assistant;
+const { ask, converse, listAssistants, listObjects, reply, writtenTurn } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 // A job (D55): the fact Clew fans out, and the proposal the person approves once, echoed back as it was assembled; the ledger re-authorizes every step.
 const JobApprovalInput = Type.Object(
@@ -191,7 +192,7 @@ api.get('/changes', c =>
     while (!stopped) {
       try {
         const session = await authenticate(cookie);
-        const change = await changesFor(session.context.id);
+        const change = await changesFor(session.context);
         const value = JSON.stringify(change);
         if (value !== previous) {
           await stream.writeSSE({ data: value, id: change.policy + ':' + change.revision, retry: 5000 });
@@ -251,6 +252,10 @@ api.get('/threads', async c => {
   ]);
   return c.json({ threads, sources, deliveries });
 });
+/** Alla samtal (WD-L1): one page of the person's conversations, the latest activity first; `after` is the last page's `next`. */
+api.get('/conversations', async c =>
+  c.json(await listConversationsFor(c.get('session').context, c.req.query('after'))),
+);
 api.post('/deliveries/:id/claim', async c =>
   c.json({ claimed: await attention.claim(c.get('session').context, c.req.param('id')) }),
 );
@@ -502,6 +507,13 @@ api.post('/conversation/stream', async c => {
     }
   });
 });
+/**
+ * What a question sent with a turn key came to (WD-L3), read by the page after a stop or a broken answer: the turn as it
+ * was written, or `written: null`. A read; nothing is asked or written.
+ */
+api.get('/conversation/turns/:turn', async c =>
+  c.json(await writtenTurn(c.get('session').context, c.req.param('turn'))),
+);
 /** What `@` can point at (`POST /api/objects`), with what is typed in the body, never in the address (`objects.ts`). */
 api.route('/objects', objectsRoutes({ list: listObjects }));
 api.get('/threads/:id/verbs', async c => {

@@ -6,6 +6,7 @@ import {
   expectNoAxeViolations,
   narrow,
   open,
+  pagesNav,
   phone,
   reflowProblems,
   test,
@@ -120,6 +121,64 @@ test.describe('another system’s assistant beside the conversation', () => {
       side: true,
     });
     await expect(transcript(page).getByText('Du frågade HR-assistenten i sidofältet', { exact: true })).toHaveCount(1);
+  });
+  // WD-L5: the panel's question is a turn like the box's: it can be stopped, and it never pulls the person back.
+  for (const [layout, viewport] of [
+    ['desktop', desktop],
+    ['320 px', narrow],
+  ] as const)
+    test(`at ${layout} a question in the panel can be stopped: Stoppa stands in for send, the question goes back in the panel’s box with the focus, and it is said`, async ({
+      page,
+      api,
+    }) => {
+      await page.setViewportSize(viewport);
+      api.handoverAssistants = [hrAssistant];
+      // At 320 px the exchange takes the column instead of standing beside the transcript.
+      await open(page, '/conversations/new');
+      await page.getByRole('link', { name: 'HR-assistenten', exact: true }).click();
+      await expect(sideBox(page)).toBeFocused();
+      const release = api.holdAnswer();
+      await askBeside(page, QUESTION);
+      const stop = page.getByRole('button', { name: 'Stoppa' });
+      await expect(stop).toBeEnabled();
+      // The box stays open while the assistant answers, and Enter waits for the answer.
+      await expect(sideBox(page)).toBeFocused();
+      await sideBox(page).fill('Och om jag är över 40?');
+      await sideBox(page).press('Enter');
+      await expect(sideBox(page)).toHaveText('Och om jag är över 40?');
+      expect(api.asked).toHaveLength(1);
+      expect(await reflowProblems(page)).toEqual([]);
+      await expectNoAxeViolations(page);
+      await sideBox(page).fill('');
+      await stop.focus();
+      await page.keyboard.press('Enter');
+      await expect(sideBox(page)).toHaveText(QUESTION);
+      await expect(sideBox(page)).toBeFocused();
+      await expect(page.getByRole('button', { name: 'Stoppa' })).toHaveCount(0);
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Frågan avbröts'));
+      // The answer that comes after is not drawn, and the page stays the conversation not asked yet.
+      release();
+      await page.waitForTimeout(500);
+      await expect(page.getByText('25 semesterdagar')).toHaveCount(0);
+      await expect(page).toHaveURL(/\/conversations\/new/);
+    });
+  test('a question in the panel left for another page is let go of: its answer does not pull the person back', async ({
+    page,
+    api,
+  }) => {
+    api.handoverAssistants = [hrAssistant];
+    await openBeside(page);
+    const release = api.holdAnswer();
+    await askBeside(page, QUESTION);
+    await expect(panel(page).getByRole('button', { name: 'Stoppa' })).toBeVisible();
+    await pagesNav(page)
+      .getByRole('link', { name: /^Att göra/ })
+      .click();
+    await expect(page).toHaveURL(/\/todo/);
+    release();
+    await page.waitForTimeout(500);
+    await expect(page).toHaveURL(/\/todo/);
+    await expect(panel(page)).toHaveCount(0);
   });
   test('Esc in the panel closes it: the conversation stays, the address lets go of the assistant, and Clew’s box has the focus', async ({
     page,

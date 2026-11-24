@@ -9,6 +9,7 @@ import {
   Button,
   EmptyState,
   HStack,
+  Heading,
   Link,
   List,
   ListItem,
@@ -61,6 +62,9 @@ import {
 } from '../components/people/entity-sections';
 import { KeyFigureTiles } from '../components/people/unit-figures';
 import { PageFrame } from '../components/shell/page-frame';
+
+/** The page's heading when the unit cannot be read, in the browser's tab too. */
+const FAILED_TITLE = 'Enheten kunde inte hämtas';
 
 /**
  * Whether the reader manages the unit and how many people it has: the people the reader may ask about come in one group
@@ -410,7 +414,9 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
         : `${tabName} · ${detail.entity.name}`
       : missing
         ? 'Enheten finns inte'
-        : null,
+        : read.isError
+          ? FAILED_TITLE
+          : null,
   );
   const tabHref = (value: string) => unitPageHref(id, { ...(value === OVERVIEW ? {} : { section: value }), from });
   const here = tabHref(OVERVIEW);
@@ -428,6 +434,8 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
           />
         ) : read.isError ? (
           <VStack gap={3}>
+            {/* The page keeps its one level-1 heading when the unit cannot be read: what is missing, the alert why. */}
+            <Heading level={1}>{FAILED_TITLE}</Heading>
             <Text as="p" role="alert">
               {errorMessage(read.error, 'Uppgifterna kunde inte hämtas just nu.')}
             </Text>

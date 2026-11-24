@@ -16,7 +16,13 @@ export interface DialogueStoreHarness {
   store: DialogueStore;
   /** Prefixes every id the suite writes, the organisation's included, so runs never meet. */
   prefix: string;
-  seedPerson(id: string, organisationId: string, name: string): Promise<void>;
+  /** A person as provisioning would have written them: active unless `enabled` is false; a user name where it is given. */
+  seedPerson(
+    id: string,
+    organisationId: string,
+    name: string,
+    extra?: { enabled?: boolean; userName?: string },
+  ): Promise<void>;
   seedUnit(id: string, organisationId: string, label: string): Promise<void>;
   auditFor(subject: string): Promise<Array<{ actor: string; action: string }>>;
   /** The free-text columns as stored, where the adapter seals them (Postgres). */
@@ -270,6 +276,17 @@ export function dialogueStoreContract(name: string, make: () => Promise<Dialogue
       expect([...read.names]).toEqual([[boss, 'Ingrid Holm']]);
       expect([...read.units]).toEqual([[unit, 'Bergsåkers skola']]);
       expect(read.none.size).toBe(0);
+    });
+
+    test('an erasure locks the person and reads whether they are active; a user name or an unknown id has no state', async () => {
+      const { h, p, org, boss } = await world();
+      const gone = p + '-gone';
+      await h.seedPerson(gone, org, 'Gunnar Lind', { enabled: false, userName: p + '-gunnar' });
+      expect(await h.store.transaction(tx => tx.lockPersonForErasure(boss))).toBe(true);
+      expect(await h.store.transaction(tx => tx.lockPersonForErasure(gone))).toBe(false);
+      // A user name is not an id.
+      expect(await h.store.transaction(tx => tx.lockPersonForErasure(p + '-gunnar'))).toBeUndefined();
+      expect(await h.store.transaction(tx => tx.lockPersonForErasure(p + '-nobody'))).toBeUndefined();
     });
 
     test('a throw rolls the whole transaction back', async () => {

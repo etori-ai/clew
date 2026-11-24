@@ -693,9 +693,11 @@ function Page() {
                 </Text>
               </HStack>
               {dryRun.isError && (
-                <Banner status="error" title={errorMessage(dryRun.error, 'The dry run could not be run.')}>
-                  <Button label="Try again" size="sm" variant="secondary" onClick={run} />
-                </Banner>
+                <Banner
+                  status="error"
+                  title={errorMessage(dryRun.error, 'The dry run could not be run.')}
+                  endContent={<Button label="Try again" size="sm" variant="secondary" onClick={run} />}
+                />
               )}
             </VStack>
             {outcome && (
