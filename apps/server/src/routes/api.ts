@@ -132,6 +132,12 @@ const RemindInput = Type.Object(
   { seconds: Type.Integer({ minimum: 1, maximum: 30 * 86400 }) },
   { additionalProperties: false },
 );
+/** `@`'s search (`POST /api/objects`): the words typed and the refs in view, each bounded by the route. */
+const ObjectsInput = Type.Object(
+  { q: Type.String(), near: Type.Array(Type.String()) },
+  { additionalProperties: false },
+);
+type ObjectsQuery = Static<typeof ObjectsInput>;
 const CancelReminderInput = Type.Object(
   { workflowId: Type.String({ minLength: 1, maxLength: 200 }) },
   { additionalProperties: false },
@@ -143,6 +149,7 @@ const validators = {
   remind: ajv.compile(RemindInput),
   snooze: ajv.compile(SnoozeInput),
   cancelReminder: ajv.compile(CancelReminderInput),
+  objects: ajv.compile(ObjectsInput),
   ask: ajv.compile(AskInput),
   reply: ajv.compile(ReplyInput),
   confirm: ajv.compile(ConfirmInput),
@@ -500,10 +507,17 @@ api.post('/conversation/stream', async c => {
     }
   });
 });
-/** What `@` can point at, in the box's context: `near` is a comma-separated list of the refs the person is looking at. */
-api.get('/objects', async c => {
-  const q = c.req.query('q') ?? '';
-  const near = (c.req.query('near') ?? '').split(',').filter(Boolean);
+/**
+ * What `@` can point at, in the box's context: `q` is what the person typed after `@`, `near` the refs they are looking
+ * at. Both travel in the body, never in the address: what is typed after `@` is a person's name as often as not, and an
+ * address lands in every access log on the way (the web review of 2026-11-23, M4). A read: it writes nothing.
+ */
+api.post('/objects', async c => {
+  const { q, near } = await body(
+    c.req.raw,
+    validators.objects as unknown as (value: unknown) => value is ObjectsQuery,
+    16_000,
+  );
   if (q.length > 80) throw new InputError('För lång sökning.');
   if (near.length > 40 || near.some(r => r.length > 200 || !/^[a-z]+:[A-Za-z0-9:_.@-]+$/.test(r)))
     throw new InputError('Ogiltigt sammanhang.');

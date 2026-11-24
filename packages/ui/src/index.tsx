@@ -103,7 +103,8 @@ export { Overlay } from '@astryxdesign/core/Overlay';
 export { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
 export { Kbd } from '@astryxdesign/core/Kbd';
 export { ScrollableArea } from '@astryxdesign/core/ScrollableArea';
-export { useToast } from '@astryxdesign/core/Toast';
+// Astryx's toasts, through the session's own hook: a session's end takes its toasts down (`session.tsx`).
+export { useToast } from './session';
 // Administration (D23): tables, switches, dialogs, forms and tabs. Still only re-exports.
 export {
   Table,
@@ -199,7 +200,16 @@ export {
   UsersIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
-export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
+export {
+  SessionBoundary,
+  SessionUnreachable,
+  readSession,
+  retryDelay,
+  sessionFetch,
+  signOut,
+  type BrowserSession,
+  type SessionAnswer,
+} from './session';
 // The area mark (D71): the system's hue in registration order, the area's icon, the word always beside them.
 export { AreaChip, AreaGlyph, AreaLine, AreaMark, SystemSwatch, clewIcon, swatchWords } from './components/mark';
 export { hueOf, hueWord, ordinalWord, systemHues, type SystemHue } from './system-hues';

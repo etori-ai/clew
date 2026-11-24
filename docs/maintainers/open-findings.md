@@ -23,7 +23,6 @@ no batch.
 | 8 | Erasure reaches everything | `DE-M6`, `BD-M1`, `BD-M2`, `BD-L1`, `BD-L3`, `BD-L5` | |
 | 10 | The assistant's prompt, tools, provider and record | `AM-2`, `AM-3`, `AM-5`, `AM-6`, `AM-7`, `AM-8`, `AM-9`, `AM-10` | |
 | 11 | Connector administration and its scripts | `DE-M5`, `CB-9`, `CB-10`, `CB-11`, `CB-12`, `CB-13` | |
-| 12 | The session and the change stream in the browser | `WD-M1`, `WD-M2`, `WD-M3`, `WD-M4`, `WD-L2`, `WD-L4`, `WD-L9` | |
 | 13 | The conversation's state | `WD-L1`, `WD-L3`, `WD-L5`, `WD-L6`, `WD-L7`, `WD-L8` | |
 | 14 | The calendar's time zones, entries and talk meetings | `DE-M8`, `DE-L14`, `DE-L15`, `DE-L16`, `WA-M2`, `WA-L5` | |
 | 15 | No installation's name or brand in the code, and Swedish where a person reads | `AM-12`, `BL-9`, `WA-L6`, `WA-L7`, `WA-L11`, `WA-L12`, `WA-L13` | |
@@ -44,10 +43,10 @@ no batch.
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 5 | 7 |
-| WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
+| WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 0 | 6 | 6 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 7 | 7 |
-| | **Total** | **0** | **21** | **61** | **82** |
+| | **Total** | **0** | **17** | **58** | **75** |
 
 ## High
 
@@ -167,19 +166,12 @@ stream's cost) with a table of statements per tick.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| WD-M1 | Medium | The session boundary ends the session, in every tab, on any non-2xx answer or network error, so a transient failure reads as a sign-out. | `packages/ui/src/session.tsx:98` |
-| WD-M2 | Medium | The change stream's `EventSource` has no `onerror`, so after one reconnect answered with an HTTP error it stays closed. | `apps/web/src/main.tsx:126-130` |
-| WD-M3 | Medium | A link opened signed out loses its query on the way through sign-in, and "Logga in igen" loses the whole address. | `apps/web/src/main.tsx:195` |
-| WD-M4 | Medium | Typed text and user names are sent as query strings in four places, where nginx's default access log and the browser history keep them. | `apps/web/src/components/conversation/composer.tsx:187` |
 | WD-L1 | Low | Alla samtal shows at most 50 conversations, shared with recently handled work items and ordered by when they began. | `packages/db/src/threads.ts:116-138` |
-| WD-L2 | Low | Toasts with live buttons and the tab's title stay on screen after the session ends. | `apps/web/src/main.tsx:486` |
 | WD-L3 | Low | A turn the page reports as stopped or failed may already have written a work item or the answer, and a retry then asks twice. | `apps/server/src/assistant/index.ts:235-246` |
-| WD-L4 | Low | Session storage keeps what a conversation showed, view inputs included, after the session ends. | `apps/web/src/conversation-shown.ts:52-76` |
 | WD-L5 | Low | A question to another system's assistant cannot be stopped and, when answered, can pull the person back or draw one conversation under another's address. | `apps/web/src/components/conversation/conversation-context.tsx:863-912` |
 | WD-L6 | Low | The open conversation is a copy in component state that no change notice refreshes. | `apps/web/src/components/conversation/conversation-context.tsx:328` |
 | WD-L7 | Low | A refused prediction is not taken back from the list once another write has landed on it. | `apps/web/src/thread-cache.ts:61-62` |
 | WD-L8 | Low | A correction's status and a competence source's import are polled, against D33 and D46. | `apps/web/src/components/work/review-recovery.tsx:33` |
-| WD-L9 | Low | The first load asks for the session twice, in a chain, before the page's first read. | `apps/web/src/main.tsx:82-119` |
 
 ## The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA
 

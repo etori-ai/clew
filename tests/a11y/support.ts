@@ -755,6 +755,8 @@ export class MockApi {
       path = url.pathname.replace('/api', ''),
       post = request.method() === 'POST';
     const json = (body: unknown) => route.fulfill({ json: body });
+    // What a read is read with: its body, never its address (WD-M4: the address is in every access log on the way).
+    const input = <T = Record<string, unknown>>() => (request.postDataJSON() ?? {}) as T;
     const id = path.split('/')[2] ?? '';
     if (path === '/protocol/manifest-reference.json') return json(reference);
     // The manifest dry run (D60, D97) as the server runs it: the real preview over the posted document.
@@ -1300,11 +1302,11 @@ export class MockApi {
     }
     if (path === '/cap/calendar.today') return json({ output: today });
     if (path === '/cap/calendar.week') {
-      const from = (JSON.parse(url.searchParams.get('input') ?? '{}') as { from?: string }).from ?? '2026-11-02';
+      const from = input<{ from?: string }>().from ?? '2026-11-02';
       return json({ output: { from, events: events(from) } });
     }
     if (path === '/cap/calendar.day') {
-      const date = (JSON.parse(url.searchParams.get('input') ?? '{}') as { date?: string }).date ?? '2026-11-04';
+      const date = input<{ date?: string }>().date ?? '2026-11-04';
       return json({
         output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] },
       });
@@ -1852,7 +1854,7 @@ export class MockApi {
       return route.fulfill({ status: 201, json: { id: 'holding-' + this.registered.length } });
     }
     // Kompetens (D108): one person's holdings, the view the person's section opens; refused while the module is off, as
-    // the registry refuses a read of a connector that is switched off: `GET /api/cap` answers it 404, as a name nobody
+    // the registry refuses a read of a connector that is switched off: `POST /api/cap` answers it 404, as a name nobody
     // registered.
     // What needs doing among a manager's reports, as the card under an answer reads it again.
     if (path === '/cap/competence.attention')
@@ -1876,11 +1878,12 @@ export class MockApi {
     if (path === '/cap/servicedesk.equipment') return json(equipmentAnswer);
     // Utvecklingssamtal (D96): the two composites and the built-in module's writes.
     if (path === '/cap/clew.talks' || path === '/cap/clew.commitments' || path.startsWith('/talks/'))
-      return this.handleTalks(route, path, url);
+      return this.handleTalks(route, path);
     // `@` as the server answers it: with nothing typed only the context the box sends (`near`), with text everything open, the context first.
     if (path === '/objects') {
-      const q = (url.searchParams.get('q') ?? '').toLowerCase(),
-        near = (url.searchParams.get('near') ?? '').split(',');
+      const asked = input<{ q?: string; near?: string[] }>();
+      const q = (asked.q ?? '').toLowerCase(),
+        near = asked.near ?? [];
       const all = this.threads
         .filter(t => t.state === 'open' && t.kind === 'pushed')
         .flatMap(t => [
@@ -1906,21 +1909,21 @@ export class MockApi {
     }
     // A name finds a person (D38): the hit carries its contact card as a view. Anything else finds the routine.
     if (path === '/cap/clew.search')
-      return json({ output: /lindqvist/i.test(url.searchParams.get('input') ?? '') ? personSearch : searchOutput });
+      return json({ output: /lindqvist/i.test(JSON.stringify(input())) ? personSearch : searchOutput });
     // The phone book's declared views, answered by the connector itself.
     if (path.startsWith('/cap/phonebook.')) {
-      const answer = await phonebook(path.slice('/cap/'.length), JSON.parse(url.searchParams.get('input') ?? '{}'));
+      const answer = await phonebook(path.slice('/cap/'.length), input());
       return route.fulfill({ status: answer.status, json: answer.body });
     }
     if (path === '/cap/clew.cardFromAnswer' && post) return json({ output: { threadId: 'rutin' } });
     // An employee's absence pattern is asked for one employee's ref (`hr:emp:<n>`, the HR manifest's input pattern).
     if (path === '/cap/hr.absencePattern') {
-      const ref = (JSON.parse(url.searchParams.get('input') ?? '{}') as { ref?: string }).ref;
+      const ref = input<{ ref?: string }>().ref;
       if (!ref || !/^hr:emp:[0-9]+$/.test(ref))
         return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan till hr.absencePattern.' } });
     }
     // A read a spec opens, as its connector answers it, with the view its manifest declares.
-    const read = path.startsWith('/cap/') && !post ? path.slice('/cap/'.length) : null;
+    const read = path.startsWith('/cap/') ? path.slice('/cap/'.length) : null;
     const view = read && read in READS ? manifestView(read) : undefined;
     if (read && view) return json({ output: READS[read], source: view.source, view });
     // A read the person may open that declares no view (D116, `views`), drawn as it is: `hr.whoIsOn`, whose answer is
@@ -1928,7 +1931,7 @@ export class MockApi {
     // connectors answers its own shape, so it is in `READS` or fails the test as unmocked.
     const listed = path.startsWith('/cap/') ? this.views.find(v => v.capability === path.slice(5)) : undefined;
     const standIn = !!listed && (listed.capability === 'hr.whoIsOn' || !CATALOGUED.has(listed.capability));
-    if (listed && standIn && !listed.kind && !post)
+    if (listed && standIn && !listed.kind)
       return json({ output: this.output, source: SOURCES[listed.capability.split('.')[0]!] ?? 'Personalsystemet' });
     // A capability the registry does not know (D23) is the route's 404; the suite fails on one it reads.
     if (path.startsWith('/cap/')) {
@@ -2501,7 +2504,7 @@ export class MockApi {
    * without a talks system, read-only when another system answers), and the seven writes over the mock's own state, so a
    * spec sees the lists change on the next read.
    */
-  private handleTalks(route: Route, path: string, url: URL) {
+  private handleTalks(route: Route, path: string) {
     const request = route.request(),
       method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
@@ -2523,7 +2526,7 @@ export class MockApi {
       return json({ output: this.talksWritable ? result : readOnlyTalks(result), source: result.source });
     }
     if (path === '/cap/clew.commitments') {
-      const input = JSON.parse(url.searchParams.get('input') ?? '{}') as CommitmentsInput;
+      const input = (request.postDataJSON() ?? {}) as CommitmentsInput;
       // `person` is a user name (or an id for someone without one); an employee reads nobody's but their own.
       const about =
         this.staff.units.flatMap(u => u.people).find(p => (p.userName ?? p.id) === input.person)?.id ??

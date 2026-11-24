@@ -520,7 +520,7 @@
       "number": 34,
       "path": "docs/decisions/D34-the-box-is-the-page-and-the-push-is-its-brief.md",
       "title": "D34 · The box is the page; the push is its brief; one rail orders everything by time",
-      "status": "accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41; `/overview` and the rail replaced by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the brief above the box and its sentence replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md); the groups' order is the artboard's since [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) (Nu, Jag föreslår, Senare, Till kännedom)",
+      "status": "accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41; `/overview` and the rail replaced by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the brief above the box and its sentence replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md); the groups' order is the artboard's since [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) (Nu, Jag föreslår, Senare, Till kännedom); `@`'s search is `POST /api/objects` with what is typed in the body since 2026-11-24 (WD-M4 of the web review of 2026-11-23)",
       "date": "2026-11-04",
       "area": "ui"
     },
@@ -574,7 +574,7 @@
       "number": 38,
       "path": "docs/decisions/D38-views-are-declared-by-connectors-and-drawn-by-clew.md",
       "title": "D38 · A view is declared by the connector and drawn by Clew",
-      "status": "accepted, built 2026-11-05; the kinds beyond the first four are not built; a view in the menu is D40, and such a view is a page of its own (D42)",
+      "status": "accepted, built 2026-11-05; the kinds beyond the first four are not built; a view in the menu is D40, and such a view is a page of its own (D42); amended 2026-11-24: the view's read is `POST /api/cap/:name` with its input as the body, never in an address (WD-M4 of the web review of 2026-11-23)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -1357,7 +1357,7 @@
       "number": 116,
       "path": "docs/decisions/D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md",
       "title": "D116 · A panel is a peek at one thing; a list is a page, and every view has an address",
-      "status": "provisional (product owner, 2026-11-12; accepted when a manager outside the repository has worked through a list reached from Hem and back, and one connector author has known from the guide alone where their table and their record open; no manual screen-reader pass yet); amended 2026-11-12 (product owner): a system that does not answer is said where its content is missing, not as a banner at the top of the page, which replaces [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md)'s artboard 8 rule and the banner drawn under [D8](D08-every-action-works-without-the-model.md) for it; its first application, a unit of the organisation tree as a page, was withdrawn when merged with `main` on 2026-11-13, where [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) keeps the unit in its drawer ([open questions](../maintainers/open-questions.md)); the peek panel is replaced by [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) (2026-11-14, provisional): a list is still a page, and a single thing is now a page too",
+      "status": "provisional (product owner, 2026-11-12; accepted when a manager outside the repository has worked through a list reached from Hem and back, and one connector author has known from the guide alone where their table and their record open; no manual screen-reader pass yet); amended 2026-11-12 (product owner): a system that does not answer is said where its content is missing, not as a banner at the top of the page, which replaces [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md)'s artboard 8 rule and the banner drawn under [D8](D08-every-action-works-without-the-model.md) for it; its first application, a unit of the organisation tree as a page, was withdrawn when merged with `main` on 2026-11-13, where [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) keeps the unit in its drawer ([open questions](../maintainers/open-questions.md)); the peek panel is replaced by [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) (2026-11-14, provisional): a list is still a page, and a single thing is now a page too; amended 2026-11-24 (WD-M4 of the web review of 2026-11-23): what a person types into a view's own search field is never written into the page's address, which keeps the view's choices, its name and its way back, so a reload or Back forgets the words, as [D100](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) item 5 accepted for the people list",
       "date": "2026-11-12",
       "area": "ui"
     },

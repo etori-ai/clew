@@ -36,14 +36,16 @@ export const tabWord: Record<TodoTab, string> = { 'needs-you': 'Behöver dig', w
 export const tabOf = (value: string | null): TodoTab =>
   value === 'snoozed' ? 'waiting' : todoTabs.includes(value as TodoTab) ? (value as TodoTab) : 'needs-you';
 
-/** Where Att göra keeps its state (D43): the pile, the system, the filter's words and the chosen work item. */
+/**
+ * Where Att göra keeps its state (D43): the pile, the system and the chosen work item. The filter's words are not here:
+ * what a person types stays out of every address (D100 item 5).
+ */
 export interface TodoState {
   tab?: TodoTab;
   area?: string | null;
-  filter?: string | null;
   item?: string | null;
 }
-const TODO_KEYS: Record<keyof TodoState, string> = { tab: 'tab', area: 'area', filter: 'filter', item: 'item' };
+const TODO_KEYS: Record<keyof TodoState, string> = { tab: 'tab', area: 'area', item: 'item' };
 /** `/todo` with `next` applied over `search`; whatever else the address holds (a review over the page) is kept. */
 export function todoHref(next: TodoState, search: URLSearchParams | string = ''): string {
   const q = new URLSearchParams(search);

@@ -1,4 +1,4 @@
-import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useLocation } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
 import { Banner, Button, EmptyState, VStack, useMediaQuery } from '@clew/ui';
@@ -7,10 +7,10 @@ import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { Shell, shortQuery } from '../components/shell/shell';
 import { useNav } from '../components/shell/nav';
-import { viewOpenHref, withViewInput } from '../view-address';
+import { viewOpenHref } from '../view-address';
 import { useShownForTheWayBack } from '../way-back';
 import { DeclaredView } from '../components/views/view';
-import { useView, viewSubject } from '../components/views/view-read';
+import { useView, useViewInput, viewSubject } from '../components/views/view-read';
 import { AskClew } from '../components/conversation/thing-panel';
 import { PageHeader } from '../components/shell/page-header';
 import { ContentArrival, ContentSkeleton } from '../components/shell/loading';
@@ -33,8 +33,6 @@ const TITLE = 'Nyheter';
  */
 export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const short = useMediaQuery(shortQuery);
-  const [search] = useSearchParams();
-  const navigate = useNavigate();
   const location = useLocation();
   const address = location.pathname + location.search;
   useShownForTheWayBack(address);
@@ -47,8 +45,9 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
     admin,
     manager: user.role === 'manager',
   });
-  const inputJson = search.get('input');
-  const main = useView(NEWS_CAPABILITY, inputJson, { title, address });
+  // The address's input, and what is typed into the list's search field, which no address holds (`useViewInput`).
+  const viewInput = useViewInput(NEWS_CAPABILITY);
+  const main = useView(NEWS_CAPABILITY, viewInput.inputJson, { title, address });
   const list = main.shown?.capability === NEWS_CAPABILITY ? main.shown : null;
   const missing = !!main.failed && refused(main.failed);
   // The news is a list, a page of its own (D116): the conversation about it goes on without it beside.
@@ -97,9 +96,7 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
                       tableQuery={tableQuery}
                       title={title}
                       pageAction={ask}
-                      onInput={next =>
-                        navigate(withViewInput(location.pathname, location.search, next), { replace: true })
-                      }
+                      onInput={next => viewInput.onInput(next, list.spec)}
                       /* A piece of news is one thing: its own page, with the list as the way back (D126). */
                       hrefFor={v => viewOpenHref(areas?.views, location.pathname, location.search, v)}
                     />
