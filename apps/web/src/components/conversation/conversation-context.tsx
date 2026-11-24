@@ -12,11 +12,12 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react';
-import { matchesTurnContext, turnContextKey } from '@clew/contracts';
+import { matchesWrittenTurn, turnRequestKey } from '@clew/contracts';
 import type {
   Chip,
   ClewObject,
   ConversationResponse,
+  ConversationInput,
   Handover,
   HandoverAssistant,
   ThreadMessage,
@@ -330,54 +331,23 @@ interface Turns {
 
 /** A question's key (WD-L3): the server writes it on the question, so the same question sent again is not asked twice. */
 const turnKey = () => crypto.randomUUID();
-/** A question as its key is held to: its words, where it was asked, whom it was to and what went with it. */
-interface Asked {
-  text: string;
-  /** The conversation it was asked in; null for one that would have started a conversation. */
-  at: string | null;
-  /** Another system's assistant it went to, by its id ("Till:", the panel); null for Clew's own. */
-  to: string | null;
-  context: string;
-}
-const askedOf = (
-  text: string,
-  at: string | null,
-  to: string | null,
-  chips: readonly Chip[],
-  beside?: string,
-): Asked => ({
-  text,
-  at,
-  to,
-  context: turnContextKey(chips, beside),
-});
-/** A question that did not come back, kept with its key while the same question is sent again from the same place. */
-interface Unanswered extends Asked {
+interface Unanswered {
+  requestKey: string;
   turn: string;
 }
-/**
- * The key for a question: the kept one when the same words go again from the same place to the same recipient with the
- * same things attached, else a new one. A changed question is another question: the server refuses a key that comes
- * back with anything else, and never answers one question with another's turn.
- */
-const keyFor = (kept: Unanswered | null, now: Asked) =>
-  kept && kept.text === now.text && kept.at === now.at && kept.to === now.to && kept.context === now.context
-    ? kept.turn
-    : turnKey();
+const keyFor = (kept: Unanswered | null, request: ConversationInput): Unanswered => {
+  const requestKey = turnRequestKey(request);
+  return kept?.requestKey === requestKey ? kept : { requestKey, turn: turnKey() };
+};
 /** A broken response may still have committed. A different question under the key must not be shown or retried with it. */
-async function writtenUnder(turn: string, asked: Asked) {
+async function writtenUnder(turn: string, request: ConversationInput) {
   const written = await api.writtenTurn(turn).then(
     r => r.written,
     () => null,
   );
   if (!written) return null;
-  const message = written.thread.messages.find(m => m.role === 'user' && m.meta?.turn === turn);
-  return message?.body === asked.text &&
-    (message.meta?.handed?.assistant ?? null) === asked.to &&
-    (!asked.at || written.conversationId === asked.at) &&
-    matchesTurnContext(message.meta, asked.context)
-    ? written
-    : 'different';
+  const index = written.thread.messages.findIndex(m => m.role === 'user' && m.meta?.turn === turn);
+  return matchesWrittenTurn(written.thread, index, request) ? written : 'different';
 }
 
 /**
@@ -451,9 +421,18 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
         setOpenId(null);
         setLatest(null);
       }
-      const at = current;
-      const question = askedOf(text, at, handed?.id ?? null, chips, beside);
-      const turn = keyFor(unanswered.current, question);
+      const question: ConversationInput = {
+        text,
+        chips,
+        ...(beside && !handed ? { beside } : {}),
+        ...(current ? { conversationId: current } : {}),
+        ...(handed ? { assistant: handed.id } : {}),
+        ...(handed && suggested ? { suggested: true as const } : {}),
+        ...(own ? { own: true as const } : {}),
+        ...(handed && confirmed ? { confirmed: true as const } : {}),
+      };
+      const kept = keyFor(unanswered.current, question);
+      const { turn } = kept;
       unanswered.current = null;
       const controller = new AbortController();
       inflight.current = controller;
@@ -502,17 +481,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
         await tracked(async () => {
           try {
             const response = await api.converseStream(
-              {
-                text,
-                chips,
-                turn,
-                ...(beside && !handed ? { beside } : {}),
-                ...(current ? { conversationId: current } : {}),
-                ...(handed ? { assistant: handed.id } : {}),
-                ...(handed && suggested ? { suggested: true as const } : {}),
-                ...(own ? { own: true as const } : {}),
-                ...(handed && confirmed ? { confirmed: true as const } : {}),
-              },
+              { ...question, turn },
               event => {
                 // The turn went to another system's assistant: what follows is drawn as that assistant's from its first word.
                 if (event.type === 'handed') setPending(p => p && { ...p, handed: event.assistant, answer: '' });
@@ -558,7 +527,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
             }
             setPending(null);
             if (left()) return;
-            unanswered.current = written === 'different' ? null : { ...question, turn };
+            unanswered.current = written === 'different' ? null : kept;
             setValue(v => v || raw);
             if (!stopped) setError(errorMessage(e, 'Frågan kunde inte ställas.'));
             else announce('Frågan avbröts. Den ligger kvar i rutan.');
@@ -1039,8 +1008,15 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       const text = raw.replace(/\s+/g, ' ').trim();
       if (!text || asideBusy.current || busy) return false;
       const at = openRef.current ? openId : null;
-      const question = askedOf(text, at, assistant.id, []);
-      const turn = keyFor(asideUnanswered.current, question);
+      const question: ConversationInput = {
+        text,
+        ...(at ? { conversationId: at } : {}),
+        assistant: assistant.id,
+        side: true as const,
+        ...(confirmed ? { confirmed: true as const } : {}),
+      };
+      const kept = keyFor(asideUnanswered.current, question);
+      const { turn } = kept;
       asideUnanswered.current = null;
       const controller = new AbortController();
       asideFlight.current = controller;
@@ -1071,14 +1047,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       };
       try {
         const response = await api.converseStream(
-          {
-            text,
-            turn,
-            ...(at ? { conversationId: at } : {}),
-            assistant: assistant.id,
-            side: true as const,
-            ...(confirmed ? { confirmed: true as const } : {}),
-          },
+          { ...question, turn },
           event => {
             if (event.type === 'text')
               setAside(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
@@ -1102,7 +1071,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         }
         setAside(null);
         if (left()) return false;
-        asideUnanswered.current = written === 'different' ? null : { ...question, turn };
+        asideUnanswered.current = written === 'different' ? null : kept;
         if (stopped) announce('Frågan avbröts. Den ligger kvar i rutan.');
         else setAsideError(errorMessage(e, 'Frågan kunde inte ställas.'));
         return false;

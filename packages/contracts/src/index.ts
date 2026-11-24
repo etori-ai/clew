@@ -4986,18 +4986,40 @@ export const ConversationInput = object({
 });
 export type ConversationInput = Static<typeof ConversationInput>;
 
-/** A retry concerns the same attached objects (in any order) and the same object open beside the transcript. */
-export function turnContextKey(chips: readonly Pick<Chip, 'kind' | 'ref'>[] = [], beside?: string | null): string {
+/**
+ * The identity of a question for retries (WD-L3). Attachment labels and order are presentation.
+ * The attachment open beside the question, its conversation and its recipient affect the answer.
+ */
+export function turnRequestKey(request: ConversationInput): string {
+  const chips = request.chips ?? [];
   return JSON.stringify([
+    request.text,
+    request.conversationId ?? null,
+    request.assistant ?? null,
+    request.side === true,
     chips.map(c => `${c.kind}:${c.ref}`).sort(),
-    chips.some(c => c.ref === beside) ? beside : null,
+    chips.some(c => c.ref === request.beside) ? request.beside : null,
   ]);
 }
 
-/** Older questions with attachments did not record which one was open. Their stored answer is still readable by key. */
-export function matchesTurnContext(meta: MessageMeta | undefined, key: string): boolean {
+/** Shared by a server replay and the browser recovering a broken response. */
+export function matchesWrittenTurn(thread: Thread | undefined, index: number, request: ConversationInput): boolean {
+  const question = thread?.messages[index];
+  if (!thread || question?.role !== 'user' || (!request.conversationId && index !== 0)) return false;
+  const meta = question.meta;
+  // A pre-existing question with attachments did not record which one was open. Its history is still readable.
   if (meta?.chips?.length && meta.turnBeside === undefined) return false;
-  return turnContextKey(meta?.chips, meta?.turnBeside) === key;
+  return (
+    turnRequestKey(request) ===
+    turnRequestKey({
+      text: question.body,
+      conversationId: request.conversationId ? thread.id : undefined,
+      assistant: meta?.handed?.assistant,
+      side: meta?.handed?.side,
+      chips: meta?.chips,
+      beside: meta?.turnBeside ?? undefined,
+    })
+  );
 }
 /** Alla samtal (WD-L1): one page of the person's conversations, the latest activity first, and where the next begins. */
 export const ConversationPageSchema = object({

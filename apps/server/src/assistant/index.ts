@@ -19,7 +19,7 @@ import type {
   ViewRef,
   WrittenTurn,
 } from '@clew/contracts';
-import { matchesTurnContext, turnContextKey, viewRows } from '@clew/contracts';
+import { matchesWrittenTurn, viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
 import { audiencedActorOf, answersOf, CLEW_SOURCE, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
@@ -1048,18 +1048,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (!held) return undefined;
     const conversation = held.personId === persona.id ? await access.read(persona, held.threadId) : undefined;
     const asked = conversation ? conversation.messages.findIndex(m => m.role === 'user' && m.meta?.turn === key) : -1;
-    const question = conversation?.messages[asked];
-    if (request) {
-      // The same request: the same words to the same assistant (or to Clew), in the conversation it continued, or as
-      // the first question of the one it started.
-      const same =
-        !!question &&
-        question.body === request.text &&
-        matchesTurnContext(question.meta, turnContextKey(request.chips, request.beside)) &&
-        (question.meta?.handed?.assistant ?? null) === (request.assistant ?? null) &&
-        (request.conversationId ? request.conversationId === conversation!.id : asked === 0);
-      if (!same) throw new InputError(KEY_REFUSED);
-    }
+    if (request && !matchesWrittenTurn(conversation, asked, request)) throw new InputError(KEY_REFUSED);
     if (!conversation) return undefined;
     const answer = asked < 0 ? undefined : conversation.messages.slice(asked + 1).find(m => m.role === 'assistant');
     if (!answer) return undefined;

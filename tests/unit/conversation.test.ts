@@ -1,5 +1,6 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
+import { matchesWrittenTurn } from '@clew/contracts';
 import type { AuthenticatedContext, Thread, TurnEvent, WrittenTurn } from '../../packages/contracts/src/index';
 import { createHash } from 'node:crypto';
 import {
@@ -1335,6 +1336,9 @@ describe('the thing open beside the transcript is told to the model as that', ()
     const question = turn.thread.messages[0]!;
     const chips = [...question.meta!.chips!].reverse();
     const retry = { text: question.body, turn: key, chips, beside: 'thread:' + invoices.id };
+    const { turnBeside: _originalFocus, ...legacyMeta } = question.meta!;
+    const legacy = { ...turn.thread, messages: [{ ...question, meta: legacyMeta }] };
+    expect(matchesWrittenTurn(legacy, 0, retry)).toBe(false);
     expect((await w.assistant.converse(hillevi, retry)).answer).toEqual(turn.answer);
     for (const changed of [
       { ...retry, beside: 'thread:' + other.id },
