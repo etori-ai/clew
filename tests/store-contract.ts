@@ -69,6 +69,18 @@ export const draft = (personId: string, overrides: Partial<NewThread> = {}): New
 
 export function storeContract(name: string, make: () => Promise<StoreHarness>) {
   describe(`${name} store`, () => {
+    test('a changed action advances the decision revision even at the same clock instant', async () => {
+      const {
+        store,
+        people: [person],
+      } = await make();
+      const t = draft(person);
+      await store.transaction(tx => tx.insertThread(t));
+      const actions = t.actions.map(a => ({ ...a, input: { amount: 300 } }));
+      await store.transaction(tx => tx.updateThread(t.id, { actions, updatedAt: t.updatedAt }));
+      await store.transaction(tx => tx.updateThread(t.id, { actions, updatedAt: t.updatedAt }));
+      expect(await store.readThread(person, t.id)).toMatchObject({ decisionRevision: 1, updatedAt: t.updatedAt });
+    });
     test('timer generations, cancellation and audit share the thread transaction', async () => {
       const {
         store,

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
+  cardDecisionVersion,
   dayWord,
   isSnoozed,
   parseSwedishTime,
@@ -629,12 +630,13 @@ export function useThreadActions({ thread, onChange }: ActionProps) {
   };
   const [selected, setSelected] = useState<string[]>(withDraft);
   const [returned] = useState(() => reviewLeftFor(thread.id));
-  const seededAt = useRef(thread.updatedAt);
+  const version = cardDecisionVersion(thread);
+  const seededAt = useRef(version);
   useEffect(() => {
-    if (seededAt.current === thread.updatedAt) return;
-    seededAt.current = thread.updatedAt;
+    if (seededAt.current === version) return;
+    seededAt.current = version;
     setSelected(withDraft());
-  }, [thread.updatedAt]);
+  }, [version]);
   const client = useQueryClient();
   const leave = useLeaveWithUndo(apply);
   // A button waits on its action (the pressed button loads until the source has answered). An action that asks first

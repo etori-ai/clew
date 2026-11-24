@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { stockholmDate, unresolvedExecution, type Thread } from '@clew/contracts';
 import type { AuditEntry, JobInput, ThreadStore, ThreadTx, TimerIntent, WorkflowStart } from '../model';
 import { admitAttention, type AttentionDay } from '../attention-domain';
@@ -41,6 +42,13 @@ export function memoryThreadStore(): MemoryThreadStore {
   let messageSequence = 0;
   let transactions = Promise.resolve();
   const copy = <T>(value: T): T => structuredClone(value);
+  // Same decision fields as the PostgreSQL trigger. A message alone leaves the content revision alone.
+  const revised = (old: Thread, next: Thread): Thread => {
+    const fields = ['title', 'summary', 'actions', 'items', 'subjects', 'deadline', 'waitingOn', 'state'] as const;
+    return fields.some(key => !isDeepStrictEqual(old[key], next[key]))
+      ? { ...next, decisionRevision: (old.decisionRevision ?? 0) + 1 }
+      : next;
+  };
   const withTimers = (thread: Thread): Thread => {
     const timers = [...timerRows.values()]
       // Only the person's own timers are theirs to see and cancel; `obligation` and `due` are the system's (D30, D96).
@@ -163,12 +171,12 @@ export function memoryThreadStore(): MemoryThreadStore {
           code: '23505',
           constraint_name: 'thread_open_topic',
         });
-      row.thread = { ...row.thread, ...copy(patch) };
+      row.thread = revised(row.thread, { ...row.thread, ...copy(patch) });
     },
     async reopenThread(id, patch) {
       const row = threads.get(id);
       if (!row || reopensHeldTopic(row, 'open')) return false;
-      row.thread = { ...row.thread, ...copy(patch), state: 'open' };
+      row.thread = revised(row.thread, { ...row.thread, ...copy(patch), state: 'open' });
       return true;
     },
     async topicHolder(id) {
@@ -208,7 +216,7 @@ export function memoryThreadStore(): MemoryThreadStore {
         if (!left) continue;
         const { subjects, erased: counts, items } = left;
         const { subjects: _, ...thread } = row.thread;
-        row.thread = { ...thread, items, ...(subjects.length ? { subjects } : {}) };
+        row.thread = revised(row.thread, { ...thread, items, ...(subjects.length ? { subjects } : {}) });
         erased.cards++;
         erased.rows += counts.rows;
         erased.cardSubjects += counts.cardSubjects;

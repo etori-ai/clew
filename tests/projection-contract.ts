@@ -85,6 +85,10 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
       const h = await make(),
         card = `${h.prefix}-card`;
       await h.seedCard({ id: card, personId: h.personId, connector: 'reference' });
+      const changedContent = on(h, card);
+      changedContent.presentation = { ...changedContent.presentation!, decisionRevision: 1 };
+      await expect(approve(h, changedContent)).rejects.toThrow('Ärendet har ändrats');
+      expect(await h.store.read(changedContent.id)).toBeUndefined();
       const stale = on(h, card, { version: '2000-01-01T00:00:00.000Z' });
       await expect(approve(h, stale)).rejects.toThrow('Ärendet har ändrats. Läs tillbaka det innan du bekräftar.');
       const elsewhere = on(h, card, { connector: 'hr' });

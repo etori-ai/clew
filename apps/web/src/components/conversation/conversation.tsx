@@ -95,9 +95,9 @@ function ActionDraftCard({ draft, at, replaced }: { draft: ActionDraftRef; at: s
   // is kept while the conversation is open.
   // `shown` is the item's version the decision is on (AM-4), as in the item's own dialog (`card.tsx`): the one it had
   // when the dialog opened, and after a refusal the one the dialog draws now.
-  const [dialog, setDialog] = useState<{ open: boolean; startAt: ActionStep; shown: string } | null>(null);
-  const shownNow = useRef(item.data?.updatedAt);
-  shownNow.current = item.data?.updatedAt;
+  const [dialog, setDialog] = useState<{ open: boolean; startAt: ActionStep; shown: Thread } | null>(null);
+  const shownNow = useRef(item.data);
+  shownNow.current = item.data;
   const [typed, setTyped] = useState<AskValues | null>(null);
   const decision = useDecisionSend();
   if (!thread || !action) return null;
@@ -118,11 +118,11 @@ function ActionDraftCard({ draft, at, replaced }: { draft: ActionDraftRef; at: s
           ? { variant: 'neutral' as const, label: 'Ärendet är redan hanterat' }
           : null;
   const superseded = !receipt && !waiting && replaced;
-  const open = (startAt: ActionStep) => setDialog({ open: true, startAt, shown: thread.updatedAt });
+  const open = (startAt: ActionStep) => setDialog({ open: true, startAt, shown: thread });
   const send = async (sent: AskValues): Promise<string | null> => {
-    const version = dialog?.shown ?? thread.updatedAt;
+    const shown = dialog?.shown ?? thread;
     const result = await decision.send(async () => {
-      const answer = await api.act({ id: thread.id, updatedAt: version }, action.id, undefined, undefined, sent);
+      const answer = await api.act(shown, action.id, undefined, undefined, sent);
       if (answer.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
       setDialog(d => (d ? { ...d, open: false } : d));
       return answer.thread;

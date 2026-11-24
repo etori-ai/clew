@@ -11,7 +11,13 @@ export type { WriteSafety };
  * asked to check a dispatched write again, and may stand behind its read-back only.
  */
 export interface Execution {
-  presentation?: { threadId: string; version: string; actionId: string; newTitle?: string } | null;
+  presentation?: {
+    threadId: string;
+    version: string;
+    actionId: string;
+    newTitle?: string;
+    decisionRevision?: number;
+  } | null;
   id: string;
   decisionId: string;
   personId: string;
