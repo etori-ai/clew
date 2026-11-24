@@ -85,7 +85,7 @@ A card's rows are keyed again each time the source sends them, so a rename, a re
 
 A card of Clew's own may carry `Thread.subjects` instead: an action point's card is about the employee of the talk without naming them ([D96](../decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 6). These are never drawn and never read by the model.
 
-The thread store keeps an index from entity to cards by Clew's key, the table `thread_subject` ([migration 0046](../../packages/db/migrations/0046_thread_subjects.sql)), rewritten in the transaction that writes the card's rows. It answers two questions ([subjects.ts](../../apps/server/src/threads/usecases/subjects.ts)):
+The thread store keeps an index from entity to cards by Clew's key, the table `thread_subject` ([initial schema](../../packages/db/migrations/0000_initial.sql)), rewritten in the transaction that writes the card's rows. It answers two questions ([subjects.ts](../../apps/server/src/threads/usecases/subjects.ts)):
 
 - "Behöver dig" on the opened entity: the reader's own cards naming it that still ask for them (not waiting on someone else, not set aside under Inte nu, still visible under current authority), the cards that wait for the reader first, then proposals, then information.
 - "Just nu" on the list: per person, how many cards wait for the reader ("N att agera på") and how many are proposals ("N förslag"), with the card itself when there is only one, which leads to the card's page. Several lead to the person's page at Ärenden ([D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md), amended 2026-11-11; D126); each card's `kind` (`act`, `proposal`, `fyi`) tells them apart.

@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { migrationGaps } from '../../packages/db/src/migrations';
-import type { Database } from '../../packages/db/src/index';
 import { MIGRATIONS, journal, upgradeDatabase, type UpgradeDatabase } from './upgrade';
 
 /**
@@ -35,30 +36,46 @@ const engine = async (own: UpgradeDatabase) =>
     )
   )[0]!.n;
 
-test('db:init refuses a database that lacks a migration below the newest it recorded, names it, and migrates nothing', async () => {
+test('db:init preserves a database with an earlier pre-release baseline and refuses to migrate it', async () => {
   const own = await upgradeDatabase();
   try {
-    const entries = await journal();
-    // Every migration but the newest, as a database one release behind holds them, and then one in the middle lost.
-    await own.migrate(entries.slice(0, -1));
-    const db = own.db as unknown as Database;
-    const skipped = entries.at(-3)!,
-      newest = entries.at(-1)!;
-    await own.db.execute(sql`delete from drizzle.__drizzle_migrations where created_at = ${skipped.when}`);
-    expect(await migrationGaps(db, MIGRATIONS)).toEqual({ skipped: [skipped.tag], unknown: [] });
+    const [base] = await journal();
+    const previous = { ...base!, when: base!.when - 1, tag: 'previous_baseline' };
+    await own.migrate([previous], {
+      previous_baseline:
+        "create table preview_data (value text);\n--> statement-breakpoint\ninsert into preview_data values ('preserve me');",
+    });
     const run = init(own);
     expect(run.exitCode).toBe(1);
-    expect(run.stderr).toContain(`has not applied the migration ${skipped.tag}, though it has applied a later one`);
-    expect(run.stderr).toContain(
-      'record each migration in drizzle.__drizzle_migrations with its `when` from ' +
-        'packages/db/migrations/meta/_journal.json as created_at',
-    );
-    expect(run.stdout).not.toContain('Migrations applied.');
-    // The newest migration, which Drizzle would have run over the gap, was not run, and the engine was not migrated.
-    expect(await recorded(own)).not.toContain(newest.when);
-    expect(await migrationGaps(db, MIGRATIONS)).toEqual({ skipped: [skipped.tag], unknown: [] });
+    expect(run.stderr).toContain('different migration baseline');
+    expect(run.stderr).not.toContain('another branch');
+    expect(await recorded(own)).toEqual([previous.when]);
+    expect((await own.db.execute(sql`select value from preview_data`)).map(row => row.value)).toEqual(['preserve me']);
+    expect((await own.db.execute(sql`select to_regclass('public.thread') as name`))[0]?.name).toBeNull();
     expect(await engine(own)).toBe(0);
   } finally {
+    await own.drop();
+  }
+}, 60_000);
+
+test('a shared baseline still detects a skipped intermediate migration by name', async () => {
+  const own = await upgradeDatabase();
+  const folder = await mkdtemp(join(tmpdir(), 'clew-journal-'));
+  try {
+    const entries = await journal();
+    const last = entries.at(-1)!;
+    const skipped = { ...last, tag: 'skipped', idx: last.idx + 1, when: last.when + 1 };
+    const later = { ...last, tag: 'later', idx: last.idx + 2, when: last.when + 2 };
+    await own.migrate([...entries, later], { later: 'select 1;' });
+    await mkdir(join(folder, 'meta'));
+    await writeFile(join(folder, 'meta/_journal.json'), JSON.stringify({ entries: [...entries, skipped, later] }));
+    expect(await migrationGaps(own.db, folder)).toEqual({
+      missingBaseline: false,
+      skipped: [skipped.tag],
+      unknown: [],
+    });
+  } finally {
+    await rm(folder, { recursive: true, force: true });
     await own.drop();
   }
 }, 60_000);
@@ -67,7 +84,6 @@ test('db:init initialises a fresh database, and run again over a migration of an
   const own = await upgradeDatabase();
   try {
     const entries = await journal();
-    const db = own.db as unknown as Database;
     const first = init(own);
     expect(first.exitCode).toBe(0);
     expect(first.stdout).toContain('Migrations applied.');
@@ -76,12 +92,12 @@ test('db:init initialises a fresh database, and run again over a migration of an
     expect(await recorded(own)).toEqual(entries.map(e => e.when));
     expect(await engine(own)).toBe(1);
 
-    // Another branch's migration, applied to the same database between this journal's last two.
-    const other = entries.at(-1)!.when - 1;
+    // Another branch's migration, applied to the same database after this journal's newest.
+    const other = entries.at(-1)!.when + 1;
     await own.db.execute(
       sql`insert into drizzle.__drizzle_migrations (hash, created_at) values ('other-branch', ${other})`,
     );
-    expect(await migrationGaps(db, MIGRATIONS)).toEqual({ skipped: [], unknown: [other] });
+    expect(await migrationGaps(own.db, MIGRATIONS)).toEqual({ missingBaseline: false, skipped: [], unknown: [other] });
     const again = init(own);
     expect(again.exitCode).toBe(0);
     expect(again.stderr).toContain(

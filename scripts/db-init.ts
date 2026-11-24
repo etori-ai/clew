@@ -13,8 +13,16 @@ import { resolve } from 'node:path';
  * share, is named in a warning and left as it is.
  */
 const migrationsFolder = resolve(import.meta.dir, '../packages/db/migrations');
-try {
-  const { skipped, unknown } = await migrationGaps(database(), migrationsFolder);
+async function initialize() {
+  const { missingBaseline, skipped, unknown } = await migrationGaps(database(), migrationsFolder);
+  if (missingBaseline) {
+    console.error(
+      'This database has a different migration baseline. Keep the existing database and its backup. ' +
+        'Point DATABASE_URL at a fresh database and run db:init there. Nothing was migrated.',
+    );
+    process.exitCode = 1;
+    return;
+  }
   for (const at of unknown)
     console.warn(
       `This database has applied a migration that this checkout's journal does not have (recorded with created_at ` +
@@ -38,6 +46,9 @@ try {
     await migrateDurable(process.env.DATABASE_URL!);
     console.log('Durable engine schema (dbos) ready.');
   }
+}
+try {
+  await initialize();
 } finally {
   await closeDatabase();
 }

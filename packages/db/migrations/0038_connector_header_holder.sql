@@ -1,1 +1,0 @@
-ALTER TABLE "connector" ADD COLUMN "header_holder" boolean DEFAULT false NOT NULL;

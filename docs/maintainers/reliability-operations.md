@@ -28,133 +28,19 @@ Move the rest once the processes of the older version have stopped: a workflow m
 
 A release that adds a job kind leans on the same discipline: an older process that owns a job of the new kind throws `Unsupported scheduled job kind` each time it claims it, about every two minutes. The step's retry finds the job still claimed and waits, so the workflow stays `PENDING` under the older version and never reaches `ERROR`: there is nothing to resume. Once the older processes are stopped, move it as above; the new version runs the job when the last claim's lease of two minutes has run out. An executor whose heartbeat lapsed is adopted by a live instance within about two minutes; `clew_durable.executor` lists the live ones. Its row stays until its workflows are adopted, in the same transaction, so an adoption that fails (logged `durable sweep failed`, scope `dbos`) leaves it for the next sweep, and a second sweeper skips a row another one holds. A decision whose execution waits to be sent, or was left running past its lease, after its workflow ended in `ERROR` is started again by the person's own "Kontrollera status", without an operator: each check enqueues a reconciliation of its own (`reconcile:<id>:<attempt>:<instant>`), so a check after one that itself ended in `ERROR` still runs. A decision whose answer could not be recorded in five attempts (logged `execution: the answer could not be recorded, and is not tried again until it is checked`, scope `executions`) stays `running`; once its lease has run out, the person's check reads the source back again.
 
-## Upgrade from the previous scheduler
+## Database migrations
 
-1. Back up PostgreSQL, encrypted-data master keys and signing-key material. Record the application revision; the engine's state (the `dbos` and `clew_durable` schemas) is in the same backup. Preserve source operation records for their documented retention period.
-2. Stop old application/worker owners before migrating. Do not run the old polling job loop beside the engine; the current code has none, since every job row starts its own `scheduledJob` workflow in the transaction that writes it. Run `bun run db:init` inside the app container, which applies Clew's migrations and creates or migrates the engine's `dbos` schema (D86: the store adapters call `dbos.enqueue_workflow` inside their transactions, so the schema must exist before the first write), then deploy the application; the engine runs inside it.
-3. Migrations 0020–0026 add timer generations, follow-up policies, refresh/occurrence records, attention delivery and job ownership. Queued/failed legacy jobs become `temporal` (the value names the durable engine's ownership and predates D85); legacy `running` jobs become `legacy-running`. Old `due` inserts are redirected to the new owner by a database trigger. Neither that trigger nor a lease can stop an old process which already began an external effect.
-4. Inspect each `legacy-running` record and its original process/workflow/source evidence. After proving the old owner is stopped, decide whether it completed, remains uncertain or can safely be adopted. Record that decision in the same transaction as any ownership change. There is deliberately no blanket automatic requeue command.
-5. Existing invitations without a bounded approval become visible with `legacy-unverified` follow-up policies. They keep their counters and source invitations; automatic follow-up stays paused. Old topic-only work retains an unverified occurrence marker, never inferred source completion.
-6. Confirm current ownership, engine launch, queue progress and authorized reads, and take the steps [after every deployment](#after-every-deployment). With `OTEL_EXPORTER_OTLP_ENDPOINT` set (D91, [observability](../architecture/observability.md)) the engine's workflow and step spans, the request that started them and the model's steps are one trace: a turn's audit row carries `details.modelCall.traceId` and every log line carries `trace_id`, so the trace behind a failure is found in the backend from the row or the line.
+A fresh PostgreSQL 18 database starts at `0000_initial`. Drizzle owns the public schema. Its SQL includes the functions, triggers and sequences used by Clew as well as the objects declared in `packages/db/src/schema.ts`. The application tables start empty. Run `bun run db:init` inside the app container before starting the server. It applies the journal and then initializes DBOS in the same database. Repeating it is safe. [Initial migration](../../packages/db/migrations/0000_initial.sql)
+
+Before moving an existing development installation to this baseline, preserve the database, a tested backup and its encryption keys. Create a fresh database, point `DATABASE_URL` there, then initialize and seed it. If preview data must survive, keep the earlier installation available while planning and verifying its transfer on a copy. `db:init` checks for the current baseline before writing to an existing migration ledger and stops if it finds a different history.
+
+After the baseline, append each new migration to the journal. Change `packages/db/src/schema.ts`, run `bun run db:generate --name <change>` and commit the SQL, journal entry and generated snapshot together. Include explicit SQL for any trigger, function or sequence that Drizzle does not model. Preserve migrations that have shipped. [Schema declarations](../../packages/db/src/schema.ts)
+
+Drizzle applies pending migrations in one transaction. A failure rolls back Clew's changes. DBOS records its own successful migrations individually, so after an engine migration fails, fix the cause and run `db:init` again. On a shared baseline, a missing journal entry older than an applied one stops initialization and names the gap. Recover a consistent backup or verify and reconcile the missing migration on a copy before retrying. A ledger entry from another branch produces a warning. [Migration checks](../../packages/db/src/migrations.ts)
 
 ## Migrations that write rows
 
-The released sequence keeps `0054_dialogue` and `0055_dialogue_note` from `main`. The SCIM and identity changes follow in 0056–0060.
-A database on `main`, including one still at 0053, follows the usual upgrade. An isolated preview that already
-applied an earlier PR sequence with `0054_person_keys_and_participants` or `0055_person_keys_and_participants` has a different migration history.
-Preserve a backup of that preview. Start a disposable preview on a fresh database, or restore a tested pre-branch
-backup into a separate database and apply the released migrations there. If changes made in the preview must survive,
-verify a data reconciliation on a copy before switching. Keep the existing Drizzle ledger intact.
-
-Migration `0059_session_refresh_claim` adds nullable ownership fields to sessions; existing sessions need no rewrite.
-Stop every old BFF before applying it and starting the new release. Older binaries ignore those fields, so a mixed
-rollout can still submit the same rotating refresh token twice. Short statements claim and fence a token generation
-without keeping a database connection across the provider call. After an owner dies, or cannot commit its answer, a
-request finding the claim past its 30-second deadline ends that session and asks the person to sign in again; it never
-replays a possibly consumed token. Keep BFF clocks synchronized. A rollback must likewise stop all new BFFs first;
-the added nullable columns can stay while the former binary runs, with its former cross-process refresh limitation.
-
-`bun run db:init` runs Clew's migrations through Drizzle and then `DBOS.migrate`. A failure in Clew's migrations changes
-nothing in Clew's schema, because Drizzle runs every pending migration in one transaction; only Drizzle's own
-bookkeeping, the `drizzle` schema and its `__drizzle_migrations` table, is created outside it where it is missing.
-`DBOS.migrate` runs only after that transaction has committed, and DBOS (dbos-sdk 5.5.0) records each of its own
-migrations in `dbos.dbos_migrations` as it completes it. So if `DBOS.migrate` fails, Clew's migrations stay applied and
-the `dbos` schema stops after the last DBOS migration that completed. Rerunning `bun run db:init` is safe in either
-case: Drizzle runs only what it has not recorded, and `DBOS.migrate` resumes after the last version it recorded.
-
-Drizzle runs only the migrations newer than the newest it has recorded, so a migration whose journal time is earlier
-than one already applied is never run: two branches taking turns on one database leave it so. Before it migrates
-anything, `bun run db:init` looks for every migration of the journal at or below the newest one recorded among those
-`drizzle.__drizzle_migrations` records (by the journal's `when`, which Drizzle stores as `created_at`; `migrationGaps`
-in `packages/db/src/migrations.ts`). A database that lacks one is refused: the script names each missing migration,
-exits with status 1 and migrates nothing, neither Clew's later migrations, which might depend on the missing one, nor
-the durable engine. Recreate the database, or apply the missing migration's SQL by hand and record it in
-`drizzle.__drizzle_migrations` with its `when` as `created_at`; then run `bun run db:init` again. A recorded migration
-that the journal does not have, another branch's on a database branches share, is not refused: the script names each
-by its `created_at` in a warning and goes on.
-
-Migration 0053 ([D114](../decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md)) moves each
-person's `work_phone` and `mobile_phone` into `phone_numbers`, the work number first, and drops the two columns. Before
-its fix it could not upgrade a database at 0052 in which anyone held a number: `bun run db:init` failed with
-`cannot ALTER TABLE "auth_person" because it has pending trigger events` (SQLSTATE 55006). The failed run left Clew's
-schema at 0052 with its numbers and stopped before `DBOS.migrate`. Run `bun run db:init` again with the fixed file;
-nothing else is needed. A database already at 0053 or later is unaffected: Drizzle runs only the migrations newer than
-the newest one recorded in `drizzle.__drizzle_migrations` and never compares a file's hash, so such a database keeps
-the hash it recorded for 0053 (the row with `created_at` 1794478229566 holds `c19791e68d5c…`; the fixed file hashes to
-`4df0588b8e09…`) and nothing runs again. `tests/db/person-directory-upgrade.test.ts` checks both: the upgrade from 0052
-with numbers, and that a database which applied the old file runs nothing again.
-
-For maintainers writing a migration: the change signals (D46) are constraint triggers that are `DEFERRABLE INITIALLY
-DEFERRED`, one on every table the browser draws: `changeSignals` in `packages/db/src/schema.ts` lists the 47 of them,
-on 44 tables, with each one's function and arguments, and `unsignalledTables` beside it lists every other table and
-why it has none (0089 brought the list to this, DE-L10, and 0090 added the model menu's). An installation counter
-that a signal moves is a sequence, `content_change_` and the counter's id with underscores (0090), so a migration that
-adds a counter creates its sequence and names it in `SHARED_CONTENT` of `apps/server/src/shared-content.ts`. `tests/db/postgres-changes.test.ts` holds the database to both
-lists, so a migration that adds a table classifies it, and one that recreates a table makes its trigger again.
-
-A migration that writes any of those tables, directly or through `ON DELETE CASCADE` or `SET NULL`, runs
-`SET CONSTRAINTS ALL IMMEDIATE` as its first statement, which also fires anything an earlier migration of the same run
-left pending, and `SET CONSTRAINTS ALL DEFERRED` after its last write. Without that, an `ALTER TABLE`, `CREATE INDEX`,
-`DROP TABLE` or `TRUNCATE` of that table, or dropping a foreign key that references it, fails with 55006 later in the
-same run, in that migration or a later one. `CREATE TRIGGER`, `DROP INDEX` and adding a foreign key that references
-such a table are not affected. A write that matches no row queues nothing, so only an upgrade with rows shows the
-failure: give the migration an upgrade test in `tests/db` ([testing](../architecture/testing.md)). 0032, 0053, 0056,
-0085, 0089 and 0090 follow this rule. 0030 guards only its `ALTER` of `thread`: its writes come after its own
-`SET CONSTRAINTS ALL DEFERRED`, and 0031's `DELETE` from `connector` has no guard; the events of both stay pending until 0032's
-`SET CONSTRAINTS ALL IMMEDIATE` fires them, before its `ALTER` of `connector`. 0040's guard wraps only `ALTER`s of
-`auth_person` and is a precaution, since no migration before it leaves events pending there. The closing
-`SET CONSTRAINTS ALL DEFERRED` returns the rest of the run to each constraint's own mode only because every deferrable
-constraint is `INITIALLY DEFERRED`: `pg_constraint` lists exactly these 47 triggers as deferrable, in every schema
-including `dbos`. A migration that adds a `DEFERRABLE INITIALLY IMMEDIATE` constraint names the constraints it sets
-instead of using `ALL`.
-
-### Upgrading SCIM user names
-
-Migration 0060 composes existing `user_name` values into Unicode NFC. Each changed person keeps their Clew id,
-source id and sign-in binding, receives a new SCIM modification time and has one `person.user_name_normalized`
-audit row. The migration holds writes to `auth_person` while it checks names across the installation and updates them.
-
-Run this preflight before upgrading from a release that stored user names as sent. It also finds the case-only
-collisions that can stop the ICU unique index in migration 0056 on an older database created with locale C.
-
-```sql
-SELECT array_agg(id ORDER BY id) AS person_ids
-FROM auth_person
-WHERE user_name IS NOT NULL
-GROUP BY lower(normalize(user_name, NFC) COLLATE "und-x-icu")
-HAVING count(*) > 1;
-```
-
-For each result, ask the directory owner which distinct account name belongs to each person, including leavers.
-Correct the source and apply the approved name to the existing SCIM resource by its Clew id. Repeat the preflight,
-then run `bun run db:init`. Migration 0060 checks again under its lock. A collision raises SQLSTATE 23505 and rolls
-back the pending migrations. The same repair and retry apply after that refusal.
-
-### Upgrading the names of boarding layers and competence types
-
-Migration 0089 folds the names of boarding layers and of active competence types by ICU (DE-L8). The indexes before it
-folded with the database's own `lower`, which on a database created with the locale C folds only A to Z, so such a
-database may hold two names that differ only in Å, Ä or Ö case. Run this preflight before upgrading such a database
-past 0088:
-
-```sql
-SELECT 'boarding_layer' AS "table", organisation_id, event, array_agg(name ORDER BY name) AS names
-FROM boarding_layer
-GROUP BY organisation_id, event, lower(name COLLATE "und-x-icu")
-HAVING count(*) > 1
-UNION ALL
-SELECT 'competence_type', organisation_id, NULL, array_agg(name ORDER BY name)
-FROM competence_type
-WHERE archived_at IS NULL
-GROUP BY organisation_id, lower(name COLLATE "und-x-icu")
-HAVING count(*) > 1;
-```
-
-For each result, rename one layer of the pair on Administration › Introduktion, or rename or merge one type on
-Administration › Kompetens, then run `bun run db:init`. Migration 0089 looks for the same pairs before each index and
-renames nothing: a pair it finds raises SQLSTATE 23505 with a message that names the table, the organisation and the
-names, and rolls back the pending migrations. The same repair and retry apply after that refusal
-(`tests/db/name-index-upgrade.test.ts`).
+Clew uses deferred change-signal triggers on tables drawn by the browser. A migration that updates those tables, including through foreign keys, must account for pending triggers before altering a table or index. Use `SET CONSTRAINTS ALL IMMEDIATE` before the affected writes and restore the intended timing afterwards. Include a PostgreSQL upgrade test with existing rows so it exercises the triggers in the same transaction as the schema change. Classify new tables in `changeSignals` or `unsignalledTables` and add the sequence for each new shared counter. [Database test practices](../architecture/testing.md)
 
 ## The ledger queue
 
@@ -215,9 +101,7 @@ What sources say about a person or a unit ([D97](../decisions/D97-a-source-says-
 
 Migration 0046 adds `thread.subjects` and the table `thread_subject`, the index from entity to cards; `bun run db:init` applies it with the others. It fills nothing in: a card stored before it names nobody, and is indexed when its rows are next written.
 
-Migration 0056 comes with [D122](../decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md), under which Clew keys its own records about a person by the person's id. It rewrites no card: a card whose rows named a person by user name before it names nobody until its rows are next written, when each name is resolved to the id of whoever holds it then. It removes every calendar proposal stored before it, since none says which person its address meant, and with them the development-talk planning cards (topic `utvecklingssamtal`) and what hangs on them. A decision still on its way for such a card is first retired as `scripts/fixture-maintenance.ts` retires one: it is settled `failed`, or `unknown` when it was dispatched, with the reason `source-reset`; its approval expires, its lease ends and its attempt moves on, so a worker still holding it cannot finish it; its workflow in the durable engine finds the reason `source-reset` the next time it runs and ends without sending; an undelivered row of the retired `dispatch_outbox` ([D86](../decisions/D86-the-ledger-starts-its-workflow-inside-its-own-transaction.md)), which nothing writes any more, is marked delivered with the error `source-reset`; and one `execution.source_reset` audit row says so, with the state before and after and whether it was dispatched. A decision already reset is left as it is. Each card removed gets a `thread.removed` row with the reason `migration`. Both rows are written by `system:migration`. The next nightly scan draws the cards again. It also recreates the unique index on user names under ICU's root collation (`und-x-icu`), so the database must be a PostgreSQL built with ICU, as the development stack's official image is. The unique index on a person's source key becomes partial, counting only the rows that have one: a plain unique index makes the column a key of PostgreSQL's row locks, so a user write that changed the key would need a stronger lock than the one it takes and could deadlock with a group write that had just added the person. Before its own writes, 0056 fires the change-signal triggers that earlier migrations in the same run deferred, and it keeps them immediate through its writes (`SET CONSTRAINTS ALL IMMEDIATE`, then `DEFERRED` again), as [migrations that write rows](#migrations-that-write-rows) do, so neither its index on `auth_person` nor a later migration that alters a table it wrote fails with "pending trigger events".
-
-Migration 0058 adds the index `auth_person_user_name_nfc`, on a user name in the composed form (NFC) without regard to case under `und-x-icu`: the expression with which Clew finds who holds a user name a source sent ([D122](../decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) item 2), as a refresh whose rows name a person, a read of a declared view, a search and a started propose each do. Without it, every such lookup read every person in the installation. It writes no rows. Unicode normalisation needs a database in UTF-8, as the development stack's PostgreSQL image creates it.
+Clew keys its own references to people by person id. Lookups by user name use NFC and ICU root collation, including on installations with locale C. The development stack's PostgreSQL image provides ICU. [Person identity and lookup](../decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)
 
 Lenses and columns are chosen on Administration › Anslutna system, on the connector's page under "På Personal och andra listor", by a person with `admin.connectors`. They are stored in the connector's capability overrides, audited as `connector.lens` and `connector.column`, and take effect from the next read, without a restart. At most three columns per entity kind are accepted across every connector; the count is taken outside the saving transaction, so two administrators saving at once can pass it, and the list then shows the first three. Enabling or registering a connector places nothing. `bun run dev:connectors` makes the development stack's choice only while no lens or column is chosen anywhere.
 
@@ -308,7 +192,7 @@ How long a deactivated person's record is kept is the organisation's decision un
 
 `authorizationVersion` in `apps/server/src/auth-crypto.ts` is an HMAC over the authority in a person's access record and nothing else: enabled, organisation, unit, role, the sorted capabilities, the relations to people when there are any, every assignment by unit and role when there are two or more, and the grant version (narrowed 2026-11-09 for [D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md); `tests/unit/authorization-version.test.ts` holds the list). A corrected name, a renamed unit label or a new column on the person or the grant leaves it unchanged, so directory updates do not stop work in flight.
 
-Durable work stores the value and compares it exactly. When it differs, a queued execution or watch settles `blocked` with `authority-revoked`, a timer or follow-up policy pauses, and an answer retained in a thread is hidden until a fresh scan creates a new projection (D75). A change to the formula, to the field list or to `MASTER_KEY` therefore changes every stored value at once and reads as lost authority for everyone. Treat it as a release of its own: note the reliability counts before, deploy in a quiet window, expect blocked executions with that reason, let the nightly scan rebuild cards, and let the people concerned approve again. Do not roll back to a binary with the other formula; it would read the new values the same way. The narrowing of 2026-11-09 is itself such a change on the first deployment that carries it. So is migration `0083_grant_assignments` ([D135](../decisions/D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md)), for the people it concerns: it writes every assignment onto the grant of each person who holds more than one, which changes their value and no one else's. Before deploying it, count them (`select count(*) from (select person_id from auth_assignment group by person_id having count(*) > 1) held`); after it, expect `authority-revoked` for their executions in flight, and that each of their browsers clears what it holds once. A unit gained or lost, or a role changed on one, does the same for that person from then on; the next scan then closes each of their open source cards it replaces, with a `thread.superseded` audit row. This is reasoned from the code paths named; it has not been rehearsed against a populated installation.
+Durable work stores the value and compares it exactly. When it differs, a queued execution or watch settles `blocked` with `authority-revoked`, a timer or follow-up policy pauses, and an answer retained in a thread is hidden until a fresh scan creates a new projection (D75). A change to the formula, to the field list or to `MASTER_KEY` therefore changes every stored value at once and reads as lost authority for everyone. Treat it as a release of its own: note the reliability counts before, deploy in a quiet window, expect blocked executions with that reason, let the nightly scan rebuild cards, and let the people concerned approve again. Do not roll back to a binary with the other formula; it would read the new values the same way. A change in a person's units or roles also changes their authorization version. The next scan closes each open source card that it replaces and records `thread.superseded`.
 
 The nightly scan runs for enabled people with a grant and an identity binding (`granted()` in `apps/server/src/scheduler/adapters/postgres.ts`, `tests/db/scheduler-people.test.ts`). A person pushed in through provisioning who has never signed in is not scanned, nor one whose binding an operator has released ([Sign-in](#sign-in)), until a sign-in binds them again.
 
@@ -412,7 +296,7 @@ were written with.
 To check: `select state, count(*) from competence_erasure where organisation_id = '<id>' group by state`, and the
 script, which says how many wait, how many are overdue and when the next falls due.
 
-## Reproduce the synthetic upgrade and restore rehearsal
+## Reproduce the synthetic backup and restore rehearsal
 
 Use only the disposable development/CI stack with `CLEW_POC=true`. The script refuses existing database names and requires a fixture marker before cleanup. It never restores over the application database.
 
@@ -424,4 +308,4 @@ docker exec -w /workspace clew-app-1 bun scripts/recovery-rehearsal.ts cleanup
 docker exec clew-postgres-1 rm /tmp/clew-rehearsal.dump
 ```
 
-The rehearsal starts at migration 0019 with synthetic legacy jobs and an invitation, upgrades through 0026, checks conservative ownership/follow-up, reruns migrations, dumps/restores into a second database and compares recorded evidence. It seeds at 0019 (`scripts/recovery-rehearsal.ts` keeps the journal entries up to index 19), so it never holds phone numbers or planning cards; the upgrade tests in `tests/db` cover those migrations (0053 and 0056, see [Migrations that write rows](#migrations-that-write-rows)). It passed locally on 2026-11-05. It proves this fixture's PostgreSQL upgrade/restore, not a coordinated production recovery or every data-loss boundary. [Reliability CI](../../.github/workflows/reliability.yml) runs the same lane in an isolated stack; a local pass is not a GitHub run.
+The rehearsal initializes a fresh database and writes synthetic records for a person, a card, an invitation, scheduled work, a conversation reservation and audit evidence. It reruns migrations and compares the records before and after restoring a PostgreSQL dump to a second database. Reliability CI runs this check in an isolated stack. [Rehearsal](../../scripts/recovery-rehearsal.ts) · [Reliability CI](../../.github/workflows/reliability.yml)
