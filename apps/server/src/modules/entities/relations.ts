@@ -22,16 +22,17 @@ import type { DirectoryPerson, RelationDeps } from './model';
 export function relationUsecases(deps: RelationDeps) {
   /**
    * How the actor stands to each of these keys, for the relations in `admits` only; a key of nobody, of a deactivated
-   * person, of a person without a user name, outside the actor's organisation or outside `admits` is absent. The keys
-   * are a source's keys (D122): a person's user name, compared as Clew compares one (`foldSourceKey`). Every spelling
-   * asked is answered on its own, with the directory's spelling in `key`. A colleague is looked up (who holds the name,
-   * then the directory) only when `admits` lets one through, so a strict read costs one read of where the actor stands.
-   * A reader who holds the grant `registrar` (D121, from their current access record) stands so to such a person
-   * instead, but only for a read that admits it: to any other read they are the colleague they are, so the grant reaches
-   * nothing else and no source is told it unasked. With `ids` (a core capability of Clew's own domains), a person may
-   * also be named by Clew's id, as themself or as a report; never as a colleague or a registrar's. Someone with a user
-   * name is answered by it in `key`, the key the capability reads, so Clew's own records may name them by id (D122, a
-   * card's action); someone without one is answered by the id.
+   * person, outside the actor's organisation or outside `admits` is absent, and so is a person without a user name
+   * unless `ids` lets them be named by their id (below). The keys are a source's keys (D122): a person's user name,
+   * compared as Clew compares one (`foldSourceKey`). Every spelling asked is answered on its own, with the directory's
+   * spelling in `key`. A colleague is looked up (who holds the name, then the directory) only when `admits` lets one
+   * through, so a strict read costs one read of where the actor stands. A reader who holds the grant `registrar` (D121,
+   * from their current access record) stands so to such a person instead, but only for a read that admits it: to any
+   * other read they are the colleague they are, so the grant reaches nothing else and no source is told it unasked.
+   * With `ids` (a core capability of Clew's own domains), a person may also be named by Clew's id, as themself or as a
+   * report, and only where `admits` lets that relation through; never as a colleague or a registrar's. Someone with a
+   * user name is answered by it in `key`, the key the capability reads, so Clew's own records may name them by id
+   * (D122, a card's action); someone without one is answered by the id.
    */
   async function relate(
     actor: Actor,

@@ -308,9 +308,8 @@ export interface Capability<I = unknown, O = unknown> {
    * Clew's own connectors may add `ids`: the caller themself or a report may then be named by Clew's own id, as the
    * talks domain names a person without a user name and Clew's own cards name anyone (D122), and the capability is
    * given the user name where the person has one; a manifest cannot carry it, since Clew's id is never sent to a
-   * connector. Only they may admit
-   * `registrar` (D121): the protocol's relations are `PROTOCOL_PERSON_RELATIONS`, so a manifest cannot carry it either,
-   * and a connector is never told it.
+   * connector. Only they may admit `registrar` (D121): the protocol's relations are `PROTOCOL_PERSON_RELATIONS`, so a
+   * manifest cannot carry it either, and a connector is never told it.
    */
   person?: Omit<PersonAccess, 'admits'> & { admits?: PersonRelation[]; ids?: true };
   /** On a capability about a unit (D117): the relations a caller may have to the unit, `manages` when absent. */

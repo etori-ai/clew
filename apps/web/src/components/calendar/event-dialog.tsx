@@ -13,6 +13,7 @@ import {
   Text,
   TimeInput,
   VStack,
+  inviteeName,
   useAnnounce,
   useMediaQuery,
   type AgendaItem,
@@ -245,7 +246,7 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
               <MetadataListItem label="Deltagare">{event.participants.join(', ')}</MetadataListItem>
             )}
             {event && <MetadataListItem label="Arrangör">{event.organizer}</MetadataListItem>}
-            {proposal && <MetadataListItem label="Medarbetare">{proposal.participant.name}</MetadataListItem>}
+            {proposal && <MetadataListItem label="Medarbetare">{inviteeName(proposal.participant)}</MetadataListItem>}
           </MetadataList>
           {mode === 'move' && (
             <VStack gap={2} as="section" aria-label="Ny tid">
