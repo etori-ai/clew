@@ -15,5 +15,6 @@ test-results
 playwright-report
 **/.env
 **/.env.*
+.auth-test.env
 **/*.tsbuildinfo
 **/.DS_Store
