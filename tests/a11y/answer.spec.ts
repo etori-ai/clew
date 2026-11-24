@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import type { ConversationInput } from '@clew/contracts';
 import {
   announcements,
   composer,
@@ -120,7 +121,7 @@ test.describe('the answer on its way', () => {
     // the question's key, and the page reads it back before it says anything.
     const written = conversation(api.threads, 'Vem är på plats?');
     api.threads = [...api.threads.filter(t => t.id !== written.conversationId), written.thread];
-    api.written.set(api.turnKeys[0]!, written);
+    api.recordTurn(api.turnKeys[0]!, written);
     await stop.focus();
     await page.keyboard.press('Enter');
     const log = page.getByRole('log');
@@ -154,7 +155,7 @@ test.describe('the answer on its way', () => {
     // The server finished the turn all the same (the model had already made a proposal into an item): it is written
     // under the question's key, and sending the same words again is answered with it.
     const [key] = api.turnKeys;
-    api.written.set(key!, conversation(api.threads, 'Vem är på plats?'));
+    api.recordTurn(key!, conversation(api.threads, 'Vem är på plats?'));
     release();
     await hemLine(page).press('Enter');
     const log = page.getByRole('log');
@@ -333,6 +334,34 @@ test.describe('the cards in a conversation', () => {
  */
 test.describe('a conversation about a thing', () => {
   const TITLE = 'Attestera 3 fakturor, 48 200 kr';
+  test('retrying the same words with the same attachment gets a new key when the item is no longer open beside the box', async ({
+    page,
+    api: _,
+  }) => {
+    const sent: ConversationInput[] = [];
+    page.on('request', r => {
+      if (new URL(r.url()).pathname === '/api/conversation/stream') sent.push(r.postDataJSON() as ConversationInput);
+    });
+    await page.route(
+      '**/api/conversation/stream',
+      r => r.fulfill({ status: 503, json: { error: 'Tillfälligt avbrott.' } }),
+      { times: 1 },
+    );
+    await open(page, '/conversations/new?card=fakturor');
+    const pane = page.getByRole('complementary', { name: TITLE });
+    await expect(pane).toBeVisible();
+    await composer(page).fill('Vilket ärende gäller det?');
+    await composer(page).press('Enter');
+    await expect(page.getByText('Tillfälligt avbrott.', { exact: true })).toBeVisible();
+    await page.setViewportSize(narrow);
+    await expect(pane).toHaveCount(0);
+    await composer(page).press('Enter');
+    await expect.poll(() => sent.length).toBe(2);
+    expect(sent[0]!.turn).toBeTruthy();
+    expect(sent[1]!.turn).not.toBe(sent[0]!.turn);
+    expect(sent[1]!.chips).toEqual(sent[0]!.chips);
+    expect(sent.map(r => r.beside)).toEqual(['thread:fakturor', undefined]);
+  });
   test('"Fråga assistenten" lands on an empty conversation with the thing beside it, and nothing is sent until the person writes', async ({
     page,
     api,

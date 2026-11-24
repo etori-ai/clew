@@ -3448,6 +3448,8 @@ export const MessageMetaSchema = object({
   refs: Type.Optional(Type.Array(Type.String())),
   /** On a question: the key the page sent it with (`ConversationInput.turn`), so the same question sent again is not asked again. */
   turn: Type.Optional(Type.String()),
+  /** Which attached object was open when this keyed question was sent. Null records that none was open. */
+  turnBeside: Type.Optional(Type.Union([ChipSchema.properties.ref, Type.Null()])),
   shape: Type.Optional(AnswerShape),
   view: Type.Optional(ViewRefSchema),
   /**
@@ -4983,6 +4985,20 @@ export const ConversationInput = object({
   turn: Type.Optional(TurnKey),
 });
 export type ConversationInput = Static<typeof ConversationInput>;
+
+/** A retry concerns the same attached objects (in any order) and the same object open beside the transcript. */
+export function turnContextKey(chips: readonly Pick<Chip, 'kind' | 'ref'>[] = [], beside?: string | null): string {
+  return JSON.stringify([
+    chips.map(c => `${c.kind}:${c.ref}`).sort(),
+    chips.some(c => c.ref === beside) ? beside : null,
+  ]);
+}
+
+/** Older questions with attachments did not record which one was open. Their stored answer is still readable by key. */
+export function matchesTurnContext(meta: MessageMeta | undefined, key: string): boolean {
+  if (meta?.chips?.length && meta.turnBeside === undefined) return false;
+  return turnContextKey(meta?.chips, meta?.turnBeside) === key;
+}
 /** Alla samtal (WD-L1): one page of the person's conversations, the latest activity first, and where the next begins. */
 export const ConversationPageSchema = object({
   conversations: Type.Array(ThreadSchema),

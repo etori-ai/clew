@@ -19,7 +19,7 @@ import type {
   ViewRef,
   WrittenTurn,
 } from '@clew/contracts';
-import { viewRows } from '@clew/contracts';
+import { matchesTurnContext, turnContextKey, viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
 import { audiencedActorOf, answersOf, CLEW_SOURCE, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
@@ -1055,6 +1055,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       const same =
         !!question &&
         question.body === request.text &&
+        matchesTurnContext(question.meta, turnContextKey(request.chips, request.beside)) &&
         (question.meta?.handed?.assistant ?? null) === (request.assistant ?? null) &&
         (request.conversationId ? request.conversationId === conversation!.id : asked === 0);
       if (!same) throw new InputError(KEY_REFUSED);
@@ -1318,7 +1319,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     };
     const askedMeta: MessageMeta = {
       ...(chips.length ? { chips, refs } : {}),
-      ...(input.turn ? { turn: input.turn } : {}),
+      ...(input.turn ? { turn: input.turn, turnBeside: resolved.beside ?? null } : {}),
     };
     await store.transaction(async tx => {
       if (!existing) {

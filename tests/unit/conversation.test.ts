@@ -1301,7 +1301,7 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
 describe('the thing open beside the transcript is told to the model as that', () => {
   const OPEN = 'Öppet i rutan bredvid samtalet just nu';
   const ADDED = 'Du tittar på (det personen lagt till i samtalet):';
-  async function asked(input: { beside?: string; both?: boolean }) {
+  async function asked(input: { beside?: string; both?: boolean; turn?: string }) {
     const prompts: string[] = [];
     const generate: ModelGenerate = async ({ system }) => {
       prompts.push(system);
@@ -1315,6 +1315,7 @@ describe('the thing open beside the transcript is told to the model as that', ()
     const chip = (t: typeof invoices) => ({ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title });
     const turn = await w.assistant.converse(hillevi, {
       text: 'Vilka fakturor gäller det öppna ärendet?',
+      ...(input.turn ? { turn: input.turn } : {}),
       chips: input.both ? [chip(invoices), chip(other)] : [chip(invoices)],
       ...(input.beside ? { beside: input.beside === 'open' ? 'thread:' + invoices.id : input.beside } : {}),
     });
@@ -1328,6 +1329,23 @@ describe('the thing open beside the transcript is told to the model as that', ()
     return end < 0 ? rest : rest.slice(0, end);
   };
 
+  test('a written answer follows its open item across a retry with the same attachments', async () => {
+    const key = 'b0f6a9c2-4d1e-4f7a-9c3b-2e8d5a1f6c70';
+    const { w, turn, invoices, other } = await asked({ beside: 'open', both: true, turn: key });
+    const question = turn.thread.messages[0]!;
+    const chips = [...question.meta!.chips!].reverse();
+    const retry = { text: question.body, turn: key, chips, beside: 'thread:' + invoices.id };
+    expect((await w.assistant.converse(hillevi, retry)).answer).toEqual(turn.answer);
+    for (const changed of [
+      { ...retry, beside: 'thread:' + other.id },
+      { ...retry, beside: undefined },
+      { ...retry, chips: chips.slice(1) },
+    ]) {
+      await expect(w.assistant.converse(hillevi, changed)).rejects.toThrow('Frågan kunde inte ställas');
+    }
+    expect((await w.assistant.writtenTurn(hillevi, key)).written?.answer).toEqual(turn.answer);
+    expect(audit(w.store, turn.conversationId)).toEqual(['conversation.asked']);
+  });
   test('the open item stands under its own heading, with the words a person uses for it, and not among what was added', async () => {
     const { w, turn, invoices, system } = await asked({ beside: 'open' });
     expect(turn.assistant).toBe('model');

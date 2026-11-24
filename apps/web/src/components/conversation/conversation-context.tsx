@@ -12,6 +12,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react';
+import { matchesTurnContext, turnContextKey } from '@clew/contracts';
 import type {
   Chip,
   ClewObject,
@@ -336,17 +337,19 @@ interface Asked {
   at: string | null;
   /** Another system's assistant it went to, by its id ("Till:", the panel); null for Clew's own. */
   to: string | null;
-  /** The refs of what went with it, in one order. */
-  chips: string;
+  context: string;
 }
-const askedOf = (text: string, at: string | null, to: string | null, chips: readonly { ref: string }[]): Asked => ({
+const askedOf = (
+  text: string,
+  at: string | null,
+  to: string | null,
+  chips: readonly Chip[],
+  beside?: string,
+): Asked => ({
   text,
   at,
   to,
-  chips: chips
-    .map(c => c.ref)
-    .sort()
-    .join('\n'),
+  context: turnContextKey(chips, beside),
 });
 /** A question that did not come back, kept with its key while the same question is sent again from the same place. */
 interface Unanswered extends Asked {
@@ -358,15 +361,24 @@ interface Unanswered extends Asked {
  * back with anything else, and never answers one question with another's turn.
  */
 const keyFor = (kept: Unanswered | null, now: Asked) =>
-  kept && kept.text === now.text && kept.at === now.at && kept.to === now.to && kept.chips === now.chips
+  kept && kept.text === now.text && kept.at === now.at && kept.to === now.to && kept.context === now.context
     ? kept.turn
     : turnKey();
-/** What the server wrote under a question's key, or null when it wrote nothing or could not be asked. */
-const writtenUnder = (turn: string) =>
-  api.writtenTurn(turn).then(
+/** A broken response may still have committed. A different question under the key must not be shown or retried with it. */
+async function writtenUnder(turn: string, asked: Asked) {
+  const written = await api.writtenTurn(turn).then(
     r => r.written,
     () => null,
   );
+  if (!written) return null;
+  const message = written.thread.messages.find(m => m.role === 'user' && m.meta?.turn === turn);
+  return message?.body === asked.text &&
+    (message.meta?.handed?.assistant ?? null) === asked.to &&
+    (!asked.at || written.conversationId === asked.at) &&
+    matchesTurnContext(message.meta, asked.context)
+    ? written
+    : 'different';
+}
 
 /**
  * One conversation's turns (D31, D36): the question is drawn at once with its answer pending under it, the box is
@@ -440,7 +452,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
         setLatest(null);
       }
       const at = current;
-      const question = askedOf(text, at, handed?.id ?? null, chips);
+      const question = askedOf(text, at, handed?.id ?? null, chips, beside);
       const turn = keyFor(unanswered.current, question);
       unanswered.current = null;
       const controller = new AbortController();
@@ -538,15 +550,15 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
           } catch (e) {
             const stopped = controller.signal.aborted;
             // A turn left behind is not read back: nothing pulls the person to a conversation they left.
-            const written = left() ? null : await writtenUnder(turn);
-            if (written) {
+            const written = left() ? null : await writtenUnder(turn, question);
+            if (written && written !== 'different') {
               await land(written);
               if (stopped) announce('Svaret hann skrivas innan frågan stoppades. Det står i samtalet.');
               return;
             }
             setPending(null);
             if (left()) return;
-            unanswered.current = { ...question, turn };
+            unanswered.current = written === 'different' ? null : { ...question, turn };
             setValue(v => v || raw);
             if (!stopped) setError(errorMessage(e, 'Frågan kunde inte ställas.'));
             else announce('Frågan avbröts. Den ligger kvar i rutan.');
@@ -1083,14 +1095,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         return true;
       } catch (e) {
         const stopped = controller.signal.aborted;
-        const written = left() ? null : await writtenUnder(turn);
-        if (written) {
+        const written = left() ? null : await writtenUnder(turn, question);
+        if (written && written !== 'different') {
           await land(written);
           return true;
         }
         setAside(null);
         if (left()) return false;
-        asideUnanswered.current = { ...question, turn };
+        asideUnanswered.current = written === 'different' ? null : { ...question, turn };
         if (stopped) announce('Frågan avbröts. Den ligger kvar i rutan.');
         else setAsideError(errorMessage(e, 'Frågan kunde inte ställas.'));
         return false;

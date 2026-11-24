@@ -10,6 +10,8 @@ import {
 } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type {
+  ConversationInput,
+  ConversationResponse,
   EffectPreview,
   ExecutionSummary,
   ItemEvent,
@@ -301,7 +303,17 @@ export class MockApi {
   /** The key each question went with (WD-L3), in the order asked; `asked` holds the rest of what was sent. */
   turnKeys: string[] = [];
   /** What was written under a question's key, as the server keeps it on the question (WD-L3). */
-  written = new Map<string, unknown>();
+  written = new Map<string, ConversationResponse>();
+  recordTurn(turn: string, response: ConversationResponse, input: Pick<ConversationInput, 'chips' | 'beside'> = {}) {
+    const question = response.thread.messages.filter(m => m.role === 'user').at(-1)!;
+    question.meta = {
+      ...question.meta,
+      turn,
+      turnBeside: input.beside ?? null,
+      ...(input.chips?.length ? { chips: input.chips } : {}),
+    };
+    this.written.set(turn, response);
+  }
   /**
    * The next turn is written and its stream then breaks before `done` (WD-L3), as a connection lost after the server's
    * commit leaves it: the page has to read back what was written. It resets itself after that turn.
@@ -2097,17 +2109,7 @@ export class MockApi {
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
     // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {
-      const { turn, ...body } = request.postDataJSON() as {
-        text: string;
-        turn?: string;
-        conversationId?: string;
-        chips?: { ref: string }[];
-        assistant?: string;
-        suggested?: boolean;
-        own?: boolean;
-        confirmed?: boolean;
-        side?: boolean;
-      };
+      const { turn, ...body } = request.postDataJSON() as ConversationInput;
       this.asked.push(body);
       if (turn) this.turnKeys.push(turn);
       // A question sent again under a key the server has written is answered with what was written, and not asked.
@@ -2167,7 +2169,7 @@ export class MockApi {
       if (this.breakAfterWrite) {
         this.breakAfterWrite = false;
         this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
-        if (turn) this.written.set(turn, response);
+        if (turn) this.recordTurn(turn, response, body);
         await route.fulfill({
           status: 200,
           contentType: 'text/event-stream',
@@ -2188,7 +2190,7 @@ export class MockApi {
         return;
       }
       this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
-      if (turn) this.written.set(turn, response);
+      if (turn) this.recordTurn(turn, response, body);
       return;
     }
     if (path === '/conversation') {
