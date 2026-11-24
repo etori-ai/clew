@@ -102,5 +102,21 @@ export function createSupportManagementErrands({
       if (!errand) throw new SourceUnavailable('SupportManagement answered with an errand that cannot be read.');
       return errand;
     },
+
+    // The owner's side (requests.mjs) is built against the fixture only. Against SupportManagement it waits on how
+    // the errands of one `PRIMARY` stakeholder are found (the plan's phase 0, question 1) and on a gateway credential
+    // with `X-Sent-By`, so it answers that the source is unavailable rather than guess.
+    async owned() {
+      throw new SourceUnavailable("The owner's side is not built against SupportManagement yet.");
+    },
+    async record() {
+      throw new SourceUnavailable("The owner's side is not built against SupportManagement yet.");
+    },
+    async messages() {
+      throw new SourceUnavailable("The owner's side is not built against SupportManagement yet.");
+    },
+    async postOwnerMessage() {
+      throw new SourceUnavailable("The owner's side is not built against Open-E yet.");
+    },
   };
 }
