@@ -93,7 +93,11 @@ function ActionDraftCard({ draft, at, replaced }: { draft: ActionDraftRef; at: s
   // transcript for it, where its head, facts and buttons said nothing the draft does not. The dialog and the decision
   // it sends are the same as on the item (`ActionDialog`, `useDecisionSend`); what the person changes in the dialog
   // is kept while the conversation is open.
-  const [dialog, setDialog] = useState<{ open: boolean; startAt: ActionStep } | null>(null);
+  // `shown` is the item's version the decision is on (AM-4), as in the item's own dialog (`card.tsx`): the one it had
+  // when the dialog opened, and after a refusal the one the dialog draws now.
+  const [dialog, setDialog] = useState<{ open: boolean; startAt: ActionStep; shown: string } | null>(null);
+  const shownNow = useRef(item.data?.updatedAt);
+  shownNow.current = item.data?.updatedAt;
   const [typed, setTyped] = useState<AskValues | null>(null);
   const decision = useDecisionSend();
   if (!thread || !action) return null;
@@ -114,15 +118,20 @@ function ActionDraftCard({ draft, at, replaced }: { draft: ActionDraftRef; at: s
           ? { variant: 'neutral' as const, label: 'Ärendet är redan hanterat' }
           : null;
   const superseded = !receipt && !waiting && replaced;
-  const open = (startAt: ActionStep) => setDialog({ open: true, startAt });
+  const open = (startAt: ActionStep) => setDialog({ open: true, startAt, shown: thread.updatedAt });
   const send = async (sent: AskValues): Promise<string | null> => {
+    const version = dialog?.shown ?? thread.updatedAt;
     const result = await decision.send(async () => {
-      const answer = await api.act(thread, action.id, undefined, undefined, sent);
+      const answer = await api.act({ id: thread.id, updatedAt: version }, action.id, undefined, undefined, sent);
       if (answer.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
       setDialog(d => (d ? { ...d, open: false } : d));
       return answer.thread;
     });
-    return result && 'error' in result ? result.error : null;
+    if (result && 'error' in result) {
+      setDialog(d => (d ? { ...d, shown: shownNow.current ?? d.shown } : d));
+      return result.error;
+    }
+    return null;
   };
   return (
     <ChatMessageBubble variant="ghost" width="100%">

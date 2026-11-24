@@ -116,5 +116,16 @@ proposalStoreContract('postgres', async () => {
         });
       return id;
     },
+    foreignState: async id => ({
+      thread: (
+        await database()
+          .select({ title: schema.threads.title, state: schema.threads.state, updatedAt: schema.threads.updatedAt })
+          .from(schema.threads)
+          .where(eq(schema.threads.id, id))
+      )[0],
+      messages: (await database().select().from(schema.threadMessages).where(eq(schema.threadMessages.threadId, id)))
+        .length,
+      proposals: (await database().select().from(schema.proposals).where(eq(schema.proposals.threadId, id))).length,
+    }),
   };
 });

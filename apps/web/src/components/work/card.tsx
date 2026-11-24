@@ -387,13 +387,19 @@ export function useCardAction({
   // The action dialog (D112 item 10): the action it is open for, the rows chosen when it opened, the step it opens at,
   // and whether the focus goes back to the action's own button on a close (it was opened from elsewhere: an execute
   // started on a person, an assistant's draft). It stays mounted once opened, so its close gives the focus back.
+  // `shown` is the item's version the decision is on (AM-4): the one it had when the dialog opened, so an item that
+  // changes while the person reads the dialog is refused rather than sent unseen. After a refusal the dialog draws the
+  // item as it is now, so the next send is on that version (`shownNow`): the person has been told to look again.
   const [dialog, setDialog] = useState<{
     action: CardAction;
     refs?: string[];
     startAt?: ActionStep;
     open: boolean;
     refocus: boolean;
+    shown: string;
   } | null>(null);
+  const shownNow = useRef(thread.updatedAt);
+  shownNow.current = thread.updatedAt;
   // What the person typed, per action, kept while the work item is open and dropped with it or once sent.
   const [drafts, setDrafts] = useState<Record<string, AskValues>>({});
   const openDialog = (
@@ -408,6 +414,7 @@ export function useCardAction({
       ...(options.startAt ? { startAt: options.startAt } : {}),
       open: true,
       refocus: !!options.refocus,
+      shown: thread.updatedAt,
     });
   };
   const closeDialog = () => {
@@ -421,9 +428,9 @@ export function useCardAction({
   };
   const sendDialog = async (values: AskValues): Promise<string | null> => {
     if (!dialog) return null;
-    const { action, refs } = dialog;
+    const { action, refs, shown } = dialog;
     const result = await decision.send(async () => {
-      const answer = await api.act(thread, action.id, refs, undefined, values);
+      const answer = await api.act({ id: thread.id, updatedAt: shown }, action.id, refs, undefined, values);
       if (answer.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
       // Sent: the dialog closes first and the focus is back on the pressed button, which loads until the item has come
       // to rest, before the item shows the source's answer, as for a one-press action (D64).
@@ -433,7 +440,11 @@ export function useCardAction({
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       return answer.thread;
     });
-    return result && 'error' in result ? result.error : null;
+    if (result && 'error' in result) {
+      setDialog(d => (d ? { ...d, shown: shownNow.current } : d));
+      return result.error;
+    }
+    return null;
   };
   // The action as the item has it now: its path is resolved from the registered manifest on every read.
   const dialogAction = dialog ? (thread.actions.find(a => a.id === dialog.action.id) ?? dialog.action) : null;
