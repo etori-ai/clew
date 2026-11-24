@@ -18,7 +18,10 @@ lists what is needed; until then the connector runs on a fixture that behaves as
 | `manifest.mjs` | The contract: the two reads, their views, the errand row and the ref pattern |
 | `connector.mjs` | The reads, the shared state, the assertion check, the token requirement and HTTP error handling |
 | `errands.mjs` | The errand port, the mapping `toSourceErrand`, and a made-up SupportManagement with its own access rules |
-| `supportmanagement.mjs` | SupportManagement's API behind the port |
+| `supportmanagement.mjs` | SupportManagement's API behind the port. The owner's side is not built against it yet |
+| `identity.mjs` | The person's own token checked against the identity provider, for the owner's side (a copy of the POB connector's) |
+| `owner.mjs` | The owner's rules, pure: whose errand it is, which messages the owner sees, the channel of an answer, the state, the mail link and the thread |
+| `requests.mjs` | The owner's side: `sm.requests`, `sm.request`, `sm.reply`, `sm.replyEffect` and the scan |
 | `http.mjs` | The HTTP listener: reads a request within a size limit and answers whatever it holds, so nothing sent to the port ends the process |
 | `server.mjs` | Reads the configuration and serves the connector with that listener |
 
@@ -138,6 +141,29 @@ without an entry counts as `open`.
 An errand suspended until a time in the future is `waiting-on-others` whatever its status. That `PENDING` means the
 reporter has to answer is an assumption to confirm per namespace.
 
+## An errand's owner
+
+Switched on by `SM_IDP_ISSUER`, and built against the fixture only: the plan is
+[docs/reviews/2026-11-23-an-errand-owner-answers-supportmanagement-from-clew.md](../../docs/reviews/2026-11-23-an-errand-owner-answers-supportmanagement-from-clew.md).
+A person who sent something to a drake, a manager writing to Lön och pension say, owns the errand when they are its
+`PRIMARY` stakeholder (the parameter `username` is their account). SupportManagement does not decide access today
+(its access mapper does not run), so for this side the connector checks the person's token itself, as the POB connector
+does, and holds the rule.
+
+| Capability | Shown as | Notes |
+|---|---|---|
+| `sm.requests` "Mina ärenden hos drakarna" | Rows in Clew's "Mina beställningar" ([D123](../../docs/decisions/D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md)) | The errands the person owns, open and closed in the last 30 days. `waiting-on-me` when the drake has written to them since their last answer |
+| `sm.request` "Ärende" | A `text` view: the errand, the messages between the drake and the owner, and how to answer | Never offered to the model. An internal mail, a mail to someone else, an internal conversation and one shared with another errand are never shown. E-service messages are shown only when the Open-E flow instance is the owner's too. Only the owner's own mail counts as their answer, and only a mail to them, not a copy, makes the errand wait on them |
+| `sm.reply` "Svara" | An execute with one ask, "Ditt svar" | Only where the drake last wrote in Open-E: posted to Open-E as the errand's owner, once. Where the drake mailed, the page has a `mailto:` link instead, with `SV: Ärende #<number>` as its subject, so the answer is sent from the person's own mailbox |
+| `sm.replyEffect` | "Det här händer" | Where the answer goes and which message it answers |
+| The scan | A card in Att göra, "<drake> väntar på ditt svar" | One per errand that waits on its owner, with "Svara" where the answer goes through Open-E |
+
+The fixture makes Hillevi (the development stack's manager) the owner of five errands: `LOP-26110021` waits on her
+answer by mail, `IK-26110015` on her answer in the e-service, `IK-26110004` and `IK-26110007` are with the drake, and
+`IK-26100019` is closed. Each holds what she must not see beside what she may, a mail from the employee that copies
+her, and a copy to her of a mail to someone else. Hassan's `IK-26110011` holds an e-service message to the person who
+filled in the form, which is not his to see.
+
 ## Configuration
 
 | Variable | Meaning |
@@ -155,6 +181,17 @@ reporter has to answer is an assumption to confirm per namespace.
 | `SM_NAMESPACE_LINKS` | JSON object, namespace to an address with `{errandNumber}` in it: `{"IK":"https://…/arende/{errandNumber}"}` |
 
 None of these decide access. A namespace missing from the labels or links is shown by its code, without a link.
+
+The owner's side, on when `SM_IDP_ISSUER` is set:
+
+| Variable | Meaning |
+|---|---|
+| `SM_IDP_ISSUER` | The identity provider's issuer. Switches the owner's side on |
+| `SM_IDP_JWKS_URL` | Where its keys are. HTTPS, or a host listed in `SM_INSECURE_HTTP_HOSTS` for development |
+| `SM_INSECURE_HTTP_HOSTS` | Hosts whose key address may be plain HTTP. Default `localhost,127.0.0.1` |
+| `SM_ACCOUNT_CLAIM` | The claim that carries the AD account. Default `preferred_username` |
+| `SM_REPLY_ADDRESSES` | JSON object, namespace to the address its e-mail reader reads: `{"LOP":"lon@…"}`. The fixture has its own. A namespace without one gets no mail link |
+| `SM_STATE_SECONDS` | How long an errand's state for its owner is kept, the state alone. Default 120; 0 while trying the fixture |
 
 ## The fixture
 
@@ -191,11 +228,35 @@ for local development only.
 Tests: `bun test tests/unit/supportmanagement-connector.test.ts`: the fixture behind the connector, the mapping, and the
 API adapter against recorded answers in the shape asked for above.
 
+### Trying the owner's side
+
+With the stack running, start the connector with the owner's side on, refresh its manifest in Clew (Administration ›
+Anslutna system › Hämta manifest igen), and sign in as Hillevi:
+
+```sh
+docker exec -d -w /workspace -e CLEW_CONNECTOR_SECRET=local-docs-only-transport-key -e CLEW_URL=http://127.0.0.1:3000 \
+  -e SM_IDP_ISSUER=http://keycloak.orb.local:8090/realms/clew \
+  -e SM_IDP_JWKS_URL=http://keycloak.orb.local:8090/realms/clew/protocol/openid-connect/certs \
+  -e SM_INSECURE_HTTP_HOSTS=keycloak.orb.local -e SM_STATE_SECONDS=0 \
+  clew-app-1 sh -c 'node connectors/supportmanagement/server.mjs > /tmp/sm.log 2>&1'
+```
+
+Two routes, served by the fixture alone, do what a drake and the e-mail reader would:
+
+```sh
+docker exec clew-app-1 wget -qO- --post-data '{"errandNumber":"IK-26110015","channel":"webmessage"}' http://127.0.0.1:4050/fixture/handler-writes
+docker exec clew-app-1 wget -qO- --post-data '{"errandNumber":"LOP-26110021"}' http://127.0.0.1:4050/fixture/mail-filed
+```
+
+The fixture keeps what happens in memory: a restart begins again.
+
 ## What it never does
 
-It does not store anything, keep a person's errands or token between requests, write to SupportManagement, push cards,
-send `X-Sent-By`, log request or response bodies, or pass on SupportManagement's error text. The only thing kept in
-memory is a namespace's metadata (display names), for ten minutes.
+It does not store anything, keep a person's errands or token between requests, log request or response bodies, or pass
+on SupportManagement's error text. The only things kept in memory are a namespace's metadata (display names), for ten
+minutes, and, on the owner's side, an errand's state for its owner (never a message), for `SM_STATE_SECONDS`. For a
+handler it writes nothing and sends no `X-Sent-By`; on the owner's side it writes only an answer the person sent, and
+logs who opened or answered which errand, never what was written.
 
 ## Unverified
 
