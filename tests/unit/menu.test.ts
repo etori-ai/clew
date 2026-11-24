@@ -510,7 +510,7 @@ describe('the administrator chooses, view by view', () => {
         { name: 'phonebook.team', fields: expect.any(Array) },
       ],
     });
-    await admin.refreshManifest(mikael, 'phonebook', { apply: true, offered: review.connector.offered!.at });
+    await admin.refreshManifest(mikael, 'phonebook', { apply: true, offered: review.connector.offered!.revision });
     expect(registry.menu(audiencedActorOf(hassan))).toEqual([team as never]);
   });
   test('a view that stops being a tool in a new manifest drops out of the menu, though it was chosen', async () => {
@@ -521,7 +521,7 @@ describe('the administrator chooses, view by view', () => {
       menu: { 'phonebook.team': true, 'phonebook.directory': true },
     });
     served.manifest = withCapability('phonebook.team', ({ view: _view, menu: _menu, ...c }) => c);
-    const offered = (await admin.refreshManifest(mikael, 'phonebook', {})).connector.offered!.at;
+    const offered = (await admin.refreshManifest(mikael, 'phonebook', {})).connector.offered!.revision;
     const applied = await admin.refreshManifest(mikael, 'phonebook', { apply: true, offered });
     expect(applied.connector.capabilities.find(c => c.name === 'phonebook.team')!.menu).toBeNull();
     expect(labels(registry, hassan)).toEqual(['Telefonbok']);

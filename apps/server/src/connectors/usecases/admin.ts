@@ -243,7 +243,7 @@ export function connectorUsecases(deps: AdminDeps) {
       scan: m?.scan ?? false,
       uses: [...(m?.uses ?? [])],
       delegation: m?.delegation?.audience ?? null,
-      offered: offer ? { at: offer.at, diff: manifestDiff(m, offer.manifest) } : null,
+      offered: offer ? { at: offer.at, revision: offer.revision, diff: manifestDiff(m, offer.manifest) } : null,
       headerCapability: m?.header?.capability ?? registry.connector(row.id)?.header ?? null,
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
@@ -626,7 +626,7 @@ export function connectorUsecases(deps: AdminDeps) {
   /**
    * "Läs in igen från systemet" (D144). Without `apply`: the service's manifest is fetched, recorded as offered when it
    * differs from the approved one, and the difference returned; nothing live changes, the health included, since a
-   * manifest is not a check. With `apply`: the offer the administrator reviewed, named by when it was first seen,
+   * manifest is not a check. With `apply`: the offer the administrator reviewed, named by its revision,
    * becomes the approved manifest with its audit row, in one write that holds only while it is still the stored offer.
    * The stored offer is applied, never a new fetch, so what goes live is what was shown.
    */
@@ -653,7 +653,7 @@ export function connectorUsecases(deps: AdminDeps) {
     const offer = pendingOffer(row);
     if (!offer) throw new InputError('Systemet erbjuder ingen ändring att godkänna. Läs in det igen.');
     const changedAgain = 'Systemet har ändrats igen sedan du granskade det. Läs in det igen och granska ändringen.';
-    if (input.offered !== offer.at) throw new InputError(changedAgain);
+    if (input.offered !== offer.revision) throw new InputError(changedAgain);
     // The offer is loaded as the loader would load it, so a manifest this Clew cannot register is never approved.
     let offered: ConnectorManifest;
     try {
@@ -664,7 +664,10 @@ export function connectorUsecases(deps: AdminDeps) {
     const diff = manifestDiff(manifestOf(row), offered);
     const approved = await store.transaction(async tx => {
       // Only while it is still the stored offer: a check that recorded another in between makes this false.
-      if (!(await tx.approveOffer(id, { at: offer.at, manifest: row.offered }, offered, by, at))) return false;
+      if (
+        !(await tx.approveOffer(id, { at: offer.at, manifest: offer.manifest, version: row.version }, offered, by, at))
+      )
+        return false;
       await tx.writeAudit({
         actor: by,
         action: 'connector.manifest',

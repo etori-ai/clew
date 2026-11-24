@@ -72,13 +72,13 @@ const approvedElsewhere = async (store: ReturnType<typeof memoryConnectorStore>,
   const row = (await store.read(id))!;
   expect(
     await store.transaction(tx =>
-      tx.approveOffer(id, { at: row.offeredAt!, manifest: row.offered }, manifest, 'test', T0),
+      tx.approveOffer(id, { at: row.offeredAt!, manifest: row.offered, version: row.version }, manifest, 'test', T0),
     ),
   ).toBe(true);
 };
 /** An administrator reads in what the service serves and approves the offer they were shown (D144). */
 const approveServed = async (admin: ReturnType<typeof connectorUsecases>, id: string) => {
-  const offered = (await admin.refreshManifest(mikael, id, {})).connector.offered?.at;
+  const offered = (await admin.refreshManifest(mikael, id, {})).connector.offered?.revision;
   return admin.refreshManifest(mikael, id, { apply: true, ...(offered ? { offered } : {}) });
 };
 
@@ -251,7 +251,7 @@ describe('who may administer', () => {
     const { admin, store, transport } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
     serving(transport, m => ({ ...m, source: 'Hello 2' }));
-    const offered = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!.at;
+    const offered = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!.revision;
     const before = await store.read('hello');
     const session = {
       ...mikael,
@@ -746,6 +746,7 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
     expect(detail).toMatchObject({ uses: ['calendar.today'], delegation: null });
     expect(detail.offered).toEqual({
       at: T0,
+      revision: expect.stringMatching(/^[a-f0-9]{64}$/),
       diff: {
         added: [],
         removed: [],
@@ -771,7 +772,7 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
     advance(60_000);
     const applied = await admin.refreshManifest(mikael, 'hello', {
       apply: true,
-      offered: review.connector.offered!.at,
+      offered: review.connector.offered!.revision,
     });
     expect(applied.connector).toMatchObject({
       uses: ['calendar.today', 'finance.invoices'],
@@ -791,16 +792,16 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
       },
     });
   });
-  test('approving names the offer shown: a newer one is refused, and so is approving when nothing is offered', async () => {
+  test.each([0, 60_000])('a replacement offer is refused even when the clock advances by %i ms', async delay => {
     const { admin, store, transport, advance } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
     await expect(admin.refreshManifest(mikael, 'hello', { apply: true, offered: T0 })).rejects.toThrow(
       'ingen ändring att godkänna',
     );
     serving(transport, widened);
-    const shown = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!.at;
-    // The service changes again before the administrator approves: the new offer replaces the one shown.
-    advance(60_000);
+    const shown = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!.revision;
+    // Two different offers can be observed in the same millisecond.
+    advance(delay);
     serving(transport, m => ({ ...m, uses: [...(m.uses ?? []), 'clew.work'] }));
     await admin.test(mikael, 'hello');
     const before = await store.read('hello');
@@ -836,7 +837,7 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
       fields: [],
       same: false,
     });
-    await admin.refreshManifest(mikael, 'hello', { apply: true, offered: offer.at });
+    await admin.refreshManifest(mikael, 'hello', { apply: true, offered: offer.revision });
     expect(store.audit.at(-1)).toMatchObject({
       action: 'connector.manifest',
       details: {
@@ -893,7 +894,7 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
     const { admin, store, transport, advance } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
     serving(transport, widened);
-    const shown = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!.at;
+    const shown = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!.revision;
     const approved = (await store.read('hello'))!.manifest as ConnectorManifest;
     // Between the approval's read and its write, a check stores a newer offer.
     advance(60_000);
