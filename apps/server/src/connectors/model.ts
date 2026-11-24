@@ -27,7 +27,7 @@ export interface ConnectorRecord {
   audience: ConnectorAudience;
   scanEnabled: boolean;
   toolsEnabled: boolean;
-  /** Gives Clew its shared header (D88): at most one row, chosen by an administrator. */
+  /** Gives Clew its shared header (D88): at most one row, chosen by an administrator; the store refuses a second. */
   header: boolean;
   capabilities: Record<string, CapabilityOverride>;
   /** Per area of the manifest (D54): `figure: false` when its figure is switched off on Hem. */
@@ -92,8 +92,18 @@ export interface AuditEntry {
 export interface ConnectorTx {
   /** False when the id is taken. */
   insert(record: NewConnector): Promise<boolean>;
-  /** Bumps the version; false when the row does not exist. */
-  update(id: string, patch: ConnectorPatch, by: string, at: string): Promise<boolean>;
+  /**
+   * Bumps the version; false when the row does not exist or, given `version`, when the stored version is no longer that
+   * one. The version is compared in the write itself, so a change made on a row read earlier is never merged into a row
+   * changed since (DE-M5). Giving `header` to a row while another holds it throws: at most one row holds it (D88).
+   */
+  update(id: string, patch: ConnectorPatch, by: string, at: string, version?: number): Promise<boolean>;
+  /**
+   * Every row, read after taking the lock on the administration writes that span rows: the shared header, which one row
+   * holds (D88), and the columns on "Alla", which are counted across rows (D97). Such a write in another transaction
+   * waits here until this one ends, and then reads what it committed.
+   */
+  lockedRows(): Promise<ConnectorRecord[]>;
   /**
    * The offer an administrator reviewed, named by the instant it was first seen and by its content, becomes the
    * approved `manifest`, the offer cleared and the version bumped (D144); false when it is no longer the stored offer.
@@ -131,14 +141,20 @@ export interface Secrets {
   seal(value: string, connectorId: string): string;
   open(sealed: string, connectorId: string): string;
 }
-/** The service side: fetching a manifest and running the conformance check, with the secret the use case opened. */
+/**
+ * The service side: fetching a manifest and running the conformance check, with the secret the use case opened. A check
+ * of a service that serves no manifest Clew can load resolves with the check's own report of it, never rejects (CB-9),
+ * and says which it was in `failure`.
+ */
 export interface Transport {
   fetchManifest(url: string, id: string): Promise<ConnectorManifest>;
-  check(input: {
-    url: string;
-    id: string;
-    secret: string;
-  }): Promise<CheckReport & { findings: CheckFinding[]; manifest?: ConnectorManifest }>;
+  check(input: { url: string; id: string; secret: string }): Promise<
+    CheckReport & {
+      findings: CheckFinding[];
+      manifest?: ConnectorManifest;
+      failure?: Extract<ConnectorHealth['status'], 'unreachable' | 'manifest-invalid'>;
+    }
+  >;
 }
 /** The live registry's remote side (`remote.ts`): put a connector in with its signer, or take it out. */
 export interface LiveRegistration {

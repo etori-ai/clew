@@ -23,7 +23,7 @@ The first sign-in binds the provider's subject to the one active person whose us
 
 ## 2. Clew identifies itself and the person to the connector
 
-Every call from Clew to a connector carries two credentials, and the connector must check both ([Protocol 2](authorization.md#inbound-requests), [D44](../decisions/D44-authorized-reads-and-clew-signed-connector-authority.md)):
+Every call from Clew to a connector carries two credentials, and the connector must check both ([the protocol](authorization.md#inbound-requests), [D44](../decisions/D44-authorized-reads-and-clew-signed-connector-authority.md)):
 
 - **The transport key.** `X-Clew-Connector-Key` holds the shared secret from the connector's registration. It proves the request came from this Clew installation's transport. It cannot name a person.
 - **The signed assertion.** `Authorization: Bearer` holds an RS256 JWT signed by Clew's installation key, with the connector id as `aud`, the person as `sub` and `actor` (id, name, unit, role and, when the person has one, user name; nothing else), and a lifetime of at most two minutes. The connector verifies it against the public keys at `CLEW_URL/api/connectors/jwks`, pinned in its deployment configuration. [hello's verifier](../../connectors/hello/verification.mjs) is a complete reference.

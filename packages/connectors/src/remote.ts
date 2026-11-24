@@ -84,6 +84,12 @@ export class ManifestError extends Error {
     this.name = 'ManifestError';
   }
 }
+/**
+ * Why a service's manifest could not be read, by one rule for the loader and for administration: it served one this
+ * Clew does not load (`manifest-invalid`), or it did not answer or answered with an error status (`unreachable`).
+ */
+export const manifestFailure = (error: unknown): 'unreachable' | 'manifest-invalid' =>
+  error instanceof ManifestError && !/answered \d+/.test(error.message) ? 'manifest-invalid' : 'unreachable';
 
 /**
  * Every problem a manifest document has, in the order Clew finds them; none means Clew would load it. The schema first

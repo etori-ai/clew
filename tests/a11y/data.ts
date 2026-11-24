@@ -1095,6 +1095,7 @@ const summary = (values: Partial<ConnectorSummary> & Pick<ConnectorSummary, 'id'
   secretChangedAt: NOW,
   createdAt: '2026-11-03T06:00:00.000Z',
   updatedAt: NOW,
+  version: 1,
   ...values,
 });
 export const connectors = (): ConnectorSummary[] => [

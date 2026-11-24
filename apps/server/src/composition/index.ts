@@ -17,13 +17,12 @@ import {
   unregisterConnector,
 } from '../connectors/remote';
 import { postgresConnectorStore, postgresUnits, postgresGroups } from '../connectors/adapters/postgres';
+import { serviceTransport } from '../connectors/adapters/transport';
 import { connectorUsecases } from '../connectors/usecases/admin';
 import type { LiveRegistration, Secrets } from '../connectors/model';
 import type { ReconcileDeps as ConnectorReconcileDeps } from '../connectors/reconcile';
 import { applyAllRows } from '../connectors/reconcile';
 import { openSecret, sealSecret } from '../auth-crypto';
-import { fetchManifest } from '@clew/connectors/remote';
-import { checkConnector } from '@clew/connectors/check';
 import { SignJWT } from 'jose';
 import { openAICompatibleWire } from '../assistant/adapters/openai-compatible';
 import { postgresModelStore } from '../assistant/adapters/postgres';
@@ -399,23 +398,14 @@ export const connectorAdmin = connectorUsecases({
   units: postgresUnits(),
   groups: postgresGroups(),
   clock,
-  transport: {
-    fetchManifest: (url, id) => fetchManifest(url, id),
-    check: async ({ url, id, secret }) => {
-      const manifest = await fetchManifest(url, id);
-      return checkConnector({
-        url,
-        id,
-        key: secret,
-        assert: assertionFor(id, manifest.uses),
-        assertForeign: sign('wrong-secret-wrong-secret-' + id, id),
-        // The reads the manifest declares for the installation (D119) are read as Clew reads them; the administrator's
-        // report counts what came back and shows none of it (D23).
-        assertInstallation: installationAssertionFor(id),
-        acceptsEmptyInput,
-      });
-    },
-  },
+  transport: serviceTransport({
+    assert: (id, uses) => assertionFor(id, uses),
+    assertForeign: id => sign('wrong-secret-wrong-secret-' + id, id),
+    // The reads the manifest declares for the installation (D119) are read as Clew reads them; the administrator's
+    // report counts what came back and shows none of it (D23).
+    assertInstallation: id => installationAssertionFor(id),
+    acceptsEmptyInput,
+  }),
 });
 export const connectorReconcile: ConnectorReconcileDeps = {
   registry,

@@ -180,7 +180,7 @@ The loader refuses, with the field named ([validation.ts](../../packages/connect
 
 ## Document and semantic views
 
-Protocol 2 also supports `document`, `record`, `metrics`, `series` and `activity`. Document originals use the optional authenticated `POST /clew/documents` binary route, separate from metadata capabilities. An execute's optional `review` names its document read and requires version-bound evidence at human approval. See [document and semantic views](../guides/document-and-semantic-views.md) for payloads, preview limits, source-side version checks and compatibility.
+The protocol also supports `document`, `record`, `metrics`, `series` and `activity`. Document originals use the optional authenticated `POST /clew/documents` binary route, separate from metadata capabilities. An execute's optional `review` names its document read and requires version-bound evidence at human approval. See [document and semantic views](../guides/document-and-semantic-views.md) for payloads, preview limits, source-side version checks and compatibility.
 
 ## Scan observations
 

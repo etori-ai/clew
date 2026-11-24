@@ -4417,27 +4417,29 @@ const connectorSecret = Type.String({ minLength: 16, maxLength: 500 });
 /** Administration inputs (D23). Validated again on the server; a secret never comes back out. */
 export const AddConnectorInput = object({ id: connectorId, url: connectorUrl, secret: connectorSecret });
 export type AddConnectorInput = Static<typeof AddConnectorInput>;
-export const ConnectorPatchInput = Type.Partial(
-  object({
-    state: ConnectorStateSchema,
-    audience: ConnectorAudienceSchema,
-    scanEnabled: Type.Boolean(),
-    toolsEnabled: Type.Boolean(),
-    /** The shared header (D88): true makes this connector the one that gives it, taking it from the previous holder; false gives it up. */
-    header: Type.Boolean(),
-    capabilities: Type.Record(Type.String({ maxLength: 80 }), CapabilitySwitchSchema),
-    url: connectorUrl,
-    /** Views in the menu (D40), by capability name: true puts the view under Verktyg, false takes it out. */
-    menu: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
-    /** Lenses on an entity's list (D97), by capability name: true offers the read under Visa, false takes it out. */
-    lens: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
-    /** Columns on "Alla" (D97), by capability name: the key of the view field shown, null takes the column out. */
-    column: Type.Record(Type.String({ maxLength: 80 }), Type.Union([viewKey, Type.Null()])),
-    /** Figures on Hem (D54), by area id: false switches the area's figure off for the connector's audience, true back on. */
-    figures: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
-  }),
-  closed,
-);
+export const ConnectorPatchInput = object({
+  /**
+   * The connector's `version` as the page showed it (DE-M5): a change is made on what the administrator saw, so one
+   * saved since, by another administrator or another tab, refuses it instead of being merged with it unseen.
+   */
+  version: Type.Integer({ minimum: 1 }),
+  state: Type.Optional(ConnectorStateSchema),
+  audience: Type.Optional(ConnectorAudienceSchema),
+  scanEnabled: Type.Optional(Type.Boolean()),
+  toolsEnabled: Type.Optional(Type.Boolean()),
+  /** The shared header (D88): true makes this connector the one that gives it, taking it from the previous holder; false gives it up. */
+  header: Type.Optional(Type.Boolean()),
+  capabilities: Type.Optional(Type.Record(Type.String({ maxLength: 80 }), CapabilitySwitchSchema)),
+  url: Type.Optional(connectorUrl),
+  /** Views in the menu (D40), by capability name: true puts the view under Verktyg, false takes it out. */
+  menu: Type.Optional(Type.Record(Type.String({ maxLength: 80 }), Type.Boolean())),
+  /** Lenses on an entity's list (D97), by capability name: true offers the read under Visa, false takes it out. */
+  lens: Type.Optional(Type.Record(Type.String({ maxLength: 80 }), Type.Boolean())),
+  /** Columns on "Alla" (D97), by capability name: the key of the view field shown, null takes the column out. */
+  column: Type.Optional(Type.Record(Type.String({ maxLength: 80 }), Type.Union([viewKey, Type.Null()]))),
+  /** Figures on Hem (D54), by area id: false switches the area's figure off for the connector's audience, true back on. */
+  figures: Type.Optional(Type.Record(Type.String({ maxLength: 80 }), Type.Boolean())),
+});
 export type ConnectorPatchInput = Static<typeof ConnectorPatchInput>;
 export const RotateSecretInput = object({ secret: connectorSecret });
 export type RotateSecretInput = Static<typeof RotateSecretInput>;
@@ -4529,6 +4531,8 @@ export interface ConnectorSummary {
   secretChangedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Raised by every administration write: a change names the version it was made on (`ConnectorPatchInput.version`). */
+  version: number;
 }
 export interface AuditEntryView {
   at: string;

@@ -94,7 +94,9 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
   const finish = (state: 'draft' | 'enabled') =>
     run(async () => {
       if (!result) return;
+      // On the draft as the dialog showed it (DE-M5): another administrator's change to it since is refused.
       await api.admin.update(result.connector.id, {
+        version: result.connector.version,
         audience,
         scanEnabled: scan,
         toolsEnabled: tools,

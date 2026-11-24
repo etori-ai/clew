@@ -37,6 +37,10 @@ Unchanged manifests and transport settings reuse compiled descriptors. Address, 
 
 The UI supports testing, manifest refresh, transport-key replacement, audience/capability changes and removal of remote connectors. Administrative mutations reauthorize the person and commit state with an audit row. Secrets are sealed at rest and are not returned to the browser.
 
+A service that does not answer, or answers with an error status, is recorded as `unreachable`; one that serves a manifest Clew does not load is recorded as `manifest-invalid`, with the reason as the health's detail. Adding such a service still stores its draft, and "Testa anslutning" records the health; neither ends in an error.
+
+A change on a connector's page is made on the connector as the page showed it: the page sends the row's `version`, and the server writes only while the row is still that version, compared in the write itself. A change saved in between, by another administrator, another tab or a script, refuses it with "Anslutningen har ändrats sedan du öppnade den. Se över den och gör ändringen igen."; the page says so in an alert and shows the connector as it now is, and nothing is merged unseen. What spans connectors is decided on rows read under one lock in the same transaction: the shared header, which one connector at most holds (taking it releases the previous holder, with an audit row on both, and a unique index refuses a second holder), and the number of columns under Alla.
+
 The checker uses synthetic actors, skips required-input reads and cannot supply delegated user tokens. A green manifest or probe result is not proof of source identity mapping or safe writes. [Testing and deployment](../guides/testing-and-deployment.md) explains these limits.
 
 Cross-system follower bindings currently use [job-bind.ts](../../scripts/job-bind.ts); they have no administration UI yet.

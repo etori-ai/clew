@@ -114,7 +114,7 @@ export const manifest = {
   assistants: { list: 'hello.assistants' },
 };
 
-// Protocol 2: Clew signs an RS256 actor assertion; the shared key authenticates transport only.
+// The protocol (D44): Clew signs an RS256 actor assertion; the shared key authenticates transport only.
 
 /** Build the service. `fetch` and `clewUrl` are how it calls back into Clew; both are injectable for tests. */
 export function createConnector({

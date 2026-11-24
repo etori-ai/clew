@@ -1132,6 +1132,12 @@ export class MockApi {
         }
         if (method === 'PATCH') {
           const patch = request.postDataJSON() as Partial<ConnectorSummary>;
+          // A change names the version the page showed (DE-M5); one saved since is refused, as the server refuses it.
+          if (patch.version !== c.version)
+            return route.fulfill({
+              status: 400,
+              json: { error: 'Anslutningen har ändrats sedan du öppnade den. Se över den och gör ändringen igen.' },
+            });
           const next = {
             ...c,
             ...('state' in patch ? { state: patch.state! } : {}),
@@ -1140,10 +1146,13 @@ export class MockApi {
             ...('toolsEnabled' in patch ? { toolsEnabled: patch.toolsEnabled! } : {}),
             ...('header' in patch ? { header: patch.header! } : {}),
             updatedAt: NOW,
+            version: c.version + 1,
           };
           // The header is exclusive (D88): the new holder takes it from the previous one.
           if ('header' in patch && patch.header)
-            this.connectors = this.connectors.map(x => (x.id === cid ? x : { ...x, header: false }));
+            this.connectors = this.connectors.map(x =>
+              x.id === cid || !x.header ? x : { ...x, header: false, version: x.version + 1 },
+            );
           if ('menu' in patch)
             for (const [name, on] of Object.entries((patch as { menu: Record<string, boolean> }).menu))
               this.menuOn = on ? [...new Set([...this.menuOn, name])] : this.menuOn.filter(n => n !== name);

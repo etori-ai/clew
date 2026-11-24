@@ -1,8 +1,8 @@
 import type { Actor, Registry } from '@clew/connectors';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import {
-  ManifestError,
   fetchManifest,
+  manifestFailure,
   parseManifest,
   remoteConnector,
   type AssertionBinding,
@@ -136,7 +136,7 @@ export async function loadConnectors(registry: Registry, options: LoadOptions = 
           return;
         } catch (error) {
           const message = (error as Error).message;
-          if (error instanceof ManifestError && !/answered \d+/.test(message)) {
+          if (manifestFailure(error) === 'manifest-invalid') {
             await record(source.id, health({ status: 'manifest-invalid', detail: message }));
             log(`Connector "${source.id}": ${message}`);
             return;

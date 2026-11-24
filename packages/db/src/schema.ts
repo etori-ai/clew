@@ -522,7 +522,8 @@ export const connectors = pgTable(
     audience: jsonb('audience').$type<ConnectorAudience>().notNull().default({ mode: 'all' }),
     scanEnabled: boolean('scan_enabled').notNull().default(true),
     toolsEnabled: boolean('tools_enabled').notNull().default(true),
-    // The one connector that gives Clew its shared header (D88), chosen by an administrator; the use case keeps it to one row.
+    // The one connector that gives Clew its shared header (D88), chosen by an administrator; at most one row, which the
+    // partial unique index below holds as well as the use case.
     headerHolder: boolean('header_holder').notNull().default(false),
     // Per capability: the narrowing switches, and `menu: true` when its view is in the menu (D40).
     capabilities: jsonb('capabilities')
@@ -555,6 +556,10 @@ export const connectors = pgTable(
     check('connector_id', sql`${t.id} ~ '^[a-z][a-z0-9-]*$'`),
     // A remote connector has an address and a secret; a bundled one has neither.
     check('connector_remote', sql`${t.bundled} OR (${t.url} IS NOT NULL AND ${t.secret} IS NOT NULL)`),
+    // One holder of the shared header (D88): a second row with the flag is refused by the database, not only by the use case.
+    uniqueIndex('connector_header_holder_one')
+      .on(t.headerHolder)
+      .where(sql`${t.headerHolder}`),
   ],
 );
 

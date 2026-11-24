@@ -89,7 +89,7 @@ test.describe('administration', () => {
       await expect(
         page.getByRole('region', { name: 'Aviseringar' }).getByText('Anslutningen ger sidhuvudet nu.'),
       ).toBeVisible();
-      expect(sent).toEqual({ header: true });
+      expect(sent).toEqual({ header: true, version: 1 });
       await expect(toggle).toBeChecked();
       await expectNoAxeViolations(page);
       // The status line in the page's head says so on the next visit; the other connectors no longer hold it.
@@ -101,6 +101,32 @@ test.describe('administration', () => {
       await expect(page.getByText('Anslutningen kan inte ge sidhuvudet', { exact: true })).toBeVisible();
       await pickSection(page, 'Områden');
       await expect(page.getByRole('switch', { name: 'Ger sidhuvudet', exact: true })).toBeDisabled();
+    });
+    test('a change to a connector saved since the page was read is refused in an alert, and the page shows it as it now is (DE-M5)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/connectors/finance');
+      const panel = await pickSection(page, 'Områden');
+      const scan = panel.getByRole('switch', { name: 'Skicka ärenden' });
+      await expect(scan).toBeChecked();
+      // Another administrator switches the cards off meanwhile; this page still shows them on.
+      api.connectors = api.connectors.map(c =>
+        c.id === 'finance' ? { ...c, scanEnabled: false, version: c.version + 1 } : c,
+      );
+      const header = panel.getByRole('switch', { name: 'Ger sidhuvudet', exact: true });
+      await header.focus();
+      await page.keyboard.press('Space');
+      await expect(
+        page.getByRole('alert').filter({ hasText: 'Anslutningen har ändrats sedan du öppnade den.' }),
+      ).toBeVisible();
+      // Read again: the other administrator's change shows, and this one was not made.
+      await expect(scan).not.toBeChecked();
+      await expect(header).not.toBeChecked();
+      expect(api.connectors.find(c => c.id === 'finance')!.header).toBe(false);
+      await expect(header).toBeFocused();
+      await expectNoAxeViolations(page);
     });
     test('a person without the grant sees no data and one way back', async ({ page, api: _ }) => {
       await page.goto('/admin/connectors');
@@ -264,7 +290,7 @@ test.describe('administration', () => {
       await toggle.focus();
       await page.keyboard.press('Space');
       await expect(toggle).toBeChecked();
-      await expect.poll(() => patches).toContainEqual({ lens: { 'hr.presence': true } });
+      await expect.poll(() => patches).toContainEqual({ lens: { 'hr.presence': true }, version: 1 });
       await expect(
         page.getByRole('region', { name: 'Aviseringar' }).getByText('Frånvaro går att välja under Visa.'),
       ).toBeVisible();
@@ -274,7 +300,7 @@ test.describe('administration', () => {
       await expect(select).toContainText('Ingen kolumn');
       await select.click();
       await page.getByRole('option', { name: 'Närvaro' }).click();
-      await expect.poll(() => patches).toContainEqual({ column: { 'hr.presence': 'today' } });
+      await expect.poll(() => patches).toContainEqual({ column: { 'hr.presence': 'today' }, version: 1 });
       await expect(select).toContainText('Närvaro');
       // The server's limit of three columns is said as the server says it.
       refuse = true;
