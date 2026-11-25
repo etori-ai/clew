@@ -18,6 +18,7 @@ const iso = (d: Date | null) => (d ? d.toISOString() : null);
 export const toRecord = (row: typeof connectors.$inferSelect): ConnectorRecord => ({
   id: row.id,
   bundled: row.bundled,
+  registrationId: row.registrationId,
   url: row.url,
   secret: row.secret,
   secretChangedAt: row.bundled ? null : iso(row.secretChangedAt),
@@ -64,7 +65,7 @@ const txOf = (tx: Transaction): ConnectorTx => ({
       .returning({ id: connectors.id });
     return inserted.length > 0;
   },
-  async update(id, patch: ConnectorPatch, by, at, version) {
+  async update(id, patch: ConnectorPatch, by, at, version, registrationId) {
     const { secretChangedAt, offeredAt, header, ...rest } = patch;
     // One statement: the version the change was made on is compared where it is raised (DE-M5). A second holder of the
     // header is refused by `connector_header_holder_one`.
@@ -80,7 +81,11 @@ const txOf = (tx: Transaction): ConnectorTx => ({
         version: sql`${connectors.version} + 1`,
       })
       .where(
-        version === undefined ? eq(connectors.id, id) : and(eq(connectors.id, id), eq(connectors.version, version)),
+        and(
+          eq(connectors.id, id),
+          version === undefined ? undefined : eq(connectors.version, version),
+          registrationId === undefined ? undefined : eq(connectors.registrationId, registrationId),
+        ),
       )
       .returning({ id: connectors.id });
     return updated.length > 0;

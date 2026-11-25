@@ -800,7 +800,7 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
     const { connector: reviewed } = await admin.refreshManifest(mikael, 'hello', {
       apply: true,
       offered: first.revision,
-      draftVersion: draft.version,
+      draft: { registrationId: draft.registrationId, version: draft.version },
     });
     expect(reviewed.state).toBe('draft');
     const active = await admin.update(mikael, 'hello', { state: 'enabled' });
@@ -808,11 +808,42 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
     const next = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!;
     for (const draftVersion of [reviewed.version, active.version]) {
       await expect(
-        admin.refreshManifest(mikael, 'hello', { apply: true, offered: next.revision, draftVersion }),
+        admin.refreshManifest(mikael, 'hello', {
+          apply: true,
+          offered: next.revision,
+          draft: { registrationId: draft.registrationId, version: draftVersion },
+        }),
       ).rejects.toThrow(CHANGED_SINCE);
     }
     expect((await admin.read(mikael, 'hello')).offered?.revision).toBe(next.revision);
     expect(actions(store, 'hello')).toEqual(['connector.added', 'connector.manifest', 'connector.enabled']);
+  });
+  test('a wizard cannot approve or enable a different registration with the same id and version', async () => {
+    const { admin, store, transport } = world();
+    const input = { id: 'hello', url: 'http://hello', secret: SECRET };
+    const { connector: draft } = await admin.add(mikael, input);
+    await admin.remove(mikael, input.id);
+    const { connector: replacement } = await admin.add(mikael, { ...input, url: 'http://replacement' });
+    expect(replacement.version).toBe(draft.version);
+    serving(transport, widened);
+    const offered = (await admin.refreshManifest(mikael, input.id, {})).connector.offered!;
+    await expect(
+      admin.refreshManifest(mikael, input.id, {
+        apply: true,
+        offered: offered.revision,
+        draft: { version: draft.version, registrationId: draft.registrationId },
+      }),
+    ).rejects.toThrow(CHANGED_SINCE);
+    await expect(
+      admin.update(mikael, input.id, {
+        state: 'enabled',
+        version: draft.version,
+        registrationId: draft.registrationId,
+      }),
+    ).rejects.toThrow(CHANGED_SINCE);
+    expect((await store.read(input.id))!.state).toBe('draft');
+    expect(actions(store, input.id)).not.toContain('connector.enabled');
+    expect(actions(store, input.id)).not.toContain('connector.manifest');
   });
   test('a refresh refuses to pair a replaced preview with the next offer’s revision', async () => {
     const { admin, store, transport } = world();

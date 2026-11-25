@@ -94,7 +94,11 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
       if (!result) return;
       const report = await api.admin.test(result.connector.id);
       let connector = await api.admin.connector(result.connector.id);
-      if (connector.state !== 'draft' || connector.version !== result.connector.version) {
+      if (
+        connector.registrationId !== result.connector.registrationId ||
+        connector.state !== 'draft' ||
+        connector.version !== result.connector.version
+      ) {
         openConnector(connector);
         return;
       }
@@ -103,7 +107,7 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
           await api.admin.refresh(connector.id, {
             apply: true,
             offered: connector.offered.revision,
-            draftVersion: result.connector.version,
+            draft: { registrationId: result.connector.registrationId, version: result.connector.version },
           })
         ).connector;
       }
@@ -118,6 +122,7 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
       try {
         await api.admin.update(result.connector.id, {
           version: result.connector.version,
+          registrationId: result.connector.registrationId,
           audience,
           scanEnabled: scan,
           toolsEnabled: tools,
@@ -125,7 +130,8 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
         });
       } catch (refused) {
         const connector = await api.admin.connector(result.connector.id).catch(() => null);
-        if (connector && connector.state !== 'draft') openConnector(connector);
+        if (connector && (connector.registrationId !== result.connector.registrationId || connector.state !== 'draft'))
+          openConnector(connector);
         else if (connector) setResult({ ...result, connector });
         throw refused;
       }

@@ -240,6 +240,7 @@ export function connectorUsecases(deps: AdminDeps) {
     const offer = pendingOffer(row);
     return {
       ...summary(row),
+      registrationId: row.registrationId,
       protocol: m?.protocol ?? null,
       scan: m?.scan ?? false,
       uses: [...(m?.uses ?? [])],
@@ -353,7 +354,11 @@ export function connectorUsecases(deps: AdminDeps) {
   async function update(persona: AuthenticatedContext, id: string, patch: ConnectorChange): Promise<ConnectorDetail> {
     const { by, at } = await mutating(persona);
     const row = await must(id);
-    if (patch.version !== undefined && patch.version !== row.version) throw new InputError(CHANGED_SINCE);
+    if (
+      (patch.version !== undefined && patch.version !== row.version) ||
+      (patch.registrationId !== undefined && patch.registrationId !== row.registrationId)
+    )
+      throw new InputError(CHANGED_SINCE);
     const m = manifestOf(row);
     if (patch.url !== undefined && row.bundled) throw new InputError('En inbyggd anslutning har ingen adress.');
     if (patch.menu)
@@ -551,7 +556,7 @@ export function connectorUsecases(deps: AdminDeps) {
       // The holder gives the header up first: the store holds at most one row to it.
       for (const holder of holders) await tx.update(holder, { header: false }, by, at);
       if (holders.length) headerChange.details.from = holders[0];
-      if (!(await tx.update(id, next, by, at, row.version))) throw new InputError(CHANGED_SINCE);
+      if (!(await tx.update(id, next, by, at, row.version, row.registrationId))) throw new InputError(CHANGED_SINCE);
       for (const c of changes)
         await tx.writeAudit({ actor: by, action: c.action, subject: 'connector:' + id, at, details: c.details });
       for (const holder of holders)
@@ -656,8 +661,14 @@ export function connectorUsecases(deps: AdminDeps) {
     const { by, at } = await mutating(persona);
     const row = await must(id);
     remote(row);
-    const draftOnly = input.draftVersion !== undefined;
-    if (draftOnly && (row.state !== 'draft' || row.version !== input.draftVersion)) throw new InputError(CHANGED_SINCE);
+    const draftOnly = input.draft !== undefined;
+    if (
+      input.draft &&
+      (row.state !== 'draft' ||
+        row.version !== input.draft.version ||
+        row.registrationId !== input.draft.registrationId)
+    )
+      throw new InputError(CHANGED_SINCE);
     const offer = pendingOffer(row);
     if (!offer) throw new InputError('Systemet erbjuder ingen ändring att godkänna. Läs in det igen.');
     if (input.offered !== offer.revision) throw new InputError(changedAgain);
@@ -674,7 +685,13 @@ export function connectorUsecases(deps: AdminDeps) {
       if (
         !(await tx.approveOffer(
           id,
-          { at: offer.at, manifest: offer.manifest, version: row.version, draftOnly },
+          {
+            at: offer.at,
+            manifest: offer.manifest,
+            version: row.version,
+            registrationId: row.registrationId,
+            draftOnly,
+          },
           offered,
           by,
           at,
