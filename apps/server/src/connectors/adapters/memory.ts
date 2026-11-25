@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { nextOrdinal } from '@clew/contracts';
 import type { AuditEntry, ConnectorRecord, ConnectorStore, ConnectorTx } from '../model';
 import { sameManifest } from '../manifests';
@@ -109,13 +110,19 @@ export function memoryConnectorStore(): MemoryConnectorStore {
               createdAt: r.at,
               updatedAt: r.at,
               version: 1,
+              registrationId: randomUUID(),
               ordinal: r.bundled ? null : nextOrdinal([...rows.values()].filter(x => !x.bundled).map(x => x.ordinal)),
             });
             return true;
           },
-          async update(id, patch, by, at, version) {
+          async update(id, patch, by, at, version, registrationId) {
             const r = rows.get(id);
-            if (!r || (version !== undefined && r.version !== version)) return false;
+            if (
+              !r ||
+              (registrationId !== undefined && r.registrationId !== registrationId) ||
+              (version !== undefined && r.version !== version)
+            )
+              return false;
             // As the partial unique index refuses it in Postgres.
             if (patch.header === true && [...rows.values()].some(x => x.header && x.id !== id))
               throw new Error('duplicate key value violates unique constraint "connector_header_holder_one"');
@@ -132,6 +139,7 @@ export function memoryConnectorStore(): MemoryConnectorStore {
             if (
               !r ||
               r.version !== offer.version ||
+              (offer.registrationId !== undefined && r.registrationId !== offer.registrationId) ||
               (offer.draftOnly && r.state !== 'draft') ||
               r.offered === null ||
               r.offeredAt !== offer.at ||

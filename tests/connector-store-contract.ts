@@ -95,6 +95,44 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       expect((row.manifest as { source: string }).source).toBe('Hello');
       expect((await store.list()).some(r => r.id === id)).toBe(true);
     });
+    test('a new registration under a reused id refuses the old draft at write time', async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      const original = (await store.read(id))!;
+      await store.transaction(async tx => {
+        await tx.remove(id);
+        await tx.insert(remoteRow(id));
+      });
+      const replacement = (await store.read(id))!;
+      expect(replacement.registrationId).not.toBe(original.registrationId);
+      expect(replacement.version).toBe(original.version);
+      expect(
+        await store.transaction(tx =>
+          tx.update(id, { state: 'enabled' }, 'person:mikael', T1, original.version, original.registrationId),
+        ),
+      ).toBe(false);
+      const offer = { ...(remoteRow(id).manifest as object), source: 'Changed' };
+      await store.recordCheck(id, { url: replacement.url!, at: T1, served: offer });
+      expect(
+        await store.transaction(tx =>
+          tx.approveOffer(
+            id,
+            {
+              at: T1,
+              manifest: offer,
+              version: original.version,
+              registrationId: original.registrationId,
+              draftOnly: true,
+            },
+            offer,
+            'person:mikael',
+            T1,
+          ),
+        ),
+      ).toBe(false);
+      expect(await store.read(id)).toMatchObject({ state: 'draft', offered: offer, version: replacement.version });
+    });
     test('a bundled row has no address and no secret', async () => {
       const { store, fresh } = await make();
       const id = fresh();
