@@ -335,6 +335,7 @@ export const threads = pgTable(
     state: text('state').$type<'open' | 'handled' | 'dismissed'>().notNull().default('open'),
     trigger: jsonb('trigger').$type<{ reason: string; source: string; at: string }>().notNull(),
     week: text('week'),
+    decisionRevision: integer('decision_revision').notNull().default(0),
     // Generic cards (D1, D12): the connector, a lead sentence, rows with refs, action slots, waiting state and the receipt.
     connector: text('connector').notNull().default('calendar'),
     area: text('area').notNull().default('calendar'),
@@ -688,6 +689,7 @@ export const executions = pgTable(
       version: string;
       actionId: string;
       newTitle?: string;
+      decisionRevision?: number;
     } | null>(),
     id: text('id').primaryKey(),
     decisionId: text('decision_id').notNull(),

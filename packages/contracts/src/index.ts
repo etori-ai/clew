@@ -3983,6 +3983,8 @@ export const HandOnSchema = object({
 export type HandOn = Static<typeof HandOnSchema>;
 /** Every thread answers "varför ser jag detta?" with trigger, source and time. */
 export const ThreadSchema = object({
+  /** Revision of the stored decision content, starting at zero. Independent of wall-clock time. */
+  decisionRevision: Type.Optional(Type.Integer({ minimum: 0 })),
   /** Clew authority under which source content was projected; absent legacy snapshots are not trusted. */
   sourceAuthorization: Type.Optional(Type.String()),
   id: id,
@@ -4043,6 +4045,9 @@ export const ThreadSchema = object({
   snoozedUntil: Type.Union([instant, Type.Null()]),
 });
 export type Thread = Static<typeof ThreadSchema>;
+/** The timestamp and the content revision of the card on which the person decided. */
+export const cardDecisionVersion = (thread: Pick<Thread, 'updatedAt' | 'decisionRevision'>): string =>
+  thread.decisionRevision ? `${thread.updatedAt}/${thread.decisionRevision}` : thread.updatedAt;
 export const unresolvedExecution = (t: Pick<Thread, 'execution'>) =>
   !!t.execution && ['pending', 'running', 'unknown', 'partial', 'failed'].includes(t.execution.state);
 
@@ -5112,7 +5117,7 @@ export type Area = Static<typeof AreaSchema>;
 export const ActInput = object({
   actionId: id,
   /**
-   * The work item's `updatedAt` as the person was shown it (AM-4): a decision is on that version. An item that has
+   * The work item's `cardDecisionVersion` as the person was shown it (AM-4): a decision is on that version. An item that has
    * changed since is refused, and the person decides again on what it says now; a decision already made on it is
    * replayed, whatever the version.
    */

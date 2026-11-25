@@ -659,6 +659,13 @@
       "when": 1795520058148,
       "tag": "0093_connector_registration",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1795520281301,
+      "tag": "0094_card_decision_revision",
+      "breakpoints": true
     }
   ]
 }
