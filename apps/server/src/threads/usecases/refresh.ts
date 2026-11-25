@@ -27,6 +27,23 @@ const canonical = (value: unknown): unknown =>
             .map(([k, v]) => [k, canonical(v)]),
         )
       : value;
+/**
+ * Whether a decided card left rows behind that the source still lists (D70 item 2): the receipt is over the card's rows,
+ * the source lists a row the decision did not touch, and no row the receipt settled as done or unknown is still listed.
+ * A done row still listed means the source has not caught up yet; an unknown one is never offered again until it is
+ * settled (D45/D47). Either way the card waits as it is.
+ */
+const leftBehind = (
+  thread: { items: readonly { ref: string }[]; receipt?: { rows: readonly { ref: string; outcome: string }[] } | null },
+  d: ThreadDraft,
+) => {
+  const rows = new Set(thread.items.map(i => i.ref));
+  const outcome = new Map((thread.receipt?.rows ?? []).filter(r => rows.has(r.ref)).map(r => [r.ref, r.outcome]));
+  if (!outcome.size) return false;
+  const listed = (d.items ?? []).map(i => i.ref);
+  if (listed.some(ref => outcome.get(ref) === 'done' || outcome.get(ref) === 'unknown')) return false;
+  return listed.some(ref => !outcome.has(ref));
+};
 /** Reads request work and return immediately; only leased workers wait for a source. */
 export function refreshUsecases({
   store,
@@ -207,11 +224,24 @@ export function refreshUsecases({
           continue;
         }
         if (thread?.receipt) {
-          // Retain the historical receipt. Unchanged observations cannot manufacture another action.
-          if (!changed) {
+          // Retain the historical receipt. Unchanged observations cannot manufacture another action, except for the
+          // rows a decision left behind (D70 item 2), which the next scan carries as a card of their own.
+          const left = leftBehind(thread, d);
+          if (!changed && !left) {
             for (const o of occurrences) await tx.saveOccurrence({ ...o.value, threadId: thread.id });
             continue;
           }
+          // The new card carries what still waits, so an open decided card and its retry card are closed as superseded:
+          // the receipt stays on the closed card as history, and no row is offered on two cards.
+          if (left && thread.state === 'open') await supersede(tx, thread.id, job.connector, at);
+          const retry = left && thread.execution && (await tx.lockThread(job.personId, `retry:${thread.execution.id}`));
+          if (
+            retry &&
+            retry.state === 'open' &&
+            !retry.receipt &&
+            !(retry.execution && ['pending', 'running', 'unknown'].includes(retry.execution.state))
+          )
+            await supersede(tx, retry.id, job.connector, at);
           thread = undefined;
         }
         if (!thread) {

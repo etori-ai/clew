@@ -25,7 +25,9 @@ receipt, never by the click.
    Nothing is written until the last step's one button, which runs the same execute with the approved refs through the
    same decision endpoint (D45/D47). `Spara och stäng` and Esc keep the decisions as the card's selection; the rows left
    behind stay on the card, and the next scan carries what is still pending as its own card (refresh.ts: a thread with a
-   receipt is retained, a changed observation makes a new one). The review counts as the card's one next step (D48 item 2).
+   receipt is retained; a changed observation makes a new one, and so do rows the decision did not touch while the source
+   still lists them and no done or unknown row is still listed, which closes an open decided card and its retry card as
+   superseded). The review counts as the card's one next step (D48 item 2).
    On a phone the dialog is the same fullscreen `Dialog`; artboard E's `BottomSheet` is a later polish.
 3. **The receipt is on the card, and the card stays while it can be undone.** A done card in the panel shows the check
    large beside the receipt's headline, one row per item with the source's answer (green only when read back), `Ångra

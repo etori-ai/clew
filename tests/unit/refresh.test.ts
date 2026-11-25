@@ -636,3 +636,129 @@ test('renewed authority preserves dismissal of an unchanged source occurrence', 
   expect(w.store.threads.dump()).toHaveLength(1);
   expect(w.store.threads.dump()[0]!.thread.state).toBe('dismissed');
 });
+
+// D70 item 2: after a decision on some of a card's rows, the rows still waiting in the source come back at the next scan
+// as a card of their own; the decided card stays as history, and a row whose answer is not known is never offered again.
+const invoice = (ref: string): ThreadItem => ({ ref, label: ref, detail: '', selectable: true, selected: false });
+const invoices = (...refs: string[]): ThreadDraft => ({
+  topic: 'invoices',
+  area: 'work',
+  title: `Attestera ${refs.length} fakturor`,
+  summary: 'Väntar på attest',
+  reason: 'Aktuell',
+  items: refs.map(invoice),
+  actions: [
+    {
+      id: 'approve',
+      label: 'Attestera valda',
+      kind: 'execute',
+      role: 'primary',
+      capability: 'source.approve',
+      usesItems: true,
+    },
+  ],
+  occurrences: refs.map(key => ({ key, revision: '1', period: 'once' })),
+});
+const decided = (
+  outcomes: Record<string, 'done' | 'failed' | 'unknown' | 'skipped'>,
+  state: 'succeeded' | 'partial' | 'failed',
+  open = false,
+) => ({
+  ...(open ? {} : { state: 'handled' as const }),
+  execution: { id: 'exec1', decisionId: 'card:1', operation: 'source.approve', state, reason: null, compensates: null },
+  receipt: {
+    at: '2026-11-05T12:00:30.000Z',
+    headline: 'Beslut',
+    rows: Object.entries(outcomes).map(([ref, outcome]) => ({ ref, label: ref, detail: '', outcome })),
+    undoUntil: null,
+    undoCapability: null,
+  },
+});
+const open = (w: ReturnType<typeof world>) =>
+  w.store.threads
+    .dump()
+    .map(x => x.thread)
+    .filter(t => t.state === 'open');
+
+test('the rows a decision left behind come back as a card of their own, and the decided card stays as history (D70)', async () => {
+  const w = world();
+  w.set([invoices('a', 'b', 'c')]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const first = open(w)[0]!;
+  await w.store.threads.transaction(tx => tx.updateThread(first.id, decided({ a: 'done' }, 'succeeded')));
+  // The attested invoice has left the source; the two others wait, unchanged.
+  w.advance();
+  w.set([invoices('b', 'c')]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const next = open(w);
+  expect(next.map(t => [t.title, t.items.map(i => i.ref)])).toEqual([['Attestera 2 fakturor', ['b', 'c']]]);
+  expect(next[0]!.id).not.toBe(first.id);
+  expect(w.store.threads.dump().find(x => x.thread.id === first.id)!.thread).toMatchObject({
+    state: 'handled',
+    receipt: { rows: [{ ref: 'a', outcome: 'done' }] },
+  });
+  expect(w.store.threads.audit.filter(a => a.action === 'thread.pushed').map(a => a.subject)).toEqual([
+    `thread:${first.id}`,
+    `thread:${next[0]!.id}`,
+  ]);
+  // The next scan keeps the new card; nothing is made twice.
+  w.advance();
+  await w.uc.request(actor);
+  await w.uc.tick();
+  expect(open(w).map(t => t.id)).toEqual([next[0]!.id]);
+});
+
+test('a card where the decision failed is closed when the next scan carries what still waits, with its retry card', async () => {
+  const w = world();
+  w.set([invoices('a', 'b', 'c')]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const first = open(w)[0]!;
+  await w.store.threads.transaction(async tx => {
+    await tx.updateThread(first.id, decided({ a: 'failed', b: 'failed' }, 'failed', true));
+    await tx.insertThread({
+      ...first,
+      id: 'retry:exec1',
+      topic: 'retry:exec1',
+      title: 'Granska 2 avvisade rader igen',
+      items: first.items.filter(i => i.ref !== 'c'),
+      personId: 'a',
+    } as Parameters<typeof tx.insertThread>[0]);
+  });
+  w.advance();
+  w.set([invoices('a', 'b', 'c')]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const next = open(w);
+  expect(next.map(t => t.items.map(i => i.ref))).toEqual([['a', 'b', 'c']]);
+  const byId = (id: string) => w.store.threads.dump().find(x => x.thread.id === id)!.thread;
+  expect(byId(first.id)).toMatchObject({ state: 'handled', receipt: { headline: 'Beslut' } });
+  expect(byId('retry:exec1').state).toBe('handled');
+  expect(
+    w.store.threads.audit
+      .filter(a => a.action === 'thread.superseded')
+      .map(a => a.subject)
+      .sort(),
+  ).toEqual([`thread:${first.id}`, 'thread:retry:exec1'].sort());
+});
+
+test('a row whose answer is not known, or that the source still lists after it was done, keeps the decided card as it is', async () => {
+  for (const outcome of ['unknown', 'done'] as const) {
+    const w = world();
+    w.set([invoices('a', 'b')]);
+    await w.uc.request(actor);
+    await w.uc.tick();
+    const first = open(w)[0]!;
+    await w.store.threads.transaction(tx =>
+      tx.updateThread(first.id, decided({ a: outcome }, outcome === 'done' ? 'succeeded' : 'partial')),
+    );
+    w.advance();
+    w.set([invoices('a', 'b')]);
+    await w.uc.request(actor);
+    await w.uc.tick();
+    expect(open(w)).toEqual([]);
+    expect(w.store.threads.audit.filter(a => a.action === 'thread.pushed')).toHaveLength(1);
+  }
+});
