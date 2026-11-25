@@ -176,7 +176,7 @@ export OIDC_CLIENT_SECRET
 export OIDC_BINDING_CLAIM=preferred_username
 ```
 
-A reverse proxy in front of Clew, here nginx, that lets a request through. Clew's server answers `/scim/v2/` and `/api/`; every other path is the web app's files, and a path that is not a file is answered with `index.html`:
+A reverse proxy in front of Clew, here nginx, that lets a request through. Clew's server answers `/scim/v2/` and `/api/`; every other path is the web app's files, and a path that is not a file is answered with `index.html`. The files are served with the security headers in `apps/web/security-headers.conf`, copied from the repository beside the files: a content security policy that lets scripts and connections come from Clew's own address only, a rule that no other page may frame Clew, and `nosniff`, `Referrer-Policy` and `Strict-Transport-Security` ([D145](../decisions/D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md)). nginx drops the headers set above a location that adds one of its own, so include the file in the location itself. Leave `/api/` without it: Clew's server sends its own headers there, and the identity provider loads its front-channel logout in a frame:
 
 ```nginx
 location /scim/v2/ {
@@ -188,12 +188,15 @@ location /api/ {
     proxy_pass           http://clew-app:3000;
 }
 location / {
+    include              /srv/clew/security-headers.conf;
     root                 /srv/clew/web;
     try_files            $uri /index.html;
 }
 ```
 
-The repository builds two images, both from the repository root ([D131](../decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md)). `apps/server/Dockerfile` is the server: Node 26.13.0, Bun 1.4.4 and the scripts an operator runs inside the container. `apps/web/Dockerfile` is the web app behind nginx: it serves the built files and passes `/api/` and `/scim/` on to the server named by `CLEW_SERVER_URL` (`http://clew-server:3000` unless set), as the example above does, so it is the one address an installation publishes. `sh scripts/images-build.sh clew-server clew-web` builds both, and `scripts/images.txt` lists every image the repository builds, the connectors' included. Give each build that is deployed a release name of its own with the build argument `CLEW_RELEASE`, such as the commit; the server image keeps it as its `CLEW_RELEASE`, and the script passes the commit. Both images run as any user and write nothing outside `/tmp`. Before a release's server starts, and after the older one has stopped, bring the database up to date by running `bun run db:init` in the server image.
+A proxy in front of the web image passes the image's headers on as they are. `Strict-Transport-Security` holds this host to https for a year; whether every subdomain is held to it too is the domain owner's decision, set where the domain's other hosts are served.
+
+The repository builds two images, both from the repository root ([D131](../decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md)). `apps/server/Dockerfile` is the server: Node 26.13.0, Bun 1.4.4 and the scripts an operator runs inside the container. `apps/web/Dockerfile` is the web app behind nginx: it serves the built files and passes `/api/` and `/scim/` on to the server named by `CLEW_SERVER_URL` (`http://clew-server:3000` unless set), as the example above does, with the same security headers on every page and file, so it is the one address an installation publishes. `sh scripts/images-build.sh clew-server clew-web` builds both, and `scripts/images.txt` lists every image the repository builds, the connectors' included. Give each build that is deployed a release name of its own with the build argument `CLEW_RELEASE`, such as the commit; the server image keeps it as its `CLEW_RELEASE`, and the script passes the commit. Both images run as any user and write nothing outside `/tmp`. Before a release's server starts, and after the older one has stopped, bring the database up to date by running `bun run db:init` in the server image.
 
 There is still no recipe for a whole installation: the repository's compose stack is the development one, and the images have been run on a workstation and, with manifests kept outside the repository, on one OpenShift test cluster. Without the images, an installation is built from a checkout of the repository, with Node 26.13.0 and Bun 1.4.4 as the development container has them (`.devcontainer/Dockerfile`): `bun install --frozen-lockfile`, `bun run db:init`, the server started with `bun run --cwd apps/server start`, and the web app built with `bun run build` and its files in `apps/web/dist` served from the same public address, as `/srv/clew/web` above.
 

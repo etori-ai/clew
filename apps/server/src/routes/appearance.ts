@@ -30,7 +30,8 @@ export function appearanceRoutes(appearance: Pick<AppearanceUsecases, 'read' | '
     if (!image) return c.json({ error: 'Logotypen finns inte.' }, 404, open);
     return c.body(new Uint8Array(image.bytes).buffer, 200, {
       ...open,
-      'Content-Type': image.mediaType,
+      // An SVG is served as the UTF-8 its upload was checked as, whatever it may say of itself.
+      'Content-Type': image.mediaType === 'image/svg+xml' ? 'image/svg+xml; charset=utf-8' : image.mediaType,
       'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
       'Cache-Control': c.req.query('v') === String(image.revision) ? 'public, max-age=31536000, immutable' : 'no-cache',
     });

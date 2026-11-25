@@ -30,6 +30,7 @@ import { AddToConversation } from '../conversation/add-to-conversation';
 import { DeclaredView } from './view';
 import { useMarks } from '../../marks';
 import { entityHref } from '../../person-address';
+import { isWebAddress } from '../../web-address';
 
 type BodyProps = {
   output: unknown;
@@ -119,7 +120,7 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
             // entity leads to the entity instead. "Lägg till i samtalet" only where the page has a box (D111 rule 6); a
             // hit with none of the three has no line of buttons.
             const viewHref = !r.subject && r.view && hrefFor ? hrefFor(r.view) : null;
-            const link = !r.subject && r.link ? r.link : null;
+            const link = !r.subject && r.link && isWebAddress(r.link) ? r.link : null;
             return (
               <ListItem
                 key={ref}

@@ -189,6 +189,32 @@ describe('the Eneo connector', () => {
       );
     }
   });
+  test('a document whose address is no https address, or too long a one, is still a hit, without the link', async () => {
+    for (const url of [
+      'www.kommun.se/rutin',
+      'javascript:alert(1)',
+      'http://intra.example/rutin',
+      `https://intra.example/${'a'.repeat(1000)}`,
+    ]) {
+      const blobFall = eneoFixtures['GET /api/v1/info-blobs/blob-fall/'] as { metadata: Record<string, unknown> };
+      const fixtures = {
+        ...eneoFixtures,
+        'GET /api/v1/info-blobs/blob-fall/': { ...blobFall, metadata: { ...blobFall.metadata, url } },
+      };
+      const { registry, context } = stack({ fixtures });
+      const result = await registry.run<{ rows: Record<string, unknown>[] }>(
+        hassan,
+        'eneo.search',
+        { query: 'brukaren har ramlat' },
+        context,
+      );
+      expect(result.rows).toHaveLength(2);
+      for (const row of result.rows) {
+        expect(row.label).toBe('Rutin vid fall i ordinärt boende');
+        expect(row).not.toHaveProperty('link');
+      }
+    }
+  });
   test('rechecks spaces and documents on every search', async () => {
     const { registry, calls, context } = stack();
     await registry.run(hassan, 'eneo.search', { query: 'fall' }, context);

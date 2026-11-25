@@ -4,6 +4,7 @@ import type { NewsResult, ViewRef } from '@clew/contracts';
 import { BoardCard, Link, List, ListItem, Text } from '@clew/ui';
 import { newsQuery } from '../../queries';
 import { toolHref } from '../shell/nav';
+import { isWebAddress } from '../../web-address';
 
 /** The combined news list (D112, amended 2026-11-11): Clew's core read over every news source the person may read. */
 export const NEWS_CAPABILITY = 'clew.news';
@@ -33,7 +34,9 @@ function NewsRowItem({ row, hrefFor }: { row: NewsEntry; hrefFor: (view: ViewRef
   // The day first, as the reference's news card has it ("2 okt."), then who published it.
   const at = Date.parse(row.publishedAt);
   const line = [Number.isNaN(at) ? '' : shortDay.format(at), row.sender].filter(Boolean).join(' · ');
-  const href = row.link ?? (row.view ? hrefFor(row.view) : undefined);
+  // A link the source gave is an http(s) address or none (D145): the server holds it to that, and the page again.
+  const out = row.link && isWebAddress(row.link) ? row.link : undefined;
+  const href = out ?? (row.view ? hrefFor(row.view) : undefined);
   const description = (
     <Text type="supporting" color="secondary" maxLines={2}>
       {line}
@@ -57,7 +60,7 @@ function NewsRowItem({ row, hrefFor }: { row: NewsEntry; hrefFor: (view: ViewRef
       itemKey={key}
       interactiveRef={link}
       label={
-        <Link ref={link} href={href} color="primary" weight="bold" maxLines={3} isExternalLink={!!row.link}>
+        <Link ref={link} href={href} color="primary" weight="bold" maxLines={3} isExternalLink={!!out}>
           {row.title}
         </Link>
       }

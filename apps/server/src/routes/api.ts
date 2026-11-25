@@ -37,7 +37,7 @@ import type {
 import { CalendarError } from '@clew/calendar/model';
 import { HandoverHeld, HandoverOffered, TurnStopped } from '../assistant';
 import type { ActInput as ActInputType, EffectInput as EffectInputType } from '@clew/contracts';
-import { InputError, protectedRoute, type Env } from '../context';
+import { InputError, protectedRoute, sessionCookie, type Env } from '../context';
 import { verbsFor } from '../assistant/verbs';
 import { registry, runCapability } from '../connectors/registry';
 import {
@@ -60,8 +60,7 @@ import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/co
 import { changesFor } from '../composition/changes';
 import { personKeys } from '../composition/person-keys';
 import { capabilityRoutes } from './capabilities';
-import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
-import { getCookie } from 'hono/cookie';
+import { authenticate, AuthError } from '../auth';
 import { readDocument, reviewDocuments } from '../composition/documents';
 import { logger } from '../logging';
 
@@ -197,7 +196,7 @@ api.use('*', async (_c, next) => {
 /** Payload-free, authenticated invalidation. Browser reads stay in TanStack Query; no browser polling. */
 api.get('/changes', c =>
   streamSSE(c, async stream => {
-    const cookie = getCookie(c, SESSION_COOKIE);
+    const cookie = sessionCookie(c);
     let previous = '',
       heartbeat = 0,
       stopped = false;

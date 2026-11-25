@@ -53,6 +53,12 @@ export class AuthError extends Error {
     this.code = code;
   }
 }
+/**
+ * The session's and the sign-in's cookies. Outside the local stack each carries the `__Host-` prefix (D145): a browser
+ * keeps such a cookie only when this host set it, Secure, for every path and with no Domain, so a page on a sibling host
+ * of the same domain cannot put a session or a sign-in of its own in their place. The local stack runs on plain http,
+ * where a prefixed cookie is not kept, so its names are bare. Read with `cookiePrefix()`, written with `cookieOptions()`.
+ */
 export const SESSION_COOKIE = 'clew-session';
 export const LOGIN_COOKIE = 'clew-login';
 export function authSettings() {
@@ -95,8 +101,27 @@ export function authSettings() {
         : 'openid profile email',
   };
 }
+/** The prefix the cookies are read with: `__Host-` except on the local stack, and also when sign-in is not configured. */
+export function cookiePrefix(): 'host' | undefined {
+  try {
+    return authSettings().local ? undefined : 'host';
+  } catch {
+    return 'host';
+  }
+}
+/** How a cookie is cleared: under the name it was read by, so also when sign-in is not configured. */
+export function clearedCookie() {
+  return cookiePrefix() === 'host' ? { path: '/', secure: true, prefix: 'host' as const } : { path: '/' };
+}
 export function cookieOptions() {
-  return { httpOnly: true, secure: !authSettings().local, sameSite: 'Lax' as const, path: '/' };
+  const local = authSettings().local;
+  return {
+    httpOnly: true,
+    secure: !local,
+    sameSite: 'Lax' as const,
+    path: '/',
+    ...(local ? {} : { prefix: 'host' as const }),
+  };
 }
 let discovered: { key: string; value: Promise<oidc.Configuration> } | undefined;
 export async function oidcConfiguration() {

@@ -387,6 +387,24 @@ describe('the composite search over the registry', () => {
     const result = await w.registry.run<{ sources: { status: string }[] }>(hassan, 'clew.search', { query: 'x' });
     expect(result.sources[0]!.status).toBe('unavailable');
   });
+  test('a hit whose link is not an http(s) address is out of shape: its source is unavailable and it never opens (D145 item 5)', async () => {
+    for (const link of [
+      'javascript:alert(1)',
+      'file:///etc/passwd',
+      'ms-word:ofe|u|https://x/a.docx',
+      '/intern/rutin',
+    ]) {
+      const w = world([source('docs', [hit({ ref: 'r1', link })])]);
+      const result = await w.registry.run<{ rows: unknown[]; sources: { status: string }[] }>(hassan, 'clew.search', {
+        query: 'rutin',
+      });
+      expect(result.sources[0]!.status).toBe('unavailable');
+      expect(result.rows).toEqual([]);
+      await expect(w.registry.run(hassan, 'clew.openSource', { ref: 'docs:r1' })).rejects.toMatchObject({
+        code: 'not-found',
+      });
+    }
+  });
   test('openSource and fetchSource go back to the connector that found the hit, and only to sources in scope', async () => {
     const w = world([
       source('docs', [hit({ ref: 'r1', link: 'https://intra/rutin' })]),
