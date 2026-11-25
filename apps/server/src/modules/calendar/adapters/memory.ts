@@ -1,4 +1,5 @@
 import type { Proposal, Thread } from '@clew/contracts';
+import { unplacedRow } from '../domain';
 import type {
   AuditEntry,
   InvitationNotice,
@@ -159,6 +160,26 @@ export function memoryProposalStore(options: { invitations?: InvitationsTx } = {
         invitations.push({ op: 'ended', ...copy(end) });
         await options.invitations?.ended(end);
       },
+    },
+    async inviteeCards(personId) {
+      return [...rows.values()]
+        .filter(
+          r =>
+            r.proposals.some(p => p.participant.personId === personId) ||
+            r.thread.items.some(i => i.ref === unplacedRow(personId)),
+        )
+        .map(r => ({ id: r.thread.id, personId: r.personId }))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    },
+    async clearInvitee(personId) {
+      let changed = 0;
+      for (const row of rows.values())
+        for (const p of row.proposals)
+          if (p.participant.personId === personId && (p.participant.name !== '' || p.participant.email !== '')) {
+            p.participant = { personId, name: '', email: '' };
+            changed++;
+          }
+      return changed;
     },
   };
   return {

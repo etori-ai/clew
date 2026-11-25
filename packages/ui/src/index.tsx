@@ -210,7 +210,7 @@ export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';
 // The calendar family (D32): the page's grid, the embedded day and list, the date picker, and the one item mapping.
 export { DayStrip, EventList, DatePicker } from './calendar-embeds';
-export { agendaItems, CHOSEN_ID, PROPOSAL_MARK } from './agenda-items';
+export { agendaItems, CHOSEN_ID, inviteeName, PROPOSAL_MARK } from './agenda-items';
 export { FigureLine, FigureTile, FigureTileSkeleton } from './components/figure';
 export { BoardCard } from './components/board-card';
 export { KeyFigure } from './components/key-figure';

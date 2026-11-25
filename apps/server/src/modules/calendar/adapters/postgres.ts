@@ -1,8 +1,9 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { readThread, type ProposalRow } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
 import type { DurableQueue } from '@clew/db/durable';
+import { unplacedRow } from '../domain';
 import type { InvitationsTx, ProposalPatch, ProposalRecord, ProposalStore, ProposalThread, ProposalTx } from '../model';
 
 /** The proposal store the server runs (D25): the `ProposalStore` port over Drizzle and Postgres. */
@@ -182,7 +183,43 @@ const txOf = (tx: Transaction, durable: DurableQueue, invitations: InvitationsTx
     await scheduleJob({ id: job.id, kind: job.kind, runAt: new Date(job.runAt), payload: job.payload }, durable, tx);
   },
   invitations,
+  async inviteeCards(personId) {
+    const owner = { id: threads.id, personId: threads.personId };
+    const [invited, rowed] = [
+      await tx
+        .selectDistinct(owner)
+        .from(proposals)
+        .innerJoin(threads, eq(threads.id, proposals.threadId))
+        .where(and(eq(proposals.participantId, personId), CALENDAR)),
+      // A row is matched by its ref inside the card's rows (jsonb containment), the way the planner writes it.
+      await tx
+        .select(owner)
+        .from(threads)
+        .where(and(CALENDAR, sql`${threads.items} @> ${JSON.stringify([{ ref: unplacedRow(personId) }])}::jsonb`)),
+    ];
+    const cards = new Map([...invited, ...rowed].map(c => [c.id, c]));
+    return [...cards.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  },
+  async clearInvitee(personId) {
+    const changed = await tx
+      .update(proposals)
+      .set({ participantName: '', participantEmail: '' })
+      .where(
+        and(
+          eq(proposals.participantId, personId),
+          or(ne(proposals.participantName, ''), ne(proposals.participantEmail, '')),
+        ),
+      )
+      .returning({ id: proposals.id });
+    return changed.length;
+  },
 });
+/**
+ * The store's transaction on a transaction the caller holds: the people module's erasure is told on its own
+ * (`composition/people.ts`), so the cards and the invitations it clears commit with the `person.erased` row.
+ */
+export const proposalTx = (tx: Transaction, durable: DurableQueue, invitations: InvitationsTx = nobody): ProposalTx =>
+  txOf(tx, durable, invitations);
 /**
  * The proposal store in Postgres; `durable` names the engine's application and queue for the jobs it schedules (D86).
  * `invitations` builds, on the store's own transaction, the port the talks domain is told of invitations through

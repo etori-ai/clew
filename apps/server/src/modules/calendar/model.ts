@@ -147,6 +147,19 @@ export interface ProposalTx {
   writeAudit(entry: AuditEntry): Promise<void>;
   scheduleJob(job: JobInput): Promise<void>;
   invitations: InvitationsTx;
+  /**
+   * The store's cards that name a person by structure, whoever owns them (D123): every card with a proposal that
+   * invites them, and every card with a row for them that has no proposal (`unplaced:<id>`). Each with its owner, in
+   * id order, the order a write of several cards locks them in. Nothing is matched on a name.
+   */
+  inviteeCards(personId: string): Promise<Array<{ id: string; personId: string }>>;
+  /**
+   * Clears the name and the address that every invitation to the person was drawn with (`participant_name` and
+   * `participant_email` set to the empty text), whoever sent it. The rows stay, the inviting manager's history and the
+   * round's count with them, and still name the person by their id. How many changed: one already cleared is not
+   * counted again.
+   */
+  clearInvitee(personId: string): Promise<number>;
 }
 export interface ProposalStore {
   readThread(personId: string, id: string): Promise<ProposalThread | undefined>;
