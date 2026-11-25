@@ -3511,6 +3511,7 @@
       "title": "Open findings",
       "category": "maintainer-guide",
       "headings": [
+        "Order of work",
         "Counts",
         "High",
         "Identity, sessions and authorization",

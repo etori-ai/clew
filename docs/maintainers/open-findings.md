@@ -1,13 +1,45 @@
 # Open findings
 
 These are the findings of the review of the whole repository on 2026-11-23, at `9fd4c962`, one review per area,
-linked below. By the product owner's decision of 2026-11-23 they are recorded and not fixed for now. A row is removed
+linked below. They are fixed in the order of work below. A row is removed
 in the change that fixes it; a finding it is decided not to fix is removed with that decision named in the commit
 message. The severity is the review's own. The reviews were made by automated reviewers, the coordinating session
 checked the high findings of the first five reviews against the code, and no person has reviewed any of them. Each
 review's own sections "Not established" and "Seen outside this area" hold more that is not listed here.
 [The overview](../reviews/2026-11-23-review-of-the-whole-repository.md) says what was reviewed, which findings are one
 weakness seen from several areas, and how far to trust them.
+
+## Order of work
+
+The product owner decided on 2026-11-23 that the findings are fixed, a batch at a time, in this order; the first nine
+fixes (#96 to #104) came before it. Each batch is one pull request stacked on the one before. After one or two
+batches, those pull requests get a review of their own: what it finds in them is fixed in them, and what it finds
+elsewhere is added here. A batch's line goes when its last finding does; a finding that moves to another batch takes
+its id with it. `BL-3` (protecting `main`) waits for the run-up to the first release, by the same decision, and is in
+no batch.
+
+| # | Batch | Findings | Decided first |
+|---|---|---|---|
+| 1 | Clew's licence and the notices it ships | `BL-2`, `BL-7`, `BL-8` | The licence: AGPL-3.0, as Eneo |
+| 2 | An administrator approves what a manifest may read and whose token it gets | `CB-1`, `CB-3`, `DE-H1`, `AM-11` | How a manifest change is approved |
+| 3 | The accessibility suite is green and its mock answers as the server does | `BL-1`, `WA-M4`, `WA-L1`, `WA-L2`, `WA-L3` | |
+| 4 | What a page may load and keep | `ID-4`, `BL-10`, `CB-8`, `ID-5`, `ID-6` | The content security policy |
+| 5 | A limit on what another party sends | `CB-4`, `CB-5`, `CB-6`, `CS-M1`, `CS-L3`, `ID-8`, `ID-10` | |
+| 6 | A decision is bound to what the person was shown | `AM-4`, `DE-M9`, `DE-L5`, `DE-L6` | |
+| 7 | A decision that failed or whose outcome is unknown has a way forward | `DE-M1`, `DE-M2`, `DE-M3`, `DE-L1`, `DE-L2`, `DE-L11` | |
+| 8 | Erasure reaches everything | `DE-M6`, `BD-M1`, `BD-M2`, `BD-L1`, `BD-L3`, `BD-L5` | |
+| 9 | Who may see and change what | `ID-3`, `ID-7`, `CO-M1`, `CO-L1`, `CB-7`, `BD-L2`, `CS-M2` | |
+| 10 | The assistant's prompt, tools, provider and record | `AM-2`, `AM-3`, `AM-5`, `AM-6`, `AM-7`, `AM-8`, `AM-9`, `AM-10` | |
+| 11 | Connector administration and its scripts | `DE-M5`, `CB-9`, `CB-10`, `CB-11`, `CB-12`, `CB-13` | |
+| 12 | The session and the change stream in the browser | `WD-M1`, `WD-M2`, `WD-M3`, `WD-M4`, `WD-L2`, `WD-L4`, `WD-L9` | |
+| 13 | The conversation's state | `WD-L1`, `WD-L3`, `WD-L5`, `WD-L6`, `WD-L7`, `WD-L8` | |
+| 14 | The calendar's time zones, entries and talk meetings | `DE-M8`, `DE-L14`, `DE-L15`, `DE-L16`, `WA-M2`, `WA-L5` | |
+| 15 | No installation's name or brand in the code, and Swedish where a person reads | `AM-12`, `BL-9`, `WA-L6`, `WA-L7`, `WA-L11`, `WA-L12`, `WA-L13` | |
+| 16 | The interface's theme check, spaces and measures | `WA-M1`, `WA-L4`, `WA-L8`, `WA-L9`, `WA-L10` | |
+| 17 | Tests and contracts that can see the fault | `WA-M5`, `DE-M4`, `DE-M7`, `ID-9`, `AM-13`, `BD-L6`, `DE-L3` | |
+| 18 | The database: audit gaps, comparisons, indexes and migrations | `DE-L4`, `DE-L7`, `DE-L8`, `DE-L9`, `DE-L10`, `DE-L12`, `DE-L13`, `BD-L4` | |
+| 19 | The build, the images and the documents that span areas | `BL-4`, `BL-5`, `BL-11`, `BL-12`, `BL-13`, `BL-14` | |
+| 20 | The connector services | `CS-L1`, `CS-L2`, `CS-L4`, `CS-L5`, `CS-L6`, `CS-L7`, `CS-L8` | |
 
 ## Counts
 
