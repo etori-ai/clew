@@ -155,7 +155,7 @@ describe('an item opened beside the queue takes the assistant’s place (D141 ru
     expect(todoHref({ item: null }, '?item=omtanke&tab=waiting')).toBe('/todo?tab=waiting');
   });
   test('any other change keeps the pane open', () => {
-    expect(todoHref({ filter: 'ledig' }, '?ask=1')).toBe('/todo?ask=1&filter=ledig');
+    expect(todoHref({ area: 'hr' }, '?ask=1')).toBe('/todo?ask=1&area=hr');
     expect(todoHref({ tab: 'done', item: null }, '?ask=1')).toBe('/todo?ask=1&tab=done');
   });
 });

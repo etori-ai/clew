@@ -1,8 +1,10 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { PanelViewSpec, Thread } from '@clew/contracts';
 import { viewQuery } from '../../queries';
 import { viewSearch } from '../../panel-address';
+import { searchKeyOf, viewInputChange, withSearchWords } from '../../view-address';
 import type { ThingSubject } from '../conversation/conversation-context';
 
 /**
@@ -45,6 +47,34 @@ const parse = (json: string | null): Record<string, unknown> => {
     return {};
   }
 };
+
+/**
+ * The input a view's page reads and how its own controls change it (`viewInputChange`). A choice goes into the address;
+ * what the person types into the search field stays with the page, never in the address: the read takes it in its body,
+ * and the address leaves the search out from the first word typed. The words last while the page stands on the same
+ * input in its address, so a reload, Back past the page or a link to another input forgets them, as D100 item 5
+ * accepted for the people list's search.
+ */
+export function useViewInput(capability: string) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const addressed = new URLSearchParams(location.search).get('input');
+  const [typed, setTyped] = useState<{ capability: string; at: string | null; key: string; words: string } | null>(
+    null,
+  );
+  const own = typed && typed.capability === capability && typed.at === addressed ? typed : null;
+  const inputJson = own ? withSearchWords(addressed, own.key, own.words) : addressed;
+  /** The view's controls changed its input; `spec` is the view drawn, whose search field is the one kept apart. */
+  const onInput = (next: Record<string, unknown>, spec: PanelViewSpec | undefined) => {
+    const key = searchKeyOf(spec);
+    const change = viewInputChange(location.pathname, location.search, next, key);
+    setTyped(key ? { capability, at: change.at, key, words: change.words } : null);
+    // Compared as `withViewInput` writes an address, so an address that only spells the same query otherwise stays.
+    const query = new URLSearchParams(location.search).toString();
+    if (change.href !== location.pathname + (query ? '?' + query : '')) navigate(change.href, { replace: true });
+  };
+  return { inputJson, onInput };
+}
 
 /** A declared view on screen (D38): what it answered, and the address and input it answered for. */
 export interface ShownView {

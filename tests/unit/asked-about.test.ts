@@ -370,7 +370,7 @@ function world() {
   for (const c of sources(seen)) registry.register({ uses: ['*'], ...c }).govern(c.id, openGovernance());
   /** Every caller of `runCapability`: the registry's call path as the person (a card, a tool, a job, a route). */
   const cap = (who: string, name: string, input: unknown) => registry.run(actorOf(people.persona(who)), name, input);
-  /** `GET /api/cap`: the person's own session asks for a read itself (`RunContext.direct`, D121). */
+  /** `POST /api/cap`: the person's own session asks for a read itself (`RunContext.direct`, D121). */
   const read = (who: string, name: string, input: unknown) =>
     registry.run(actorOf(people.persona(who)), name, input, { direct: true });
   const asked = (name: string) => seen.filter(s => s.name === name);

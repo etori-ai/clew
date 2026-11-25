@@ -184,7 +184,7 @@ function aboutOf(thread: Thread): string | null {
 /**
  * Att göra (D126 rule 2, board Att göra, the `table-inbox` template): a queue that indexes a reading pane. The title
  * with how much needs the person and waits on others; the piles (Behöver dig, Väntar på andra, Klart) as tabs that are
- * links, so the address names the pile; a filter field and the system in the title's row narrow the rows. Astryx's
+ * links, so the address names the pile; a filter field and the system in the title's row narrow the rows. The filter's words stay off the address. Astryx's
  * `Table`: the item's name is the row's link, in semibold while it is due now, with whom it is about under it; the
  * system as a token; when it is due as a badge, or for Klart when it was done. Choosing a row shows the work item in the
  * pane beside the list and puts it in the address as `item`, so Back, Forward and a reload show the same; the open row
@@ -221,7 +221,9 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const loading = threadsQ.isPending && !threadsQ.isFetched;
   const itemId = search.get('item');
   const area = search.get('area');
-  const filter = search.get('filter') ?? '';
+  // What is typed into the filter stays with the page, never in its address, which an access log and the browser's
+  // history keep: the words are a person's name as often as not (D100 item 5). Leaving the page or a reload forgets them.
+  const [filter, setFilter] = useState('');
   const now = new Date().toISOString();
   const todayDate = today();
 
@@ -434,7 +436,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       value={filter}
       hasClear
       width={mobile ? '100%' : 240}
-      onChange={value => navigate(href({ filter: value || null }), { replace: true })}
+      onChange={setFilter}
     />
   );
   const systemMenu = (

@@ -14,7 +14,8 @@ import { InputError } from '../../apps/server/src/context';
 import { memoryPersonKeys } from '../person-keys';
 
 /**
- * The capability routes (`/api/cap/:name`): a read answers its output, the source and its declared view (D38), and the
+ * The capability routes (`POST /api/cap/:name`, the input as the body and never in the address, which access logs keep:
+ * WD-M4 of the web review of 2026-11-23): a read answers its output, the source and its declared view (D38), and the
  * view carries the people its records name, from the user name a record holds to the id of whoever of the reader's
  * organisation holds it (D122), so the web links a record to `/people/<id>`. A name nobody there holds is absent. An
  * execute is reached only through the human decision endpoint. The registry and the run are stubbed here; the people
@@ -117,16 +118,18 @@ function stack(options: { people?: boolean } = {}) {
       await next();
     },
   });
-  // Served as the API mounts it under /api/cap; the paths below are the part after that.
+  // Served as the API mounts it under /api/cap; the paths below are the part after that. A read is asked as the web asks
+  // it: a POST with its input as the body.
   const request = (path: string, init?: RequestInit) => routes.request('http://clew.test' + path, init);
-  return { request, asked, ran, rows };
+  const read = (path: string, input?: unknown) =>
+    request(path, { method: 'POST', ...(input === undefined ? {} : { body: JSON.stringify(input) }) });
+  return { request, read, asked, ran, rows };
 }
 
 describe('the capability routes', () => {
   test("a read's view links the records whose user name someone of the reader's organisation holds, by id (D122)", async () => {
-    const { request, asked, ran, rows } = stack();
-    const input = encodeURIComponent(JSON.stringify({ round: '2026' }));
-    const response = await request(`/talks.talks?input=${input}`);
+    const { read, asked, ran, rows } = stack();
+    const response = await read('/talks.talks', { round: '2026' });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       output: { rows },
@@ -139,8 +142,8 @@ describe('the capability routes', () => {
     expect(asked).toEqual([['hillevi', ['Anna.Lindqvist', 'karin.l', 'ute.person', 'okand.person']]]);
   });
   test('a view that names no person is as the registry gave it, and nobody is asked about', async () => {
-    const { request, asked } = stack();
-    expect(await (await request('/rooms.list')).json()).toEqual({
+    const { read, asked } = stack();
+    expect(await (await read('/rooms.list')).json()).toEqual({
       output: { rows: [{ name: 'Rum 1', userName: 'anna.lindqvist' }] },
       source: 'Lokalbokningen',
       view: rooms,
@@ -148,30 +151,34 @@ describe('the capability routes', () => {
     expect(asked).toEqual([]);
   });
   test('when nobody holds any of the names, or the people are not wired, the view carries no people', async () => {
-    const { request, asked } = stack();
-    const none = (await (await request('/talks.strangers')).json()) as { view: PanelViewSpec };
+    const { read, asked } = stack();
+    const none = (await (await read('/talks.strangers')).json()) as { view: PanelViewSpec };
     expect(none.view).toEqual({ ...talks, capability: 'talks.strangers' });
     expect(asked).toEqual([['hillevi', ['okand.person', 'ute.person']]]);
-    const unwired = (await (await stack({ people: false }).request('/talks.talks')).json()) as { view: PanelViewSpec };
+    const unwired = (await (await stack({ people: false }).read('/talks.talks')).json()) as { view: PanelViewSpec };
     expect(unwired.view).toEqual(talks);
   });
-  test('an execute and an unknown capability are the one 404, and a POST answers its output alone', async () => {
+  test('an execute and an unknown capability are the one 404, a GET is no route at all, and a propose answers its output alone', async () => {
     const { request, ran, asked } = stack();
-    for (const path of ['/talks.flag', '/talks.book', '/talks.nothing']) expect((await request(path)).status).toBe(404);
     for (const path of ['/talks.flag', '/talks.nothing'])
       expect((await request(path, { method: 'POST', body: '{}' })).status).toBe(404);
-    // A propose runs as the person and answers its output; a POST carries no view, so no one is resolved.
+    // The input in the address is gone with the GET: no name, read or not, answers one, and nothing runs.
+    const input = encodeURIComponent(JSON.stringify({ round: '2026' }));
+    for (const path of ['/talks.talks', '/talks.book', '/talks.flag', '/talks.nothing'])
+      expect((await request(`${path}?input=${input}`)).status).toBe(404);
+    expect(ran).toEqual([]);
+    // A propose runs as the person and answers its output; it has no view, so no one is resolved.
     const posted = await request('/talks.book', { method: 'POST', body: JSON.stringify({ person: 'anna' }) });
     expect(await posted.json()).toEqual({ output: { rows: expect.any(Array) } });
     expect(ran).toEqual([['hillevi', 'talks.book', { person: 'anna' }]]);
     expect(asked).toEqual([]);
   });
   test('input that is not JSON, and a refusal from the source, are bad requests in Swedish', async () => {
-    const { request, asked } = stack();
-    const bad = await request('/talks.talks?input=%7Bnope');
+    const { request, read, asked } = stack();
+    const bad = await request('/talks.talks', { method: 'POST', body: '{nope' });
     expect(bad.status).toBe(400);
     expect(await bad.json()).toEqual({ error: 'Ogiltig förfrågan.' });
-    const refused = await request(`/talks.talks?input=${encodeURIComponent('{"refuse":true}')}`);
+    const refused = await read('/talks.talks', { refuse: true });
     expect(refused.status).toBe(400);
     expect(await refused.json()).toEqual({ error: 'Källan svarade inte.' });
     expect((await request('/talks.book', { method: 'POST', body: '{nope' })).status).toBe(400);
@@ -261,13 +268,9 @@ describe('a capability the person may not know of answers as one nobody register
     };
     return { registry, ran, answer };
   }
-  const input = (value: string) => '?input=' + encodeURIComponent(value);
   /** Every way to ask: no input, input that is empty, not JSON, refused by the schema, and a body over the limit. */
   const asked: Array<[string, RequestInit | undefined]> = [
-    ['', undefined],
-    [input('{}'), undefined],
-    ['?input=%7Bnope', undefined],
-    [input('{"other":1}'), undefined],
+    ['', { method: 'POST' }],
     ['', { method: 'POST', body: '' }],
     ['', { method: 'POST', body: '{}' }],
     ['', { method: 'POST', body: '{nope' }],
@@ -284,7 +287,7 @@ describe('a capability the person may not know of answers as one nobody register
     body: JSON.stringify({ error: 'Okänd förmåga.' }),
   };
 
-  test('a hidden capability answers GET and POST with the status, body and headers of a name nobody registered, whatever the input', async () => {
+  test('a hidden capability answers with the status, body and headers of a name nobody registered, whatever the input', async () => {
     const { ran, answer } = world();
     const hidden = ['off.read', 'off.offer', 'crm.read', 'crm.offer', 'chef.offer', 'open.switched'];
     for (const [i, [rest, init]] of asked.entries()) {
@@ -300,7 +303,6 @@ describe('a capability the person may not know of answers as one nobody register
     for (const [i, [rest, init]] of asked.entries())
       expect([i, await answer('/chef.read' + rest, init)]).toEqual([i, await answer('/nobody.read' + rest, init)]);
     const denied = { error: 'Du saknar behörighet för åtgärden.' };
-    expect(await answer('/open.managers' + input('{}'))).toMatchObject({ status: 400, body: JSON.stringify(denied) });
     expect(await answer('/open.managers', { method: 'POST', body: '{}' })).toMatchObject({
       status: 400,
       body: JSON.stringify(denied),
@@ -331,9 +333,9 @@ describe('a capability the person may not know of answers as one nobody register
     registry.setRefresh(async () => {
       registry.govern('open', { ...openGovernance(), state: 'disabled' });
     });
-    expect(await answer('/open.read' + input('{}'))).toEqual(await answer('/nobody.read' + input('{}')));
-    registry.govern('open', openGovernance());
     const post = { method: 'POST', body: '{}' };
+    expect(await answer('/open.read', post)).toEqual(await answer('/nobody.read', post));
+    registry.govern('open', openGovernance());
     expect(await answer('/open.offer', post)).toEqual(await answer('/nobody.offer', post));
     expect(await answer('/nobody.offer', post)).toEqual(UNKNOWN);
     expect(ran).toEqual([]);

@@ -178,7 +178,7 @@ export const acceptsEmptyInput = (schema: object) => {
 };
 /**
  * Run a capability through the live registry with input validation (`capabilityRunner`): the path for REST, cards and
- * tools. `direct` is the person's own session asking for a read itself, `caller` the assistant's runner and `forModel`
- * the model's own tool call (`CapabilityRunOptions`).
+ * tools. `direct` is the person's own session asking for a read itself (`POST /api/cap`), `caller` the assistant's
+ * runner and `forModel` the model's own tool call (`CapabilityRunOptions`).
  */
 export const runCapability = capabilityRunner(registry);
