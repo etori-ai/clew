@@ -4,6 +4,7 @@ import { asWritten } from './as-written';
 import { mermaidBlocks } from './mermaid';
 import { outsideLinks } from './outside-links';
 import { navigation } from './sidebar';
+import { thirdPartyNotices } from '../../scripts/third-party-notices';
 
 /**
  * The documentation site: `docs/` as it is, built to static pages for GitHub Pages. Nothing is copied and no
@@ -62,6 +63,8 @@ export default defineConfig({
             ? { build: { rollupOptions: { external: ['vue', 'vue/server-renderer', 'mermaid'] } } }
             : undefined,
       },
+      // The published site passes on Vue, VitePress and Mermaid: their notices go with it (D146 item 3).
+      thirdPartyNotices().plugin,
     ],
   },
 });
