@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 13 | The conversation's state | `WD-L1`, `WD-L3`, `WD-L5`, `WD-L6`, `WD-L7`, `WD-L8` | |
 | 15 | No installation's name or brand in the code, and Swedish where a person reads | `AM-12`, `BL-9`, `WA-L6`, `WA-L7`, `WA-L11`, `WA-L12`, `WA-L13` | |
 | 16 | The interface's theme check, spaces and measures | `WA-M1`, `WA-L4`, `WA-L8`, `WA-L9`, `WA-L10`, `WA-L14` | |
 | 17 | Tests and contracts that can see the fault | `WA-M5`, `DE-M4`, `DE-M7`, `ID-9`, `AM-13`, `BD-L6`, `DE-L3` | |
@@ -37,10 +36,10 @@ no batch.
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 1 | 1 | 2 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 2 | 2 |
-| WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 0 | 6 | 6 |
+| WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 0 | 0 | 0 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 2 | 10 | 12 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 0 | 0 |
-| | **Total** | **0** | **5** | **30** | **35** |
+| | **Total** | **0** | **5** | **24** | **29** |
 
 ## High
 
@@ -126,14 +125,7 @@ of the audit rows added to the decisions review's table B, and of test gaps unde
 it carries its follow-ups from wave 1 (a content security policy, binding a decision to what was shown, the change
 stream's cost) with a table of statements per tick.
 
-| Id | Severity | Finding | Where |
-|---|---|---|---|
-| WD-L1 | Low | Alla samtal shows at most 50 conversations, shared with recently handled work items and ordered by when they began. | `packages/db/src/threads.ts:116-138` |
-| WD-L3 | Low | A turn the page reports as stopped or failed may already have written a work item or the answer, and a retry then asks twice. | `apps/server/src/assistant/index.ts:235-246` |
-| WD-L5 | Low | A question to another system's assistant cannot be stopped and, when answered, can pull the person back or draw one conversation under another's address. | `apps/web/src/components/conversation/conversation-context.tsx:863-912` |
-| WD-L6 | Low | The open conversation is a copy in component state that no change notice refreshes. | `apps/web/src/components/conversation/conversation-context.tsx:328` |
-| WD-L7 | Low | A refused prediction is not taken back from the list once another write has landed on it. | `apps/web/src/thread-cache.ts:61-62` |
-| WD-L8 | Low | A correction's status and a competence source's import are polled, against D33 and D46. | `apps/web/src/components/work/review-recovery.tsx:33` |
+No finding of this area is open.
 
 ## The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA
 

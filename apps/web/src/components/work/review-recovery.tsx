@@ -4,6 +4,8 @@ import type { DocumentReview } from '@clew/contracts';
 import { Button, Card, CompletionFeedback, Heading, HStack, Link, Text, TextInput, VStack, useToast } from '@clew/ui';
 import { api } from '../../api';
 import { errorMessage } from '../../query-policy';
+import { correctionQuery } from '../../queries';
+import { keys } from '../../query-keys';
 
 /** Connector-described corrections use the existing human execution ledger, not a direct capability write. */
 export function ReviewRecovery({
@@ -26,12 +28,9 @@ export function ReviewRecovery({
   const handled = useRef<string | null>(null);
   const latest = useRef(onSaved);
   latest.current = onSaved;
-  const result = useQuery({
-    queryKey: ['correction', operation],
-    enabled: !!operation,
-    queryFn: () => api.correctionExecution(operation!),
-    refetchInterval: query => (['pending', 'running'].includes(query.state.data?.state ?? 'pending') ? 1500 : false),
-  });
+  // The correction's state comes as every other change does (D33, D46): its execution's row moves the change revision,
+  // and the notice reads it again. Nothing polls; "Kontrollera rättelsen" asks the source when the person wants to.
+  const result = useQuery({ ...correctionQuery(operation ?? ''), enabled: !!operation });
   const link = useQuery({
     queryKey: ['review-source', source?.capability, document.bundle.ref],
     enabled: !!source,
@@ -73,7 +72,7 @@ export function ReviewRecovery({
       const decisionId =
         'correction:' + Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
       const next = await api.approveCorrection({ decisionId, operation: correction.capability, payload });
-      client.setQueryData(['correction', next.id], next);
+      client.setQueryData(keys.correction(next.id), next);
       setOperation(next.id);
     } catch (e) {
       setError(errorMessage(e, 'Rättelsen kunde inte sparas.'));

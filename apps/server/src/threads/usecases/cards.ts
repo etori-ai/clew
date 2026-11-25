@@ -14,13 +14,23 @@ import {
   type Attention,
   type AuthenticatedContext,
   type Area,
+  type ConversationPage,
   type ItemEvents,
   type Receipt,
   type SnoozeInput,
   type SnoozePreset,
   type Thread,
 } from '@clew/contracts';
-import { HISTORY_LIMIT, historySubjects, itemEvents, reminderStart, rhythmFor } from '../domain';
+import {
+  CONVERSATION_PAGE,
+  cursorOf,
+  cursorText,
+  HISTORY_LIMIT,
+  historySubjects,
+  itemEvents,
+  reminderStart,
+  rhythmFor,
+} from '../domain';
 import {
   audiencedActorOf,
   givenBy,
@@ -584,6 +594,17 @@ export function threadUsecases(deps: ThreadDeps) {
     await wakeDue(persona);
     return (await access.list(persona, clock().toISOString())).map(pathed);
   };
+  /**
+   * Alla samtal (WD-L1): one page of the person's conversations, the latest activity first, and where the next page
+   * begins. Every conversation the person may see is reached by paging, however many there are; a read, so nothing is
+   * written. An `after` this server did not hand out is refused.
+   */
+  const listConversationsFor = async (persona: AuthenticatedContext, after?: string): Promise<ConversationPage> => {
+    const cursor = after === undefined ? undefined : cursorOf(after);
+    if (after !== undefined && !cursor) throw new InputError('Ogiltig förfrågan.');
+    const page = await access.conversations(persona, cursor, CONVERSATION_PAGE);
+    return { conversations: page.threads.map(pathed), next: page.next ? cursorText(page.next) : null };
+  };
   /** One of the person's threads, or undefined when it is not theirs. */
   const threadFor = async (persona: AuthenticatedContext, threadId: string) => {
     const thread = await access.read(persona, threadId);
@@ -709,6 +730,7 @@ export function threadUsecases(deps: ThreadDeps) {
     reopenThread,
     attentionFor,
     listThreadsFor,
+    listConversationsFor,
     threadFor,
     itemHistory,
     dismissAny,

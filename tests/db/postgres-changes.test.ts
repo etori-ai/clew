@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { changesFor } from '../../apps/server/src/composition/changes';
+import { postgresCompetenceStore } from '../../apps/server/src/modules/competence/adapters/postgres';
+import type { SourceRecord } from '../../apps/server/src/modules/competence/model';
 
 test('change revisions commit with the business mutation, survive rollback and distinguish authority changes', async () => {
   const id = 'changes-test-' + randomUUID(),
@@ -22,20 +24,20 @@ test('change revisions commit with the business mutation, survive rollback and d
         area: 'reference',
         trigger: { reason: 'Test', source: 'Test', at: at.toISOString() },
       });
-    const before = await changesFor(id);
+    const before = await changesFor({ id, capabilities: [] });
     await expect(
       database().transaction(async tx => {
         await tx.update(schema.threads).set({ title: 'Rolled back' }).where(eq(schema.threads.id, thread));
         throw new Error('rollback');
       }),
     ).rejects.toThrow();
-    expect(await changesFor(id)).toEqual(before);
+    expect(await changesFor({ id, capabilities: [] })).toEqual(before);
     await database().update(schema.threads).set({ title: 'Committed' }).where(eq(schema.threads.id, thread));
-    const changed = await changesFor(id);
+    const changed = await changesFor({ id, capabilities: [] });
     expect(Number(changed.revision)).toBe(Number(before.revision) + 1);
     expect(changed.policy).toBe(before.policy);
     await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, id));
-    expect((await changesFor(id)).policy).not.toBe(before.policy);
+    expect((await changesFor({ id, capabilities: [] })).policy).not.toBe(before.policy);
     // A second business mutation must not lock the shared revision before it
     // reaches a card already locked by the first transaction.
     let firstLocked!: () => void, secondWritten!: () => void;
@@ -77,7 +79,7 @@ test('a talk and an action point bump the change revision of every person they c
     talk = base + '-talk',
     commitment = base + '-commitment',
     people = [employee, manager, other];
-  const revision = async (id: string) => Number((await changesFor(id)).revision);
+  const revision = async (id: string) => Number((await changesFor({ id, capabilities: [] })).revision);
   const revisions = async () => Object.fromEntries(await Promise.all(people.map(async p => [p, await revision(p)])));
   const bumped = async (before: Record<string, number>, expected: string[]) => {
     const after = await revisions();
@@ -158,5 +160,71 @@ test('a talk and an action point bump the change revision of every person they c
       await database().delete(schema.people).where(eq(schema.people.id, id));
       await database().delete(schema.personChanges).where(eq(schema.personChanges.personId, id));
     }
+  }
+});
+
+test('a competence source read moves the revision of those who may see Källor, and a renewed lease moves nothing (WD-L8)', async () => {
+  const connector = 'changes-source-' + randomUUID(),
+    admin = { id: 'changes-admin-' + randomUUID(), capabilities: ['admin.competence'] },
+    other = { id: 'changes-other-' + randomUUID(), capabilities: ['admin.users'] },
+    at = Date.now();
+  const iso = (ms: number) => new Date(at + ms).toISOString();
+  // The competence store's own port, as the copy writes the source's record: claimed, renewed between pages, ended. An
+  // application of its own, though nothing here starts a workflow.
+  const store = postgresCompetenceStore({
+    application: 'clew-test-changes-' + randomUUID().slice(0, 8),
+    queue: 'clew-test-changes.ledger',
+  });
+  const blank: SourceRecord = {
+    connectorId: connector,
+    source: 'Kompetenskällan',
+    run: null,
+    claimedAt: null,
+    leaseUntil: null,
+    startedAt: null,
+    finishedAt: null,
+    outcome: null,
+    counts: null,
+  };
+  await database()
+    .insert(schema.connectors)
+    .values({ id: connector, bundled: true, createdBy: 'test', updatedBy: 'test' });
+  try {
+    const before = { admin: await changesFor(admin), other: await changesFor(other) };
+    // A read claims the source: the page draws it as under way.
+    await store.transaction(async tx => {
+      const base = await tx.openSource(blank);
+      await tx.putSource({ ...base, run: 'run-1', claimedAt: iso(0), leaseUntil: iso(60_000) });
+    });
+    const claimed = await changesFor(admin);
+    expect(claimed.revision).not.toBe(before.admin.revision);
+    expect(claimed.policy).toBe(before.admin.policy);
+    expect((await changesFor(other)).revision).toBe(before.other.revision);
+    // The lease renewed between pages, as the copy renews it: nothing the page draws has changed.
+    await store.transaction(async tx => {
+      const current = (await tx.source(connector))!;
+      await tx.putSource({ ...current, leaseUntil: iso(120_000) });
+    });
+    expect((await changesFor(admin)).revision).toBe(claimed.revision);
+    // The read ends.
+    const none = { read: 0, stored: 0, unchanged: 0, invalid: 0, unmapped: 0, revoked: 0, outside: 0, removed: 0 };
+    await store.transaction(async tx => {
+      const current = (await tx.source(connector))!;
+      await tx.putSource({
+        ...current,
+        run: null,
+        claimedAt: null,
+        leaseUntil: null,
+        startedAt: current.claimedAt,
+        finishedAt: iso(90_000),
+        outcome: 'complete',
+        counts: { unmatched: 0, total: none, organisations: {} },
+      });
+    });
+    expect((await changesFor(admin)).revision).not.toBe(claimed.revision);
+    expect((await changesFor(other)).revision).toBe(before.other.revision);
+  } finally {
+    await database().delete(schema.competenceSources).where(eq(schema.competenceSources.connectorId, connector));
+    await database().delete(schema.connectors).where(eq(schema.connectors.id, connector));
   }
 });

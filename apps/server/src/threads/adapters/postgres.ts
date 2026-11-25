@@ -1,7 +1,7 @@
 import { and, count, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { EntityKind, Subject, ThreadItem } from '@clew/contracts';
 import { database, schema, type Transaction } from '@clew/db';
-import { listThreads, toThread, unresolvedThreads } from '@clew/db/threads';
+import { listConversations, listThreads, toThread, turnWritten, unresolvedThreads } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import type { ThreadPatch, ThreadStore, ThreadTx } from '../model';
@@ -278,6 +278,8 @@ export function postgresThreadStore(options: ThreadStoreOptions): ThreadStore {
   return {
     readTimer,
     listThreads: (personId, now) => listThreads(personId, new Date(now)),
+    listConversations: (personId, { after, limit }) => listConversations(personId, after, limit),
+    turnWritten,
     readThread: (personId, id) => read(database(), and(eq(threads.id, id), eq(threads.personId, personId))),
     readThreadById: id => read(database(), eq(threads.id, id)),
     async openThread(personId, topic) {
