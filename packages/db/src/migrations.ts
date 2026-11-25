@@ -5,6 +5,8 @@ import type { Database } from './index';
 
 /** How a database's record of migrations stands against the journal in a folder (DE-L13), read before migrating. */
 export interface MigrationGaps {
+  /** A populated migration ledger belongs to a different baseline. Its rows must be preserved. */
+  missingBaseline: boolean;
   /**
    * The journal's migrations at or below the newest one the database has recorded that it has not recorded itself,
    * oldest first, by tag. Drizzle will never run them.
@@ -23,7 +25,7 @@ export interface MigrationGaps {
  * when two branches take turns on one database, is therefore never run and nothing says so: this compares every entry
  * of the journal with what is recorded, not only the newest. A database Drizzle has never migrated has recorded nothing.
  */
-export async function migrationGaps(db: Database, folder: string): Promise<MigrationGaps> {
+export async function migrationGaps(db: Pick<Database, 'execute'>, folder: string): Promise<MigrationGaps> {
   const { entries } = JSON.parse(await readFile(join(folder, 'meta/_journal.json'), 'utf8')) as {
     entries: Array<{ tag: string; when: number }>;
   };
@@ -38,6 +40,7 @@ export async function migrationGaps(db: Database, folder: string): Promise<Migra
   const known = new Set(entries.map(e => e.when));
   const held = new Set(recorded);
   return {
+    missingBaseline: recorded.length > 0 && entries.length > 0 && !held.has(entries[0]!.when),
     skipped: entries.filter(e => e.when <= newest && !held.has(e.when)).map(e => e.tag),
     unknown: recorded.filter(at => !known.has(at)),
   };

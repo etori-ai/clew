@@ -1,15 +1,14 @@
-/** Synthetic-only upgrade and backup/restore verification. Never restores over the application database. */
-import { mkdtemp, mkdir, readFile, writeFile, copyFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+/** Synthetic backup/restore verification from the current schema. Never restores over the application database. */
+import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { database, closeDatabase } from '@clew/db';
+import { database, closeDatabase, schema } from '@clew/db';
 
 const originalUrl = process.env.DATABASE_URL;
 if (!originalUrl || process.env.CLEW_POC !== 'true')
   throw new Error('Run only in the synthetic development stack (CLEW_POC=true).');
+const migrationsFolder = resolve('packages/db/migrations');
 const names = ['clew_reliability_rehearsal', 'clew_reliability_restored'] as const;
 const marker = 'clew-synthetic-recovery-fixture';
 async function connect(name?: string) {
@@ -34,6 +33,7 @@ const tables = [
   'timer_intent',
   'work_occurrence',
   'person_change',
+  'handover_turn',
 ];
 async function digest(name: string) {
   if (!(await markerPresent(name))) throw new Error('Not a rehearsal database: ' + name);
@@ -56,58 +56,88 @@ try {
     if (existing.length) throw new Error('A rehearsal database already exists; inspect it before cleanup.');
     await admin.execute(sql.raw(`create database ${names[0]}`));
     await admin.execute(sql.raw(`create database ${names[1]}`));
-    const folder = await mkdtemp(join(tmpdir(), 'clew-upgrade-'));
-    try {
-      const migrations = resolve('packages/db/migrations');
-      const journal = JSON.parse(await readFile(join(migrations, 'meta/_journal.json'), 'utf8'));
-      journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 19);
-      await mkdir(join(folder, 'meta'));
-      await writeFile(join(folder, 'meta/_journal.json'), JSON.stringify(journal));
-      for (const entry of journal.entries)
-        await copyFile(join(migrations, entry.tag + '.sql'), join(folder, entry.tag + '.sql'));
-      const db = await connect(names[0]);
-      await migrate(db, { migrationsFolder: folder });
-      await db.execute(
-        sql`insert into auth_person (id, organisation_id, name) values (${marker}, 'test', 'Synthetic recovery fixture')`,
-      );
-      await db.execute(
-        sql`insert into thread (id, person_id, kind, topic, title, state, connector, area, trigger, created_at, updated_at) values (${marker}, ${marker}, 'pushed', 'synthetic', 'Synthetic recovery fixture', 'handled', 'calendar', 'calendar', '{}'::jsonb, '2026-11-01', '2026-11-01')`,
-      );
-      await db.execute(
-        sql`insert into proposal (id, thread_id, person_id, status, participant_email, participant_name, start, "end", confirmed_at, reminders) values (${marker}, ${marker}, ${marker}, 'confirmed', 'fixture@example.test', 'Synthetic invitee', '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z', '2026-11-01', 1)`,
-      );
-      await db.execute(
-        sql`insert into job (id, kind, run_at, status, payload) values ('synthetic-due','receipt-final','2026-11-01','due',${JSON.stringify({ threadId: marker })}::jsonb), ('synthetic-running','undo-expiry','2026-11-01','running',${JSON.stringify({ threadId: marker })}::jsonb)`,
-      );
-      await migrate(db, { migrationsFolder: migrations });
-      await migrate(db, { migrationsFolder: migrations });
-      const policy = await db.execute(sql`select state, reason from followup_policy where thread_id = ${marker}`);
-      const jobs = await db.execute(sql`select id, status from job order by id`);
-      if (
-        policy[0]?.state !== 'blocked' ||
-        policy[0]?.reason !== 'legacy-unverified' ||
-        jobs[0]?.status !== 'temporal' ||
-        jobs[1]?.status !== 'legacy-running'
-      )
-        throw new Error('Conservative upgrade failed');
-      console.log(
-        JSON.stringify({
-          upgradedFrom: '0019',
-          duplicateMigrationSafe: true,
-          legacyFollowup: 'blocked',
-          queuedJob: 'temporal',
-          oldOwner: 'legacy-running',
-          digest: await digest(names[0]),
-        }),
-      );
-    } finally {
-      await rm(folder, { recursive: true, force: true });
-    }
+    const db = await connect(names[0]);
+    await migrate(db, { migrationsFolder });
+    const at = new Date('2026-11-01T09:00:00Z');
+    const due = new Date('2026-11-09T09:00:00Z');
+    await db.transaction(async tx => {
+      await tx.insert(schema.people).values({ id: marker, organisationId: 'test', name: 'Synthetic recovery fixture' });
+      await tx.insert(schema.threads).values({
+        id: marker,
+        personId: marker,
+        kind: 'pushed',
+        topic: 'synthetic',
+        title: 'Synthetic recovery fixture',
+        state: 'handled',
+        trigger: { reason: 'recovery', source: 'calendar', at: at.toISOString() },
+      });
+      await tx.insert(schema.proposals).values({
+        id: marker,
+        threadId: marker,
+        personId: marker,
+        participantId: marker,
+        status: 'confirmed',
+        participantEmail: 'fixture@example.test',
+        participantName: 'Synthetic invitee',
+        start: due,
+        end: new Date('2026-11-09T10:00:00Z'),
+        confirmedAt: at,
+        reminders: 1,
+      });
+      await tx
+        .insert(schema.jobs)
+        .values({ id: marker, kind: 'receipt-final', runAt: due, payload: { threadId: marker } });
+      await tx.insert(schema.audit).values({ actor: marker, action: 'recovery.fixture', subject: marker });
+      await tx.insert(schema.followupPolicies).values({
+        threadId: marker,
+        personId: marker,
+        unitId: 'test',
+        authorizationVersion: 'fixture',
+        executionId: marker,
+        proposalIds: [marker],
+        maxReminders: 2,
+        afterWorkdays: 3,
+        expiresAt: due,
+        state: 'active',
+      });
+      await tx.insert(schema.timerIntents).values({
+        id: marker,
+        threadId: marker,
+        personId: marker,
+        kind: 'reminder',
+        generation: 1,
+        unitId: 'test',
+        authorizationVersion: 'fixture',
+        dueAt: due,
+        requestedAt: at,
+        state: 'active',
+        nextAt: due,
+      });
+      await tx.insert(schema.workOccurrences).values({
+        id: marker,
+        personId: marker,
+        connector: 'calendar',
+        assignment: 'test',
+        sourceKey: marker,
+        period: '2026-11',
+        revision: '1',
+        observedAt: at,
+        sourceState: 'open',
+        disposition: 'open',
+        threadId: marker,
+        legacy: false,
+      });
+      await tx.insert(schema.handoverTurns).values({ turn: marker, personId: marker });
+    });
+    const before = await digest(names[0]);
+    await migrate(database(), { migrationsFolder });
+    if ((await digest(names[0])) !== before) throw new Error('Rerunning migrations changed the synthetic evidence');
+    console.log(JSON.stringify({ initialized: true, migrationsIdempotent: true, digest: before }));
   } else if (action === 'verify') {
     const before = await digest(names[0]),
       after = await digest(names[1]);
-    if (before !== after) throw new Error('Restore differs from the upgraded database');
-    await migrate(database(), { migrationsFolder: resolve('packages/db/migrations') });
+    if (before !== after) throw new Error('Restore differs from the populated database');
+    await migrate(database(), { migrationsFolder });
     if ((await digest(names[1])) !== after) throw new Error('Rerunning migrations changed restored evidence');
     console.log(JSON.stringify({ restored: true, evidencePreserved: true, migrationsIdempotent: true, digest: after }));
   } else if (action === 'cleanup') {

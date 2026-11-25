@@ -1,2 +1,0 @@
-ALTER TABLE "talk_round" ADD COLUMN "prepare_days" integer DEFAULT 5 NOT NULL;--> statement-breakpoint
-ALTER TABLE "talk_round" ADD CONSTRAINT "talk_round_prepare_days" CHECK ("talk_round"."prepare_days" BETWEEN 0 AND 30);

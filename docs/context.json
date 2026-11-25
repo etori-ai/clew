@@ -3564,7 +3564,7 @@
       "headings": [
         "Inspect without exposing source data",
         "After every deployment",
-        "Upgrade from the previous scheduler",
+        "Database migrations",
         "Migrations that write rows",
         "The ledger queue",
         "Restore safely",
@@ -3574,7 +3574,7 @@
         "Erasing one person",
         "Changing the authorization fingerprint",
         "The competence copy",
-        "Reproduce the synthetic upgrade and restore rehearsal"
+        "Reproduce the synthetic backup and restore rehearsal"
       ]
     },
     {
