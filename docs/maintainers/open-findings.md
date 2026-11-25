@@ -13,7 +13,7 @@ weakness seen from several areas, and how far to trust them.
 
 | Area | Review | High | Medium | Low | Total |
 |---|---|---|---|---|---|
-| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 1 | 3 | 6 | 10 |
+| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 3 | 6 | 9 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 1 | 6 | 6 | 13 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 1 | 6 | 6 | 13 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 1 | 9 | 16 | 26 |
@@ -23,13 +23,12 @@ weakness seen from several areas, and how far to trust them.
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 5 | 13 | 18 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 2 | 8 | 10 |
-| | **Total** | **5** | **41** | **80** | **126** |
+| | **Total** | **4** | **41** | **80** | **125** |
 
 ## High
 
 | Id | Finding | Where |
 |---|---|---|
-| ID-1 | A SCIM write of a group mapped to Kompetenssökning derives none of its members, so a person removed from the group keeps the registrar relation. | `apps/server/src/modules/people/usecases.ts:324` |
 | CB-1 | A connector's own manifest decides which reads it may call back as the person and which audience its token is exchanged for, and no administrator sees or decides either. Same as `DE-H1`. | `packages/connectors/src/protocol.ts:457-464` |
 | AM-1 | An answer is drawn with Astryx's `Markdown`, which loads images from any address, and nothing on the page stops the request. | `apps/web/src/components/conversation/conversation.tsx:513` |
 | DE-H1 | A connector's manifest is replaced and goes live at every boot, at "Testa anslutning" and when a draft is enabled, with no audit row and no administrator's act. Same as `CB-1`. | `apps/server/src/connectors/remote.ts:98-117` |
@@ -42,7 +41,6 @@ points, and it carries a section on the earlier SCIM reviews.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| ID-1 | High | A SCIM write of a group mapped to Kompetenssökning derives none of its members, because `givesAuthority` is never handed the relation rows. | `apps/server/src/modules/people/usecases.ts:324` |
 | ID-2 | Medium | `localReturnTo` tests the text before the parser removes dot segments, so a return address such as `/.//evil.example/login` leaves the installation after sign-in. | `apps/server/src/auth-crypto.ts:112` |
 | ID-3 | Medium | `followedUnits` builds the signed `units` from every assignment, so a unit a manager is only placed on is told to a source as one they follow up. | `apps/server/src/composition/people.ts:116` |
 | ID-4 | Medium | The web image and the hosting guide's proxy example send no content security policy, framing rule, `Strict-Transport-Security` or `Referrer-Policy`. Same as `BL-10`. | `apps/web/nginx.conf.template` |

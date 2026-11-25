@@ -737,6 +737,38 @@ describe('SCIM groups and derivation', () => {
     expect(store.state.grants.get(a)?.unitLabel).toBe('IT och digitalisering');
     expect(store.state.units.get('it')?.label).toBe('IT och digitalisering');
   });
+  test('a relation-mapped group grants, transfers and revokes registrar access in the SCIM write', async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    const b = (await scim.createUser(p, { ...anna, externalId: 'mk-2', userName: 'bo' }, BASE)).id;
+    await scim.createGroup(p, group('unit:it', 'IT', [a, b]), BASE);
+    const key = 'directory:registrars';
+    store.state.groupRelations.push({ organisationId: p.organisationId, groupExternalId: key, relation: 'registrar' });
+    const mapped = await scim.createGroup(p, group(key, 'Registrars', [a]), BASE);
+    expect(store.state.grants.get(a)?.relations).toEqual(['registrar']);
+    const before = store.state.audit.length;
+    await scim.patchGroup(
+      p,
+      mapped.id,
+      { schemas: [], Operations: [{ op: 'replace', path: 'members', value: [{ value: b }] }] },
+      BASE,
+    );
+    expect(store.state.grants.get(a)?.relations).toBeUndefined();
+    expect(store.state.grants.get(b)?.relations).toEqual(['registrar']);
+    expect(
+      store.state.audit
+        .slice(before)
+        .filter(r => r.action === 'grant.derived')
+        .map(r => [r.subject, r.details.relations]),
+    ).toEqual([
+      ['person:' + a, []],
+      ['person:' + b, ['registrar']],
+    ]);
+    await scim.deleteGroup(p, mapped.id);
+    expect(store.state.grants.get(b)?.relations).toBeUndefined();
+    await scim.createGroup(p, group(key, 'Registrars', [b]), BASE);
+    expect(store.state.grants.get(b)?.relations).toEqual(['registrar']);
+  });
   test('a renamed unit that is not the one a person acts as relabels it on their grant and says so on its row (D135)', async () => {
     const { scim, p, store } = harness();
     const a = (await scim.createUser(p, anna, BASE)).id;
