@@ -35,11 +35,9 @@ import { isWebAddress } from '../../web-address';
 
 type BodyProps = {
   output: unknown;
-  /** What pressing a calendar entry does where the body stands beside a conversation: the entry is then a button. */
-  onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void;
   /**
-   * Where a calendar entry's name leads on a page of its own (D126 rule 1): each entry is a link there. With neither this
-   * nor `onOpenItem` an entry is drawn and is no control (WA-M2).
+   * Where a calendar entry leads, on a read's own page and beside a conversation (D126 rules 1 and 3): each entry is a
+   * link to its place in Kalender. Without it an entry is drawn and is no control (WA-M2).
    */
   entryHref?: (item: AgendaItem, view: 'day' | 'week') => string;
   /** The capability's declared view (D38) and what it needs to be used: its input and how to change it, and where a row's own view lives. */
@@ -203,7 +201,6 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
  */
 export function PanelBody({
   output,
-  onOpenItem,
   entryHref,
   view,
   source,
@@ -236,7 +233,6 @@ export function PanelBody({
       week: { href: (item: AgendaItem) => entryHref(item, 'week'), follow },
     };
   }, [entryHref, navigate]);
-  const openItem = onOpenItem ? (item: AgendaItem) => onOpenItem(item, dayItems) : undefined;
   const rows =
     !declared && !calendar && !search && isRecord(output) && Array.isArray(output.rows)
       ? (output.rows as Record<string, unknown>[])
@@ -261,25 +257,13 @@ export function PanelBody({
       {day && (
         <>
           <Text type="supporting">Du tittar på {dayLabel(day.from)} i din kalender.</Text>
-          <DayStrip
-            date={day.from}
-            items={dayItems}
-            dayHeadingLevel={dayHeadingLevel}
-            onItemClick={openItem}
-            itemLink={links?.day}
-          />
+          <DayStrip date={day.from} items={dayItems} dayHeadingLevel={dayHeadingLevel} itemLink={links?.day} />
         </>
       )}
       {todayView && (
         <>
           <Text type="supporting">Du tittar på {dayLabel(todayView.date)} i din kalender.</Text>
-          <DayStrip
-            date={todayView.date}
-            items={dayItems}
-            dayHeadingLevel={dayHeadingLevel}
-            onItemClick={openItem}
-            itemLink={links?.day}
-          />
+          <DayStrip date={todayView.date} items={dayItems} dayHeadingLevel={dayHeadingLevel} itemLink={links?.day} />
           <Text type="supporting">
             {todayView.gaps.length
               ? `Lediga luckor: ${todayView.gaps.map(g => timeRange(g.start, g.end)).join(', ')}.`
@@ -293,7 +277,6 @@ export function PanelBody({
           days={5}
           items={dayItems}
           dayHeadingLevel={dayHeadingLevel}
-          onItemClick={openItem}
           itemLink={links?.week}
         />
       )}

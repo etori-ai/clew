@@ -18,7 +18,7 @@ const detail = (key: string): EntityDetail => ({
 });
 function stack() {
   const calls: unknown[][] = [];
-  const entities: Pick<EntityUsecases, 'list' | 'rows' | 'detail' | 'section'> = {
+  const entities: Pick<EntityUsecases, 'list' | 'rows' | 'detail' | 'section' | 'names'> = {
     list: async (p, kind) => {
       calls.push(['list', p.id, kind]);
       return { kind, groups: [], columns: [], lenses: [], actions: [], attention: [] };
@@ -35,6 +35,10 @@ function stack() {
       calls.push(['section', p.id, kind, key, capability]);
       return key === 'nobody' ? undefined : { capability, status: 'timeout' };
     },
+    names: async (p, subjects) => {
+      calls.push(['names', p.id, subjects]);
+      return subjects.filter(s => s.key !== 'nobody').map(s => ({ ...s, name: 'Namn ' + s.key }));
+    },
   };
   const routes = entityRoutes({
     entities,
@@ -46,7 +50,13 @@ function stack() {
   });
   // Served as `main.ts` mounts it under /api/entities; the paths below are the part after that.
   const get = (path: string) => routes.request('http://clew.test' + path);
-  return { calls, get };
+  const post = (path: string, body: string) =>
+    routes.request('http://clew.test' + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+  return { calls, get, post };
 }
 
 describe('the entities routes', () => {
@@ -100,5 +110,42 @@ describe('the entities routes', () => {
       expect(await answer.json()).toEqual({ error: 'Ogiltig förfrågan.' });
     }
     expect(calls).toEqual([['detail', 'hillevi', 'person', 'rows']]);
+  });
+  test('the names of a list: the subjects in the body reach the use case, at most 200; anything else is a bad request', async () => {
+    const { calls, post } = stack();
+    const subjects = [
+      { entity: 'person', key: 'anna' },
+      { entity: 'unit', key: 'unit-skola' },
+      { entity: 'person', key: 'nobody' },
+    ];
+    const answer = await post('/names', JSON.stringify({ subjects }));
+    expect(answer.status).toBe(200);
+    expect(await answer.json()).toEqual({
+      names: [
+        { entity: 'person', key: 'anna', name: 'Namn anna' },
+        { entity: 'unit', key: 'unit-skola', name: 'Namn unit-skola' },
+      ],
+    });
+    const many = (n: number) =>
+      JSON.stringify({ subjects: Array.from({ length: n }, (_, i) => ({ entity: 'person', key: 'p' + i })) });
+    expect((await post('/names', many(200))).status).toBe(200);
+    for (const body of [
+      many(201),
+      '',
+      'not json',
+      '[]',
+      JSON.stringify({}),
+      JSON.stringify({ subjects: [{ entity: 'room', key: 'a' }] }),
+      JSON.stringify({ subjects: [{ entity: 'person', key: '' }] }),
+      JSON.stringify({ subjects: [], extra: true }),
+    ]) {
+      const refused = await post('/names', body);
+      expect([body.slice(0, 40), refused.status]).toEqual([body.slice(0, 40), 400]);
+      expect(await refused.json()).toEqual({ error: 'Ogiltig förfrågan.' });
+    }
+    expect(calls.map(c => [c[0], c[1], (c[2] as unknown[]).length])).toEqual([
+      ['names', 'hillevi', 3],
+      ['names', 'hillevi', 200],
+    ]);
   });
 });

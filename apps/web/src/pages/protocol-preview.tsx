@@ -31,6 +31,7 @@ import {
 import { createQueryClient } from '../query-client';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
+import { mobileQuery } from '../media';
 import { SectionFrame, SectionRow } from '../components/people/entity-sections';
 import { badgeVariant } from '../components/views/view';
 import { actionMenuItems } from '../entity-actions';
@@ -70,7 +71,6 @@ import {
  * called or stored: a public page never makes the server reach an address someone typed, nor asks a connector or the
  * directory, so the samples are the declaration's, never a person's.
  */
-const mobileQuery = '(max-width: 768px)';
 type Outcome = { kind: 'invalid'; message: string } | { kind: 'preview'; document: unknown; preview: ManifestPreview };
 type Manifest = NonNullable<ManifestPreview['manifest']>;
 

@@ -2482,6 +2482,25 @@ export const EntitySectionSchema = object({
   row: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 });
 export type EntitySection = Static<typeof EntitySectionSchema>;
+/** The most subjects one names read takes: a list that names more asks in several. */
+export const ENTITY_NAMES_MAX = 200;
+/**
+ * `POST /api/entities/names`: the names of the people and units a list's rows are about, by Clew's key (D122). The keys
+ * go in the body, never in the address an access log keeps.
+ */
+export const EntityNamesInputSchema = object({
+  subjects: Type.Array(SubjectSchema, { maxItems: ENTITY_NAMES_MAX }),
+});
+export type EntityNamesInput = Static<typeof EntityNamesInputSchema>;
+/**
+ * The answer: each subject the reader may open, with the name the directory holds now. One the reader may not open, or
+ * that names nobody, is absent, and the answer never tells which.
+ */
+export const EntityNamesSchema = object({
+  names: Type.Array(object({ ...SubjectSchema.properties, name: Type.String() }), { maxItems: ENTITY_NAMES_MAX }),
+});
+export type EntityNames = Static<typeof EntityNamesSchema>;
+export type EntityName = EntityNames['names'][number];
 /**
  * `POST /api/entities/:kind/:key/actions`: start one of the entity's actions (D97, D8), named as `EntityAction.capability`.
  * `values` answers a propose's asks (D112): the propose drafts with them. An execute's asks are answered when the person
@@ -5668,18 +5687,21 @@ export {
   THEME_CONTRAST_PAIRS,
   THEME_FILE_MAX_BYTES,
   THEME_NAME_MAX,
+  THEME_TEMPLATE,
   checkThemeContrast,
   contrastRatio,
   isThemeHex,
   parseThemeFile,
   themeFileOf,
   themeFileSchema,
+  themeColorOf,
   themeFromAccent,
   type InstallationTheme,
   type LogoMediaType,
   type ThemeColorPair,
   type ThemeColorToken,
   type ThemeColors,
+  type ThemeContrastToken,
   type ThemeFileResult,
   type ThemeMode,
   type ThemeProblem,

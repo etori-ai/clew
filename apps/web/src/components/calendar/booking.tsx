@@ -24,8 +24,7 @@ import { localClock, localInstant } from '@clew/calendar/dates';
 import { api } from '../../api';
 import { availabilityQuery, membersQuery, roomsQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
-import { keys } from '../../query-keys';
-import { applyThread } from '../../thread-cache';
+import { applyThread, invalidateCalendar } from '../../thread-cache';
 
 const EMPTY_MEMBERS: CalendarMember[] = [];
 const EMPTY_ROOMS: CalendarRoom[] = [];
@@ -141,7 +140,7 @@ export function useBooking() {
         ...(draft.room ? { room: draft.room } : {}),
       });
       await applyThread(client, thread);
-      void client.invalidateQueries({ queryKey: keys.calendarAll });
+      void invalidateCalendar(client);
       toast({
         body: 'Bokningsbeslutet är sparat. Ärendet visar när kalendern har bekräftat bokningen.',
         uniqueID: 'booking:' + thread.id,

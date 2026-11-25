@@ -1,6 +1,6 @@
 # D44 · The connector check reads as a result, not a log
 
-**Status:** accepted, built 2026-11-05; a manual pass with a screen reader is not done · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05; a manual pass with a screen reader is not done; item 5 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`WA-L9`, batch 16 and its review): the buttons wrap below the app's one phone line, `mobileQuery` in `apps/web/src/media.ts` (767 px and below), not at 720 px · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** The conformance check has two readers and gives each its own result.
 
