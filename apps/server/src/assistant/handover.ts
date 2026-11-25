@@ -85,10 +85,17 @@ export function handoverTool(
  * hears it in the conversation (D122 item 4). The two messages, the conversation's state and the audit row
  * (`conversation.handed`: which assistant, new or continued, how many sources, never a word of either text) commit
  * together; a turn the person stops writes nothing here, though the source may already hold the question. A turn the
- * source answered whose write then fails (another send of the same question wrote first, WD-L3) writes
- * `conversation.failed` on its own, so a question that went out twice is on record twice.
+ * source answered whose write then fails records `conversation.failed` separately. A keyed question is reserved
+ * before the source call, including when no transcript can be committed or the process stops.
  */
-export function handoverPath(deps: AssistantDeps) {
+export function handoverPath(
+  deps: AssistantDeps,
+  written: (
+    persona: AuthenticatedContext,
+    key: string,
+    input: ConversationInput,
+  ) => Promise<ConversationResponse | undefined>,
+) {
   const { store, registry, clock, ids } = deps;
   const access = threadAccess(store, registry);
   return async function handOver(
@@ -149,6 +156,14 @@ export function handoverPath(deps: AssistantDeps) {
     };
     const started = clock().getTime();
     const took = () => Math.max(0, clock().getTime() - started);
+    if (observer.signal?.aborted) throw new TurnStopped();
+    if (input.turn && !(await store.claimHandover(input.turn, persona.id))) {
+      const committed = await written(persona, input.turn, input);
+      if (committed) return committed;
+      throw new InputError(
+        'Frågan har redan tagits emot för sändning. Läs in samtalet igen för att se om svaret har kommit.',
+      );
+    }
     // From here what is heard is the other assistant's: the listener draws it as such from its first word.
     emit({ type: 'handed', assistant: { id: picked, name: listed.name, source: listed.source } });
     emit({ type: 'step', step: { ...step, status: 'running' } });
