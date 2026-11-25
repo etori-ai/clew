@@ -3059,11 +3059,64 @@ The OAuth audience (an IdP client id) the token must be bound to.
 - Constraints: matches `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$`
 - Pairs with:
   - **Delegation brings the person's own token.** With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion: on a request, on an approved write while the session that approved it is active, and on a scan the person's active session asked for (Clew does not call the scan without one). Figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`. ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md))
+  - **A connector acts as the person one way.** A manifest declares `delegation`, for a system that takes the identity provider's token, or `linkedAccount`, for a system whose own authorization server issues the token, and never both. `linkedAccount.resource` is an http or https address without credentials, a query or a fragment: Clew looks for the system's authorization server from it, and an administrator approves it with the manifest. ([D147](../decisions/D147-a-person-links-an-account-once-where-a-system-issues-its-own-credential.md))
 
 Example:
 
 ```json
 "eneo"
+```
+
+### linkedAccount
+
+#### `linkedAccount`
+
+The connector acts as the person against its system with a token the system's own authorization server issued, which the person links once and Clew keeps (D147).
+
+- Type: object
+- optional
+
+Example:
+
+```json
+{
+  "resource": "https://hr.example.test",
+  "scopes": [
+    "leave"
+  ]
+}
+```
+
+#### `linkedAccount.resource`
+
+The address of the system the connector calls, as Clew and the person's browser reach it: an http or https address without credentials, a query or a fragment. Clew looks for the system's authorization server from it (RFC 9728, RFC 8414) and names it as the `resource` the token is for (RFC 8707). Part of what an administrator approves (D144).
+
+- Type: string
+- required
+- Constraints: 1 to 500 characters
+- Pairs with:
+  - **A connector acts as the person one way.** A manifest declares `delegation`, for a system that takes the identity provider's token, or `linkedAccount`, for a system whose own authorization server issues the token, and never both. `linkedAccount.resource` is an http or https address without credentials, a query or a fragment: Clew looks for the system's authorization server from it, and an administrator approves it with the manifest. ([D147](../decisions/D147-a-person-links-an-account-once-where-a-system-issues-its-own-credential.md))
+
+Example:
+
+```json
+"https://hr.example.test"
+```
+
+#### `linkedAccount.scopes`
+
+The scopes the connector needs at the system's authorization server. Left out, Clew asks for none and the system gives its default.
+
+- Type: array of string
+- optional
+- Constraints: at most 20 items; no duplicates; each matches `^[\x21\x23-\x5B\x5D-\x7E]+$`; each at most 200 characters
+
+Example:
+
+```json
+[
+  "leave"
+]
 ```
 
 ### assistants
@@ -3166,6 +3219,7 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **requests makes a source of what the person ordered or reported** (call; `capabilities[].name`, `capabilities[].view.open.capability`) ([D123](../decisions/README.md)): A `read` named `<id>.requests` that takes `{}` lists what the person ordered or reported in a service desk and waits for: its output is a `RequestsOutput`, rows of `ref` (`request:<id>:…`), `label` (the number and the type, never a title, a description or a name), `state` (`waiting-on-me`, `new`, `active` or `closed`), `status` (your own word), `since` (when it was ordered or reported) and an optional `expectedAt` and `link`, and nothing else. It is not an errand list: `<id>.errands` is for the people who handle cases, this one for the person who waits. Clew asks every request source in the person's scope as the person, at once under a budget, and lists the rows as `clew.requests`, what waits on the person first, then what is open from the oldest, then what is closed from the newest, at most 200: the first five under "Beställningar och felanmälningar" on Hem and the whole list on its own page. An answer that is not a `RequestsOutput` counts as no answer, and a source that does not answer is named under the rows. A row opens the read the view's `open` names (by convention `<id>.request`) beside the page. While `clew.requests` is registered the model is offered it and never the per-source read.
 - **news makes a news source** (call; `capabilities[].name`, `capabilities[].view.open.capability`) ([D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): A `read` named `<id>.news` that takes `{}` is a source of Clew's news: its output is a `NewsOutput`, rows of `ref`, `title`, `sender`, `publishedAt` and an optional `link`, and nothing else. Clew asks every news source in the person's scope as the person, at once and under a short budget, and lists the rows as `clew.news`, newest first: the three newest under "Nyheter" on Hem, all of them on "Alla nyheter". An answer that is not a `NewsOutput`, a source that fails and a source that is late contribute nothing, and no error is shown. A row with `link` leaves Clew in a new tab; without one it opens the read the view's `open` names (by convention `<id>.newsItem`) beside the page. While `clew.news` is registered the model is offered it and never the per-source read.
 - **Delegation brings the person's own token** (call; `delegation.audience`) ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md)): With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion: on a request, on an approved write while the session that approved it is active, and on a scan the person's active session asked for (Clew does not call the scan without one). Figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`.
+- **A connector acts as the person one way** (loader; `delegation.audience`, `linkedAccount.resource`) ([D147](../decisions/D147-a-person-links-an-account-once-where-a-system-issues-its-own-credential.md)): A manifest declares `delegation`, for a system that takes the identity provider's token, or `linkedAccount`, for a system whose own authorization server issues the token, and never both. `linkedAccount.resource` is an http or https address without credentials, a query or a fragment: Clew looks for the system's authorization server from it, and an administrator approves it with the manifest.
 - **A read about an entity answers for the keys it may** (call; `capabilities[].about`, `capabilities[].about.entity`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): Clew calls the read as the person with `{ keys }`: a person's provisioned `userName` (compare without regard to case; the caller's own is `actor.userName`) or a unit's id, only for entities the person may already see and the read admits (`person.admits`, D117), at most 200 in one call. Answer one row per key you know, carrying `key` as it was asked; a key outside the person's scope is answered as no row, never as a refusal. Beside the rows you may answer `heading` and `note`, two short strings. Clew keeps nothing and decides where the rows show: a section on the opened entity, and a lens, a column or a mark on the row where an administrator chose the source.
 - **Clew sends only the people and units a capability admits, and says how the caller stands to each** (call; `capabilities[].person`, `capabilities[].person.admits`, `capabilities[].unit.admits`, `capabilities[].about`) ([D117](../decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)): Before a call reaches you, Clew resolves how the caller stands to every person or unit the input names, from its own directory: a person `self`, `managed` (a direct report under D99, a co-manager of the caller's unit only when their line runs to the caller, never someone who manages the caller) or `colleague`; a unit `manages`, `member` or `below` (led by a manager who reports to the caller, one level down). A key in `keys` outside `person.admits` (`["self", "managed"]` when omitted) or `unit.admits` (`["manages"]`) is left out of the call; a call whose single key is outside it, or not a string, is refused as an unknown capability is, so the caller cannot tell whether that person exists. This holds on every path: a page, a card, a tool, another connector's callback, a document's bytes. The request body's `about` maps each key sent to its relation, and the assertion binds the request it was signed for: its `body` claim is the SHA-256 of the exact bytes, base64url, `path` the route it was posted to, `capability` the capability of that route, and on an approved write `operationId` its `X-Clew-Operation-Id`. Verify every one against the request received and take each `jti` once (the verifier every connector in the repository carries does all of it when handed the request), then answer `self` differently from `managed` without a copy of the organisation, and answer a key `about` does not name as no row. A `<id>.commitments` read's `person`, a property a row of a read about a person fills from its `key` and an execute's effect read name a person whether or not you declare `person`.
 - **An action about an entity becomes a card** (call; `capabilities[].kind`, `capabilities[].about.param`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }` and, for a propose that asks, the person's answers. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Clew starts it only on someone the action admits (`person.admits`, D117); refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety and the answers to its asks. The same request while the card is open gives the same card.

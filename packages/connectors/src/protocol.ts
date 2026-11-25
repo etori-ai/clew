@@ -424,6 +424,31 @@ export const DelegationSchema = object(
   'The connector acts as the person against its system with a token Clew obtains by token exchange.',
 );
 /**
+ * The connector calls its system as the person with a token that system's own authorization server issued (D147), for
+ * a system that cannot take the identity provider's. The person links their account once; Clew is the OAuth client,
+ * keeps the tokens and sends a fresh access token in `X-Clew-Delegated-Token` beside the assertion, with or without a
+ * live session. A manifest declares this or `delegation`, never both.
+ */
+export const LinkedAccountSchema = object(
+  {
+    resource: Type.String({
+      minLength: 1,
+      maxLength: 500,
+      description:
+        "The address of the system the connector calls, as Clew and the person's browser reach it: an http or https address without credentials, a query or a fragment. Clew looks for the system's authorization server from it (RFC 9728, RFC 8414) and names it as the `resource` the token is for (RFC 8707). Part of what an administrator approves (D144).",
+    }),
+    scopes: Type.Optional(
+      Type.Array(Type.String({ pattern: '^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$', maxLength: 200 }), {
+        uniqueItems: true,
+        maxItems: 20,
+        description:
+          "The scopes the connector needs at the system's authorization server. Left out, Clew asks for none and the system gives its default.",
+      }),
+    ),
+  },
+  "The connector acts as the person against its system with a token the system's own authorization server issued, which the person links once and Clew keeps (D147).",
+);
+/**
  * A read Clew makes as the installation itself, with no person behind the call (D119). Reads only, never a tool, never
  * on a person's page: it is not a capability, so nothing a person, the model or another connector reaches can call it.
  */
@@ -503,6 +528,7 @@ export const ConnectorManifestSchema = Type.Object(
       }),
     ),
     delegation: Type.Optional(DelegationSchema),
+    linkedAccount: Type.Optional(LinkedAccountSchema),
     documents: Type.Optional(
       Type.Boolean({
         description: 'Implements POST /clew/documents for authorised, versioned binary document reads (D79).',
@@ -788,6 +814,7 @@ export function protocolSchema() {
       HoldingsInput: HoldingsInputSchema,
       HoldingsOutput: HoldingsOutputSchema,
       Delegation: DelegationSchema,
+      LinkedAccount: LinkedAccountSchema,
       View: ViewSchema,
       Menu: MenuHintSchema,
       ManifestFact: ManifestFactSchema,
@@ -1109,7 +1136,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
     in: 'header',
     required: false,
     schema: text(
-      "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan.",
+      "The person's own token for the connector's system. With `delegation` (D26) it is present only when one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan. With `linkedAccount` (D147) it is the access token of the account the person linked, present whenever the person has a link that the system still accepts.",
     ),
   };
   return {

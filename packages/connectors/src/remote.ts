@@ -18,7 +18,7 @@ import {
   type InstallationRead,
   type SourceErrorCode,
 } from './index';
-import { connectorProblems } from './validation';
+import { actsAsProblems, connectorProblems } from './validation';
 import {
   ASK_ROUTE,
   CallResponseSchema,
@@ -137,7 +137,7 @@ export function manifestProblems(
   const problems: string[] = [];
   if (expectedId && manifest.id !== expectedId)
     problems.push(`Manifest id "${manifest.id}" does not match the configured id "${expectedId}".`);
-  problems.push(...connectorProblems(manifest, compile));
+  problems.push(...connectorProblems(manifest, compile), ...actsAsProblems(manifest));
   return problems;
 }
 /** Validate a manifest document; returns the typed manifest or throws with the schema problems listed, else the first rule it breaks. */

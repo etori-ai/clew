@@ -265,6 +265,17 @@ export async function checkConnector(options: CheckOptions): Promise<
       `Använder personens egen behörighet mot ${manifest.delegation.audience}. Kontrollen har ingen inloggning och kan inte pröva det, så nekade svar är väntade.`,
     );
   }
+  if (manifest.linkedAccount) {
+    warn(
+      `linkedAccount: acts as the person with an account they link at ${manifest.linkedAccount.resource}; not verified by this check (it has no linked account), so a "denied" answer below is the expected one`,
+    );
+    item(
+      'warn',
+      'connection',
+      'Agerar som personen',
+      `Använder ett konto som personen kopplar hos ${manifest.linkedAccount.resource}. Kontrollen har inget kopplat konto och kan inte pröva det, så nekade svar är väntade.`,
+    );
+  }
   const remote = remoteConnector(manifest, {
     url,
     key: options.key,
@@ -672,6 +683,10 @@ export async function checkConnector(options: CheckOptions): Promise<
           // 401 is the connector rejecting Clew's key or assertion, whatever its body says, and fails below.
           ok(`${c.name} as ${actor.role}: refused without the person's token, as a delegating connector should (${m})`);
           row.note('ok', 'Nekas utan personens egen inloggning, som väntat.');
+        } else if (manifest.linkedAccount && error instanceof CapabilityError && error.code === 'denied') {
+          // The same for a connector whose person links an account (D147): the check has none to send a token for.
+          ok(`${c.name} as ${actor.role}: refused without a linked account, as such a connector should (${m})`);
+          row.note('ok', 'Nekas utan personens kopplade konto, som väntat.');
         } else if (UNAVAILABLE.test(m)) {
           warn(
             `${c.name} as ${actor.role}: ${m} (a capability that calls back into Clew needs CLEW_URL and a running Clew)`,

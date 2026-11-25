@@ -106,7 +106,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan."
+              "description": "The person's own token for the connector's system. With `delegation` (D26) it is present only when one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan. With `linkedAccount` (D147) it is the access token of the account the person linked, present whenever the person has a link that the system still accepts."
             }
           }
         ],
@@ -303,7 +303,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan."
+              "description": "The person's own token for the connector's system. With `delegation` (D26) it is present only when one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan. With `linkedAccount` (D147) it is the access token of the account the person linked, present whenever the person has a link that the system still accepts."
             }
           }
         ],
@@ -386,7 +386,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan."
+              "description": "The person's own token for the connector's system. With `delegation` (D26) it is present only when one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan. With `linkedAccount` (D147) it is the access token of the account the person linked, present whenever the person has a link that the system still accepts."
             }
           }
         ],
@@ -489,7 +489,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan."
+              "description": "The person's own token for the connector's system. With `delegation` (D26) it is present only when one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan. With `linkedAccount` (D147) it is the access token of the account the person linked, present whenever the person has a link that the system still accepts."
             }
           }
         ],
@@ -3254,6 +3254,33 @@
             },
             "additionalProperties": false,
             "description": "The connector acts as the person against its system with a token Clew obtains by token exchange."
+          },
+          "linkedAccount": {
+            "type": "object",
+            "required": [
+              "resource"
+            ],
+            "properties": {
+              "resource": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "description": "The address of the system the connector calls, as Clew and the person's browser reach it: an http or https address without credentials, a query or a fragment. Clew looks for the system's authorization server from it (RFC 9728, RFC 8414) and names it as the `resource` the token is for (RFC 8707). Part of what an administrator approves (D144)."
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$",
+                  "maxLength": 200
+                },
+                "uniqueItems": true,
+                "maxItems": 20,
+                "description": "The scopes the connector needs at the system's authorization server. Left out, Clew asks for none and the system gives its default."
+              }
+            },
+            "additionalProperties": false,
+            "description": "The connector acts as the person against its system with a token the system's own authorization server issued, which the person links once and Clew keeps (D147)."
           },
           "documents": {
             "type": "boolean",
@@ -7810,6 +7837,33 @@
         },
         "additionalProperties": false,
         "description": "The connector acts as the person against its system with a token Clew obtains by token exchange."
+      },
+      "LinkedAccount": {
+        "type": "object",
+        "required": [
+          "resource"
+        ],
+        "properties": {
+          "resource": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "The address of the system the connector calls, as Clew and the person's browser reach it: an http or https address without credentials, a query or a fragment. Clew looks for the system's authorization server from it (RFC 9728, RFC 8414) and names it as the `resource` the token is for (RFC 8707). Part of what an administrator approves (D144)."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$",
+              "maxLength": 200
+            },
+            "uniqueItems": true,
+            "maxItems": 20,
+            "description": "The scopes the connector needs at the system's authorization server. Left out, Clew asks for none and the system gives its default."
+          }
+        },
+        "additionalProperties": false,
+        "description": "The connector acts as the person against its system with a token the system's own authorization server issued, which the person links once and Clew keeps (D147)."
       },
       "View": {
         "anyOf": [

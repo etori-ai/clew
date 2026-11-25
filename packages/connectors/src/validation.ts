@@ -496,3 +496,36 @@ export function connectorProblems(
   }
   return problems;
 }
+/**
+ * How a manifest says its connector acts as the person: by token exchange at the identity provider (`delegation`, D26)
+ * or with an account the person linked at the system (`linkedAccount`, D147). One way, never both, and the linked
+ * system's address is one Clew can look for an authorization server from. Whether the address must be HTTPS is the
+ * installation's to say, not the manifest's: a local stack reaches its systems over plain http.
+ */
+export function actsAsProblems(manifest: { delegation?: unknown; linkedAccount?: { resource: string } }): string[] {
+  const problems: string[] = [];
+  if (manifest.delegation && manifest.linkedAccount)
+    problems.push(
+      'The manifest declares both delegation and linkedAccount: a connector acts as the person one way (D147).',
+    );
+  if (manifest.linkedAccount) {
+    let address: URL | undefined;
+    try {
+      address = new URL(manifest.linkedAccount.resource);
+    } catch {
+      address = undefined;
+    }
+    if (
+      !address ||
+      !/^https?:$/.test(address.protocol) ||
+      address.username ||
+      address.password ||
+      address.search ||
+      address.hash
+    )
+      problems.push(
+        'linkedAccount.resource must be an http or https address without credentials, a query or a fragment (D147).',
+      );
+  }
+  return problems;
+}

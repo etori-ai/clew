@@ -195,6 +195,9 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].execution.lookup': 'hr.absenceByOperation',
   delegation: { audience: 'eneo' },
   'delegation.audience': 'eneo',
+  linkedAccount: { resource: 'https://hr.example.test', scopes: ['leave'] },
+  'linkedAccount.resource': 'https://hr.example.test',
+  'linkedAccount.scopes': ['leave'],
   'capabilities[].view.body': 'markdown',
   'capabilities[].view.empty': 'Inga träffar.',
   'capabilities[].view.fields[].format': 'status',
@@ -703,6 +706,14 @@ export const RULES: Rule[] = [
     text: "With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion: on a request, on an approved write while the session that approved it is active, and on a scan the person's active session asked for (Clew does not call the scan without one). Figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`.",
   },
   {
+    id: 'acts-as-one-way',
+    title: 'A connector acts as the person one way',
+    fields: ['delegation.audience', 'linkedAccount.resource'],
+    enforced: 'loader',
+    decision: 'D147',
+    text: "A manifest declares `delegation`, for a system that takes the identity provider's token, or `linkedAccount`, for a system whose own authorization server issues the token, and never both. `linkedAccount.resource` is an http or https address without credentials, a query or a fragment: Clew looks for the system's authorization server from it, and an administrator approves it with the manifest.",
+  },
+  {
     id: 'about-call',
     title: 'A read about an entity answers for the keys it may',
     fields: ['capabilities[].about', 'capabilities[].about.entity'],
@@ -1054,7 +1065,16 @@ const SECTIONS: Array<{ id: string; title: string; holds: (path: string) => bool
     title: 'The document',
     holds: p =>
       !p.includes('.') &&
-      !['areas', 'capabilities', 'installation', 'facts', 'delegation', 'assistants', 'header'].includes(p),
+      ![
+        'areas',
+        'capabilities',
+        'installation',
+        'facts',
+        'delegation',
+        'linkedAccount',
+        'assistants',
+        'header',
+      ].includes(p),
   },
   { id: 'areas', title: 'areas[]', holds: p => p.startsWith('areas') },
   {
@@ -1066,6 +1086,7 @@ const SECTIONS: Array<{ id: string; title: string; holds: (path: string) => bool
   { id: 'installation', title: 'installation[]', holds: p => p.startsWith('installation') },
   { id: 'facts', title: 'facts[]', holds: p => p.startsWith('facts') },
   { id: 'delegation', title: 'delegation', holds: p => p.startsWith('delegation') },
+  { id: 'linked-account', title: 'linkedAccount', holds: p => p.startsWith('linkedAccount') },
   { id: 'assistants', title: 'assistants', holds: p => p.startsWith('assistants') },
   { id: 'header', title: 'header', holds: p => p.startsWith('header') },
 ];
