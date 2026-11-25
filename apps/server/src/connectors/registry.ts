@@ -2,14 +2,12 @@ import type { AuthenticatedContext, Thread } from '@clew/contracts';
 import {
   audiencedActorOf,
   BOARDING_CONNECTOR,
-  CapabilityError,
   COMPETENCE_CONNECTOR,
   Registry,
   type HoldingsReader,
-  type RunCaller,
   schemaCompiler,
 } from '@clew/connectors';
-import { InputError } from '../context';
+import { capabilityRunner } from './run';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
 import { clock } from '../composition/ambient';
@@ -55,7 +53,7 @@ export const registry = new Registry({
 });
 /** The composite search (D26) lists its sources from the registry at call time, so a connector enabled by an administrator is searched from the next question on. */
 const search = searchUsecases({
-  sources: actor => registry.searchSources(actor),
+  sources: (actor, options) => registry.searchSources(actor, options),
   clock,
   // A hit names a person by user name; the list links them by id (D122).
   people: userReads,
@@ -74,11 +72,11 @@ const internal = [
   },
 ];
 /** The combined errand list (D35 item 4, D89) lists its case systems from the registry the same way. */
-const errands = errandUsecases({ sources: actor => registry.errandSources(actor) });
+const errands = errandUsecases({ sources: (actor, options) => registry.errandSources(actor, options) });
 /** The combined request list (D123), what a person ordered or reported, lists its service desks from the registry the same way. */
-const requests = requestUsecases({ sources: actor => registry.requestSources(actor) });
+const requests = requestUsecases({ sources: (actor, options) => registry.requestSources(actor, options) });
 /** The combined news list (D112, amended 2026-11-11) lists its news sources from the registry the same way. */
-const news = newsUsecases({ sources: actor => registry.newsSources(actor) });
+const news = newsUsecases({ sources: (actor, options) => registry.newsSources(actor, options) });
 /**
  * The talks seam (D96 items 8 and 9): `clew.talks` and `clew.commitments` ask the one system that answers the talks
  * profile for the person, chosen from the registry at call time, so switching the built-in module off on Anslutna system
@@ -106,7 +104,7 @@ export const personThreads: { list?: (actor: Parameters<Registry['visible']>[0],
   {};
 const threadsOf = async (actor: Parameters<Registry['visible']>[0], now: string) =>
   (await personThreads.list?.(actor, now)) ?? [];
-const workPart = workCapabilities({ list: threadsOf, clock });
+const workPart = workCapabilities({ list: threadsOf, clock, forModel: id => registry.forModel(id) });
 const conversationPart = conversationCapabilities({ list: threadsOf, clock });
 /**
  * Clew's own lists that Alla verktyg shows whether or not an administrator placed them in the menu (D126 rule 8), as
@@ -179,30 +177,8 @@ export const acceptsEmptyInput = (schema: object) => {
   }
 };
 /**
- * Run a capability through the registry with input validation: the path for REST, cards and tools. A connector's
- * callback goes through the registry's `clewFor` instead (`routes/connector-callback.ts`), which keeps the protocol's
- * codes. It runs as the person with their provisioned groups, so an audience that names a group admits its members.
- * `direct` is for the one caller that is the person's own session asking for a read itself (`GET /api/cap`): only there
- * is a relation the person holds by grant resolved (D121, `RunContext.direct`). `caller` is for the assistant's runner,
- * which reads in a conversation turn for the person (D122 item 6, `RunContext.caller`).
+ * Run a capability through the live registry with input validation (`capabilityRunner`): the path for REST, cards and
+ * tools. `direct` is the person's own session asking for a read itself, `caller` the assistant's runner and `forModel`
+ * the model's own tool call (`CapabilityRunOptions`).
  */
-export async function runCapability<O = unknown>(
-  persona: AuthenticatedContext,
-  name: string,
-  input: unknown,
-  options: { direct?: boolean; caller?: RunCaller } = {},
-): Promise<O> {
-  const found = registry.find(name);
-  if (!found) throw new InputError('Okänd förmåga.');
-  try {
-    return await registry.run<O>(audiencedActorOf(persona), name, input ?? {}, {
-      authorize: () => persona.authorize(),
-      delegate: persona.delegate,
-      ...(options.direct ? { direct: true } : {}),
-      ...(options.caller ? { caller: options.caller } : {}),
-    });
-  } catch (error) {
-    if (error instanceof CapabilityError) throw new InputError(error.message);
-    throw error;
-  }
-}
+export const runCapability = capabilityRunner(registry);

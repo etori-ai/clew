@@ -15,7 +15,9 @@ import { WireError } from '../ports';
 /**
  * The model ports in memory (D24, D25): the unit tests' adapters. `memoryModelStore` keeps the same contract as Postgres,
  * held to it by `tests/model-store-contract.ts`; a transaction is a snapshot and a throw rolls every write back, the
- * audit row included. `memoryModelWire` is an endpoint the test plays; `memoryModelHealth` is the in-process view.
+ * audit row included. Transactions run one at a time, which is what a row lock (`lockProvider`) promises and more: a
+ * second one waits until the first has committed or rolled back. `memoryModelWire` is an endpoint the test plays;
+ * `memoryModelHealth` is the in-process view.
  */
 export interface MemoryModelStore extends ModelStore {
   audit: AuditEntry[];
@@ -25,6 +27,8 @@ export function memoryModelStore(): MemoryModelStore {
   let providers = new Map<string, ProviderRecord>();
   let models = new Map<string, ModelRecord>();
   let choices = new Map<string, string>();
+  /** The transaction that runs now, settled or not; the next one starts after it. */
+  let running: Promise<unknown> = Promise.resolve();
   const self: MemoryModelStore = {
     audit: [],
     choices,
@@ -56,102 +60,111 @@ export function memoryModelStore(): MemoryModelStore {
         .filter(a => a.subject === subject)
         .map(a => ({ at: a.at, actor: a.actor, action: a.action, details: a.details ?? {} }));
     },
-    async transaction(fn) {
-      const snapshot = {
-        providers: structuredClone(providers),
-        models: structuredClone(models),
-        choices: new Map(choices),
-        audit: [...self.audit],
-      };
-      const tx: ModelTx = {
-        async insertProvider(r) {
-          if (providers.has(r.id)) return false;
-          providers.set(r.id, {
-            id: r.id,
-            title: r.title,
-            baseUrl: r.baseUrl,
-            apiKey: r.apiKey,
-            keyChangedAt: r.apiKey ? r.at : null,
-            health: structuredClone(r.health),
-            createdBy: r.createdBy,
-            updatedBy: r.createdBy,
-            createdAt: r.at,
-            updatedAt: r.at,
-            version: 1,
-          });
-          return true;
-        },
-        async updateProvider(id, patch, by, at) {
-          const r = providers.get(id);
-          if (!r) return false;
-          Object.assign(r, structuredClone(patch), { updatedBy: by, updatedAt: at, version: r.version + 1 });
-          return true;
-        },
-        async removeProvider(id) {
-          if ([...models.values()].some(m => m.providerId === id))
-            throw new Error('model_provider_id_model_provider_id_fk');
-          providers.delete(id);
-        },
-        async insertModel(r) {
-          if (models.has(r.id)) return false;
-          if (!providers.has(r.providerId)) throw new Error('model_provider_id_model_provider_id_fk');
-          models.set(r.id, {
-            id: r.id,
-            providerId: r.providerId,
-            model: r.model,
-            title: r.title,
-            description: r.description,
-            state: 'disabled',
-            audience: { mode: 'all' },
-            isDefault: false,
-            tools: r.tools,
-            reasoning: 'provider-default',
-            createdBy: r.createdBy,
-            updatedBy: r.createdBy,
-            createdAt: r.at,
-            updatedAt: r.at,
-            version: 1,
-          });
-          return true;
-        },
-        async updateModel(id, patch, by, at) {
-          const r = models.get(id);
-          if (!r) return false;
-          // The partial unique index: at most one default at any moment.
-          if (patch.isDefault && [...models.values()].some(m => m.id !== id && m.isDefault))
-            throw new Error('model_one_default');
-          Object.assign(r, structuredClone(patch), { updatedBy: by, updatedAt: at, version: r.version + 1 });
-          return true;
-        },
-        async removeModel(id) {
-          models.delete(id);
-          for (const [person, model] of choices) if (model === id) choices.delete(person);
-        },
-        async setChoice(personId, modelId) {
-          if (modelId === null) {
-            choices.delete(personId);
-            return;
-          }
-          if (!models.has(modelId)) throw new Error('model_choice_model_id_model_id_fk');
-          choices.set(personId, modelId);
-        },
-        async writeAudit(entry) {
-          self.audit.push(structuredClone(entry));
-        },
-      };
-      try {
-        return await fn(tx);
-      } catch (error) {
-        providers = snapshot.providers;
-        models = snapshot.models;
-        choices.clear();
-        for (const [k, v] of snapshot.choices) choices.set(k, v);
-        self.audit.length = 0;
-        self.audit.push(...snapshot.audit);
-        throw error;
-      }
+    transaction(fn) {
+      const turn = running.then(() => run(fn));
+      running = turn.catch(() => undefined);
+      return turn;
     },
   };
+  async function run<T>(fn: (tx: ModelTx) => Promise<T>): Promise<T> {
+    const snapshot = {
+      providers: structuredClone(providers),
+      models: structuredClone(models),
+      choices: new Map(choices),
+      audit: [...self.audit],
+    };
+    const tx: ModelTx = {
+      async lockProvider(id) {
+        const r = providers.get(id);
+        return r ? structuredClone(r) : undefined;
+      },
+      async insertProvider(r) {
+        if (providers.has(r.id)) return false;
+        providers.set(r.id, {
+          id: r.id,
+          title: r.title,
+          baseUrl: r.baseUrl,
+          apiKey: r.apiKey,
+          keyChangedAt: r.apiKey ? r.at : null,
+          health: structuredClone(r.health),
+          createdBy: r.createdBy,
+          updatedBy: r.createdBy,
+          createdAt: r.at,
+          updatedAt: r.at,
+          version: 1,
+        });
+        return true;
+      },
+      async updateProvider(id, patch, by, at) {
+        const r = providers.get(id);
+        if (!r) return false;
+        Object.assign(r, structuredClone(patch), { updatedBy: by, updatedAt: at, version: r.version + 1 });
+        return true;
+      },
+      async removeProvider(id) {
+        if ([...models.values()].some(m => m.providerId === id))
+          throw new Error('model_provider_id_model_provider_id_fk');
+        providers.delete(id);
+      },
+      async insertModel(r) {
+        if (models.has(r.id)) return false;
+        if (!providers.has(r.providerId)) throw new Error('model_provider_id_model_provider_id_fk');
+        models.set(r.id, {
+          id: r.id,
+          providerId: r.providerId,
+          model: r.model,
+          title: r.title,
+          description: r.description,
+          state: 'disabled',
+          audience: { mode: 'all' },
+          isDefault: false,
+          tools: r.tools,
+          reasoning: 'provider-default',
+          createdBy: r.createdBy,
+          updatedBy: r.createdBy,
+          createdAt: r.at,
+          updatedAt: r.at,
+          version: 1,
+        });
+        return true;
+      },
+      async updateModel(id, patch, by, at) {
+        const r = models.get(id);
+        if (!r) return false;
+        // The partial unique index: at most one default at any moment.
+        if (patch.isDefault && [...models.values()].some(m => m.id !== id && m.isDefault))
+          throw new Error('model_one_default');
+        Object.assign(r, structuredClone(patch), { updatedBy: by, updatedAt: at, version: r.version + 1 });
+        return true;
+      },
+      async removeModel(id) {
+        models.delete(id);
+        for (const [person, model] of choices) if (model === id) choices.delete(person);
+      },
+      async setChoice(personId, modelId) {
+        if (modelId === null) {
+          choices.delete(personId);
+          return;
+        }
+        if (!models.has(modelId)) throw new Error('model_choice_model_id_model_id_fk');
+        choices.set(personId, modelId);
+      },
+      async writeAudit(entry) {
+        self.audit.push(structuredClone(entry));
+      },
+    };
+    try {
+      return await fn(tx);
+    } catch (error) {
+      providers = snapshot.providers;
+      models = snapshot.models;
+      choices.clear();
+      for (const [k, v] of snapshot.choices) choices.set(k, v);
+      self.audit.length = 0;
+      self.audit.push(...snapshot.audit);
+      throw error;
+    }
+  }
   return self;
 }
 /** Which endpoints answer, in memory: unknown counts as worth trying. The live adapter is the same object. */

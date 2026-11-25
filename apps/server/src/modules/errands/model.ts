@@ -1,4 +1,4 @@
-import type { Actor } from '@clew/connectors';
+import type { Actor, SourceOptions } from '@clew/connectors';
 import type { ViewOpen } from '@clew/contracts';
 
 /**
@@ -13,7 +13,11 @@ export interface ErrandSourceRef {
   source: string;
   open?: ViewOpen;
 }
-export type ErrandSources = (actor: Actor) => ErrandSourceRef[];
+/**
+ * The sources the person may use now; with `forModel` (the model's own read, D122 item 4) only those the administrator
+ * has not closed to the assistant.
+ */
+export type ErrandSources = (actor: Actor, options?: SourceOptions) => ErrandSourceRef[];
 export type ErrandCall = <O = unknown>(name: string, input?: unknown) => Promise<O>;
 export interface ErrandBudget {
   /** Milliseconds one case system gets before it counts as `timeout`. */

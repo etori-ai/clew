@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 10 | The assistant's prompt, tools, provider and record | `AM-2`, `AM-3`, `AM-5`, `AM-6`, `AM-7`, `AM-8`, `AM-9`, `AM-10` | |
 | 11 | Connector administration and its scripts | `DE-M5`, `CB-9`, `CB-10`, `CB-11`, `CB-12`, `CB-13` | |
 | 12 | The session and the change stream in the browser | `WD-M1`, `WD-M2`, `WD-M3`, `WD-M4`, `WD-L2`, `WD-L4`, `WD-L9` | |
 | 13 | The conversation's state | `WD-L1`, `WD-L3`, `WD-L5`, `WD-L6`, `WD-L7`, `WD-L8` | |
@@ -38,7 +37,7 @@ no batch.
 |---|---|---|---|---|---|
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 0 | 1 | 1 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 0 | 5 | 5 |
-| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 5 | 5 | 10 |
+| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 0 | 2 | 2 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 4 | 11 | 15 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
@@ -46,7 +45,7 @@ no batch.
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 7 | 7 |
-| | **Total** | **0** | **18** | **58** | **76** |
+| | **Total** | **0** | **13** | **55** | **68** |
 
 ## High
 
@@ -81,16 +80,8 @@ and it carries a table of what reaches the model and a table of the tools.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| AM-2 | Medium | Source text is written into the system prompt beside Clew's rules, with no rule that it is data and no line rule on its fields. | `apps/server/src/assistant/model.ts:136-213` |
-| AM-3 | Medium | The live server binds the assistant's `people` port with the person's Clew id and the prompt calls it their user name, which the registry refuses. | `apps/server/src/composition/index.ts:359-363` |
-| AM-5 | Medium | One failed turn marks the provider down for everyone, and turns fail for reasons unrelated to the endpoint: an 8-second budget, no text after tool calls, no token limit. | `apps/server/src/assistant/index.ts:734` |
-| AM-6 | Medium | A model call that does not end in the model's answer leaves no record of which model was called or what it read. | `apps/server/src/assistant/index.ts:727` |
-| AM-7 | Medium | D115's guard is applied to the turn's prompt but not to the conversation's history, which is sent unchecked. | `apps/server/src/assistant/context.ts:92` |
-| AM-8 | Low | A failed tool's error message, a connector's own or any other error's, is handed to the model as it is. | `apps/server/src/assistant/model.ts:54-56` |
-| AM-9 | Low | The administrator's "Assistent" switch closes tools only; chips, matched cards and the router's answers from a closed connector still reach the model. | `packages/connectors/src/index.ts:1891-1894` |
-| AM-10 | Low | Changing a provider's address keeps its sealed key, which is then sent to the new address. | `apps/server/src/assistant/usecases/models.ts:229-256` |
 | AM-12 | Low | The system prompt tells the model it serves Sundsvalls kommun's Startsidan in every installation. | `apps/server/src/assistant/model.ts:137` |
-| AM-13 | Low | Several model administration audit rows have no test, the assistant's function ports have no contract case, and nothing tests what a stopped turn or a model-started item leaves. | `apps/server/src/assistant/usecases/models.ts` |
+| AM-13 | Low | The audit rows of a model's renamed fields (`model.title`, `model.model`, `model.description`), `model.audience`, `model.tools` and `model.removed` have no test, and the assistant's function ports (`run`, `start`, `people`, `handover`) have no contract case, so a test may bind them to something the server does not. | `apps/server/src/assistant/usecases/models.ts`, `apps/server/src/assistant/ports.ts` |
 
 ## Decisions, durable execution, audit and the database
 

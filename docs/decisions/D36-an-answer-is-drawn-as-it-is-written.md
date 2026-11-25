@@ -1,6 +1,6 @@
 # D36 · An answer is drawn as it is written; the box never moves under the cursor
 
-**Status:** accepted, built 2026-11-05 · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05; item 2 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`AM-6`): a stopped turn still saves no conversation, but one that called a model, read anything or started a work item writes its audit row, `conversation.stopped`, with the model, what the call cost, the reads and the item, never a word of the question (as [the model turn in the audit trail](../architecture/observability.md) says) · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** A question shows at once and its answer arrives as it is written. The landing's box stays where it is
 while the person types.

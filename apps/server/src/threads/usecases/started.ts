@@ -67,6 +67,8 @@ export interface StartContext {
    * whether or what is started. A request that finds its card already open makes nothing and marks nothing.
    */
   recordDraft?: Omit<RecordDraftSent, 'personId' | 'capability' | 'threadId'>;
+  /** Records the assistant and administered model that started this decision. */
+  by?: { assistant: true; model?: string };
 }
 
 export function startedCards({ store, registry, run, digest, clock, ids, people }: StartedDeps) {
@@ -196,6 +198,7 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
           ...(context.asked && Object.keys(context.asked).length ? { asked: context.asked } : {}),
           // That it came from the assistant's draft, never which conversation or what it said.
           ...(fromDraft ? { fromDraft: true } : {}),
+          ...(context.by ? { by: 'assistant', ...(context.by.model ? { model: context.by.model } : {}) } : {}),
         },
       });
       return true;

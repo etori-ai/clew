@@ -16,9 +16,10 @@ import type {
   ProviderSummary,
   ProviderTestReport,
 } from '@clew/contracts';
+import { providerAddressProblem } from '@clew/contracts';
 import { audiencedActorOf } from '@clew/connectors';
 import { ForbiddenError, InputError } from '../../context';
-import { choicesFor, pickModel, slugFor } from '../domain';
+import { choicesFor, pickModel, sameOrigin, slugFor } from '../domain';
 import {
   WireError,
   type Endpoint,
@@ -27,6 +28,7 @@ import {
   type ModelRecord,
   type ModelStore,
   type ModelWire,
+  type ProviderPatch,
   type ProviderRecord,
   type ResolvedModel,
 } from '../ports';
@@ -40,6 +42,12 @@ import {
  */
 /** The administration grant (D23) covers the models too: one surface, one grant, until a reason to split them appears. */
 export const MODEL_ADMIN_CAPABILITY = 'admin.connectors';
+/**
+ * A key given for an address the provider no longer has: another administrator moved it to another host after the page
+ * was read, and the key the administrator typed was for the host they saw (D24).
+ */
+export const PROVIDER_MOVED =
+  'Leverantörens adress har ändrats sedan sidan lästes in. Läs in sidan igen och lägg in nyckeln för den nya adressen.';
 /** A model added without the administrator's statement that the organisation may process personal data with it (D122). */
 export const PERSONAL_DATA_UNCONFIRMED =
   'Bekräfta att organisationen får behandla personuppgifter med modellen innan du lägger till den.';
@@ -74,10 +82,17 @@ export function modelUsecases(deps: ModelDeps) {
     await persona.authorize();
     return { by: persona.principal.id, at: clock().toISOString() };
   };
+  const NO_PROVIDER = 'Leverantören finns inte.';
   const mustProvider = async (id: string) => {
     const row = await store.readProvider(id);
-    if (!row) throw new InputError('Leverantören finns inte.');
+    if (!row) throw new InputError(NO_PROVIDER);
     return row;
+  };
+  /** An address as the administrator wrote it, refused in the page's words when it is not one a key may go to. */
+  const mustAddress = (url: string) => {
+    const problem = providerAddressProblem(url);
+    if (problem) throw new InputError(problem);
+    return url.trim().replace(/\/+$/, '');
   };
   const mustModel = async (id: string) => {
     const row = await store.readModel(id);
@@ -197,8 +212,8 @@ export function modelUsecases(deps: ModelDeps) {
     input: AddProviderInput,
   ): Promise<{ provider: ProviderDetail; report: ProviderTestReport }> {
     const { by, at } = await mutating(persona);
+    const baseUrl = mustAddress(input.baseUrl);
     if (await store.readProvider(input.id)) throw new InputError('Leverantören finns redan.');
-    const baseUrl = input.baseUrl.replace(/\/+$/, '');
     const key = input.apiKey?.trim() || undefined;
     const report = await probeEndpoint({ baseUrl, ...(key ? { apiKey: key } : {}) }, at);
     await store.transaction(async tx => {
@@ -225,45 +240,62 @@ export function modelUsecases(deps: ModelDeps) {
     if (report.health.status !== 'untested') health.mark(input.id, report.health.status === 'ok', at);
     return { provider: await providerDetail((await store.readProvider(input.id))!), report };
   }
-  /** Name and address; a changed field is one audit row. */
+  /**
+   * Name and address; a changed field is one audit row. A key is for the host it was given for: an address on another
+   * host (scheme, name or port) removes the sealed key in the same transaction, and the `provider.url` row says so, so
+   * the key is never sent to a host nobody gave it to. The administrator gives the new host its key with "Byt nyckel".
+   * A new path on the same host (`/v1` to `/v2`) keeps it. What is changed is decided from the row as it is inside the
+   * transaction, held there (`lockProvider`), so a key given at the same moment is either removed with the old host or
+   * refused for it (`rotateKey`), never left with the new one.
+   */
   async function updateProvider(
     persona: AuthenticatedContext,
     id: string,
     patch: ProviderPatchInput,
   ): Promise<ProviderDetail> {
     const { by, at } = await mutating(persona);
-    const row = await mustProvider(id);
-    const changes: Array<{ action: string; details: Record<string, unknown> }> = [];
-    const next: { title?: string; baseUrl?: string } = {};
-    if (patch.title !== undefined && patch.title.trim() !== row.title) {
-      next.title = patch.title.trim();
-      changes.push({ action: 'provider.title', details: { from: row.title, to: next.title } });
-    }
-    if (patch.baseUrl !== undefined) {
-      const url = patch.baseUrl.replace(/\/+$/, '');
-      if (url !== row.baseUrl) {
-        next.baseUrl = url;
-        changes.push({ action: 'provider.url', details: { from: row.baseUrl, to: url } });
-      }
-    }
-    if (!changes.length) return providerDetail(row);
+    const address = patch.baseUrl === undefined ? undefined : mustAddress(patch.baseUrl);
     await store.transaction(async tx => {
+      const row = await tx.lockProvider(id);
+      if (!row) throw new InputError(NO_PROVIDER);
+      const changes: Array<{ action: string; details: Record<string, unknown> }> = [];
+      const next: ProviderPatch = {};
+      if (patch.title !== undefined && patch.title.trim() !== row.title) {
+        next.title = patch.title.trim();
+        changes.push({ action: 'provider.title', details: { from: row.title, to: next.title } });
+      }
+      if (address !== undefined && address !== row.baseUrl) {
+        next.baseUrl = address;
+        const keyRemoved = row.apiKey !== null && !sameOrigin(row.baseUrl, address);
+        if (keyRemoved) Object.assign(next, { apiKey: null, keyChangedAt: at });
+        changes.push({
+          action: 'provider.url',
+          details: { from: row.baseUrl, to: address, ...(keyRemoved ? { keyRemoved } : {}) },
+        });
+      }
+      if (!changes.length) return;
       await tx.updateProvider(id, next, by, at);
       for (const c of changes)
         await tx.writeAudit({ actor: by, action: c.action, subject: 'provider:' + id, at, details: c.details });
     });
-    return providerDetail((await store.readProvider(id))!);
+    return providerDetail(await mustProvider(id));
   }
-  /** A new key, or none: sealed, dated, used from the next question on. The old one is gone. */
+  /**
+   * A new key, or none: sealed, dated, used from the next question on. The old one is gone. The key is for the address
+   * the administrator saw (`input.baseUrl`): when the provider has moved to another host since, read in the transaction
+   * with its row held, the key is refused and nothing changes, so it never reaches a host it was not typed for.
+   */
   async function rotateKey(
     persona: AuthenticatedContext,
     id: string,
     input: ProviderKeyInput,
   ): Promise<ProviderDetail> {
     const { by, at } = await mutating(persona);
-    await mustProvider(id);
     const key = input.apiKey.trim();
     await store.transaction(async tx => {
+      const row = await tx.lockProvider(id);
+      if (!row) throw new InputError(NO_PROVIDER);
+      if (!sameOrigin(row.baseUrl, input.baseUrl)) throw new InputError(PROVIDER_MOVED);
       await tx.updateProvider(id, { apiKey: key ? sealer.seal(key, id) : null, keyChangedAt: at }, by, at);
       await tx.writeAudit({
         actor: by,

@@ -1,6 +1,6 @@
 # D84 · A model's reasoning is its own setting, and the model test settles it
 
-**Status:** accepted, built 2026-11-09 · **Date:** 2026-11-07, revised 2026-11-09 · **Area:** product
+**Status:** accepted, built 2026-11-09; the last sentence of the record amended 2026-11-24 in the fixes of the review of 2026-11-23 (`AM-5`): only a turn whose endpoint did not answer or refused the key marks the provider down ([D24](D24-model-endpoints-are-administered-in-the-product.md)) · **Date:** 2026-11-07, revised 2026-11-09 · **Area:** product
 
 **Decision.** A model has a `reasoning` value beside `tools` (D24). `provider-default`, what every model starts with,
 sends nothing about reasoning. `none` sends `reasoning_effort: "none"` through the AI SDK's `reasoning` call option.
