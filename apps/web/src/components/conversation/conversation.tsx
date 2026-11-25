@@ -161,7 +161,7 @@ function ActionDraftCard({
       }}
       startAt={dialog.startAt}
       values={values}
-      onValuesChange={setTyped}
+      onValuesChange={update => setTyped(current => update(current ?? draft.values ?? {}))}
       onSend={send}
     />
   );
