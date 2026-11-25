@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { Assignment, GroupRecord, UserRecord } from '../apps/server/src/modules/people/domain';
-import type { LeaverChange, LeaversTx, Provisioner, ProvisionStore } from '../apps/server/src/modules/people/ports';
+import type {
+  ErasureTx,
+  LeaverChange,
+  LeaversTx,
+  Provisioner,
+  ProvisionStore,
+} from '../apps/server/src/modules/people/ports';
 import { directoryUsecases } from '../apps/server/src/modules/people/usecases';
 
 /**
@@ -31,6 +37,11 @@ export interface ScimStoreHarness {
   logSignIn(actor: string | null, action: string): Promise<number>;
   /** The actor of a row of the authentication log, by its id. */
   signInActor(id: number): Promise<string | null | undefined>;
+  /**
+   * The same adapter built with an erasure binding (D123), as composition builds the erasure's store with the
+   * calendar's: `erasure` is the port.
+   */
+  withErasure(erasure: () => ErasureTx): ProvisionStore;
   /**
    * The same adapter built with a leavers binding (D108 item 14), as composition builds the SCIM store: `leavers` is the
    * port, and `failed` hears of a call that failed.
@@ -1297,6 +1308,50 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         }),
       ).rejects.toThrow('rolled back');
       await asErased();
+    });
+
+    test('an erasure tells the erasure port bound to the store on its transaction, and one that fails fails the erasure (D123)', async () => {
+      const h = await make(),
+        p = h.prefix,
+        org = p + '-org',
+        a = p + '-a',
+        input = { actor: 'operator:cli', personId: a, at: T },
+        told: unknown[] = [];
+      // A store built without a binding clears nothing in another domain, and says so with zero counts.
+      expect(await h.store.transaction(tx => tx.erasure.invitee(input))).toEqual({
+        invitations: 0,
+        planningRows: 0,
+        drafts: 0,
+      });
+      let failing = false;
+      const store = h.withErasure(() => ({
+        async invitee(given) {
+          told.push(given);
+          if (failing) throw new Error('the calendar could not clear the person');
+          return { invitations: 2, planningRows: 3, drafts: 1 };
+        },
+      }));
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(a, org));
+      });
+      expect(await store.transaction(tx => tx.erasure.invitee(input))).toEqual({
+        invitations: 2,
+        planningRows: 3,
+        drafts: 1,
+      });
+      // Unlike the leavers port it is not best effort: the binding's failure fails the transaction, and what it
+      // wrote before goes with it.
+      failing = true;
+      await expect(
+        store.transaction(async tx => {
+          await tx.updateUser(a, { name: 'Before the port', updatedAt: T });
+          await tx.erasure.invitee(input);
+        }),
+      ).rejects.toThrow('the calendar could not clear the person');
+      await store.transaction(async tx => {
+        expect(await tx.readUser(org, a)).toMatchObject({ name: userRow(a, org).name });
+      });
+      expect(told).toEqual([input, input]);
     });
   });
 }

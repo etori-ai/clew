@@ -277,6 +277,14 @@ export function boardingTx(tx: Transaction, options: { sealer: Sealer; workItems
         .from(people)
         .where(inArray(people.id, [...new Set(ids)]));
     },
+    async lockPersonForErasure(personId) {
+      const [person] = await tx
+        .select({ enabled: people.enabled })
+        .from(people)
+        .where(eq(people.id, personId))
+        .for('share');
+      return person?.enabled;
+    },
     async erasePerson(personId) {
       const threadIds = new Set<string>(),
         cleared = new Set<string>();

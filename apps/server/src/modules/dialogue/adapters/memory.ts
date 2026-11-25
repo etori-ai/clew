@@ -24,7 +24,7 @@ export type DialogueCardCall =
   | { op: 'reopen'; threadId: string; dueOn: string | null; at: string }
   | { op: 'retime'; threadId: string; dueOn: string | null; at: string }
   | { op: 'fire'; threadId: string; generation: number; at: string; fired: boolean }
-  | { op: 'remove'; threadIds: string[] };
+  | { op: 'remove'; threadIds: string[]; why: 'activity-removed' | 'erasure' };
 export interface MemoryDialogueCard {
   personId: string;
   activityId: string;
@@ -121,10 +121,10 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
       state.calls.push({ op: 'fire', threadId, generation, at, fired });
       return fired;
     },
-    async remove(threadIds) {
+    async remove(threadIds, why) {
       fail('remove');
       if (!threadIds.length) return;
-      state.calls.push({ op: 'remove', threadIds: [...threadIds] });
+      state.calls.push({ op: 'remove', threadIds: [...threadIds], why });
       for (const id of threadIds) state.cards.delete(id);
       // The thread's foreign key nulls the pointer, as `ON DELETE SET NULL` does in Postgres.
       for (const a of state.activities.values()) if (a.threadId && threadIds.includes(a.threadId)) a.threadId = null;

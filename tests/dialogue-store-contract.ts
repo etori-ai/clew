@@ -9,9 +9,8 @@ import type {
 
 /**
  * The dialogue store (D118, D120): configuration, assessments, activities, a manager's own notes, the names it shows,
- * erasure and export. One
- * suite, two adapters: `tests/unit/dialogue-store.test.ts` on memory, `tests/db/postgres-dialogue-store.test.ts` on
- * Postgres. The harness supplies the store with a card port that writes the minimum a card needs.
+ * erasure, export and the card port it carries. One suite, two adapters: `tests/unit/dialogue-store.test.ts` on
+ * memory, `tests/db/postgres-dialogue-store.test.ts` on Postgres, where the store carries composition's card port.
  */
 export interface DialogueStoreHarness {
   store: DialogueStore;
@@ -24,6 +23,8 @@ export interface DialogueStoreHarness {
   stored?: (activityId: string) => Promise<{ text: string; note: string | null }>;
   storedComment?: (assessmentId: string) => Promise<string | null>;
   storedNote?: (noteId: string) => Promise<string>;
+  /** Why a card was removed, as its removal says it (the `thread.removed` row's `reason`); undefined if it was not. */
+  removedWhy(threadId: string): Promise<string | undefined>;
 }
 const T = '2026-11-13T08:00:00.000Z';
 const T2 = '2026-11-13T09:00:00.000Z';
@@ -316,6 +317,28 @@ export function dialogueStoreContract(name: string, make: () => Promise<Dialogue
       expect(await h.store.transaction(tx => tx.note(p + '-missing'))).toBeUndefined();
     });
 
+    test('a card is removed with the reason it is given, and the activity loses its pointer to it (D118 item 4, D123)', async () => {
+      const w = await world();
+      const { h, p, org, unit, boss } = w;
+      for (const n of [1, 2, 3])
+        await addWithCard(w, activity(p + '-r' + n, org, unit, { ownerId: boss, threadId: p + '-rt' + n }));
+      await h.store.transaction(async tx => {
+        await tx.workItems.remove([p + '-rt1'], 'activity-removed');
+        await tx.workItems.remove([p + '-rt2'], 'erasure');
+      });
+      expect([await h.removedWhy(p + '-rt1'), await h.removedWhy(p + '-rt2'), await h.removedWhy(p + '-rt3')]).toEqual([
+        'activity-removed',
+        'erasure',
+        undefined,
+      ]);
+      expect((await h.store.transaction(tx => tx.activities(org, [unit]))).map(a => [a.id, a.threadId]).sort()).toEqual(
+        [
+          [p + '-r1', null],
+          [p + '-r2', null],
+          [p + '-r3', p + '-rt3'],
+        ],
+      );
+    });
     test('erasure clears the person from every row and returns the cards they owned; export holds everything', async () => {
       const w = await world();
       const { h, p, org, unit, chef, boss } = w;

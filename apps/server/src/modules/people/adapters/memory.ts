@@ -11,7 +11,7 @@ import {
   type Placement,
   type UserRecord,
 } from '../domain';
-import type { LeaverChange, LeaversTx, Provisioner, ProvisionStore, ProvisionTx } from '../ports';
+import type { ErasureTx, LeaverChange, LeaversTx, Provisioner, ProvisionStore, ProvisionTx } from '../ports';
 
 /**
  * The provisioning store in memory: the unit tests' adapter (D25), held to Postgres by
@@ -61,6 +61,11 @@ export interface MemoryProvisionState {
 export interface MemoryProvisionOptions {
   leavers?: () => LeaversTx;
   leaverFailed?: (error: unknown, change: LeaverChange, kind: keyof LeaversTx) => void;
+  /**
+   * The erasure port a test binds (the calendar's, on its own memory store, which commits on its own); without it an
+   * erasure clears nothing in another domain. A failure fails the erasure, as on Postgres.
+   */
+  erasure?: () => ErasureTx;
 }
 export const memberKey = (groupId: string, personId: string) => groupId + '\u0000' + personId;
 const splitKey = (key: string) => key.split('\u0000') as [string, string];
@@ -146,6 +151,10 @@ export function memoryProvisionStore(
   };
   const tx: ProvisionTx = {
     leavers: { deactivated: tell('deactivated'), reactivated: tell('reactivated') },
+    erasure: {
+      invitee: input =>
+        options.erasure?.().invitee(input) ?? Promise.resolve({ invitations: 0, planningRows: 0, drafts: 0 }),
+    },
     async lockPerson(id) {
       const p = state.users.get(id);
       return p && { id: p.id, organisationId: p.organisationId };

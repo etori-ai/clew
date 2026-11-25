@@ -1511,5 +1511,6 @@ scimStoreContract('memory', async () => {
       return store.state.authenticationAudit[id]?.actor;
     },
     withLeavers: (leavers, leaverFailed) => memoryProvisionStore({ leavers, leaverFailed }),
+    withErasure: erasure => memoryProvisionStore({ erasure }),
   };
 });
