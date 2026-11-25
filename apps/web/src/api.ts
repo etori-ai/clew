@@ -132,10 +132,12 @@ import type {
   EntityDetail,
   EntityKind,
   EntityList,
+  EntityNames,
   EntityRows,
   EntitySection,
   RecordActions,
   RecordDraftRef,
+  Subject,
 } from '@clew/contracts';
 import type {
   BoardingImportBody,
@@ -302,6 +304,11 @@ export const api = {
       call<EntitySection>(
         `/api/entities/${kind}/${encodeURIComponent(key)}/section?capability=${encodeURIComponent(capability)}`,
       ),
+    /**
+     * The names of the people and units a list is about, at most `ENTITY_NAMES_MAX` a request: a read, posted so the keys
+     * stay out of the address. One the reader may not open is absent from the answer.
+     */
+    names: (subjects: readonly Subject[]) => post<EntityNames>('/api/entities/names', { subjects }),
     /**
      * Start one of the entity's actions from its menu, without the model (D97, D8): the answer is the card the person
      * decides on. A refusal is the source's Swedish sentence (400); an action the entity does not offer is a 404.

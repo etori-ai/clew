@@ -31,6 +31,7 @@ import { usePageTitle } from '../../page-title';
 import { AddModelDialog, AddProviderDialog, PERSONAL_DATA_NOTICE } from './add-model';
 import { audienceLabel, modelStatusOf, providerStatusOf } from './labels';
 import { AdminShell } from './shell';
+import { mobileQuery } from '../../media';
 import { DOT } from '../../dot';
 
 /**
@@ -46,7 +47,7 @@ interface Row extends Record<string, unknown> {
 const EMPTY = { providers: [] as ProviderSummary[], models: [] as ModelSummary[] };
 
 export function AdminModelsPage({ user }: { user: SessionUser }) {
-  const mobile = useMediaQuery('(max-width: 720px)');
+  const mobile = useMediaQuery(mobileQuery);
   const client = useQueryClient();
   const toast = useToast();
   const list = useQuery(adminQueries.models);
