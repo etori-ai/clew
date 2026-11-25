@@ -387,6 +387,23 @@ test.describe('D30 the obligation', () => {
     await page.keyboard.press('Enter');
     await expect(card.getByRole('list', { name: 'Väntar: 1' })).toContainText('påmind 2 gånger');
   });
+  test('an invitee an erasure cleared is drawn as Okänd, never as an empty row or a nameless avatar (D123)', async ({
+    page,
+    api,
+  }) => {
+    // Both invitations were sent, so both stay on the card, by id, without the name and address they were drawn with.
+    const erased = { name: '', email: '' };
+    api.threads = api.threads.map(t =>
+      t.id === 'samtal-svar' ? { ...t, proposals: t.proposals.map(p => ({ ...p, participant: erased })) } : t,
+    );
+    await open(page, '/todo?tab=waiting&item=samtal-svar');
+    const card = page.locator('#card-samtal-svar');
+    await expect(card.getByRole('list', { name: 'Väntar: 1' }).getByRole('listitem')).toContainText('Okänd');
+    // The one who answered yes: the avatar and the first names beside it; the one waiting: the row of Väntar.
+    await expect(card.getByRole('group', { name: 'Avatarer' })).toContainText('Okänd');
+    await expect(card.getByText('Okänd', { exact: true })).toHaveCount(3);
+    await expectNoAxeViolations(page);
+  });
 });
 
 test.describe('D54 Läget: the areas’ figures from their connectors, on Hem (D126)', () => {

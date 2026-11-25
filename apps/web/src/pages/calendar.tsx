@@ -42,6 +42,7 @@ import {
   percent,
   pixel,
   useAnnounce,
+  inviteeName,
   useMediaQuery,
   useResizable,
   type AgendaItem,
@@ -175,7 +176,7 @@ const entrySubject = (item: AgendaItem): ThingSubject | null => {
       ? {
           key: ref,
           label: 'förslaget',
-          chips: [{ ref, kind: 'proposal', label: `${item.title} · ${p.participant.name}` }],
+          chips: [{ ref, kind: 'proposal', label: `${item.title} · ${inviteeName(p.participant)}` }],
           search: '?card=' + encodeURIComponent(p.threadId),
         }
       : null;
@@ -328,7 +329,7 @@ function ProposalFacts({ item, thread }: { item: AgendaItem; thread: Thread | nu
       </HStack>
       <MetadataList columns="single">
         <MetadataListItem label="Med">
-          <Text>{p.participant.name}</Text>
+          <Text>{inviteeName(p.participant)}</Text>
         </MetadataListItem>
       </MetadataList>
       {thread?.summary && <Text as="p">{thread.summary}</Text>}
@@ -1049,7 +1050,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         at.set('view', view === 'month' ? 'week' : view);
         return {
           id: p.id,
-          label: `${p.participant.name}`,
+          label: inviteeName(p.participant),
           description: `${capital(shortDayLabel(displayDate(p.start)))} ${timeRange(p.start, p.end)}`,
           href: withEntry(pathname, at, p.id),
         };

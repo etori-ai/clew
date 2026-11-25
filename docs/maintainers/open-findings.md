@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 8 | Erasure reaches everything | `DE-M6`, `BD-M1`, `BD-M2`, `BD-L1`, `BD-L3`, `BD-L5` | |
 | 9 | Who may see and change what | `ID-3`, `ID-7`, `CO-M1`, `CO-L1`, `CB-7`, `BD-L2`, `CS-M2` | |
 | 10 | The assistant's prompt, tools, provider and record | `AM-2`, `AM-3`, `AM-5`, `AM-6`, `AM-7`, `AM-8`, `AM-9`, `AM-10` | |
 | 11 | Connector administration and its scripts | `DE-M5`, `CB-9`, `CB-10`, `CB-11`, `CB-12`, `CB-13` | |
@@ -41,14 +40,14 @@ no batch.
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 1 | 2 | 3 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 1 | 5 | 6 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 5 | 5 | 10 |
-| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 5 | 11 | 16 |
+| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 4 | 11 | 15 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 1 | 1 | 2 |
-| BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 6 | 8 |
+| BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 3 | 3 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 1 | 7 | 8 |
-| | **Total** | **0** | **25** | **64** | **89** |
+| | **Total** | **0** | **22** | **61** | **83** |
 
 ## High
 
@@ -107,7 +106,6 @@ ports with no contract under M7.
 |---|---|---|---|
 | DE-M4 | Medium | The card projection, the owned domains' timer fences and the follow-up's writes are SQL in the composition root with no memory twin, so the unit suite tests a copy. | `apps/server/src/composition/execution-projection.ts:30-247` |
 | DE-M5 | Medium | Connector administration merges and writes from a row read before its transaction, with no version compared, and nothing keeps `header_holder` to one row. | `apps/server/src/connectors/usecases/admin.ts:331` |
-| DE-M6 | Medium | No erasure clears an invitee's `participant_name` and `participant_email` from `proposal`. | `packages/db/src/schema.ts:433-435` |
 | DE-M7 | Medium | Ten ports or groups of ports have behaviour that no contract case holds both adapters to. | `tests/` (the store contracts) |
 | DE-M8 | Medium | The CalDAV adapter builds a person's address as `<login>@clew.test` and reads an appointment with no organiser as someone else's. | `packages/calendar/src/nextcloud.ts:68` |
 | DE-L3 | Low | `scanInto`, the first scan implementation, is unreachable in the server, and its tests still stand as evidence. | `apps/server/src/threads/usecases/cards.ts:110-203` |
@@ -158,13 +156,8 @@ of the audit rows added to the decisions review's table B, and of test gaps unde
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| BD-M1 | Medium | The documented procedure for erasing one person runs no boarding export or erasure, and D123, the status page and the scripts' headers leave it out too. | `docs/maintainers/reliability-operations.md:199` |
-| BD-M2 | Medium | `boarding.erasePerson` refuses neither an unknown id nor an active person, and its script parses arguments its own way and reaches for the durable engine. | `apps/server/src/modules/boarding/usecases.ts:952-969` |
-| BD-L1 | Low | A plan item owned by a manager who has been deactivated waits for nobody, since it is handed back only when its owner is erased. | `apps/server/src/modules/boarding/domain.ts:328-329` |
 | BD-L2 | Low | `activityFor` admits a dialogue activity's former owner to every write, so they can rewrite and remove it, not only mark it done. | `apps/server/src/modules/dialogue/usecases.ts:102-112` |
-| BD-L3 | Low | Two scan cards of Clew's own put the person's user name in their action input, which no erasure reaches. | `apps/server/src/modules/boarding/capabilities.ts:197` |
 | BD-L4 | Low | `currentRound` takes a write lock on the organisation's one open round on every talks read, so every reader queues on one row. | `apps/server/src/modules/talks/adapters/postgres.ts:79-86` |
-| BD-L5 | Low | Dialogue's own copy of the card-removal helper audits every card an erasure removes as an activity removed by hand. | `apps/server/src/composition/dialogue-work-items.ts:26` |
 | BD-L6 | Low | Several boarding and dialogue work-item audit rows, `DialogueTx.lockPersonForErasure` and boarding's erasure refusals have no test or contract case. | `apps/server/src/composition/boarding-work-items.ts:153-289` |
 
 ## The web app's data, state and errors

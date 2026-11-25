@@ -174,8 +174,9 @@ export interface Related {
 /**
  * The core rule of who may be asked about (D97 item 8, D117), as the registry asks it: how `actor` stands to each of
  * these keys of `entity`, for the relations in `admits` only. A key the directory does not know, or that names someone
- * outside `admits`, is absent. With `ids`, a person without a user name may be named by Clew's own id (a core
- * capability of Clew's own domains only). Throws when the directory cannot be read: never an empty answer for an error.
+ * outside `admits`, is absent. With `ids` (a core capability of Clew's own domains only), the actor themself or a report
+ * may be named by Clew's own id, answered by their user name in `key` where they have one. Throws when the directory
+ * cannot be read: never an empty answer for an error.
  * Composition binds it to the entities module over the people directory.
  */
 export type RelationResolver = (
@@ -308,10 +309,11 @@ export interface Capability<I = unknown, O = unknown> {
   /**
    * Who may be asked about through it (D117): the relations a caller may have to a person its input names, and on a
    * capability not about a person the input property that takes the key. The registry enforces it on every path. Only
-   * Clew's own connectors may add `ids`: a person without a user name may then be named by Clew's own id, as the talks
-   * domain names them; a manifest cannot carry it, since Clew's id is never sent to a connector. Only they may admit
-   * `registrar` (D121): the protocol's relations are `PROTOCOL_PERSON_RELATIONS`, so a manifest cannot carry it either,
-   * and a connector is never told it.
+   * Clew's own connectors may add `ids`: the caller themself or a report may then be named by Clew's own id, as the
+   * talks domain names a person without a user name and Clew's own cards name anyone (D122), and the capability is
+   * given the user name where the person has one; a manifest cannot carry it, since Clew's id is never sent to a
+   * connector. Only they may admit `registrar` (D121): the protocol's relations are `PROTOCOL_PERSON_RELATIONS`, so a
+   * manifest cannot carry it either, and a connector is never told it.
    */
   person?: Omit<PersonAccess, 'admits'> & { admits?: PersonRelation[]; ids?: true };
   /** On a capability about a unit (D117): the relations a caller may have to the unit, `manages` when absent. */

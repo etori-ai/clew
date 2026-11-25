@@ -34,6 +34,7 @@ import {
   VisuallyHidden,
   WeekAgenda,
   agendaItems,
+  inviteeName,
 } from '@clew/ui';
 import { useConversation } from '../conversation/conversation-context';
 import { TimePicker, useLeaveWithUndo, useSnoozeRows } from './card';
@@ -306,7 +307,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
           </Text>
           {unplaced.map(u => (
             <Text key={u.ref} type="supporting">
-              {u.label}
+              {inviteeName({ name: u.label })}
               {DOT}
               {u.detail}
             </Text>
@@ -327,11 +328,11 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
               </Text>
               <AvatarGroup size="sm">
                 {accepted.slice(0, 5).map(p => (
-                  <Avatar key={p.id} name={p.participant.name} />
+                  <Avatar key={p.id} name={inviteeName(p.participant)} />
                 ))}
                 {accepted.length > 5 && <AvatarGroupOverflow count={accepted.length - 5} />}
               </AvatarGroup>
-              <Text type="supporting">{accepted.map(p => p.participant.name.split(' ')[0]).join(', ')}</Text>
+              <Text type="supporting">{accepted.map(p => inviteeName(p.participant).split(' ')[0]).join(', ')}</Text>
             </HStack>
           )}
           {waiting.length > 0 && (
@@ -339,7 +340,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
               {waiting.map(p => (
                 <ListItem
                   key={p.id}
-                  label={<Text>{p.participant.name}</Text>}
+                  label={<Text>{inviteeName(p.participant)}</Text>}
                   description={
                     <Text type="supporting">{`${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)}`}</Text>
                   }
@@ -375,7 +376,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
                   key={p.id}
                   value={p.id}
                   label={
-                    <Text>{`${p.participant.name}\u00a0· ${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)}`}</Text>
+                    <Text>{`${inviteeName(p.participant)}\u00a0· ${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)}`}</Text>
                   }
                   isChecked={p.status !== 'proposed' || selected.includes(p.id)}
                   isDisabled={p.status !== 'proposed'}

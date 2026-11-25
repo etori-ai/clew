@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import type { ProposalRecord } from '../../apps/server/src/modules/calendar/model';
+import { memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
+import { INVITEE_ERASED, inviteeErasure } from '../../apps/server/src/modules/calendar/usecases/erasure';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { SCIM } from '../../apps/server/src/modules/people/contracts';
 import { ERASED, IDENTIFIERS_ABOUT } from '../../apps/server/src/modules/people/domain';
@@ -10,8 +13,11 @@ import { memoryPersonKeys } from '../person-keys';
 /**
  * An operator's erasure of a deactivated person (D123, Q7 of the 2026-11-12 users review) on the memory adapter: the
  * person pushed through the SCIM use cases as a source pushes them, the sign-in's rows written as `@clew/db/auth`
- * writes them (a unit test cannot run it), and the erasure's refusals, its one transaction and its audit row. The same
- * on PostgreSQL, the sign-in's own writes included, is `tests/db/person-erase.test.ts`.
+ * writes them (a unit test cannot run it), and the erasure's refusals, its one transaction and its audit row. The
+ * calendar's part, the invitations and the planning cards, runs on the calendar's memory store bound through the
+ * erasure port as composition binds it on PostgreSQL; that store commits on its own, so that the erasure's single
+ * transaction across both is `tests/db/person-erase.test.ts`, which runs the same on PostgreSQL, the sign-in's own
+ * writes included.
  */
 const BASE = 'https://clew.test/scim/v2';
 const OPERATOR = 'operator:cli';
@@ -37,14 +43,101 @@ const patch = (...Operations: Array<{ op: string; path?: string; value?: unknown
   Operations,
 });
 function harness() {
-  const store = memoryProvisionStore();
+  const calendar = memoryProposalStore();
+  const store = memoryProvisionStore({
+    erasure: () => ({ invitee: input => calendar.transaction(tx => inviteeErasure(tx).invitee(input)) }),
+  });
   let tick = 0,
     seq = 0;
   const clock = () => new Date(Date.UTC(2026, 10, 13, 6, 0, tick++));
   const scim = scimUsecases({ store, clock, ids: () => 'id-' + ++seq, digest: token => 'digest:' + token });
   const p = { id: 'metakatalogen', organisationId: 'sundsvall', label: 'Metakatalogen' };
   store.state.provisioners.set('digest:secret', p);
-  return { store, scim, p, clock, erasure: personErasureUsecases({ store, clock }) };
+  return { store, calendar, scim, p, clock, erasure: personErasureUsecases({ store, clock }) };
+}
+const T0 = '2026-11-10T08:00:00.000Z';
+const invite = (
+  id: string,
+  threadId: string,
+  personId: string,
+  status: ProposalRecord['status'],
+  participant: ProposalRecord['participant'],
+): ProposalRecord => ({
+  id,
+  threadId,
+  personId,
+  status,
+  participant,
+  start: '2026-11-17T09:00:00.000Z',
+  end: '2026-11-17T09:45:00.000Z',
+  eventUid: null,
+  eventRef: null,
+  eventRevision: null,
+  confirmedAt: null,
+  undoUntil: null,
+  reminders: 0,
+  remindedAt: null,
+});
+const row = (ref: string, label: string) => ({
+  ref,
+  label,
+  detail: 'tis 17 nov 10:00–10:45',
+  selectable: true,
+  selected: true,
+});
+/**
+ * Two managers' planning cards that name Anna (D30): Maja's, with a time sent to her, one drawn for her and never
+ * sent, and one drawn for Bo, each a row; and Lars's, from a round that could not place her or Bo, a row each without
+ * a proposal. Every row carries the name it was drawn with, as `samtal.ts` draws it.
+ */
+async function planningCards(calendar: ReturnType<typeof memoryProposalStore>, anna: string, bo: string) {
+  const her = { personId: anna, name: 'Anna Berg', email: 'anna.berg@sundsvall.se' };
+  await calendar.transaction(async tx => {
+    for (const [id, personId] of [
+      ['card-maja', 'maja'],
+      ['card-lars', 'lars'],
+    ] as const)
+      await tx.insertThread({
+        id,
+        personId,
+        topic: 'utvecklingssamtal',
+        title: 'Planera utvecklingssamtal',
+        week: '2026-W47',
+        area: 'Personal',
+        summary: 'Utvecklingssamtal',
+        trigger: { reason: '2 samtal saknar tid', source: 'Kalendern', at: T0 },
+        createdAt: T0,
+        updatedAt: T0,
+      });
+    await tx.insertProposals([
+      invite('proposal-1', 'card-maja', 'maja', 'confirmed', her),
+      invite('proposal-2', 'card-maja', 'maja', 'proposed', { ...her, email: 'Anna.Berg@Sundsvall.se' }),
+      invite('proposal-3', 'card-maja', 'maja', 'proposed', {
+        personId: bo,
+        name: 'Bo Ek',
+        email: 'bo.ek@sundsvall.se',
+      }),
+    ]);
+    await tx.updateThread('card-maja', {
+      items: [
+        row('proposal:proposal-1', 'Anna Berg'),
+        row('proposal:proposal-2', 'Anna Berg'),
+        row('proposal:proposal-3', 'Bo Ek'),
+      ],
+    });
+    await tx.updateThread('card-lars', {
+      items: [
+        {
+          ref: 'unplaced:' + anna,
+          label: 'Anna Berg',
+          detail: 'Ingen gemensam tid',
+          selectable: false,
+          selected: false,
+        },
+        { ref: 'unplaced:' + bo, label: 'Bo Ek', detail: 'Ingen gemensam tid', selectable: false, selected: false },
+      ],
+    });
+  });
 }
 /**
  * Anna as a source leaves her: pushed, renamed and given a new source key, given a title, phone numbers and an
@@ -94,6 +187,8 @@ async function anna() {
     { digest: 'd2', personId: id },
     { digest: 'd3', personId: bo },
   );
+  // Her managers' planning cards: invitations to her drawn with her name and address as they were then, and rows.
+  await planningCards(h.calendar, id, bo);
   store.state.authenticationAudit.push(
     { actor: 'claim:annber', action: 'identity-unmatched' },
     { actor: 'claim:ANNA.BERG', action: 'identity-unmatched' },
@@ -172,7 +267,7 @@ describe('erasing a person (D123)', () => {
   });
 
   test('clears the record and what names the person, keeps every event and the id, and audits counts only', async () => {
-    const { store, scim, p, erasure, id, bo, unit, choir } = await anna();
+    const { store, calendar, scim, p, erasure, id, bo, unit, choir } = await anna();
     await scim.deleteUser(p, id);
     const held = store.state.users.get(id)!,
       events = store.state.audit.map(row => [row.action, row.subject]);
@@ -189,6 +284,9 @@ describe('erasing a person (D123)', () => {
       sessions: 2,
       auditRows: 10,
       signInRows: 3,
+      invitations: 2,
+      planningRows: 3,
+      drafts: 1,
     };
     expect(erased).toEqual({ erased: counts });
     const at = store.state.users.get(id)!.updatedAt;
@@ -230,6 +328,38 @@ describe('erasing a person (D123)', () => {
     expect(store.state.grants.has(bo)).toBe(true);
     expect(store.state.bindings).toEqual([{ issuer: ISSUER, subject: 'sub-bo', personId: bo }]);
     expect(store.state.sessions).toEqual([{ digest: 'd3', personId: bo }]);
+    // Her invitations stay, the manager's history, by her id alone, the one sent as it was and the one never sent
+    // withdrawn; Bo's keeps his name and address. Her rows leave both cards, which take the erasure's time as their
+    // version, and Bo's stay as they were drawn.
+    const maja = (await calendar.readThread('maja', 'card-maja'))!,
+      lars = (await calendar.readThread('lars', 'card-lars'))!;
+    expect(maja.proposals.map(p => [p.id, p.status, p.participant])).toEqual([
+      ['proposal-1', 'confirmed', { personId: id, name: '', email: '' }],
+      ['proposal-2', 'superseded', { personId: id, name: '', email: '' }],
+      ['proposal-3', 'proposed', { personId: bo, name: 'Bo Ek', email: 'bo.ek@sundsvall.se' }],
+    ]);
+    expect(maja.thread.items.map(i => [i.ref, i.label])).toEqual([['proposal:proposal-3', 'Bo Ek']]);
+    expect(lars.thread.items.map(i => [i.ref, i.label])).toEqual([['unplaced:' + bo, 'Bo Ek']]);
+    expect([maja.thread.updatedAt, lars.thread.updatedAt]).toEqual([at, at]);
+    // The card's own view leaves the withdrawn time out, so nothing of hers is drawn there.
+    expect(maja.thread.proposals.map(p => p.id)).toEqual(['proposal-1', 'proposal-3']);
+    // One row per card, by the erasure's actor, ids and a count only.
+    expect(calendar.audit).toEqual([
+      {
+        actor: OPERATOR,
+        action: INVITEE_ERASED,
+        subject: 'thread:card-lars',
+        at,
+        details: { person: id, rows: 1, drafts: [] },
+      },
+      {
+        actor: OPERATOR,
+        action: INVITEE_ERASED,
+        subject: 'thread:card-maja',
+        at,
+        details: { person: id, rows: 2, drafts: ['proposal-2'] },
+      },
+    ]);
 
     // Every event stays where it was, and the erasure's own row comes last.
     expect(store.state.audit.map(row => [row.action, row.subject])).toEqual([
@@ -278,6 +408,10 @@ describe('erasing a person (D123)', () => {
       store.state.audit,
       store.state.authenticationAudit,
       store.state.bindings,
+      maja.proposals.filter(p => p.participant.personId === id),
+      maja.thread,
+      lars.thread,
+      calendar.audit,
     ]).toLowerCase();
     for (const value of HER_VALUES) expect(kept).not.toContain(value.toLowerCase());
 
@@ -292,9 +426,13 @@ describe('erasing a person (D123)', () => {
         sessions: 0,
         auditRows: 0,
         signInRows: 0,
+        invitations: 0,
+        planningRows: 0,
+        drafts: 0,
       },
     });
     expect(store.state.users.get(id)!.updatedAt).toBe(at);
+    expect(calendar.audit).toHaveLength(2);
 
     // The name and the key are free: the source pushes them again as a new person, whom the name now names, and the
     // old one stays erased.
@@ -323,6 +461,9 @@ describe('erasing a person (D123)', () => {
         sessions: 0,
         auditRows: 0,
         signInRows: 0,
+        invitations: 0,
+        planningRows: 0,
+        drafts: 0,
       },
     });
     // Her resource no longer lists the group, so its time of change is the erasure's, as the group's is.
@@ -390,6 +531,8 @@ describe('erasing a person (D123)', () => {
     await expect(personErasureUsecases({ store: failing, clock }).erasePerson(OPERATOR, id)).rejects.toThrow(
       'the audit row could not be written',
     );
+    // The calendar's memory store commits on its own; on PostgreSQL its writes are the erasure's transaction's and go
+    // with it (`tests/db/person-erase.test.ts`).
     expect(store.state).toEqual(before);
   });
 
@@ -453,7 +596,7 @@ describe('scripts/person-erase.ts refuses, asking the database nothing,', () => 
       code: 2,
       out: '',
       err:
-        'Erasing person "p1" clears their name, e-mail address, phone numbers, employments, title, user name and source key, removes their groups, placements, grant, sign-in bindings and sessions, and replaces their identifiers in the audit trail, and cannot be undone. Run again with --confirm to erase.\n' +
+        'Erasing person "p1" clears their name, e-mail address, phone numbers, employments, title, user name and source key, removes their groups, placements, grant, sign-in bindings and sessions, clears their name and address from the invitations sent to them, takes their rows off their managers\' planning cards and withdraws the times drawn for them and never sent, and replaces their identifiers in the audit trail, and cannot be undone. Run again with --confirm to erase.\n' +
         usage,
     });
   });

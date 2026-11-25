@@ -88,6 +88,27 @@ export interface LeaversTx {
   /** The person was activated again. */
   reactivated(change: LeaverChange): Promise<void>;
 }
+/** What an erasure cleared of the person in another domain's records about them (D123), counts only. */
+export interface InviteeErased {
+  /** Invitations to the person (the calendar's proposals) cleared of the name and the address they were drawn with. */
+  invitations: number;
+  /** Rows that named the person on their managers' planning cards, taken off the cards. */
+  planningRows: number;
+  /** Times drawn for the person and never sent, withdrawn: their address is gone, so they could not be sent. */
+  drafts: number;
+}
+/**
+ * What an operator's erasure of one person clears in the records other domains keep about them on other people's
+ * behalf (D123, DE-M6 of the review of 2026-11-23): the calendar's invitations to them and the rows of their managers'
+ * planning cards. The erasure tells it inside its own transaction, after the person is locked and before its
+ * `person.erased` row, so what the domain writes commits or rolls back with that row. Unlike the leavers port it is not
+ * best effort: a domain that cannot clear the person fails the erasure, which writes nothing, and the operator runs it
+ * again. The people module imports no such domain: composition binds the calendar's (`composition/people.ts`), and a
+ * store built without a binding clears nothing and counts zero.
+ */
+export interface ErasureTx {
+  invitee(input: { actor: string; personId: string; at: string }): Promise<InviteeErased>;
+}
 /**
  * The ports of provisioning (D68, D85, D25): what the SCIM use cases and the derivation read and write inside one
  * transaction. The grant is the projection `auth_access_grant`; the capabilities it carries are strings there and the
@@ -355,6 +376,8 @@ export interface ProvisionTx {
    * and in the composed form (NFC) on both sides; how many rows changed. The rest of each row stays.
    */
   eraseClaims(names: readonly string[], marker: string): Promise<number>;
+  /** What other domains clear of a person this transaction erases (D123), as composition binds them. */
+  erasure: ErasureTx;
   /** Add or remove one group-capability row of an organisation; true when the row changed. */
   setGroupCapability(
     organisationId: string,

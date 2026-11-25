@@ -22,8 +22,9 @@ export interface NamedInputs {
   /** Whether the capability declared `person.admits` or `unit.admits`; without it the strict default stands. */
   declared: boolean;
   /**
-   * A core capability of Clew's own domains that also takes a person without a user name by Clew's own id (D117), as
-   * the talks domain does. Never on a remote manifest: Clew's id is never sent to a connector.
+   * A core capability of Clew's own domains that also takes the caller or a report by Clew's own id (D117, D122): a
+   * person without a user name, as the talks domain names them, and anyone a card of Clew's own names by id, given to
+   * the capability by their user name. Never on a remote manifest: Clew's id is never sent to a connector.
    */
   ids: boolean;
 }

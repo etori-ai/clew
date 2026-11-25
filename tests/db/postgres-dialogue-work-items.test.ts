@@ -196,9 +196,34 @@ describe('the activity card (D118 item 4)', () => {
         connector: 'talks',
         area: 'talks',
       });
-    await run(items => items.remove([id, foreign]));
-    expect((await rows(id)).thread).toBeUndefined();
+    await run(items => items.remove([id, foreign], 'activity-removed'));
+    r = await rows(id);
+    expect(r.thread).toBeUndefined();
+    expect(r.timer).toBeUndefined();
+    expect(r.audit.at(-1)).toMatchObject({
+      actor: 'dialogue:activity',
+      action: 'thread.removed',
+      details: { reason: 'activity-removed' },
+    });
     expect((await rows(foreign)).thread).toBeDefined();
+    expect((await rows(foreign)).audit).toEqual([]);
     await database().delete(schema.threads).where(eq(schema.threads.id, foreign));
+  });
+
+  test('an erasure removes the cards with their timers and says so on each card’s audit row', async () => {
+    const { id: personId, unitId } = await owner();
+    const [dated, undated] = [card(), card()];
+    await open(dated, personId, unitId, '2026-03-12');
+    await open(undated, personId, unitId, null);
+    await run(items => items.remove([undated, dated], 'erasure'));
+    for (const id of [dated, undated]) {
+      const r = await rows(id);
+      expect(r.thread).toBeUndefined();
+      expect(r.timer).toBeUndefined();
+      expect(r.audit.map(a => [a.actor, a.action, a.details])).toEqual([
+        ['dialogue:activity', 'thread.pushed', expect.anything()],
+        ['dialogue:activity', 'thread.removed', { reason: 'erasure' }],
+      ]);
+    }
   });
 });

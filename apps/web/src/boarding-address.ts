@@ -114,7 +114,8 @@ export function planReadOf(search: URLSearchParams | string): { plan: string | n
 }
 /**
  * What the page of `boarding.person` names (`/tools/boarding.person?input={"keys":[…]}&from=…`, the suggestion's card):
- * the one person's user name when it names exactly one, and the way back. More than one is a list: Personal's lens.
+ * the one person's key when it names exactly one, which the card writes as their Clew id (D122), and the way back. More
+ * than one is a list: Personal's lens.
  */
 export function personReadOf(search: URLSearchParams | string): { key: string | null; from: string | null } {
   const keys = inputOf(search).keys;

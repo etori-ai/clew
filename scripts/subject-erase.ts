@@ -19,8 +19,8 @@
  * A person is named by their id, never by a user name. Refused, writing nothing and no audit row, for an id the people
  * table does not hold and for a person who is still active: the source deactivates a person first (D68 item 1). A unit
  * is erased by any id, since a removed unit may still be named on cards. When no card names the entity the script says
- * so. Run `bun scripts/talks-erase.ts` and `bun scripts/competence-erase.ts` as well to erase a person from those
- * domains.
+ * so. Run `bun scripts/talks-erase.ts`, `bun scripts/competence-erase.ts`, `bun scripts/dialogue-erase.ts` and
+ * `bun scripts/boarding-erase.ts` as well to erase a person from those domains.
  */
 import { resolve } from 'node:path';
 import { closeDatabase } from '@clew/db';

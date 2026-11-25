@@ -16,6 +16,7 @@ import {
   placesOf,
   viewProblem,
   type Actor,
+  type RegistryOptions,
 } from '../../packages/connectors/src/index';
 import { ForbiddenError } from '../../apps/server/src/context';
 import { memoryTalkStore, type MemoryTalkStore } from '../../apps/server/src/modules/talks/adapters/memory';
@@ -44,7 +45,7 @@ import {
   talkUsecases,
   type TalkUsecases,
 } from '../../apps/server/src/modules/talks/usecases';
-import { Registry } from '../registry';
+import { Registry, trustingRelations } from '../registry';
 
 /**
  * The talks module's use cases (D96, D132) on the memory adapter, with a clock, ids and a staff port the test owns:
@@ -890,7 +891,8 @@ describe('the cards before and after a booked talk (D134)', () => {
       kind: 'read' as const,
       role: 'primary' as const,
       target: 'panel' as const,
-      input: { keys: ['dan.d'] },
+      // Clew is the source, so its card names the person by Clew's id, never by the user name (D122).
+      input: { keys: ['dan'] },
     };
     expect(await cards(boss)).toEqual([
       {
@@ -1621,8 +1623,8 @@ describe('the built-in connector', () => {
     role: p.role,
   });
   const personas = new Map([boss, other, asAnna, asBo].map(p => [p.id, p]));
-  const registry = () =>
-    new Registry().register(
+  const registry = (options: RegistryOptions = {}) =>
+    new Registry(options).register(
       talksConnector(talks, async a => {
         const p = personas.get(a.id);
         if (!p) throw new Error('unknown');
@@ -1883,16 +1885,26 @@ describe('the built-in connector', () => {
             kind: 'read',
             role: 'primary',
             target: 'panel',
-            input: { keys: ['dan.d'] },
+            input: { keys: ['dan'] },
           },
         ],
         occurrences: [{ key: 'talks:calendar:dan', revision: `${moved.start}/${moved.end}`, period: roundId }],
       },
     ]);
-    // Nobody is named on the card: the person is the row's subject.
+    // Nobody is named on the card: the person is the row's subject, and the action names them by id, not user name.
     for (const name of NAMES) expect(JSON.stringify(drafts)).not.toContain(name);
-    // The read the card opens answers with that key.
-    expect(await r.run(actor(boss), 'talks.person', { keys: ['dan.d'] })).toMatchObject({ rows: [{ key: 'dan.d' }] });
+    expect(JSON.stringify(drafts[0]!.actions)).not.toContain('dan.d');
+    // The read the card opens, with the card's own input, answers for Dan: the registry resolves Clew's id as the rule
+    // does (D117), to the user name the read is given (`tests/unit/asked-about.test.ts` holds the rule itself).
+    const byId = registry({
+      relations: async (a, e, keys, admits, options) =>
+        (await trustingRelations(a, e, keys, admits)).map(k =>
+          options?.ids && k.asked === 'dan' ? { ...k, key: 'dan.d' } : k,
+        ),
+    });
+    expect(await byId.run(actor(boss), 'talks.person', drafts[0]!.actions[0]!.input!)).toMatchObject({
+      rows: [{ key: 'dan.d' }],
+    });
     // Gone is another card text and another revision of the same occurrence, so a handled card comes back.
     await seen(null);
     const [gone] = (await scan(boss)).drafts;
