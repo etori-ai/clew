@@ -132,6 +132,7 @@ export function memoryConnectorStore(): MemoryConnectorStore {
             if (
               !r ||
               r.version !== offer.version ||
+              (offer.draftOnly && r.state !== 'draft') ||
               r.offered === null ||
               r.offeredAt !== offer.at ||
               !sameManifest(r.offered, offer.manifest)
