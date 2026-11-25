@@ -23,6 +23,7 @@ import {
   CERTIFICATE_TITLE,
   ENTITY_UNIT,
   NEWS_LINK,
+  NOW,
   asNotice,
   expiredCertificate,
   newsMenuRow,
@@ -152,7 +153,7 @@ test.describe('Hem', () => {
     await expect(rows).toHaveCount(4);
     for (const i of [0, 1, 2, 3]) await expect(rows.nth(i).getByRole('link')).toHaveCount(1);
     // How many need the person in all, beside the heading, and the way to all of them in Att göra.
-    await expect(block.getByText(/^·\s*6\s*behöver dig$/)).toBeVisible();
+    await expect(block.getByText(/^·\s*7\s*behöver dig$/)).toBeVisible();
     await expect(block.getByRole('link', { name: 'Visa alla' })).toHaveAttribute('href', '/todo');
     const fakturor = block.getByRole('link', { name: /^Öppna Attestera 3 fakturor/ });
     await expect(fakturor).toHaveAttribute('href', '/items/fakturor?from=%2F');
@@ -1002,23 +1003,43 @@ test.describe('a row whose next press is the decision itself runs it from the ro
     page,
     api,
   }) => {
-    // Hem draws the most urgent rows: the notice is due today here, so it is among them.
-    const notice = api.threads.find(t => t.id === 'rutin')!;
-    notice.deadline = '2026-11-04';
+    // The reference connector's ready-to-send action has its input and asks the person to choose no rows.
+    const task: Thread = {
+      ...api.threads.find(t => t.id === 'rutin')!,
+      id: 'reference',
+      topic: 'reference:item:1',
+      title: 'Hantera testposten',
+      connector: 'reference',
+      area: 'reference',
+      deadline: '2026-11-04',
+      items: [],
+      trigger: { source: 'Testkälla', reason: 'Testkällan har en öppen post.', at: NOW },
+      actions: [
+        {
+          id: 'complete',
+          label: 'Markera klar',
+          capability: 'reference.complete',
+          kind: 'execute',
+          role: 'primary',
+          input: { ref: 'reference:item:1', revision: 1 },
+        },
+      ],
+    };
+    api.threads = [task, ...api.threads];
     await open(page, '/');
-    const row = needs(page).locator('#work-rutin');
+    const row = needs(page).locator('#work-reference');
     // The button is not a link to the page here, so the item's name is (D142 item 7).
-    await expect(row.getByRole('link', { name: 'Ny rutin för läkemedelshantering' })).toHaveAttribute(
+    await expect(row.getByRole('link', { name: 'Hantera testposten' })).toHaveAttribute(
       'href',
-      '/items/rutin?from=%2F',
+      '/items/reference?from=%2F',
     );
     await expect(row.getByRole('link', { name: /^Öppna/ })).toHaveCount(0);
     await expectNoAxeViolations(page);
-    const ack = row.getByRole('button', { name: 'Jag har läst: Ny rutin för läkemedelshantering' });
-    await ack.focus();
+    const complete = row.getByRole('button', { name: 'Markera klar: Hantera testposten' });
+    await complete.focus();
     await page.keyboard.press('Enter');
-    await expect.poll(() => api.acted.map(a => [a.threadId, a.body.actionId])).toEqual([['rutin', 'ack']]);
+    await expect.poll(() => api.acted.map(a => [a.threadId, a.body.actionId])).toEqual([['reference', 'complete']]);
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(toasts(page).getByText(/^Läskvittot är registrerat\. Ärendet ligger under Klart\./)).toBeVisible();
+    await expect(toasts(page).getByText(/^Bekräftat i testkällan\. Ärendet ligger under Klart\./)).toBeVisible();
   });
 });

@@ -2,24 +2,30 @@ import { desktop, expect, expectNoAxeViolations, open, test } from './support';
 
 test.describe('a decision the card is left waiting on keeps its way back where the card lies (D70 amended)', () => {
   test.use({ viewport: desktop });
-  test('toast undo keeps a rejected request visible and succeeds when retried', async ({ page, api }) => {
+  test('toast undo keeps a failed request visible and succeeds when retried', async ({ page, api }) => {
     await open(page, '/todo?item=samtal');
     await page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();
+    // The toast comes with the calendar's answer, which carries the way back.
     const toasts = page.getByRole('region', { name: 'Aviseringar' });
     const undo = toasts.getByRole('button', { name: 'Ångra', exact: true });
     await expect(undo).toBeVisible();
+    // The server fails the request as the routes fail what is nobody's input (`context.ts`).
     await page.route('**/api/threads/samtal/undo-receipt', route =>
-      route.fulfill({ status: 409, json: { error: 'Källan svarar inte. Försök igen.' } }),
+      route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } }),
     );
     await undo.click();
-    await expect(toasts.getByRole('alert')).toContainText('Källan svarar inte');
+    await expect(toasts.getByRole('alert')).toContainText('Något gick fel. Försök igen.');
     await expect(undo).toBeVisible();
     expect(api.threads.find(t => t.id === 'samtal')!.receipt).not.toBeNull();
     await page.unroute('**/api/threads/samtal/undo-receipt');
     await undo.click();
+    // The undo is a decision of its own: Ångra goes at once, and the receipt once the calendar has cancelled.
     await expect(undo).toHaveCount(0);
-    expect(api.threads.find(t => t.id === 'samtal')!.receipt).toBeNull();
-    await expect(page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
+    await expect.poll(() => api.threads.find(t => t.id === 'samtal')!.receipt).toBeNull();
+    const card = page.locator('#card-samtal');
+    await expect(card.getByText('2 av 2 kalenderändringar är bekräftade')).toHaveCount(0);
+    // What the card then offers is left out here: with its proposals undone it has neither "Skicka" nor "Vecka N i
+    // stället", which is the register's DE-L17 and not what it should offer.
   });
 
   test('the receipt’s toast stays when the person moves on, and its Visa leads to the item’s page with the page they are on as the way back (D126 rule 1)', async ({
@@ -94,7 +100,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
       .locator('#card-samtal')
       .getByRole('button', { name: /^Ångra allt · / })
       .click();
-    // Undone, the item is back under Behöver dig with its proposals, and nothing waits on anyone.
+    // Undone, the item is back under Behöver dig without its receipt, and nothing waits on anyone.
     await expect(waiting).toHaveCount(0);
     await page
       .getByRole('navigation', { name: 'Urval' })

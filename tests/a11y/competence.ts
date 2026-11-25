@@ -130,11 +130,12 @@ export const attentionSpec: PanelViewSpec = {
   connector: 'competence',
   source: 'Kompetens',
   chip: false,
-  // The people the rows name, by the key on the row, as the server resolves them (D122): a name links to the page.
+  // The people the rows name: the user name on the row to Clew's id, as the server resolves them (D122), so a name
+  // links to the person's page and never to `/people/<user name>`, which names nobody.
   people: {
-    'anna.lindqvist': 'anna.lindqvist',
-    'erik.sandstrom': 'erik.sandstrom',
-    'maria.kallstrom': 'maria.kallstrom',
+    'anna.lindqvist': 'anna',
+    'erik.sandstrom': 'erik',
+    'maria.kallstrom': 'maria',
   },
 };
 const due = (userName: string, name: string, competence: string, status: string, expiresOn: string) => ({

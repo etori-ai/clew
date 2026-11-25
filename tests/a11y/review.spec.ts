@@ -655,23 +655,8 @@ test.describe('confirmed review completion', () => {
           (window as unknown as { recordCompletion(): void }).recordCompletion();
       }).observe(document, { childList: true, subtree: true });
     });
-    await page.route('**/api/threads/fakturor/act', async route => {
-      const card = api.threads.find(t => t.id === 'fakturor')!;
-      const refs = route.request().postDataJSON().refs as string[];
-      const next = {
-        ...card,
-        state: 'handled' as const,
-        receipt: {
-          at: '2026-11-04T08:00:00.000Z',
-          headline: 'Resultatet kunde inte bekräftas',
-          undoUntil: null,
-          undoCapability: null,
-          rows: refs.map(ref => ({ ref, label: ref, outcome: 'unknown' as const, detail: 'Källan svarade inte.' })),
-        },
-      };
-      api.threads = api.threads.map(t => (t.id === card.id ? next : t));
-      await route.fulfill({ json: { kind: 'execute', thread: next } });
-    });
+    // The source answers without confirming the row: the execution is unknown and the item stays open.
+    api.sourceInDoubt = true;
     await open(page, '/todo?item=fakturor');
     await pane(page).getByRole('link', { name: 'Granska 3' }).click();
     await page.getByRole('button', { name: 'Hoppa över', exact: true }).click();
@@ -685,7 +670,7 @@ test.describe('confirmed review completion', () => {
     await expect(rowHeading(page, ROWS[1]!)).toBeVisible();
     await expect(rows(page).getByRole('listitem').nth(1)).toContainText('Obekräftad');
     await expect(rows(page).getByRole('listitem').nth(0)).toContainText('Inte skickad');
-    await expect(page.getByRole('main')).toContainText('Källan svarade inte.');
+    await expect(page.getByRole('main')).toContainText('Ekonomisystemet gav inget säkert besked');
     expect(completionShown).toBe(false);
     await expectNoAxeViolations(page);
   });
