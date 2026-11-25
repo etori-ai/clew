@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ManifestDiff } from '@clew/contracts';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 
@@ -34,9 +35,16 @@ export const pendingOffer = (row: {
   manifest: unknown;
   offered: unknown;
   offeredAt: string | null;
-}): { manifest: ConnectorManifest; at: string } | undefined =>
+  version: number;
+}): { manifest: ConnectorManifest; at: string; revision: string } | undefined =>
   isManifest(row.offered) && row.offeredAt && !sameManifest(row.manifest, row.offered)
-    ? { manifest: row.offered, at: row.offeredAt }
+    ? {
+        manifest: row.offered,
+        at: row.offeredAt,
+        revision: createHash('sha256')
+          .update(canonical([row.version, row.offeredAt, row.offered]))
+          .digest('hex'),
+      }
     : undefined;
 
 /** The top-level fields the diff names on their own lines; every other field that changed is listed in `fields`. */

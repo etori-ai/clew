@@ -129,7 +129,13 @@ export function memoryConnectorStore(): MemoryConnectorStore {
           },
           async approveOffer(id, offer, manifest, by, at) {
             const r = rows.get(id);
-            if (!r || r.offered === null || r.offeredAt !== offer.at || !sameManifest(r.offered, offer.manifest))
+            if (
+              !r ||
+              r.version !== offer.version ||
+              r.offered === null ||
+              r.offeredAt !== offer.at ||
+              !sameManifest(r.offered, offer.manifest)
+            )
               return false;
             keep(id);
             Object.assign(r, {

@@ -116,7 +116,7 @@ export interface ConnectorTx {
    */
   approveOffer(
     id: string,
-    offer: { at: string; manifest: unknown },
+    offer: { at: string; manifest: unknown; version: number },
     manifest: unknown,
     by: string,
     at: string,
