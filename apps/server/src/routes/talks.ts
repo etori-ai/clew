@@ -15,6 +15,7 @@ import {
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { TalkUsecases } from '../modules/talks/usecases';
 import type { InvitationUsecases } from '../modules/calendar/usecases/invitations';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * The talks module's writes (D96 items 2 and 4, D132 item 4): mark a talk held or undo it, register the time of a talk
@@ -48,8 +49,8 @@ const validators = {
   commitment: ajv.compile<CommitmentAddBody>(CommitmentAddBodySchema),
 };
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 2000): Promise<T> {
-  const text = await request.text();
-  if (text.length > max) throw new InputError('För stor förfrågan.');
+  const text = await textOfAtMost(request, max);
+  if (text === undefined) throw new InputError('För stor förfrågan.');
   let value: unknown;
   try {
     value = JSON.parse(text);

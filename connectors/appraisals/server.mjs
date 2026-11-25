@@ -2,6 +2,7 @@
 // FIXTURE_TODAY (a fixed day, YYYY-MM-DD), FIXTURE_PERSON_MAP (a JSON object, Clew person id to user name),
 // APPRAISALS_LINK_BASE (the https address rows link to).
 import { createServer } from 'node:http';
+import { listener } from './http.mjs';
 import { createConnector } from './connector.mjs';
 
 const env = process.env;
@@ -25,15 +26,4 @@ const { handle } = createConnector({
   ...(env.APPRAISALS_LINK_BASE ? { linkBase: env.APPRAISALS_LINK_BASE.replace(/\/+$/, '') } : {}),
 });
 const port = Number(env.PORT ?? 4051);
-createServer(async (req, res) => {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const request = new Request(`http://${req.headers.host ?? 'connector'}${req.url}`, {
-    method: req.method,
-    headers: req.headers,
-    body: chunks.length ? Buffer.concat(chunks) : undefined,
-  });
-  const response = await handle(request);
-  res.writeHead(response.status, Object.fromEntries(response.headers));
-  res.end(Buffer.from(await response.arrayBuffer()));
-}).listen(port, () => console.log(`appraisals connector listening on :${port}`));
+createServer(listener(handle)).listen(port, () => console.log(`appraisals connector listening on :${port}`));

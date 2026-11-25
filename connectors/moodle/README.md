@@ -25,7 +25,8 @@ How Moodle actually answers is recorded in [samples/](samples/README.md): 36 rea
 | `connector.mjs` | The reads, matching a person, who may be answered about, the installation's pages, deadlines, and HTTP error handling |
 | `learning.mjs` | The learning-platform port, its errors, and an in-memory stand-in shaped like the development seed |
 | `moodle.mjs` | Moodle's REST API behind the port: the only code here that knows it |
-| `server.mjs` | Serves it over HTTP, stops a read when Clew goes away, and reads the configuration |
+| `http.mjs` | The HTTP listener: reads a request within a size limit and answers whatever it holds, so nothing sent to the port ends the process; it stops a read when Clew goes away |
+| `server.mjs` | Reads the configuration and serves the connector with that listener |
 
 ## What it answers
 

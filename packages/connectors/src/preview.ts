@@ -23,8 +23,12 @@ import {
 export interface PreviewOptions {
   /** The id the connector will be registered with, when known. */
   id?: string;
-  /** Validates `{}` against an input schema with a real validator. Absent, a schema that lists `required` properties is taken to need input. */
-  acceptsEmptyInput?: (schema: object) => boolean;
+  /**
+   * Compiles a schema with a real validator (`schemaCompiler()`): the rules' compilation, and `{}` checked against each
+   * input with the same one. Absent, the rules compile with their own, and a schema that lists `required` properties is
+   * taken to need input.
+   */
+  compile?: (schema: object) => (value: unknown) => boolean;
 }
 const listsNothingRequired = (schema: object) =>
   !((schema as { required?: unknown }).required as unknown[] | undefined)?.length;
@@ -35,10 +39,19 @@ type PreviewCapability = NonNullable<ManifestPreview['manifest']>['capabilities'
 
 export function previewManifest(document: unknown, options: PreviewOptions = {}): ManifestPreview {
   const protocol = { current: PROTOCOL_VERSION, accepted: [...PROTOCOL_ACCEPTED] };
-  const problems = manifestProblems(document, options.id);
+  const { compile } = options;
+  const problems = manifestProblems(document, options.id, compile);
   if (problems.length) return { ok: false, protocol, problems, issues: problems.map(p => placeProblem(p, document)) };
   const manifest = document as ConnectorManifest;
-  const accepts = options.acceptsEmptyInput ?? listsNothingRequired;
+  const accepts = compile
+    ? (schema: object) => {
+        try {
+          return !!compile(schema)({});
+        } catch {
+          return false;
+        }
+      }
+    : listsNothingRequired;
   const capabilities = manifest.capabilities.map((c): PreviewCapability => {
     const roles = c.scope.roles ?? BOTH;
     const needsInput = !accepts(c.input as object);

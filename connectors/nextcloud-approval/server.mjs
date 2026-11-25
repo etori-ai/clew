@@ -7,6 +7,7 @@
 //   NEXTCLOUD_SOURCE_LABEL  the system's name as a person reads it (default "Nextcloud")
 //   NEXTCLOUD_PUBLIC_URL    Nextcloud's address in the person's browser, for links to a file (optional)
 import { createServer } from 'node:http';
+import { listener } from './http.mjs';
 import { createConnector } from './connector.mjs';
 import { createFixtureApproval } from './approvals.mjs';
 import { createNextcloudApproval } from './nextcloud.mjs';
@@ -43,15 +44,6 @@ const { handle } = createConnector({
   publicUrl,
 });
 const port = Number(env.PORT ?? 4052);
-createServer(async (req, res) => {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const request = new Request(`http://${req.headers.host ?? 'connector'}${req.url}`, {
-    method: req.method,
-    headers: req.headers,
-    body: chunks.length ? Buffer.concat(chunks) : undefined,
-  });
-  const response = await handle(request);
-  res.writeHead(response.status, Object.fromEntries(response.headers));
-  res.end(Buffer.from(await response.arrayBuffer()));
-}).listen(port, () => console.log(`nextcloud-approval connector listening on :${port} (${adapter} adapter)`));
+createServer(listener(handle)).listen(port, () =>
+  console.log(`nextcloud-approval connector listening on :${port} (${adapter} adapter)`),
+);

@@ -471,7 +471,10 @@ async function keySet() {
   const config = await oidcConfiguration(),
     uri = config.serverMetadata().jwks_uri;
   if (!uri) throw new AuthError(401, 'invalid');
-  return (jwks ??= createRemoteJWKSet(new URL(uri), { timeoutDuration: 5000, cooldownDuration: 0 }));
+  // jose's own cooldown, 30 seconds, stands (ID-8): a token that names a key the set does not hold fetches the provider's
+  // keys again at most that often, so a stream of forged logout tokens cannot make Clew call the provider for each one.
+  // A key the provider has rotated in is still found, at the latest on the first logout after the cooldown.
+  return (jwks ??= createRemoteJWKSet(new URL(uri), { timeoutDuration: 5000 }));
 }
 export async function receiveLogout(token: string) {
   const settings = authSettings();

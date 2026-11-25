@@ -2216,7 +2216,8 @@
             },
             "additionalProperties": false
           },
-          "description": "What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one."
+          "maxItems": 200,
+          "description": "What the connector can do, one entry per operation, at most 200. The name is the contract (D37): a break is a new name, never a changed one."
         },
         "installation": {
           "type": "array",

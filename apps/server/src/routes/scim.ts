@@ -4,6 +4,7 @@ import { SCIM_CONTENT_TYPE, ScimError } from '../modules/people/contracts';
 import { project, resourceTypes, schemaDocuments, serviceProviderConfig } from '../modules/people/domain';
 import type { Provisioner } from '../modules/people/ports';
 import type { ScimQuery, ScimUsecases } from '../modules/people/usecases';
+import { boundedText } from '../bounded-body';
 
 /**
  * SCIM 2.0 under `/scim/v2` (RFC 7644; D68): the one way people and groups enter an installation. A bearer token issued to
@@ -71,23 +72,9 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
   const base = (c: Context) => scimAddress(c.req.url);
   const body = async (c: Context): Promise<unknown> => {
     // The declared length first, so an oversized body is refused before it is read; then the measured one, for a
-    // chunked body that declares none.
-    if (Number(c.req.header('content-length') ?? 0) > BODY_LIMIT)
-      throw new ScimError(413, 'The request body is too large.');
-    // Read a piece at a time and stopped at the limit, in bytes as the limit is: a body that declares no length is
-    // not held in memory whole before it is measured.
-    const pieces: Uint8Array[] = [];
-    let size = 0;
-    const reader = c.req.raw.body?.getReader();
-    for (let piece = await reader?.read(); piece && !piece.done; piece = await reader!.read()) {
-      size += piece.value.byteLength;
-      if (size > BODY_LIMIT) {
-        await reader!.cancel();
-        throw new ScimError(413, 'The request body is too large.');
-      }
-      pieces.push(piece.value);
-    }
-    const text = new TextDecoder().decode(Buffer.concat(pieces));
+    // chunked body that declares none, read a piece at a time and stopped at the limit, in bytes as the limit is.
+    const text = await boundedText(c.req.raw, BODY_LIMIT);
+    if (text === undefined) throw new ScimError(413, 'The request body is too large.');
     try {
       return JSON.parse(text);
     } catch {

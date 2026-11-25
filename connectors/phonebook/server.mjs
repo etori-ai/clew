@@ -2,8 +2,10 @@
 //   PORT (default 4020), CLEW_CONNECTOR_SECRET (shared with Clew),
 //   PHONEBOOK_ADAPTER  "fixture" (default: the made-up organisation in directory.mjs) or "http"
 //   PHONEBOOK_URL, PHONEBOOK_API_KEY  the phone book API and its integration key, for the http adapter
+//   PHONEBOOK_ALLOW_HTTP  true lets PHONEBOOK_URL be plain http on a private development network
 //   PHONEBOOK_UNIT_MAP  optional JSON object: Clew unit id -> the phone book's unit id, where they differ
 import { createServer } from 'node:http';
+import { listener } from './http.mjs';
 import { createConnector } from './connector.mjs';
 import { createFixtureDirectory, createHttpDirectory } from './directory.mjs';
 
@@ -25,15 +27,6 @@ if (process.env.PHONEBOOK_UNIT_MAP) {
 
 const { handle } = createConnector({ secret: process.env.CLEW_CONNECTOR_SECRET, directory, unitMap });
 const port = Number(process.env.PORT ?? 4020);
-createServer(async (req, res) => {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const request = new Request(`http://${req.headers.host ?? 'connector'}${req.url}`, {
-    method: req.method,
-    headers: req.headers,
-    body: chunks.length ? Buffer.concat(chunks) : undefined,
-  });
-  const response = await handle(request);
-  res.writeHead(response.status, Object.fromEntries(response.headers));
-  res.end(Buffer.from(await response.arrayBuffer()));
-}).listen(port, () => console.log(`phonebook connector listening on :${port} (${adapter} adapter)`));
+createServer(listener(handle)).listen(port, () =>
+  console.log(`phonebook connector listening on :${port} (${adapter} adapter)`),
+);

@@ -4,6 +4,7 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { failure, InputError, privateHeaders, type Env } from '../context';
 import type { PersonKeys } from '../threads/model';
 import { viewWithPeople } from '../threads/usecases/keys';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * Standing actions and panel views: one capability run directly, as the person. GET answers a read, its input as JSON in
@@ -74,8 +75,8 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
     const persona = c.get('session').context;
     const found = registry.findFor(audiencedActorOf(persona), name);
     if (!found || found.capability.kind === 'execute') return unknown(c);
-    const text = await c.req.raw.text();
-    if (text.length > 8000) throw new InputError('För stor förfrågan.');
+    const text = await textOfAtMost(c.req.raw, 8000);
+    if (text === undefined) throw new InputError('För stor förfrågan.');
     let input: unknown = {};
     try {
       input = text ? JSON.parse(text) : {};
