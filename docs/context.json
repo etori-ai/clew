@@ -3507,6 +3507,25 @@
       ]
     },
     {
+      "path": "docs/maintainers/open-findings.md",
+      "title": "Open findings",
+      "category": "maintainer-guide",
+      "headings": [
+        "Counts",
+        "High",
+        "Identity, sessions and authorization",
+        "The connector boundary in the core",
+        "The assistant and the model boundary",
+        "Decisions, durable execution, audit and the database",
+        "Baseline, build and supply chain",
+        "The competence domain",
+        "Introduction and leaving, the follow-up dialogue and talks",
+        "The web app's data, state and errors",
+        "The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA",
+        "The connector services"
+      ]
+    },
+    {
       "path": "docs/maintainers/open-questions.md",
       "title": "Open questions",
       "category": "maintainer-guide",
@@ -4898,6 +4917,155 @@
         "Not covered",
         "Later, and asked of other teams",
         "Questions this leaves, and who they wait for"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-assistant-and-model-boundary.md",
+      "title": "The assistant and the model boundary, reviewed",
+      "category": "review-history",
+      "headings": [
+        "Summary",
+        "What reaches the model",
+        "Findings",
+        "Not established",
+        "Looked at and found sound",
+        "Seen outside this area"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-baseline-build-and-supply-chain.md",
+      "title": "Baseline, build and supply chain: `origin/main` at `9fd4c962`",
+      "category": "review-history",
+      "headings": [
+        "Summary",
+        "Baseline",
+        "Findings",
+        "The eight `proposed` records: what the code does today",
+        "Not established",
+        "Looked at and found sound",
+        "Seen outside this area",
+        "What was started and removed"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-boarding-dialogue-and-talks.md",
+      "title": "Review: introduction and leaving, the follow-up dialogue and talks · 2026-11-23",
+      "category": "review-history",
+      "headings": [
+        "Summary",
+        "Findings",
+        "The seven questions",
+        "The talk booking stack's ten findings",
+        "Area 4's audit table B, completed for these three domains",
+        "Not established",
+        "Looked at and found sound",
+        "Seen outside this area"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-competence.md",
+      "title": "Review: the competence domain · 2026-11-23",
+      "category": "review-history",
+      "headings": [
+        "Summary",
+        "Findings",
+        "Not established",
+        "Looked at and found sound",
+        "Seen outside this area"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-connector-boundary-in-the-core.md",
+      "title": "Review: the connector boundary in the core (2026-11-23)",
+      "category": "review-history",
+      "headings": [
+        "Summary",
+        "Findings",
+        "Not established",
+        "Looked at and found sound",
+        "Seen outside this area"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-connector-services.md",
+      "title": "Review: the connector services (2026-11-23)",
+      "category": "review-history",
+      "headings": [
+        "Summary",
+        "Findings",
+        "The eight questions",
+        "Not established",
+        "Looked at and found sound",
+        "Seen outside this area",
+        "What this review started, and removed"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md",
+      "title": "Review: decisions, durable execution, audit and the database · 2026-11-23",
+      "category": "review-history",
+      "headings": [
+        "Summary",
+        "How each finding was established",
+        "Findings",
+        "The audit sweep: every mutating use case in `apps/server/src`",
+        "The questions, one by one",
+        "Not established",
+        "Looked at and found sound",
+        "Seen outside this area"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-identity-sessions-and-authorization.md",
+      "title": "Identity, sessions and authorization, reviewed",
+      "category": "review-history",
+      "headings": [
+        "Summary",
+        "Findings",
+        "Not established",
+        "Looked at and found sound",
+        "The earlier SCIM reviews",
+        "Seen outside this area"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-of-the-whole-repository.md",
+      "title": "Review of the whole repository · 2026-11-23",
+      "category": "review-history",
+      "headings": [
+        "What was reviewed",
+        "What it found",
+        "Themes across the areas",
+        "How far to trust it",
+        "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md",
+      "title": "The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA, reviewed",
+      "category": "review-history",
+      "headings": [
+        "Summary",
+        "Findings",
+        "Coverage map",
+        "The wave-1 points followed up",
+        "Not established",
+        "Looked at and found sound",
+        "Seen outside this area"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-review-web-data-state-and-errors.md",
+      "title": "Review · the web app's data, state and errors",
+      "category": "review-history",
+      "headings": [
+        "Summary",
+        "Findings",
+        "The questions, answered",
+        "Follow-ups from wave 1",
+        "Not established",
+        "Looked at and found sound",
+        "Seen outside this area"
       ]
     },
     {
