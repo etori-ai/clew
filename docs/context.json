@@ -3631,6 +3631,18 @@
       ]
     },
     {
+      "path": "docs/reference/models.md",
+      "title": "Which models are good enough",
+      "category": "integrator-guide",
+      "headings": [
+        "Models",
+        "The flows",
+        "Without a model",
+        "What this does not show",
+        "Run it for a model"
+      ]
+    },
+    {
       "path": "docs/reference/prototype-parity.md",
       "title": "Parity with the startsidan prototype",
       "category": "integrator-guide",
