@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**145 in force**: 98 accepted and 47 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**145 in force**: 98 accepted and 47 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -198,6 +198,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D99 · An unresolved job step reaches a person and is finished forward; no connector is asked for rollback](D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward.md) | integrations, product | 2026-11-10 |  |
 | [D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) | product, identity, integrations | 2026-11-11 | [D119](README.md), [D120](README.md), [D121](README.md), [D123](README.md) |
 | [D119 · Key figures per unit come through one vendor-neutral profile](D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md) | integrations | 2026-11-13 |  |
+| [D143 · Lön och pension's invoices are attested in BillingPreprocessor through a connector of their own, and Clew's audience holds who may](D143-lop-invoices-are-attested-in-billingpreprocessor-and-clews-audience-holds-who-may.md) | integrations, identity | 2026-11-24 |  |
 
 ## No longer in force
 

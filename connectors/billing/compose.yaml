@@ -1,0 +1,29 @@
+# The billing connector on its own, beside a Clew it reaches over https (CLEW_URL must be https, or one of the
+# development stack's own names, which only the devcontainer's service has: run that one locally, README.md). An
+# administrator registers it in Clew (Administration › Anslutna system, or `bun scripts/connector-add.ts`), so nothing on
+# Clew's container names it (D23), then sets its audience to the group that may attest before enabling it.
+#
+#   BILLING_SECRET=<16+ characters> CLEW_URL=https://<clew> docker compose -f connectors/billing/compose.yaml up -d billing
+#
+# Without BILLING_ADAPTER the connector serves the made-up records in records.mjs. Against BillingPreprocessor:
+#   BILLING_ADAPTER=api BILLING_URL=https://…/billingpreprocessor/4.5 BILLING_MUNICIPALITY_ID=…
+#   BILLING_TOKEN_URL=https://…/token BILLING_CLIENT_ID=… BILLING_CLIENT_SECRET=…
+services:
+  billing:
+    build: .
+    environment:
+      CLEW_CONNECTOR_SECRET: ${BILLING_SECRET:?set BILLING_SECRET to a shared secret of 16+ characters}
+      CLEW_URL: ${CLEW_URL:?set CLEW_URL to Clew's base URL, https outside local development}
+      BILLING_ADAPTER: ${BILLING_ADAPTER:-fixture}
+      BILLING_SOURCE_LABEL: ${BILLING_SOURCE_LABEL:-}
+      BILLING_CATEGORY: ${BILLING_CATEGORY:-}
+      BILLING_ERRAND_LINK: ${BILLING_ERRAND_LINK:-}
+      BILLING_CUSTOMERS: ${BILLING_CUSTOMERS:-}
+      BILLING_URL: ${BILLING_URL:-}
+      BILLING_MUNICIPALITY_ID: ${BILLING_MUNICIPALITY_ID:-}
+      BILLING_TOKEN_URL: ${BILLING_TOKEN_URL:-}
+      BILLING_CLIENT_ID: ${BILLING_CLIENT_ID:-}
+      BILLING_CLIENT_SECRET: ${BILLING_CLIENT_SECRET:-}
+      BILLING_FIXTURE_FAULT: ${BILLING_FIXTURE_FAULT:-}
+    ports:
+      - '127.0.0.1:4056:4056'

@@ -332,6 +332,31 @@ services:
       MOODLE_PUBLIC_URL: http://localhost:3024
     ports:
       - "127.0.0.1:4053:4053"
+  # The billing connector: the billing records in BillingPreprocessor that wait for attest, Lön och pension's category,
+  # on its made-up records (connectors/billing/records.mjs). In the billing profile and not registered by
+  # `dev:connectors`, since who may attest is an audience an administrator sets: the commands are in
+  # connectors/billing/README.md. Stateless: a restart puts the records back. 4056: 4055 is taken. The BILLING_*
+  # variables from the shell that starts it point it at BillingPreprocessor's test gateway instead (README.md, "Testing
+  # against BillingPreprocessor").
+  billing:
+    <<: *fixture
+    profiles: ["billing"]
+    working_dir: /workspace/connectors/billing
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+    environment:
+      <<: *fixture-environment
+      BILLING_ADAPTER: ${BILLING_ADAPTER:-fixture}
+      BILLING_URL: ${BILLING_URL:-}
+      BILLING_MUNICIPALITY_ID: ${BILLING_MUNICIPALITY_ID:-}
+      BILLING_TOKEN_URL: ${BILLING_TOKEN_URL:-}
+      BILLING_CLIENT_ID: ${BILLING_CLIENT_ID:-}
+      BILLING_CLIENT_SECRET: ${BILLING_CLIENT_SECRET:-}
+      BILLING_CATEGORY: ${BILLING_CATEGORY:-}
+      BILLING_ERRAND_LINK: ${BILLING_ERRAND_LINK:-}
+      BILLING_CUSTOMERS: ${BILLING_CUSTOMERS:-}
+    ports:
+      - "127.0.0.1:4056:4056"
   # The IT service desk (D123): what a person ordered or reported and waits for, an order placed for a person and the
   # equipment registered to them, the first source of the requests profile. Its records in SQLite on a volume of its
   # own; FIXTURE_KEY opens its route that moves a request forward (connectors/servicedesk/README.md). 4054: 4053 is the

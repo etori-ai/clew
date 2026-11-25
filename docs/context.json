@@ -1677,6 +1677,15 @@
       "status": "provisional (the product owner chose it on 2026-11-21 from the canvas \"Clew",
       "date": "2026-11-21",
       "area": "ui, product"
+    },
+    {
+      "key": "D143-lop-invoices-are-attested-in-billingpreprocessor-and-clews-audience-holds-who-may",
+      "number": 143,
+      "path": "docs/decisions/D143-lop-invoices-are-attested-in-billingpreprocessor-and-clews-audience-holds-who-may.md",
+      "title": "D143 · Lön och pension's invoices are attested in BillingPreprocessor through a connector of their own, and Clew's audience holds who may",
+      "status": "proposed (2026-11-24; the connector is built on made-up records and has met neither BillingPreprocessor nor the gateway; provisional once the product owner and Lön och pension have chosen the rule in item 3, accepted once one attest has gone through the test gateway and been read back)",
+      "date": "2026-11-24",
+      "area": "integrations, identity"
     }
   ],
   "documents": [
@@ -1723,6 +1732,20 @@
         "The records",
         "Environment",
         "Run and register"
+      ]
+    },
+    {
+      "path": "connectors/billing/README.md",
+      "title": "billing: invoices to attest in BillingPreprocessor",
+      "category": "integrator-guide",
+      "headings": [
+        "What it declares",
+        "Naming the customers",
+        "Who may attest",
+        "Try it in the development stack",
+        "Against BillingPreprocessor",
+        "Testing against BillingPreprocessor",
+        "Not known yet"
       ]
     },
     {
@@ -2579,6 +2602,12 @@
       "headings": [
         "As built"
       ]
+    },
+    {
+      "path": "docs/decisions/D143-lop-invoices-are-attested-in-billingpreprocessor-and-clews-audience-holds-who-may.md",
+      "title": "D143 · Lön och pension's invoices are attested in BillingPreprocessor through a connector of their own, and Clew's audience holds who may",
+      "category": "decision-history",
+      "headings": []
     },
     {
       "path": "docs/decisions/D15-postgres-scheduler-now-temporal-later.md",
