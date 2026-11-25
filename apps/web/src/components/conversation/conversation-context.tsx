@@ -20,15 +20,19 @@ import type {
   Thread,
 } from '@clew/contracts';
 import { useLocation, useMatch, useNavigate } from 'react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAnnounce, type ChatComposerInputHandle } from '@clew/ui';
 import { api } from '../../api';
 import { errorMessage } from '../../query-policy';
 import { assistantQuery, threadQuery, verbsQuery } from '../../queries';
 import { panelSearch } from '../../panel-address';
+import { ASSISTANT_PARAM } from '../../conversation-about';
 import { applyThread } from '../../thread-cache';
 import {
-  conversationOf,
+  askedOf,
+  keyFor,
+  writtenUnder,
+  type Unanswered,
   useTurns,
   type ClewAction,
   type Conversation,
@@ -79,6 +83,11 @@ export interface ConversationState {
   busy: boolean;
   error: string | null;
   /**
+   * Why the box does not send now, or null when it does: the panel's question is starting this conversation (WD-L5),
+   * and a question from the box before it has an id would start a second one. The box keeps what is typed.
+   */
+  waiting: string | null;
+  /**
    * The conversation takes the column: on its own page (`/conversations/<id>`, and `/conversations/new` before anything
    * is asked, D126 rule 5). A question asked on Hem's line is answered under it (`inPlace`) and never takes the column.
    */
@@ -111,7 +120,10 @@ export interface ConversationState {
    */
   submit(raw: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing): Promise<void>;
   ask(text: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing): void;
-  /** Stoppa (D36): the turn is aborted, nothing is saved, and the question goes back in the box. */
+  /**
+   * Stoppa (D36): the turn is aborted and the question goes back in the box, unless the turn was written before it
+   * stopped (a proposal already made into an item, WD-L3): then the written turn is drawn and nothing goes back.
+   */
   stop(): void;
   performActions(actions: ClewAction[]): Promise<void>;
   cancelActions(): void;
@@ -142,6 +154,8 @@ export interface ConversationState {
    * Resolves false when nothing was sent, so the panel's box keeps what was typed.
    */
   askAside(assistant: Handed, text: string, confirmed?: boolean): Promise<boolean>;
+  /** Stoppa in the panel (WD-L5): the question to the other system's assistant is aborted and goes back in its box. */
+  stopAside(): void;
   /** Lets go of a question the panel held or failed to send. */
   dropAside(): void;
   /**
@@ -179,6 +193,7 @@ export const INERT_CONVERSATION: ConversationState = {
   done: null,
   busy: false,
   error: null,
+  waiting: null,
   open: false,
   inPlace: false,
   value: '',
@@ -205,6 +220,7 @@ export const INERT_CONVERSATION: ConversationState = {
   aside: null,
   asideError: null,
   askAside: async () => false,
+  stopAside: noop,
   dropAside: noop,
   askClew: noop,
   acceptOffer: noop,
@@ -245,11 +261,14 @@ interface Question {
   beside?: string;
   /** The person, the unit or the record beside the transcript (D136 item 1). */
   thing?: OpenThing;
-  current: Conversation | null;
+  current: string | null;
   from?: AskFrom;
 }
 /** The address of a conversation not asked yet: "Fråga assistenten" lands here with the thing beside it (D126 rule 5). */
 const NEW = '/conversations/new';
+/** Why the box waits while the panel's question starts the conversation (WD-L5). */
+const WAIT_FOR_ASIDE =
+  'Frågan i sidofältet startar samtalet. Skicka din fråga när den har fått svar, så hamnar båda i samma samtal.';
 /**
  * The conversation (D31, D50, D126, D138): one state for the box and the transcript, held above the pages so a question
  * asked on Hem is the same conversation when it is opened as a conversation. On Hem the answer stands under the line
@@ -297,7 +316,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const turns = useTurns(onThreadChange);
   const {
     conversation,
-    setConversation,
+    openId,
+    setOpenId,
     latest,
     setLatest,
     pending,
@@ -315,6 +335,23 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     cancelActions,
     makeCard,
   } = turns;
+  // The panel beside the conversation: one question at a time to another system's assistant, in the same conversation.
+  const [aside, setAside] = useState<AsideTurn | null>(null);
+  const [asideError, setAsideError] = useState<string | null>(null);
+  const asideBusy = useRef(false);
+  // The panel's question in flight and why it would be aborted (WD-L5), as for the box's turn: Stoppa puts it back in
+  // the panel's box; leaving the conversation (another one, a new one, closing it, another page) lets it go.
+  const asideFlight = useRef<AbortController | null>(null);
+  const asideReason = useRef<'stop' | 'leave'>('stop');
+  const asideUnanswered = useRef<Unanswered | null>(null);
+  const stopAside = useCallback((reason: 'stop' | 'leave' = 'stop') => {
+    if (!asideFlight.current) return;
+    asideReason.current = reason;
+    asideFlight.current.abort();
+  }, []);
+  // The conversation on the page now, for an answer that comes back after the person may have moved on.
+  const openNow = useRef<string | null>(null);
+  openNow.current = openId;
   // How many conversation boxes are mounted (`useClaimBox`): state, not the input's ref, so the controls that add to the
   // box are drawn again when one comes or goes.
   const [boxes, setBoxes] = useState(0);
@@ -368,11 +405,12 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const close = useCallback(() => {
     if (!shownRef.current && !where.current.onRoute) return;
     abortTurn('stop');
+    stopAside('leave');
     setShown(false);
     setError(null);
     onConversation(null);
     input.current?.focus();
-  }, [onConversation, abortTurn, setError, input]);
+  }, [onConversation, abortTurn, stopAside, setError, input]);
   const closeInPlace = useCallback(() => {
     abortTurn('stop');
     setInPlace(false);
@@ -410,8 +448,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const newConversation = useCallback(
     (options?: { from?: string; stay?: boolean }) => {
       abortTurn('leave');
+      stopAside('leave');
       // A new conversation has nothing in its drawer.
-      setConversation(null);
+      setOpenId(null);
       setLatest(null);
       setDone(null);
       setError(null);
@@ -423,36 +462,47 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       if (where.current.onRoute && !options?.stay) navigate('/');
       input.current?.focus();
     },
-    [navigate, abortTurn, setConversation, setLatest, setDone, setError, setValue, input],
+    [navigate, abortTurn, stopAside, setOpenId, setLatest, setDone, setError, setValue, input],
   );
   const client = useQueryClient();
+  // The conversation asked for last: one that is read after a later one was asked for is not drawn under its address,
+  // and its failure is not said there.
+  const opening = useRef<string | null>(null);
+  /**
+   * A conversation asked for by its address is the one on the page at once (WD-L6): nothing is drawn of it until its
+   * thread is read (its shape meanwhile), and a question written while it is read continues it, never the one before.
+   */
   const openConversation = useCallback(
     async (threadId: string) => {
       abortTurn('leave');
+      stopAside('leave');
+      opening.current = threadId;
+      setOpenId(threadId);
+      setLatest(null);
+      setDone(null);
+      setError(null);
+      setShown(true);
       try {
-        const t = await client.query(threadQuery(threadId));
-        setConversation(conversationOf(t));
-        setLatest(null);
-        setDone(null);
-        setShown(true);
-        // Another conversation in the provider: the card under Hem's line was the one before, and is not drawn again.
+        await client.query(threadQuery(threadId));
+        if (opening.current !== threadId) return;
         setInPlace(false);
         input.current?.focus();
       } catch (e) {
-        setError(errorMessage(e, 'Samtalet kunde inte öppnas.'));
+        if (opening.current === threadId) setError(errorMessage(e, 'Samtalet kunde inte öppnas.'));
       }
     },
-    [client, abortTurn, setConversation, setLatest, setDone, setError, input],
+    [client, abortTurn, stopAside, setOpenId, setLatest, setDone, setError, input],
   );
   // The route names the conversation: arriving at /conversations/:id (a link, the back button, a reload) puts the
   // transcript on the page. Arriving at /conversations/new is a conversation not asked yet: whatever conversation was
   // held before is let go of, unless a question is on its way from Hem to this address.
   const wasOnRoute = useRef(false);
   useEffect(() => {
-    if (conversationId && conversationId !== conversation?.id) void openConversation(conversationId);
+    if (conversationId && conversationId !== openId) void openConversation(conversationId);
     else if (onRoute && !shown) setShown(true);
-    if (routeId === 'new' && !pending && conversation) {
-      setConversation(null);
+    if (routeId === 'new' && !pending && openId) {
+      opening.current = null;
+      setOpenId(null);
       setLatest(null);
       setDone(null);
     }
@@ -464,9 +514,17 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!here && shownRef.current) {
       abortTurn('leave');
+      stopAside('leave');
       setShown(false);
     }
-  }, [here, abortTurn]);
+  }, [here, abortTurn, stopAside]);
+  // The panel stands only beside a conversation's transcript, named by the address (`?assistant=`). Whatever takes it
+  // away (Back to Hem, another page, its ✕ or Esc, another conversation) lets its question go (WD-L5): an answer is
+  // never written where no panel shows it.
+  const asideShown = onRoute && new URLSearchParams(location.search).has(ASSISTANT_PARAM);
+  useEffect(() => {
+    if (!asideShown) stopAside('leave');
+  }, [asideShown, stopAside]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // ⌘K is "Nytt samtal" from anywhere (the canvas's H3 item 1): in a conversation it starts a new one, elsewhere it takes the focus to the box.
@@ -491,12 +549,18 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
 
   // The question Clew's assistant suggested another system's assistant for, kept so the person's answer sends it again.
   const offered = useRef<{ question: Question; assistant: HandoverAssistant; held?: 'person' | 'card' } | null>(null);
+  // The panel's question is on its way and the conversation it starts has no id yet (WD-L5): a question from the box now
+  // would start a second conversation, so the box waits for it and says why.
+  const waiting = !!aside && !aside.held && !openId ? WAIT_FOR_ASIDE : null;
+  const waitingRef = useRef<string | null>(null);
+  waitingRef.current = waiting;
   /** One question on its way to whoever answers it: Clew, or another system's assistant with nothing attached. */
   const dispatch = useCallback(
     async (
       question: Question,
       how: { to?: Handed | null; suggested?: boolean; own?: boolean; confirmed?: boolean },
     ) => {
+      if (waitingRef.current) return;
       const { raw, text, chips: used, current, from } = question;
       // Answered under Hem's line (D138 item 9): decided when the question leaves, so closing the card while the answer
       // is on its way never turns it into a question that takes the person to the conversation's page.
@@ -574,7 +638,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       // A question asked where no transcript is on the page starts a conversation of its own (D50): the box on the
       // landing is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is,
       // and from Hem's line while its answer stands under it (D138 item 9).
-      const current = openRef.current || (from?.inPlace && inPlaceRef.current) ? conversation : null;
+      const current = openRef.current || (from?.inPlace && inPlaceRef.current) ? openId : null;
       const beside = about?.find(c => c.beside)?.ref;
       await dispatch(
         {
@@ -590,7 +654,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         from?.inPlace ? { own: true } : {},
       );
     },
-    [chips, conversation, dispatch],
+    [chips, openId, dispatch],
   );
   const acceptOffer = useCallback(() => {
     const o = offered.current;
@@ -609,28 +673,57 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     (text: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing) => void submit(text, from, about, thing),
     [submit],
   );
-  // The panel beside the conversation: one question at a time to another system's assistant, in the same conversation.
-  const [aside, setAside] = useState<AsideTurn | null>(null);
-  const [asideError, setAsideError] = useState<string | null>(null);
-  const asideBusy = useRef(false);
   const dropAside = useCallback(() => {
     if (!asideBusy.current) setAside(null);
     setAsideError(null);
   }, []);
+  /**
+   * The panel's question (WD-L5). It can be stopped, and leaving the conversation stops it. Its answer lands in the
+   * conversation it was asked in and nowhere else: the thread goes into the cache, where that conversation is drawn
+   * from (WD-L6), and the page is given an address only while it is still the conversation not asked yet that the
+   * question started. A question stopped or failed is read back by its key, as the box's turn is (WD-L3).
+   */
   const askAside = useCallback(
     async (assistant: Handed, raw: string, confirmed?: boolean): Promise<boolean> => {
       const text = raw.replace(/\s+/g, ' ').trim();
       if (!text || asideBusy.current || busy) return false;
+      const at = openRef.current ? openId : null;
+      const question = askedOf(text, at, assistant.id, []);
+      const turn = keyFor(asideUnanswered.current, question);
+      asideUnanswered.current = null;
+      const controller = new AbortController();
+      asideFlight.current = controller;
+      asideReason.current = 'stop';
       asideBusy.current = true;
       setAsideError(null);
       setAside({ assistant: assistant.id, text, at: new Date().toISOString(), answer: '' });
       announce(`Frågar ${assistant.name} …`);
-      const current = openRef.current ? conversation : null;
+      const left = () => controller.signal.aborted && asideReason.current === 'leave';
+      const land = async (response: ConversationResponse) => {
+        await applyThread(client, response.thread);
+        setAside(null);
+        if (left()) return;
+        const started = !at && openNow.current === null && window.location.pathname === NEW;
+        if (started) {
+          setOpenId(response.thread.id);
+          onConversation(response.conversationId);
+        }
+        // Said only while its conversation is the one on the page: one that lands while another is open, or none, is
+        // in its conversation for when the person goes back to it, and is not spoken of here.
+        if (!started && openNow.current !== response.thread.id) return;
+        const answer = response.thread.messages.at(-1)?.meta?.handover;
+        announce(
+          answer?.failed
+            ? `${assistant.name} svarade inte. Skriv frågan till assistenten om du vill ha svar där.`
+            : `${assistant.name} har svarat i sidofältet.`,
+        );
+      };
       try {
         const response = await api.converseStream(
           {
             text,
-            ...(current ? { conversationId: current.id } : {}),
+            turn,
+            ...(at ? { conversationId: at } : {}),
             assistant: assistant.id,
             side: true as const,
             ...(confirmed ? { confirmed: true as const } : {}),
@@ -639,6 +732,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
             if (event.type === 'text')
               setAside(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
           },
+          controller.signal,
         );
         if ('offer' in response) {
           // Clew held the question before it left: the panel asks where it should go.
@@ -646,35 +740,37 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           announce('Frågan är inte skickad. Välj i sidofältet.');
           return true;
         }
-        setConversation(conversationOf(response.thread));
-        setAside(null);
-        void applyThread(client, response.thread);
-        if (!current) onConversation(response.conversationId);
-        const answer = response.thread.messages.at(-1)?.meta?.handover;
-        announce(
-          answer?.failed
-            ? `${assistant.name} svarade inte. Skriv frågan till assistenten om du vill ha svar där.`
-            : `${assistant.name} har svarat i sidofältet.`,
-        );
+        await land(response);
         return true;
       } catch (e) {
+        const stopped = controller.signal.aborted;
+        const written = left() ? null : await writtenUnder(turn);
+        if (written) {
+          await land(written);
+          return true;
+        }
         setAside(null);
-        setAsideError(errorMessage(e, 'Frågan kunde inte ställas.'));
+        if (left()) return false;
+        asideUnanswered.current = { ...question, turn };
+        if (stopped) announce('Frågan avbröts. Den ligger kvar i rutan.');
+        else setAsideError(errorMessage(e, 'Frågan kunde inte ställas.'));
         return false;
       } finally {
+        if (asideFlight.current === controller) asideFlight.current = null;
         asideBusy.current = false;
       }
     },
-    [announce, busy, client, conversation, onConversation, setConversation],
+    [announce, busy, client, openId, onConversation, setOpenId],
   );
   const askClew = useCallback(
     (text: string) => {
       setAside(null);
-      void dispatch({ raw: text, text, chips: [], current: openRef.current ? conversation : null }, { own: true });
+      void dispatch({ raw: text, text, chips: [], current: openRef.current ? openId : null }, { own: true });
     },
-    [conversation, dispatch],
+    [openId, dispatch],
   );
   const stop = useCallback(() => abortTurn('stop'), [abortTurn]);
+  const stopPanel = useCallback(() => stopAside('stop'), [stopAside]);
 
   const state = useMemo<ConversationState>(
     () => ({
@@ -686,6 +782,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       done,
       busy,
       error,
+      waiting,
       open,
       inPlace,
       value,
@@ -712,6 +809,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       aside,
       asideError,
       askAside,
+      stopAside: stopPanel,
       dropAside,
       askClew,
       acceptOffer,
@@ -726,6 +824,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       done,
       busy,
       error,
+      waiting,
       open,
       inPlace,
       value,
@@ -752,6 +851,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       aside,
       asideError,
       askAside,
+      stopPanel,
       dropAside,
       askClew,
       acceptOffer,

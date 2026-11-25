@@ -84,7 +84,9 @@ export function handoverTool(
  * (`MessageMeta.basis`), so once the administrator closes that connector to the assistant, Clew's own model no longer
  * hears it in the conversation (D122 item 4). The two messages, the conversation's state and the audit row
  * (`conversation.handed`: which assistant, new or continued, how many sources, never a word of either text) commit
- * together; a turn the person stops writes nothing here, though the source may already hold the question.
+ * together; a turn the person stops writes nothing here, though the source may already hold the question. A turn the
+ * source answered whose write then fails (another send of the same question wrote first, WD-L3) writes
+ * `conversation.failed` on its own, so a question that went out twice is on record twice.
  */
 export function handoverPath(deps: AssistantDeps) {
   const { store, registry, clock, ids } = deps;
@@ -241,57 +243,96 @@ export function handoverPath(deps: AssistantDeps) {
       // What the answer was written from: the connector whose assistant answered (D122 item 4).
       basis: { connectors: [connector] },
     };
-    await store.transaction(async tx => {
-      if (!existing) {
-        await tx.insertThread({
-          id: conversationId,
-          personId: persona.id,
-          kind: 'question',
-          topic: 'question',
-          title: input.text.slice(0, 80),
-          state: 'open',
-          week: null,
-          connector: 'clew',
-          area: 'fragor',
-          summary: body || input.text.slice(0, 200),
-          handover: state,
-          items: [],
-          actions: [],
-          waitingOn: null,
-          deadline: null,
-          trigger: { reason: 'Du ställde en fråga', source: listed.name, at },
-          createdAt: at,
-          updatedAt: at,
+    const write = () =>
+      store.transaction(async tx => {
+        if (!existing) {
+          await tx.insertThread({
+            id: conversationId,
+            personId: persona.id,
+            kind: 'question',
+            topic: 'question',
+            title: input.text.slice(0, 80),
+            state: 'open',
+            week: null,
+            connector: 'clew',
+            area: 'fragor',
+            summary: body || input.text.slice(0, 200),
+            handover: state,
+            items: [],
+            actions: [],
+            waitingOn: null,
+            deadline: null,
+            trigger: { reason: 'Du ställde en fråga', source: listed.name, at },
+            createdAt: at,
+            updatedAt: at,
+          });
+        } else {
+          // What is said at the side does not become the conversation's summary: that stays the transcript's.
+          await tx.updateThread(conversationId, { ...(side ? {} : { summary: body }), updatedAt: at, handover: state });
+        }
+        await tx.addMessage(conversationId, {
+          role: 'user',
+          body: input.text,
+          at,
+          meta: { handed: asked, ...(input.turn ? { turn: input.turn } : {}) },
         });
-      } else {
-        // What is said at the side does not become the conversation's summary: that stays the transcript's.
-        await tx.updateThread(conversationId, { ...(side ? {} : { summary: body }), updatedAt: at, handover: state });
-      }
-      await tx.addMessage(conversationId, { role: 'user', body: input.text, at, meta: { handed: asked } });
-      await tx.addMessage(conversationId, { role: 'assistant', body, at, meta: answerMeta });
-      await tx.writeAudit({
-        actor: persona.principal.id,
-        action: 'conversation.handed',
-        subject: 'thread:' + conversationId,
-        at,
-        details: {
-          assistant: picked,
-          connector,
-          session: continued ? 'continued' : 'new',
-          // What the person chose to send with the question; nothing can be yet.
-          chips: [],
-          cites: cites.length,
-          ms: took(),
-          ...(cut ? { cut: true } : {}),
-          ...(failed ? { failed } : {}),
-          ...(side ? { side: true } : {}),
-          // How the assistant was chosen: by the person in the list above the field, or on Clew's suggestion.
-          ...(routed ? { routed: 'suggested' } : {}),
-          // The question was held for naming a person or a card of the asker's, and they sent it anyway.
-          ...(input.confirmed ? { confirmed: true } : {}),
-        },
+        await tx.addMessage(conversationId, { role: 'assistant', body, at, meta: answerMeta });
+        await tx.writeAudit({
+          actor: persona.principal.id,
+          action: 'conversation.handed',
+          subject: 'thread:' + conversationId,
+          at,
+          details: {
+            assistant: picked,
+            connector,
+            session: continued ? 'continued' : 'new',
+            // What the person chose to send with the question; nothing can be yet.
+            chips: [],
+            cites: cites.length,
+            ms: took(),
+            ...(cut ? { cut: true } : {}),
+            ...(failed ? { failed } : {}),
+            ...(side ? { side: true } : {}),
+            // How the assistant was chosen: by the person in the list above the field, or on Clew's suggestion.
+            ...(routed ? { routed: 'suggested' } : {}),
+            // The question was held for naming a person or a card of the asker's, and they sent it anyway.
+            ...(input.confirmed ? { confirmed: true } : {}),
+          },
+        });
       });
-    });
+    try {
+      await write();
+    } catch (e) {
+      // The question went to the other system and its turn could not be written: another send of it under the same
+      // key wrote first (WD-L3), or the store did not answer. What was asked there is still on record, in a transaction
+      // of its own, as a turn of Clew's own that is not written is (`conversation.failed`): which assistant, never a
+      // word of the question or the answer.
+      try {
+        await store.transaction(tx =>
+          tx.writeAudit({
+            actor: persona.principal.id,
+            action: 'conversation.failed',
+            subject: existing ? 'thread:' + existing.id : 'person:' + persona.id,
+            at,
+            details: {
+              assistant: picked,
+              connector,
+              session: continued ? 'continued' : 'new',
+              chips: [],
+              ms: took(),
+              ...(side ? { side: true } : {}),
+              failure: (e instanceof Error ? e.name : typeof e).slice(0, 40),
+            },
+          }),
+        );
+      } catch (failure) {
+        deps.log(
+          'assistant: the audit row of a handed turn that was not written was not written:',
+          String(failure).slice(0, 200),
+        );
+      }
+      throw e;
+    }
     const conversation = (await access.read(persona, conversationId))!;
     return {
       conversationId,

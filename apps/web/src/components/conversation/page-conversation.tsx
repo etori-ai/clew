@@ -503,7 +503,7 @@ export function usePageConversation(
         raw,
         text,
         ...pageTurn(subject),
-        current: continued.current,
+        current: continued.current?.id ?? null,
         own: true,
         onAnswered: response => answered.current?.(response),
         // The box keeps the focus it has; it takes it back only from nowhere (Stoppa gone), never from a form or a

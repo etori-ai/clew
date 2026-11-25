@@ -4,7 +4,7 @@ import type { DocumentBundle, PanelViewSpec, ReviewEvidence, ReviewRecovery } fr
 import { desktop, expect, expectNoAxeViolations, narrow, open, reflowProblems, test, type MockApi } from './support';
 import { fixtureConnectors } from '../fixture-connectors';
 import { Registry } from '../registry';
-import { user } from './data';
+import { NOW, user } from './data';
 
 async function originals(page: Page, api: MockApi) {
   const registry = new Registry();
@@ -72,6 +72,31 @@ async function originals(page: Page, api: MockApi) {
     revise: (value: boolean) => (revised = value),
     correct: (input: unknown) => registry.run(actor, 'finance.correct', input),
   };
+}
+/** The invoices' work item as its source finished it: two rows confirmed and the third rejected, for a correction. */
+function rejected(api: MockApi) {
+  const card = api.threads.find(t => t.id === 'fakturor')!;
+  card.execution = {
+    id: 'rejected-execution',
+    decisionId: 'first',
+    operation: 'finance.approve',
+    state: 'partial',
+    reason: null,
+    compensates: null,
+  };
+  card.receipt = {
+    at: '2026-11-04T08:00:00.000Z',
+    headline: 'Två bekräftade, en avvisad.',
+    undoUntil: null,
+    undoCapability: null,
+    rows: card.items.map((i, n) => ({
+      ref: i.ref,
+      label: i.label,
+      outcome: n === 2 ? 'failed' : 'done',
+      detail: n === 2 ? 'Beställningsnummer saknas.' : 'Attesterad.',
+    })),
+  };
+  return card;
 }
 /** The invoices' own page, which is their review (D142), with Att göra's pane as its way back. */
 const REVIEW = '/items/fakturor?from=%2Ftodo%3Fitem%3Dfakturor';
@@ -145,27 +170,7 @@ test.describe('the shared document and semantic catalogue', () => {
     }) => {
       await page.setViewportSize(viewport);
       const fixture = await originals(page, api);
-      const card = api.threads.find(t => t.id === 'fakturor')!;
-      card.execution = {
-        id: 'rejected-execution',
-        decisionId: 'first',
-        operation: 'finance.approve',
-        state: 'partial',
-        reason: null,
-        compensates: null,
-      };
-      card.receipt = {
-        at: '2026-11-04T08:00:00.000Z',
-        headline: 'Två bekräftade, en avvisad.',
-        undoUntil: null,
-        undoCapability: null,
-        rows: card.items.map((i, n) => ({
-          ref: i.ref,
-          label: i.label,
-          outcome: n === 2 ? 'failed' : 'done',
-          detail: n === 2 ? 'Beställningsnummer saknas.' : 'Attesterad.',
-        })),
-      };
+      const card = rejected(api);
       let saved = false;
       let execution: object;
       await page.route('**/api/executions', async route => {
@@ -220,8 +225,54 @@ test.describe('the shared document and semantic catalogue', () => {
       const retry = page.getByRole('main');
       await expect(retry.getByRole('heading', { name: /Energibolaget/ })).toBeVisible();
       await expect(retry.getByRole('button', { name: 'Attestera', exact: true })).toBeEnabled();
-      expect(card.receipt.rows.filter(r => r.outcome === 'done')).toHaveLength(2);
+      expect(card.receipt!.rows.filter(r => r.outcome === 'done')).toHaveLength(2);
     });
+  test('a correction the source has not confirmed waits and says so, is asked about by nothing while time passes, and settles on the change notice (WD-L8)', async ({
+    page,
+    api,
+  }) => {
+    const fixture = await originals(page, api);
+    rejected(api);
+    let execution: { id: string; state: string; result?: unknown } = { id: 'correction-1', state: 'pending' };
+    let result: unknown;
+    const reads: string[] = [];
+    await page.route('**/api/executions', async route => {
+      result = await fixture.correct(route.request().postDataJSON().payload);
+      await route.fulfill({ json: execution });
+    });
+    await page.route('**/api/executions/correction-1', route => {
+      reads.push(route.request().method());
+      return route.fulfill({ json: execution });
+    });
+    // The page's time moves only as the test moves it.
+    await page.clock.install({ time: new Date(NOW) });
+    await open(page, '/todo?item=fakturor');
+    await page.getByRole('link', { name: 'Visa granskning', exact: true }).click();
+    const review = page.getByRole('main');
+    await review
+      .getByRole('list', { name: 'Rader', exact: true })
+      .getByRole('button', { name: /Energibolaget/ })
+      .click();
+    const field = review.getByRole('textbox', { name: 'Beställningsnummer' });
+    await field.fill('PO-2026-333');
+    await review.getByRole('button', { name: 'Spara rättelse', exact: true }).click();
+    // The source has the correction and has not said it took it: the page says so, and nothing is saved twice.
+    await expect(
+      review.getByRole('status').filter({ hasText: 'Rättelsen väntar på källans bekräftelse.' }),
+    ).toBeVisible();
+    await expect(review.getByRole('button', { name: 'Spara rättelse', exact: true })).toBeDisabled();
+    await expect(field).not.toBeEditable();
+    await expect(review.getByRole('button', { name: 'Kontrollera rättelsen' })).toBeVisible();
+    await expectNoAxeViolations(page);
+    await page.clock.runFor(10_000);
+    expect(reads).toEqual([]);
+    // The source confirms: the execution's row moves the person's change revision, and the notice reads it again.
+    execution = { id: 'correction-1', state: 'succeeded', result };
+    await api.changed();
+    await expect(page.getByRole('region', { name: 'Aviseringar' })).toContainText('Beställningsnumret är sparat');
+    await expect(review.getByText('Rättelsen väntar på källans bekräftelse.')).toHaveCount(0);
+    expect(reads).toEqual(['GET']);
+  });
   test('named steps distinguish repeated suppliers and preserve decisions made out of order', async ({ page, api }) => {
     await originals(page, api);
     await open(page, REVIEW);

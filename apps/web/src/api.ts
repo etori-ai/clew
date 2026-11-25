@@ -33,6 +33,8 @@ import type {
   AskValues,
   EffectPreview,
   MeetingTimes,
+  ConversationPage,
+  WrittenTurn,
 } from '@clew/contracts';
 import type {
   AddModelInput,
@@ -551,6 +553,11 @@ export const api = {
       sources?: Array<{ connector: string; state: string; lastSuccess: string | null; error: string | null }>;
       deliveries?: Array<{ id: string; threadId: string; kind: 'automatic' | 'reminder' }>;
     }>('/api/threads'),
+  /** Alla samtal (WD-L1): one page of the person's conversations, the latest activity first; `after` is the last page's `next`. */
+  conversations: (after: string | null) =>
+    call<ConversationPage>('/api/conversations' + (after ? '?after=' + encodeURIComponent(after) : '')),
+  /** What a question sent with this turn key came to (WD-L3): read after a stop or a broken answer. */
+  writtenTurn: (turn: string) => call<WrittenTurn>(`/api/conversation/turns/${encodeURIComponent(turn)}`),
   claimDelivery: (id: string) => post<{ claimed: boolean }>(`/api/deliveries/${encodeURIComponent(id)}/claim`, {}),
   ask: (question: string) => post<Thread>('/api/ask', { question }),
   reply: (id: string, body: string) => post<Thread>(`/api/threads/${id}/reply`, { body }),
