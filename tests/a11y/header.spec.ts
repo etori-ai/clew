@@ -1,4 +1,5 @@
 import {
+  SITE,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -11,7 +12,6 @@ import {
   test,
 } from './support';
 import type { InstallationTheme, SiteHeaderView } from '@clew/contracts';
-import intranetMenu from '../../connectors/intranet/menu.json' with { type: 'json' };
 import { contrastRatio, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 
 /**
@@ -48,7 +48,9 @@ test.describe('the shared header on every page', () => {
     page,
     api,
   }) => {
-    api.header = { ...fromConnector(), logo: intranetMenu.logo };
+    // A white mark (the routed `logo.svg` is a white plate), which needs the dark ground the header gives it.
+    api.header = fromConnector();
+    const mark = api.header.logo!;
     const theme: InstallationTheme = {
       name: null,
       colors: {
@@ -61,8 +63,8 @@ test.describe('the shared header on every page', () => {
     api.appearance = { ...api.appearance, revision: 1, theme };
     await page.setViewportSize(desktop);
     await open(page, '/calendar');
-    const logo = page.getByRole('banner').getByRole('img', { name: intranetMenu.logo.alt });
-    await expect(logo).toHaveAttribute('src', intranetMenu.logo.src);
+    const logo = page.getByRole('banner').getByRole('img', { name: mark.alt });
+    await expect(logo).toHaveAttribute('src', mark.src);
     const contrastWithWhiteMark = async () => {
       const pixel = await logo.evaluate(img => {
         const ctx = document.createElement('canvas').getContext('2d')!;
@@ -216,8 +218,8 @@ test.describe('the shared header on every page', () => {
     await page.setViewportSize(desktop);
     await open(page, '/');
     const banner = page.getByRole('banner');
-    await expect(banner.getByRole('navigation', { name: 'Startsidan', exact: true })).toHaveCount(1);
-    await expect(banner.getByRole('link', { name: 'Startsidan' })).toHaveAttribute('href', '/');
+    await expect(banner.getByRole('navigation', { name: SITE, exact: true })).toHaveCount(1);
+    await expect(banner.getByRole('link', { name: SITE })).toHaveAttribute('href', '/');
     await expect(page.getByRole('navigation', { name: 'Huvudmeny', exact: true })).toHaveCount(0);
     await expect(banner.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeVisible();
     await expect(

@@ -18,8 +18,8 @@ import {
 } from '../../apps/server/src/modules/appearance/usecases';
 
 /**
- * Administration › Utseende (D98) on the memory store: who may change the installation's theme and logo, what a save
- * stores and answers, and the audit row each change writes in its transaction.
+ * Administration › Utseende (D98) on the memory store: who may change the installation's name, theme and logo, what a
+ * save stores and answers, and the audit row each change writes in its transaction.
  */
 const T = '2026-11-10T08:00:00.000Z';
 const base64 = (bytes: Uint8Array | string) => Buffer.from(bytes).toString('base64');
@@ -60,15 +60,73 @@ function stack() {
 }
 
 describe('Utseende', () => {
-  test('anyone reads the appearance, and an installation nobody has configured is Neutral without a logo', async () => {
+  test('anyone reads the appearance, and an installation nobody has configured is Clew in Neutral without a logo', async () => {
     const { usecases } = stack();
-    expect(await usecases.read()).toEqual({ revision: 0, theme: null, logo: null });
+    expect(await usecases.read()).toEqual({ revision: 0, name: 'Clew', theme: null, logo: null });
+    expect(await usecases.name()).toBe('Clew');
     expect(await usecases.logo('light')).toBeNull();
+  });
+
+  test('a name is saved trimmed, after the step-up, with an audit row that says what it was and what it is', async () => {
+    const { usecases, admin, store, authorized } = stack();
+    const view = await usecases.setName(admin, '  Intranätet ');
+    expect(view).toEqual({
+      revision: 1,
+      name: 'Intranätet',
+      theme: null,
+      logo: null,
+      updatedAt: T,
+      updatedBy: 'Mikael Lund',
+    });
+    expect(authorized()).toBe(1);
+    expect(await usecases.name()).toBe('Intranätet');
+    expect((await usecases.read()).name).toBe('Intranätet');
+    expect(store.audit).toEqual([
+      {
+        actor: 'person:mikael',
+        action: 'appearance.name.set',
+        subject: APPEARANCE_SUBJECT,
+        details: { from: null, to: 'Intranätet', revision: 1 },
+      },
+    ]);
+    // The same name again is no change and writes nothing; another replaces it and says which it replaced.
+    expect((await usecases.setName(admin, 'Intranätet')).revision).toBe(1);
+    await usecases.setName(admin, 'Medarbetarwebben');
+    expect(store.audit.at(-1)).toMatchObject({
+      action: 'appearance.name.set',
+      details: { from: 'Intranätet', to: 'Medarbetarwebben', revision: 2 },
+    });
+    // The theme and the logo are untouched by a name, and the name by them.
+    await usecases.setTheme(admin, themeFileOf(theme));
+    expect(await usecases.read()).toMatchObject({ name: 'Medarbetarwebben', theme });
+    // Back to the default: audited once, and once more writes nothing.
+    expect(await usecases.clearName(admin)).toMatchObject({ revision: 4, name: 'Clew', theme });
+    expect(store.audit.at(-1)).toEqual({
+      actor: 'person:mikael',
+      action: 'appearance.name.cleared',
+      subject: APPEARANCE_SUBJECT,
+      details: { from: 'Medarbetarwebben', revision: 4 },
+    });
+    expect((await usecases.clearName(admin)).revision).toBe(4);
+    expect(store.audit).toHaveLength(4);
+  });
+
+  test('a name that is empty, on two lines or too long is refused in Swedish, before the step-up and with nothing written', async () => {
+    const { usecases, admin, store, authorized } = stack();
+    await expect(usecases.setName(admin, '   ')).rejects.toThrow('Skriv ett namn.');
+    await expect(usecases.setName(admin, 'Intra\nnätet')).rejects.toThrow('Namnet ska stå på en rad.');
+    await expect(usecases.setName(admin, 'x'.repeat(61))).rejects.toThrow('Namnet får vara högst 60 tecken.');
+    await expect(usecases.setName(admin, '   ')).rejects.toBeInstanceOf(InputError);
+    expect((await usecases.setName(admin, 'å'.repeat(60))).name).toBe('å'.repeat(60));
+    expect(store.audit).toHaveLength(1);
+    expect(authorized()).toBe(1);
   });
 
   test('only a person with admin.appearance reads the administration view or changes anything, and nothing is written', async () => {
     const { usecases, other, store, authorized } = stack();
     await expect(usecases.adminRead(other)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(usecases.setName(other, 'Intranätet')).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(usecases.clearName(other)).rejects.toBeInstanceOf(ForbiddenError);
     await expect(usecases.setTheme(other, themeFileOf(theme))).rejects.toBeInstanceOf(ForbiddenError);
     await expect(usecases.clearTheme(other)).rejects.toBeInstanceOf(ForbiddenError);
     await expect(usecases.setLogo(other, { alt: 'Kommun', light: png })).rejects.toBeInstanceOf(ForbiddenError);
@@ -81,9 +139,9 @@ describe('Utseende', () => {
   test('a theme file is saved as its colours, after the step-up, with an audit row that names it and never carries it', async () => {
     const { usecases, admin, store, authorized } = stack();
     const view = await usecases.setTheme(admin, themeFileOf(theme));
-    expect(view).toEqual({ revision: 1, theme, logo: null, updatedAt: T, updatedBy: 'Mikael Lund' });
+    expect(view).toEqual({ revision: 1, name: 'Clew', theme, logo: null, updatedAt: T, updatedBy: 'Mikael Lund' });
     expect(authorized()).toBe(1);
-    expect(await usecases.read()).toEqual({ revision: 1, theme, logo: null });
+    expect(await usecases.read()).toEqual({ revision: 1, name: 'Clew', theme, logo: null });
     expect(store.audit).toEqual([
       {
         actor: 'person:mikael',
@@ -313,19 +371,24 @@ describe('Utseende', () => {
     const saved = await usecases.operator.setTheme(themeFileOf(theme));
     expect(saved).toMatchObject({ revision: 1, updatedBy: 'Kommandoraden', theme: { name: 'Exempelkommunen' } });
     await usecases.operator.setLogo({ alt: 'Exempelkommunen', light: png });
-    // The file and the image are checked as an upload is: nothing is written for a refusal.
+    await usecases.operator.setName('Exempelkommunens intranät');
+    // The name, the file and the image are checked as an upload is: nothing is written for a refusal.
+    await expect(usecases.operator.setName('')).rejects.toBeInstanceOf(InputError);
     await expect(usecases.operator.setTheme({ light: {} })).rejects.toBeInstanceOf(ThemeFileError);
     await expect(usecases.operator.setLogo({ alt: 'X', light: svg('<svg><script/></svg>') })).rejects.toBeInstanceOf(
       InputError,
     );
     await usecases.operator.clearTheme();
     await usecases.operator.clearLogo();
-    expect(await usecases.read()).toEqual({ revision: 4, theme: null, logo: null });
+    await usecases.operator.clearName();
+    expect(await usecases.read()).toEqual({ revision: 6, name: 'Clew', theme: null, logo: null });
     expect(store.audit.map(row => [row.actor, row.action, row.subject])).toEqual([
       ['bootstrap:appearance', 'appearance.theme.set', APPEARANCE_SUBJECT],
       ['bootstrap:appearance', 'appearance.logo.set', APPEARANCE_SUBJECT],
+      ['bootstrap:appearance', 'appearance.name.set', APPEARANCE_SUBJECT],
       ['bootstrap:appearance', 'appearance.theme.cleared', APPEARANCE_SUBJECT],
       ['bootstrap:appearance', 'appearance.logo.cleared', APPEARANCE_SUBJECT],
+      ['bootstrap:appearance', 'appearance.name.cleared', APPEARANCE_SUBJECT],
     ]);
     // No session is behind the command line, so there is no step-up to ask for.
     expect(authorized()).toBe(0);
@@ -344,9 +407,11 @@ describe('Utseende', () => {
     for (const folder of folders) {
       const { usecases } = stack();
       const manifest = JSON.parse(readFileSync(resolve(folder, 'appearance.json'), 'utf8')) as {
+        name?: string;
         theme?: string;
         logo?: { alt: string; light: string; dark?: string };
       };
+      if (manifest.name) await usecases.operator.setName(manifest.name);
       if (manifest.theme)
         await usecases.operator.setTheme(JSON.parse(readFileSync(resolve(folder, manifest.theme), 'utf8')));
       if (manifest.logo)
@@ -356,6 +421,7 @@ describe('Utseende', () => {
           dark: manifest.logo.dark ? image(resolve(folder, manifest.logo.dark)) : null,
         });
       const saved = await usecases.read();
+      expect(saved.name).toBe(manifest.name ?? 'Clew');
       expect(saved.theme !== null).toBe(manifest.theme !== undefined);
       expect(saved.logo?.alt).toBe(manifest.logo?.alt);
     }

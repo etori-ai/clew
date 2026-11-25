@@ -1,12 +1,13 @@
-import type { AuthenticatedContext, SiteHeaderView } from '@clew/contracts';
+import { SITE_NAME_DEFAULT, type AuthenticatedContext, type SiteHeaderView } from '@clew/contracts';
 import { audiencedActorOf, type HeaderAnswer, type Registry } from '@clew/connectors';
 import { CLEWS_START, withClewsStart } from '../header-start';
 
 /**
  * The shared header for a signed-in person (D88): the answer of the connector an administrator chose to give it
- * (`Registry.header`), or Clew's default, the site's name and Start, when no connector gives the person one. Platform
- * code beside the registry, like the menu and the tools. The connector gives the shared places. Clew adds its own
- * Start link first (D116, `header-start.ts`).
+ * (`Registry.header`), or Clew's default, the installation's name (D98 as amended 2026-11-24, `siteName`) and Start,
+ * when no connector gives the person one. Platform code beside the registry, like the menu and the tools. The
+ * connector gives the shared places and its site's own name. Clew adds its own Start link first (D116,
+ * `header-start.ts`).
  *
  * The header never blocks a page. The browser draws the default band at once and fills the places in when this
  * answers; here the connector gets a short budget (`HEADER_TIMEOUT_MS`), and what it answered per person is kept and
@@ -32,7 +33,7 @@ import { CLEWS_START, withClewsStart } from '../header-start';
  * in this process only.
  */
 export const DEFAULT_HEADER: SiteHeaderView = {
-  menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items: [CLEWS_START] },
+  menu: { version: 1, site: { name: SITE_NAME_DEFAULT, href: '/' }, items: [CLEWS_START] },
   logo: null,
   source: null,
 };
@@ -50,6 +51,8 @@ export const HEADER_STALE_MS = 60 * 60_000;
 export interface SiteHeaderDeps {
   registry: Pick<Registry, 'header' | 'headerHolder'>;
   clock(): Date;
+  /** What the installation is called now (the appearance's `name`): the default header's site, read as it is served. */
+  siteName(): Promise<string>;
 }
 /** Whom a kept header was read for: the person, their authority and their groups, in whatever order they came. */
 export const headerScope = (persona: AuthenticatedContext) =>
@@ -74,7 +77,7 @@ const viewOf = (found: Extract<HeaderAnswer, { status: 'answered' }>): SiteHeade
   source: { id: found.connector.id, label: found.connector.source },
 });
 
-export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
+export function siteHeaders({ registry, clock, siteName }: SiteHeaderDeps) {
   const cache = new Map<string, Kept>();
   const ask = (persona: AuthenticatedContext) =>
     registry.header(audiencedActorOf(persona), {
@@ -115,7 +118,16 @@ export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
     swept = now;
     for (const [key, kept] of cache) if (now - kept.at >= HEADER_STALE_MS) cache.delete(key);
   }
+  /**
+   * The header as it is served: a connector's answer as it gave it, and the default with the installation's name as it
+   * is now, so a name an administrator saves is in the next header read and never in what was kept.
+   */
   async function read(persona: AuthenticatedContext): Promise<SiteHeaderView> {
+    const view = await answer(persona);
+    if (view.source) return view;
+    return { ...view, menu: { ...view.menu, site: { ...view.menu.site, name: await siteName() } } };
+  }
+  async function answer(persona: AuthenticatedContext): Promise<SiteHeaderView> {
     const key = headerScope(persona);
     const holder = await registry.headerHolder(audiencedActorOf(persona));
     await persona.authorize();

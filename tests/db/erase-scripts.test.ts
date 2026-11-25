@@ -83,6 +83,7 @@ const talks = talkUsecases({
     new Set(
       managerId === manager ? overview.units.flatMap(u => u.people.map(p => p.id)).filter(id => id !== manager) : [],
     ),
+  siteName: async () => 'Medarbetarwebben',
   clock: () => at,
   ids,
 });

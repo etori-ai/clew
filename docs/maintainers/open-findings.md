@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 15 | No installation's name or brand in the code, and Swedish where a person reads | `AM-12`, `BL-9`, `WA-L6`, `WA-L7`, `WA-L11`, `WA-L12`, `WA-L13` | |
 | 18 | The database: audit gaps, comparisons, indexes and migrations | `DE-L4`, `DE-L7`, `DE-L8`, `DE-L9`, `DE-L10`, `DE-L12`, `DE-L13`, `BD-L4` | |
 
 ## Counts
@@ -29,15 +28,15 @@ no batch.
 |---|---|---|---|---|---|
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 0 | 0 | 0 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 0 | 0 | 0 |
-| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 0 | 1 | 1 |
+| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 0 | 0 | 0 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 0 | 7 | 7 |
-| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 1 | 1 | 2 |
+| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 1 | 0 | 1 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 1 | 1 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 0 | 0 | 0 |
-| WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 0 | 5 | 5 |
+| WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 0 | 0 | 0 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 0 | 0 |
-| | **Total** | **0** | **1** | **15** | **16** |
+| | **Total** | **0** | **1** | **8** | **9** |
 
 ## High
 
@@ -62,9 +61,7 @@ No finding of this area is open.
 [The review](../reviews/2026-11-23-review-assistant-and-model-boundary.md); its "Not established" holds six points,
 and it carries a table of what reaches the model and a table of the tools.
 
-| Id | Severity | Finding | Where |
-|---|---|---|---|
-| AM-12 | Low | The system prompt tells the model it serves Sundsvalls kommun's Startsidan in every installation. | `apps/server/src/assistant/model.ts:137` |
+No finding of this area is open.
 
 ## Decisions, durable execution, audit and the database
 
@@ -91,7 +88,6 @@ and it carries the baseline table of every suite, the failing-test table under f
 | Id | Severity | Finding | Where |
 |---|---|---|---|
 | BL-3 | Medium | `main` has no branch protection or ruleset, so no check is required before a change lands. | GitHub settings of the repository |
-| BL-9 | Low | The web image serves Sundsvall's trademarked dragon from `apps/web/public/branding/`, though the build is said to carry no branding. | `apps/web/Dockerfile:7` |
 
 ## The competence domain
 
@@ -124,13 +120,7 @@ No finding of this area is open.
 holds seven points, and it carries the accessibility coverage map (routes, view kinds, states drawn without axe, mock
 fixtures the server cannot produce).
 
-| Id | Severity | Finding | Where |
-|---|---|---|---|
-| WA-L6 | Low | "Startsidan" is hard-coded in tab titles, the sign-in and error pages and several sentences, where the installation's site name belongs. | `packages/ui/src/tab-title.ts` (every tab's title: `apps/web/src/page-title.ts` and the ended session's `ENDED_TITLE`), `packages/ui/src/session.tsx` (`UNREACHABLE_WORDS`, `REACHED_WORDS` and the heading of `SessionNotice`) |
-| WA-L7 | Low | Sundsvall's colours are the examples on Administration › Utseende and in the theme parser's message. | `apps/web/src/pages/admin/appearance.tsx:147` |
-| WA-L11 | Low | Astryx's English fallbacks reach a Swedish reader in dialogs, date and number fields and on a phone. | `packages/ui/src/locale.ts` |
-| WA-L12 | Low | Raw technical and browser messages, such as "Failed to fetch" and JSON details, are shown as they come. | `apps/web/src/components/shell/shell.tsx:218-223` |
-| WA-L13 | Low | The English protocol pages render Astryx's own words and some model sentences in Swedish without marking them `lang="sv"`. | `apps/web/src/pages/protocol.tsx:96` |
+No finding of this area is open.
 
 ## The connector services
 

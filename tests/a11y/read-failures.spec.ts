@@ -4,7 +4,7 @@ import { competenceCatalogue, competenceRequirements, competenceShareTargets, co
 import { competenceTypes, searchHolders, withSkills } from './competence';
 import { ENTITY_UNIT, newsOutput, user } from './data';
 import { menuRows } from './phonebook';
-import { FAILED, desktop, expect, expectNoAxeViolations, open, phone, test, type MockApi } from './support';
+import { FAILED, SITE, desktop, expect, expectNoAxeViolations, open, phone, test, type MockApi } from './support';
 import { Units } from './unit-data';
 
 /*
@@ -32,7 +32,7 @@ const exactly = (path: string) => (url: URL) => url.pathname === path;
 /** A page that cannot name its thing still has its one level-1 heading, saying what could not be read, and the tab too. */
 async function named(page: Page, heading: string) {
   await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText([heading]);
-  await expect(page).toHaveTitle(`${heading} · Startsidan`);
+  await expect(page).toHaveTitle(`${heading} · ${SITE}`);
 }
 /** The page's own alert with the server's sentence, in the page's main content. */
 const alertIn = (scope: Page | Locator) =>
@@ -184,14 +184,14 @@ test.describe('a page whose read fails says so where its content would stand', (
       await open(page, path);
       const heading = page.getByRole('main').getByRole('heading', { level: 1 });
       await expect(heading).toHaveText([name]);
-      await expect(page).toHaveTitle(`${name} · Startsidan`);
+      await expect(page).toHaveTitle(`${name} · ${SITE}`);
       await failing(page, exactly(read));
       const refused = page.waitForResponse(r => new URL(r.url()).pathname === read && r.status() === 503);
       await page.evaluate(() => (window as unknown as { refresh(): void }).refresh());
       await refused;
       // What was drawn stays, under the same heading, and the tab says the same as the heading.
       await expect(heading).toHaveText([name]);
-      await expect(page).toHaveTitle(`${name} · Startsidan`);
+      await expect(page).toHaveTitle(`${name} · ${SITE}`);
       await expect(alertIn(page)).toHaveCount(0);
       await expectNoAxeViolations(page);
     });

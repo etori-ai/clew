@@ -5,7 +5,7 @@ import { AppShell, HStack, Skeleton, VStack, VisuallyHidden } from '@clew/ui';
 import { createHeaderBandTheme } from '@clew/ui/theme';
 import { SiteHeader, selectedItem } from '@clew/site-header';
 import { useBranding } from '../../branding';
-import { PENDING_MENU, SHELL_WIDTH, START_PAGE, SiteName, headerLogo } from './shell';
+import { SHELL_WIDTH, START_PAGE, SiteName, headerLogo, ownMenu } from './shell';
 import { ContentSkeleton, HemSkeleton, TitleSkeleton, UnitsSkeleton } from './loading';
 import { PageFrame } from './page-frame';
 
@@ -29,7 +29,7 @@ export function FirstLoad({ header }: { header: SiteHeaderView | null }) {
   const bandTheme = useMemo(() => createHeaderBandTheme(branding), [branding]);
   const shared = header?.source ? header : null;
   // As the shell draws it (D130): a connector's places on the band, else the heading row alone with Start under it.
-  const menu = shared ? shared.menu : { ...(header?.menu ?? PENDING_MENU), items: [] };
+  const menu = shared ? shared.menu : ownMenu(branding.name);
   const here = window.location.origin + location.pathname + location.search;
   const pages = [...(shared ? [] : [START_PAGE]), TODO_PAGE];
   const currentPage =

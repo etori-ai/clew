@@ -363,6 +363,12 @@ export const isSearchSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId
   c.kind === 'read' && c.name === connectorId + '.search' && connectorId !== SEARCH_CONNECTOR;
 /** The core connector that owns the composite search and the question area. */
 export const SEARCH_CONNECTOR = 'clew';
+/**
+ * The source Clew names its own answers, capabilities and work items with: the product, as its own data is named on the
+ * staff and unit pages, never an installation's name (D98), since a source is stored with what it labels and an
+ * installation may be renamed.
+ */
+export const CLEW_SOURCE = 'Clew';
 /** A capability is an errand source when it is named `<id>.errands` and is a read (D35, D89); the composite `clew.errands` is never one itself. */
 export const isErrandSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.errands' && connectorId !== SEARCH_CONNECTOR;

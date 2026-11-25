@@ -5,7 +5,10 @@ import {
   THEME_BASE_COLORS,
   THEME_COLOR_TOKENS,
   THEME_CONTRAST_PAIRS,
+  SITE_NAME_DEFAULT,
+  SITE_NAME_MAX,
   THEME_TEMPLATE,
+  checkSiteName,
   checkThemeContrast,
   contrastRatio,
   parseThemeFile,
@@ -46,7 +49,12 @@ const examples = () =>
       file: JSON.parse(readFileSync(new URL(`../../themes/${name}/theme.tokens.json`, import.meta.url), 'utf8')),
     }));
 /** A theme as an installation saves it, for Astryx to resolve as the page does. */
-const branding = (colors: ThemeColors): Branding => ({ revision: 1, theme: { name: null, colors }, logo: null });
+const branding = (colors: ThemeColors): Branding => ({
+  revision: 1,
+  name: SITE_NAME_DEFAULT,
+  theme: { name: null, colors },
+  logo: null,
+});
 /** Each pair as one line, for a table compared whole: `foreground on ground` and its minimum. */
 const tableOf = (pairs: ReadonlyArray<readonly [string, string, number]>) =>
   Object.fromEntries(pairs.map(([foreground, ground, min]) => [`${foreground} on ${ground}`, min]));
@@ -471,5 +479,64 @@ describe('the theme file and the base it is checked against (D98)', () => {
     expect(
       JSON.parse(readFileSync(new URL('../../docs/protocol/theme-file.schema.json', import.meta.url), 'utf8')),
     ).toEqual(schema);
+  });
+});
+
+/**
+ * The installation's name (D98 item 11) is checked by one function on the server, on Administration › Utseende and in
+ * every browser that reads the saved appearance: one line, nothing invisible or direction-turning, nothing a page cannot
+ * draw, no pile of combining marks, at least one letter or digit. Each refusal is named in Swedish for the field.
+ */
+describe("the installation's name", () => {
+  const problem = (value: unknown) => {
+    const checked = checkSiteName(value);
+    return 'problem' in checked ? checked.problem : undefined;
+  };
+  test('a name is trimmed and saved in its composed form', () => {
+    expect(checkSiteName('  Medarbetarwebben  ')).toEqual({ name: 'Medarbetarwebben' });
+    // "Malmö" written with a combining diaeresis is saved as the one precomposed letter.
+    expect(checkSiteName('Malmo\u0308')).toEqual({ name: 'Malm\u00f6' });
+    expect(checkSiteName("Ånge kommun – Söder & Co's 2")).toEqual({ name: "Ånge kommun – Söder & Co's 2" });
+    expect(checkSiteName('Ạ\u0302')).toEqual({ name: 'Ậ' });
+  });
+  test('nothing, blanks or not a string is refused as no name', () => {
+    for (const value of ['', '   ', '\u2028', undefined, null, 7]) expect(problem(value)).toBe('Skriv ett namn.');
+  });
+  test('a line or paragraph separator or a control character is refused as more than one line', () => {
+    for (const value of ['Intra\nnätet', 'Intra\u2028nätet', 'Intra\u2029nätet', 'Intra\tnätet', 'Intra\u0085nätet'])
+      expect(problem(value)).toBe('Namnet ska stå på en rad.');
+  });
+  test('a zero-width character, alone or within, and a direction control are refused as invisible', () => {
+    for (const value of [
+      '\u200b',
+      'Intra\u200bnätet',
+      'Intra\u202enätet',
+      'Intra\u2067nätet\u2069',
+      'Intra\ufeffnätet',
+    ])
+      expect(problem(value)).toBe('Namnet får inte ha osynliga tecken eller tecken som vänder textens riktning.');
+  });
+  test('a private-use or unassigned code point, or a lone surrogate, is refused as not drawable', () => {
+    for (const value of ['Intra\ue000nätet', 'Intra\u0378nätet', 'Intra\ud800nätet'])
+      expect(problem(value)).toBe('Namnet har tecken som inte kan visas.');
+  });
+  test('two combining marks on a letter are a name, three are refused', () => {
+    // Q has no precomposed accented forms, so its marks stay marks in the composed form.
+    expect(checkSiteName('Aq\u0301\u0308a')).toEqual({ name: 'Aq\u0301\u0308a' });
+    expect(problem('Aq\u0301\u0308\u0303a')).toBe(
+      'Namnet får ha högst två accenter eller andra tecken på samma bokstav.',
+    );
+    expect(problem('Z' + '\u0301'.repeat(60))).toBe(
+      'Namnet får ha högst två accenter eller andra tecken på samma bokstav.',
+    );
+  });
+  test('a name of punctuation alone is refused; a digit is enough', () => {
+    for (const value of ['...', '– · –', '&&'])
+      expect(problem(value)).toBe('Namnet behöver minst en bokstav eller siffra.');
+    expect(checkSiteName('1177')).toEqual({ name: '1177' });
+  });
+  test(`a name is at most ${SITE_NAME_MAX} characters, counted as a person sees them`, () => {
+    expect(checkSiteName('å'.repeat(SITE_NAME_MAX))).toEqual({ name: 'å'.repeat(SITE_NAME_MAX) });
+    expect(problem('å'.repeat(SITE_NAME_MAX + 1))).toBe(`Namnet får vara högst ${SITE_NAME_MAX} tecken.`);
   });
 });

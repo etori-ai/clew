@@ -101,7 +101,7 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
   registry.register({
     id: SEARCH_CONNECTOR,
     kind: 'core',
-    source: 'Startsidan',
+    source: 'Clew',
     ...requestCapabilities(requests, a => registry.requestSources(a).length > 0),
     uses: ['*'],
   });

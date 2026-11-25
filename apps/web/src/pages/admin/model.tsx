@@ -36,7 +36,8 @@ import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { Findings } from './add-model';
 import { AudienceEditor } from './audience';
-import { actionLabel, actorLabel, audienceLabel, modelStatusOf, providerHealthLabel } from './labels';
+import { actorLabel, audienceLabel, historyLabel, historyWords, modelStatusOf, providerHealthLabel } from './labels';
+import { TechnicalCause } from './check-result';
 import { AdminShell } from './shell';
 import { mobileQuery } from '../../media';
 import { DOT } from '../../dot';
@@ -211,7 +212,17 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
           container="section"
           collapsible={false}
           title={`${m.providerTitle}: ${providerHealthLabel[m.health.status].toLowerCase()}`}
-          description={`${m.health.detail ?? ''} Rutan hittar bara exakta saker tills leverantören svarar igen.`.trim()}
+          description={
+            <>
+              Rutan hittar bara exakta saker tills leverantören svarar igen.
+              {m.health.detail && (
+                <>
+                  {' '}
+                  <TechnicalCause detail={m.health.detail} />
+                </>
+              )}
+            </>
+          }
           endContent={<Timestamp value={m.health.at} format="date_time" />}
         />
       )}
@@ -399,11 +410,10 @@ export function History({ history }: { history: ModelDetail['history'] }) {
       {[...history].reverse().map((h, i) => (
         <ListItem
           key={i}
-          label={<Text>{actionLabel[h.action] ?? h.action}</Text>}
+          label={<Text>{historyLabel(h.action)}</Text>}
           description={
             <Text type="supporting">
-              {actorLabel(h.actor)}
-              {Object.keys(h.details).length ? '\u00a0· ' + JSON.stringify(h.details) : ''}
+              {[actorLabel(h.actor), historyWords(h.action, h.details)].filter(Boolean).join('\u00a0· ')}
             </Text>
           }
           endContent={<Timestamp value={h.at} format="date_time" />}

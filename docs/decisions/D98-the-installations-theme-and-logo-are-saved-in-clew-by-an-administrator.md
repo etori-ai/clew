@@ -1,6 +1,6 @@
 # D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file
 
-**Status:** accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet; item 5's check of an SVG amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the file is read as XML, held to what a drawing needs and to UTF-8, so a namespace prefix, a character reference, a CSS escape or another encoding hides nothing); rule 3 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`WA-M1`, batch 16 and its review): a colour the file leaves alone is the base theme's except a status icon (`icon-info`, `icon-success`), which Astryx draws in its status's text colour until it is set, so it is checked in the file's text colour and a refusal names that colour once, never the icon; text is held at 4.5:1 and the accent (the focus ring), the icons and the status marks at 3:1 on the page, a surface, a card and a popover, the secondary words, a link, the secondary icon and the accent on the muted ground too; the words on `info-muted`, `success-muted` and a selected item's `accent-muted` at 4.5:1, a translucent base tint laid over the surface before it is measured; and the template a file starts from (`THEME_TEMPLATE`) pins neither status icon · **Date:** 2026-11-10 · **Area:** ui
+**Status:** accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet; item 5's check of an SVG amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the file is read as XML, held to what a drawing needs and to UTF-8, so a namespace prefix, a character reference, a CSS escape or another encoding hides nothing); the installation's name added as item 11 and items 9 and 10 amended 2026-11-24 (`WA-L6`, `AM-12`, `BL-9`: the name is part of the appearance, one line of at most 60 characters in Unicode's composed form, with nothing invisible, nothing that turns the text's direction and at least one letter or digit, `Clew` until an administrator names it, audited as `appearance.name.set` and `appearance.name.cleared`, and it is what the tab titles, the sign-in page, the session's words, the sentences that say where something is kept or who sent an invitation, and Clew's own header call the installation, never the model, whose instructions a person trusted with the colours must not reach; the command line sets the name and `--reset` clears it; the dragon moved to `themes/sundsvall/` and the web image carries no logo); rule 3 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`WA-M1`, batch 16 and its review): a colour the file leaves alone is the base theme's except a status icon (`icon-info`, `icon-success`), which Astryx draws in its status's text colour until it is set, so it is checked in the file's text colour and a refusal names that colour once, never the icon; text is held at 4.5:1 and the accent (the focus ring), the icons and the status marks at 3:1 on the page, a surface, a card and a popover, the secondary words, a link, the secondary icon and the accent on the muted ground too; the words on `info-muted`, `success-muted` and a selected item's `accent-muted` at 4.5:1, a translucent base tint laid over the surface before it is measured; and the template a file starts from (`THEME_TEMPLATE`) pins neither status icon · **Date:** 2026-11-10 · **Area:** ui
 
 **Decision.** An installation's colours and its header logo are data in Clew's own PostgreSQL, changed on
 Administration › Utseende by a person with the grant capability `admin.appearance`, and read by every browser from
@@ -35,7 +35,7 @@ the `sundsvall` and `custom` profiles as code. An installation nobody has config
    when a connector gives one (D88).
 6. **Module and audit.** `apps/server/src/modules/appearance/` is a core module with a port and two adapters (D20,
    D25). Every change needs `admin.appearance` and the step-up `authorize()` and writes its audit row in the same
-   transaction: `appearance.theme.set`, `appearance.theme.cleared`, `appearance.logo.set`, `appearance.logo.cleared`,
+   transaction: `appearance.name.set`, `appearance.name.cleared` (as amended), `appearance.theme.set`, `appearance.theme.cleared`, `appearance.logo.set`, `appearance.logo.cleared`,
    subject `installation:appearance`. An audit row names the theme and an image's type and size, never the file or
    the image. One row, `installation_appearance`; its `revision` rises with every save.
 7. **The browser.** `apps/web/src/branding.ts` reads the appearance before the first render, keeps a copy in
@@ -47,12 +47,27 @@ the `sundsvall` and `custom` profiles as code. An installation nobody has config
    `logo-alt` remain for a page that names its own logo.
 9. **Sundsvall is an example folder.** `themes/sundsvall/theme.tokens.json` carries the published palette and D38's
    mapping, as an ordinary theme file with its palette as references, and `themes/sundsvall/appearance.json` names it
-   together with the logo. The dragon stays in `apps/web/public/branding/` for the development intranet fixture, and
-   the example points there; an installation uploads its own originals.
-10. **The command line makes the same changes.** `bun scripts/appearance-set.ts <folder>` saves the theme and logo an
-    example folder names, `--reset` goes back to Neutral and `--show` reads. It runs where the database is, as
-    `scripts/connector-add.ts` does (D23), through the use cases' `operator` side: the same checks of the file and the
-    images, the same audit rows, `bootstrap:appearance` as the actor, and no route that reaches it.
+   together with the logo. The dragon is in that folder beside its provenance and is not part of the web app or its
+   image (as amended 2026-11-24); an installation uploads its own originals.
+10. **The command line makes the same changes.** `bun scripts/appearance-set.ts <folder>` saves the name, theme and
+    logo an example folder names, `--reset` clears the name and goes back to Neutral with no logo, and `--show` reads
+    (as amended 2026-11-24). It runs where the database is, as `scripts/connector-add.ts` does (D23), through the use
+    cases' `operator` side: the same checks of the name, the file and the images, the same audit rows,
+    `bootstrap:appearance` as the actor, and no route that reaches it. It checks each part with the same functions
+    before it saves anything, so a refused part leaves nothing half saved, and says what it refuses in English.
+11. **The installation's name (added 2026-11-24).** The appearance carries a name, set on Utseende and `Clew` until an
+    administrator names it. `checkSiteName` in `theme-file.ts` checks it on the page, on the server and in every
+    browser that reads the saved appearance: it is saved in Unicode's composed form (NFC), trimmed, on one line, with
+    no control, format (zero-width or direction-turning), private-use or unassigned character, at most two combining
+    marks in a row, at least one letter or digit, and at most 60 characters; each refusal is said at the field in
+    Swedish. It is every tab's title, the sign-in page's heading, the name in what the browser says of the session,
+    who sent a talk's invitation, and the band's name in Clew's own header (D88: a header connector's site name still
+    wins), which reads the name alone and not the logos beside it. Clew's own name stays where the product is meant:
+    the source label on what Clew stores, since a stored label must not change when an installation is renamed, and
+    the protocol pages. The model is never given the name: it does not need it, and `admin.appearance` is a grant
+    apart from the administration of models and connectors, so a person trusted with the colours and the logo must
+    not reach every assistant's instructions through a name. The prompt says what the model is the assistant of in
+    Clew's own words ("medarbetarnas startsida").
 
 No first-run wizard. People enter only through SCIM and the first administrator gets a capability from a
 `capability:` group (D68, D85), so at first start there is nobody to answer one; the page is where it is chosen.

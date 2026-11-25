@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { organisationPeople } from './data';
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -73,7 +74,7 @@ test.describe('organisation', () => {
     test('the tree says how the units hang together, who leads each and how many it holds', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/organisation');
-      await expect(page).toHaveTitle('Organisation · Startsidan');
+      await expect(page).toHaveTitle(`Organisation · ${SITE}`);
       // The section is marked in the administration's own panel (D126), on its row.
       await expect(
         page

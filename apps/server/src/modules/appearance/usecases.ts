@@ -1,5 +1,7 @@
 import {
+  SITE_NAME_DEFAULT,
   THEME_TEMPLATE,
+  checkSiteName,
   parseThemeFile,
   themeFileOf,
   type AppearanceAdminView,
@@ -14,14 +16,16 @@ import { isLogoProblem, logoImageOf } from './domain';
 import type { AppearanceRecord, AppearanceStore, LogoImage } from './ports';
 
 /**
- * The installation's appearance (D98): the theme every page is drawn in and the logo in the header, chosen by an
- * administrator in the product and stored in Clew's own database, not in the build.
+ * The installation's appearance (D98): its name, the theme every page is drawn in and the logo in the header, chosen
+ * by an administrator in the product and stored in Clew's own database, not in the build.
  *
- * `read` and `logo` are what any browser asks before a person has signed in, so they take no actor and answer nothing
- * but the appearance. Every change needs the grant capability `admin.appearance` and the step-up `authorize()`, and
- * writes its audit row in the same transaction (`appearance.theme.set`, `appearance.theme.cleared`,
- * `appearance.logo.set`, `appearance.logo.cleared`). An audit row names the theme and the image's type and size, never
- * the colours' file or the image.
+ * `read`, `name` and `logo` are what any browser asks before a person has signed in, so they take no actor and answer
+ * nothing but the appearance; `name` is also what the shared header calls the installation, and it reads the name
+ * alone, never the logos (`AppearanceStore.readName`). The model is never given the name (D98 item 11). Every change
+ * needs the grant capability `admin.appearance` and the step-up `authorize()`, and writes its audit row in the same
+ * transaction (`appearance.name.set`, `appearance.name.cleared`, `appearance.theme.set`, `appearance.theme.cleared`,
+ * `appearance.logo.set`, `appearance.logo.cleared`). An audit row names the name, the theme and the image's type and
+ * size, never the colours' file or the image.
  */
 export const APPEARANCE_CAPABILITY: Capability = 'admin.appearance';
 export const APPEARANCE_SUBJECT = 'installation:appearance';
@@ -47,6 +51,7 @@ export function appearanceUsecases(deps: { store: AppearanceStore; clock: () => 
   };
   const publicView = (record: AppearanceRecord): InstallationAppearance => ({
     revision: record.revision,
+    name: record.name ?? SITE_NAME_DEFAULT,
     theme: record.theme,
     logo: record.logo
       ? {
@@ -65,15 +70,17 @@ export function appearanceUsecases(deps: { store: AppearanceStore; clock: () => 
   async function change(
     author: Author,
     action: string,
-    next: (
-      current: AppearanceRecord,
-    ) => { record: Pick<AppearanceRecord, 'theme' | 'logo'>; details: Record<string, unknown> } | null,
+    next: (current: AppearanceRecord) => {
+      record: Partial<Pick<AppearanceRecord, 'name' | 'theme' | 'logo'>>;
+      details: Record<string, unknown>;
+    } | null,
   ): Promise<AppearanceAdminView> {
     return deps.store.transaction(async tx => {
       const current = await tx.read();
       const changed = next(current);
       if (!changed) return adminView(current);
       const record: AppearanceRecord = {
+        ...current,
         ...changed.record,
         revision: current.revision + 1,
         updatedAt: deps.clock().toISOString(),
@@ -91,11 +98,29 @@ export function appearanceUsecases(deps: { store: AppearanceStore; clock: () => 
   }
   const describe = (image: LogoImage) => ({ mediaType: image.mediaType, bytes: image.bytes.length });
   /**
-   * The four changes for one author. `allowed` refuses before anything is read; `author` is asked only once the input
+   * The six changes for one author. `allowed` refuses before anything is read; `author` is asked only once the input
    * holds, so a person's step-up is not spent on a file that is refused.
    */
   function changes(allowed: () => void, author: () => Promise<Author>) {
     return {
+      /** Names the installation; the name it already has is no change and writes nothing. */
+      async setName(value: string): Promise<AppearanceAdminView> {
+        allowed();
+        const checked = checkSiteName(value);
+        if ('problem' in checked) throw new InputError(checked.problem);
+        return change(await author(), 'appearance.name.set', current =>
+          current.name === checked.name
+            ? null
+            : { record: { name: checked.name }, details: { from: current.name, to: checked.name } },
+        );
+      },
+      /** Back to the name an installation nobody has named has (`SITE_NAME_DEFAULT`). */
+      async clearName(): Promise<AppearanceAdminView> {
+        allowed();
+        return change(await author(), 'appearance.name.cleared', current =>
+          current.name === null ? null : { record: { name: null }, details: { from: current.name } },
+        );
+      },
       /** Replaces the theme with an uploaded file's, refused whole with every problem named when it does not hold. */
       async setTheme(file: unknown): Promise<AppearanceAdminView> {
         allowed();
@@ -150,6 +175,10 @@ export function appearanceUsecases(deps: { store: AppearanceStore; clock: () => 
     async read(): Promise<InstallationAppearance> {
       return publicView(await deps.store.read());
     },
+    /** Public: what the installation is called, its default until an administrator names it. */
+    async name(): Promise<string> {
+      return (await deps.store.readName()) ?? SITE_NAME_DEFAULT;
+    },
     /** Public: one image of the logo, or null when the installation has none. */
     async logo(variant: LogoVariant): Promise<(LogoImage & { revision: number }) | null> {
       const record = await deps.store.read();
@@ -168,14 +197,17 @@ export function appearanceUsecases(deps: { store: AppearanceStore; clock: () => 
       require(persona);
       return adminView(await deps.store.read());
     },
+    setName: (persona: AuthenticatedContext, name: string) => by(persona).setName(name),
+    clearName: (persona: AuthenticatedContext) => by(persona).clearName(),
     setTheme: (persona: AuthenticatedContext, file: unknown) => by(persona).setTheme(file),
     clearTheme: (persona: AuthenticatedContext) => by(persona).clearTheme(),
     setLogo: (persona: AuthenticatedContext, input: AppearanceLogoInputType) => by(persona).setLogo(input),
     clearLogo: (persona: AuthenticatedContext) => by(persona).clearLogo(),
     /**
-     * The same four changes for the operator at the command line (`scripts/appearance-set.ts`), who has the database
-     * and no session: the same checks of the file and the image, the same audit rows, with `bootstrap:appearance` as
-     * the actor, as `bootstrap:connector` is for a connector registered from there (D23). No route reaches this.
+     * The same six changes for the operator at the command line (`scripts/appearance-set.ts`), who has the database
+     * and no session: the same checks of the name, the file and the image, the same audit rows, with
+     * `bootstrap:appearance` as the actor, as `bootstrap:connector` is for a connector registered from there (D23). No
+     * route reaches this.
      */
     operator: changes(
       () => undefined,

@@ -1,6 +1,6 @@
 # Clew
 
-Clew is an open-source workspace for an employee's work across systems. It brings together what needs attention, the information needed to decide, and actions with receipts from the source. It is built for the public sector; its Swedish employee interface is called **Startsidan**.
+Clew is an open-source workspace for an employee's work across systems. It brings together what needs attention, the information needed to decide, and actions with receipts from the source. It is built for the public sector; its Swedish employee interface carries the installation's own name, Clew until an administrator names it (D98).
 
 An employee can find a colleague, check their calendar, review an invoice or follow up a task without first choosing which system to open. Source systems keep their business records. Clew owns the coordination: who may see the work, what the person approved, what happened afterwards and when to bring it back. This includes tasks that need changes in several systems, assembled into one proposal with one approval and a separate outcome for each system.
 
@@ -12,7 +12,7 @@ Clew has a web application, a modular backend and independently deployed connect
 
 ```mermaid
 flowchart LR
-  Person[Employee] --> Web[Startsidan web app]
+  Person[Employee] --> Web[Clew web app]
   Web --> Server[Clew server]
   Server --> DB[(PostgreSQL: coordination and evidence)]
   Server <--> Engine[DBOS: durable work and timers, inside the server]

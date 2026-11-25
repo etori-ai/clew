@@ -1,5 +1,6 @@
 import type { Locator } from '@playwright/test';
 import {
+  SITE,
   desktop,
   expect,
   narrow,
@@ -43,9 +44,9 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
         // The logo and the name are the band's heading (D98, D130), on every width; with a header connector the band
         // draws the connector's own (`header.spec.ts`).
         const heading = page.getByRole('banner');
-        const home = heading.getByRole('link', { name: /Startsidan/ });
+        const home = heading.getByRole('link', { name: SITE });
         await expect(home).toBeVisible();
-        await expect(home).toHaveAccessibleName(/Startsidan/);
+        await expect(home).toHaveAccessibleName(SITE);
         // The page's own tokens, read on the page.
         const brand = await page.getByRole('main').evaluate(element => {
           const style = getComputedStyle(element);
@@ -113,11 +114,11 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
       });
       await page.goto('/calendar');
       const heading = page.getByRole('banner');
-      const home = heading.getByRole('link', { name: /Startsidan/ });
+      const home = heading.getByRole('link', { name: SITE });
       await expect(home).toBeVisible();
       await expect.poll(() => failedRequests).toBeGreaterThan(0);
       await expect(heading.getByRole('img', { name: expectedLogo.alt, exact: true })).toHaveCount(0);
-      await expect(home).toHaveAccessibleName(/^Startsidan/);
+      await expect(home).toHaveAccessibleName(new RegExp(`^${SITE}`));
       await home.click();
       await expect(page).toHaveURL('/');
     });

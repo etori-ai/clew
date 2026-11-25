@@ -4775,6 +4775,11 @@ export interface CheckItem {
   label: string;
   description?: string;
   capability?: string;
+  /**
+   * What the system or the network answered, in its own words (English, as a runtime's errors are): kept apart from
+   * the Swedish description so the page shows it to an administrator as a technical cause, marked as English.
+   */
+  cause?: string;
 }
 export interface CheckReport {
   ok: boolean;
@@ -5682,12 +5687,15 @@ export {
   LOGO_ALT_MAX,
   LOGO_MAX_BYTES,
   LOGO_MEDIA_TYPES,
+  SITE_NAME_DEFAULT,
+  SITE_NAME_MAX,
   THEME_BASE_COLORS,
   THEME_COLOR_TOKENS,
   THEME_CONTRAST_PAIRS,
   THEME_FILE_MAX_BYTES,
   THEME_NAME_MAX,
   THEME_TEMPLATE,
+  checkSiteName,
   checkThemeContrast,
   contrastRatio,
   isThemeHex,
@@ -5698,6 +5706,7 @@ export {
   themeFromAccent,
   type InstallationTheme,
   type LogoMediaType,
+  type SiteNameProblem,
   type ThemeColorPair,
   type ThemeColorToken,
   type ThemeColors,
@@ -5706,14 +5715,16 @@ export {
   type ThemeMode,
   type ThemeProblem,
 } from './theme-file';
-import type { InstallationTheme, ThemeProblem } from './theme-file';
+import { SITE_NAME_MAX, type InstallationTheme, type ThemeProblem } from './theme-file';
 /**
- * The installation's appearance (D98) as every browser reads it before a person has signed in: the theme, or null for
- * Astryx Neutral, and the logo's addresses on Clew's own origin, or null for none. `revision` changes with every save,
- * so a cached copy is recognised as old and a logo's address is new when its image is.
+ * The installation's appearance (D98) as every browser reads it before a person has signed in: its name, the theme, or
+ * null for Astryx Neutral, and the logo's addresses on Clew's own origin, or null for none. `revision` changes with
+ * every save, so a cached copy is recognised as old and a logo's address is new when its image is.
  */
 export interface InstallationAppearance {
   revision: number;
+  /** What the tab titles, the sign-in page and Clew's own header call the installation (never the model, D98 item 11); `SITE_NAME_DEFAULT` until named. */
+  name: string;
   theme: InstallationTheme | null;
   logo: { src: string; darkSrc?: string; alt: string } | null;
 }
@@ -5751,3 +5762,12 @@ export const AppearanceLogoInput = Type.Object(
   { additionalProperties: false },
 );
 export type AppearanceLogoInputType = Static<typeof AppearanceLogoInput>;
+/**
+ * A save of the installation's name. `checkSiteName` is the validation, so a name refused is named in Swedish; the
+ * schema only bounds the envelope.
+ */
+export const AppearanceNameInput = Type.Object(
+  { name: Type.String({ maxLength: SITE_NAME_MAX * 4 }) },
+  { additionalProperties: false },
+);
+export type AppearanceNameInputType = Static<typeof AppearanceNameInput>;

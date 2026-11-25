@@ -12,7 +12,7 @@ The [vocabulary and entity map](../reference/vocabulary.md) distinguishes a work
 
 ```mermaid
 flowchart TB
-  Person[Employee] --> Web[Startsidan: React web app]
+  Person[Employee] --> Web[Clew: React web app]
   Web -->|Session-authenticated API| Server[Clew server: Node and Hono]
   Server <-->|OIDC login| IdP[Identity provider]
   Server <-->|Intent, grants, audit and results| DB[(PostgreSQL)]
