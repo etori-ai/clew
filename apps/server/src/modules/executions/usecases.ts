@@ -80,6 +80,11 @@ export function executionUsecases({
   /** Everything an approval needs before its transaction: authority, the source's write safety and, for an undo, the compensation rule. No I/O on the store beyond reading the original. */
   async function prepare(persona: AuthenticatedContext, input: ApproveInput, at: string): Promise<Execution> {
     if (!DECISION.test(input.decisionId)) throw new ExecutionError('Ogiltigt beslut.');
+    // One undo per confirmed effect (D45, DE-L5): an undo is the decision `undo:<original>` and nothing else is, so a
+    // second undo of the same effect, by any route, is the first one replayed and never a second write. Only the
+    // original's own person may undo it (`undoable`), and a decision is unique per person.
+    if (input.compensates ? input.decisionId !== 'undo:' + input.compensates : input.decisionId.startsWith('undo:'))
+      throw new ExecutionError('Ogiltigt beslut.');
     const access = await source.authorize(persona, input.operation, input.payload);
     // Existing decisions retain their approved versions even after source change or evidence expiry.
     // Commit still compares the complete intent and its original authority before returning a replay.

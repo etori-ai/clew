@@ -481,14 +481,14 @@ test('undo is another approved execution and refuses a changed payload or source
     payload = done.result!.undoInput!;
   await expect(
     w.uc.approve(person, {
-      decisionId: 'bad-undo',
+      decisionId: 'undo:' + e.id,
       operation: 'calendar.undoProposals',
       payload: command(),
       compensates: e.id,
     }),
   ).rejects.toThrow('exakt');
   const undo = await w.uc.approve(person, {
-    decisionId: 'undo',
+    decisionId: 'undo:' + e.id,
     operation: 'calendar.undoProposals',
     payload,
     compensates: e.id,

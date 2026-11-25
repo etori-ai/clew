@@ -502,6 +502,9 @@ export function calendarUsecases(deps: CalendarDeps) {
   async function replan(persona: AuthenticatedContext, threadId: string, week: string) {
     const current = await store.readThread(persona.id, threadId);
     if (!current || current.thread.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
+    // Only the planning card is redrawn (DE-L6): the store reads every card of the calendar's, a follow-up, an obligation
+    // or a calendar decision's too, and one handed here by its id would be rewritten as a proposal thread.
+    if (current.thread.topic !== TOPIC) throw new InputError('Ärendet finns inte.');
     if (Date.parse(dayStart(week)) < Date.parse(dayStart(todayDate())) || weekStartMismatch(week))
       throw new InputError('Välj en kommande vecka.');
     const open = await roundFor(persona);

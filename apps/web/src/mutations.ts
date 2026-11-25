@@ -2,7 +2,7 @@ import { createElement, useCallback, useRef, useSyncExternalStore, type ReactNod
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { BoardingPlanOutput, Thread } from '@clew/contracts';
 import { CompletionFeedback, useToast } from '@clew/ui';
-import { applyThread, previewThread } from './thread-cache';
+import { applyThread, previewThread, readItemsAgain } from './thread-cache';
 import { atRest } from './optimistic';
 import { errorMessage } from './query-policy';
 import { keys } from './query-keys';
@@ -113,6 +113,8 @@ export function useThreadAction({
         }
         await mutateAsync({ fn, ...options });
       } catch (error) {
+        // A refused decision may be one on an item that has changed since it was drawn (AM-4).
+        if (options.settle) readItemsAgain(client);
         // The error is in the mutation's state. A card drawn as gone has left the page with that state, so the preview goes
         // back where it still stands and the reason is a toast, which outlives the card's component.
         restore?.();
@@ -165,12 +167,14 @@ export function useDecisionSend({
         await mutateAsync(fn);
         return { sent: true };
       } catch (error) {
+        // As for a decision on the item itself (AM-4).
+        readItemsAgain(client);
         return { error: errorMessage(error, fallback) };
       } finally {
         inFlight.current = false;
       }
     },
-    [mutateAsync, fallback],
+    [client, mutateAsync, fallback],
   );
   return { send, busy: mutation.isPending };
 }
