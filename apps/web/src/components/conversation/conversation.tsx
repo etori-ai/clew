@@ -611,7 +611,8 @@ function ProposalWeek({ thread }: { thread: Thread }) {
         <EventList
           from={thread.week}
           items={agendaItems(events, thread.proposals)}
-          dayHeadingLevel={3}
+          // Part of the answer, whose own headings start at 2 under the conversation's h1: a day is never two levels down.
+          dayHeadingLevel={2}
           label={`Vecka ${weekNumber(thread.week)} med förslagen`}
           accessiblePath="Förslagen bekräftas i ärendet."
         />

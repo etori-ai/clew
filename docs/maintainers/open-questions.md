@@ -105,6 +105,12 @@ true. Each needs the owner's word before its first word changes:
 [D87](../decisions/D87-one-header-shared-by-the-portal-and-the-intranet.md) and
 [D99](../decisions/D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward.md).
 
+## The calendar
+
+| Question | Last stated | Where it comes from |
+|---|---|---|
+| Does an installation set its own time zone, and who decides it? Clew reads floating times, all-day dates and the days of its pages in Europe/Stockholm, fixed in the code (`packages/calendar/src/dates.ts`); a municipality elsewhere, or one whose calendars keep another zone, would see meetings an hour or more off. If it is set, is it the operator's (the deployment) or an administrator's (Administration, like the appearance of D98), and does one zone hold for every person of the installation? Until it is decided the zone stays fixed. | 2026-11-24 | [Calendar status](../reference/status/calendar.md), [D133](../decisions/D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md) |
+
 ## Accessibility
 
 No manual screen-reader pass has been made on any flow (stated in the project review of 2026-11-10 and on the status

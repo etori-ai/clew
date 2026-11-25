@@ -4,11 +4,15 @@ import type { AuthenticatedContext } from '../../packages/contracts/src';
 import { fakeGraph, fakeGraphToken, type FakeGraphOptions } from '../../packages/calendar/src/fake-graph';
 import { Microsoft365Provider } from '../../packages/calendar/src/microsoft365';
 import { createCalendarProvider } from '../../packages/calendar/src/adapters';
-import { CalendarError, type MeetingInput } from '../../packages/calendar/src/model';
+import { CalendarError, FREE_BUSY_TARGETS, type MeetingInput } from '../../packages/calendar/src/model';
 import { calendarExecutionSource } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { calendarProviderContract } from '../calendar-provider-contract';
+import { bindCalendar } from '../../packages/calendar/src/accounts';
+import { memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
+import type { ProposalRecord } from '../../apps/server/src/modules/calendar/model';
+import { eventUsecases } from '../../apps/server/src/modules/calendar/usecases/events';
 
 const directory = {
   people: [
@@ -252,6 +256,40 @@ describe('failures of the source', () => {
     const accepted = await anna.accept(invitation!.ref, invitation!.revision);
     expect(accepted.participants.find(p => p.email === 'anna@clew.test')?.response).toBe('accepted');
   });
+  test('a booking under an address Graph knows the mailbox by otherwise is still the organiser’s own', async () => {
+    const w = world();
+    // The directory holds an alias; the mailbox signs in as itself and organises under its own address.
+    const alias = new Microsoft365Provider(
+      async () => fakeGraphToken('hillevi@clew.test'),
+      { email: 'Hillevi.Berg@kommun.example', name: 'Hillevi Berg' },
+      w.url,
+    );
+    const booked = await alias.create('alias-1', input);
+    expect(booked).toMatchObject({ uid: 'alias-1', organizer: 'hillevi@clew.test', canCancel: true });
+    await alias.cancel(booked.ref, booked.revision);
+    expect(await alias.lookup(booked.ref)).toBeNull();
+  });
+  test('Graph answers twenty schedules in one request and refuses twenty-one, as the fake says it does', async () => {
+    const w = world();
+    const ask = (count: number) =>
+      fetch(`${w.url}/me/calendar/getSchedule`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${fakeGraphToken('hillevi@clew.test')}`,
+          'Content-Type': 'application/json',
+          Prefer: 'outlook.timezone="UTC"',
+        },
+        body: JSON.stringify({
+          schedules: Array.from({ length: count }, (_, i) => `p${i}@clew.test`),
+          startTime: { dateTime: '2030-05-06T09:00:00', timeZone: 'UTC' },
+          endTime: { dateTime: '2030-05-06T10:00:00', timeZone: 'UTC' },
+        }),
+      });
+    const twenty = await ask(FREE_BUSY_TARGETS);
+    expect(twenty.status).toBe(200);
+    expect(((await twenty.json()) as { value: unknown[] }).value).toHaveLength(FREE_BUSY_TARGETS);
+    expect((await ask(FREE_BUSY_TARGETS + 1)).status).toBe(400);
+  });
   test('the fake answers a call it does not implement with 501', async () => {
     const w = world();
     const response = await fetch(`${w.url}/me/messages`, {
@@ -282,8 +320,21 @@ describe('the Graph vocabulary, from the documented response shapes', () => {
 
   test('an occurrence of a series is recurring, keeps its own id and cannot be cancelled', async () => {
     const [event] = await provider(replying([{ ...base, type: 'occurrence' }])).list(dayStart, dayEnd);
-    expect(event).toMatchObject({ title: 'Möte', uid: 'ical-1', recurring: true, canCancel: false });
+    expect(event).toMatchObject({ title: 'Möte', uid: 'ical-1', icalUid: 'ical-1', recurring: true, canCancel: false });
     expect(event!.ref).toBe(`microsoft365:id:${Buffer.from('occurrence-1').toString('base64url')}`);
+  });
+  test('whose copy it is comes from isOrganizer, never from comparing addresses', async () => {
+    const mine = { emailAddress: { name: 'Hillevi', address: 'hillevi@clew.test' } };
+    const [named, flagged] = await provider(
+      replying([
+        // Names the account as organiser, but Graph says this mailbox is not the one that organises it.
+        { ...base, id: 'named', type: 'singleInstance', organizer: mine, isOrganizer: false },
+        // Organised under another address of the same mailbox (an alias), which Graph says is this one.
+        { ...base, id: 'flagged', type: 'singleInstance', isOrganizer: true },
+      ]),
+    ).list(dayStart, dayEnd);
+    expect(named).toMatchObject({ organizer: 'hillevi@clew.test', canCancel: false });
+    expect(flagged).toMatchObject({ organizer: 'anna@clew.test', canCancel: true });
   });
   test('an all-day event is a date with an exclusive end', async () => {
     const [event] = await provider(
@@ -424,5 +475,116 @@ describe('the Graph vocabulary, from the documented response shapes', () => {
   test('more than a hundred meetings asks for a shorter period', async () => {
     const value = Array.from({ length: 101 }, (_, i) => ({ ...base, id: `e${i}`, type: 'singleInstance' }));
     await expect(provider(replying(value)).list(dayStart, dayEnd)).rejects.toThrow('För många möten');
+  });
+});
+
+describe('a talk’s meeting in the invitee’s calendar on Microsoft 365 (WA-L5)', () => {
+  const as = (id: string, name: string, role: 'manager' | 'employee'): AuthenticatedContext => ({
+    id,
+    name,
+    role,
+    unitId: 'unit',
+    unitLabel: 'Unit',
+    organisationId: 'org',
+    principal: { id: 'person:' + id, kind: 'person' },
+    capabilities: [],
+    authorizationVersion: '1',
+    sessionBinding: 'test',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    authorize: async () => ({ version: '1' }),
+  });
+  const hillevi = as('hillevi', 'Hillevi Berg', 'manager'),
+    anna = as('anna', 'Anna Lindqvist', 'employee');
+  /** Hillevi's invitation to Anna's talk, sent and read back: what the ledger stores of it, with or without the shared id. */
+  async function sent(w: ReturnType<typeof world>, keepsSharedId: boolean) {
+    const event = await w.hillevi.create('clew-exec-talk', {
+      title: 'Utvecklingssamtal',
+      start,
+      end,
+      participants: ['anna@clew.test'],
+    });
+    const store = memoryProposalStore();
+    const record: ProposalRecord = {
+      id: 'invitation',
+      threadId: 'talks',
+      personId: hillevi.id,
+      status: 'confirmed',
+      participant: { personId: anna.id, email: 'anna@clew.test', name: anna.name },
+      start,
+      end,
+      eventUid: event.uid,
+      eventRef: event.ref,
+      eventRevision: event.revision,
+      eventIcalUid: keepsSharedId ? event.icalUid : null,
+      confirmedAt: start,
+      undoUntil: null,
+      reminders: 0,
+      remindedAt: null,
+    };
+    await store.transaction(async tx => {
+      await tx.insertThread({
+        id: 'talks',
+        personId: hillevi.id,
+        topic: 'utvecklingssamtal:talks',
+        title: 'Planera utvecklingssamtal',
+        week: '2030-05-06',
+        area: 'utvecklingssamtal',
+        summary: '',
+        trigger: { reason: 'Test', source: 'Test', at: start },
+        createdAt: start,
+        updatedAt: start,
+      });
+      await tx.insertProposals([record]);
+    });
+    const reads = eventUsecases({
+      store,
+      bind: p => ({ provider: p.id === anna.id ? w.anna : w.hillevi }),
+      team: async () => [],
+      clock: () => new Date('2030-05-01T12:00:00.000Z'),
+      ids: () => 'id',
+    });
+    return { event, reads };
+  }
+  test('is known by the id every copy carries, which the organiser’s copy gave when the invitation was read back', async () => {
+    const w = world();
+    const { event, reads } = await sent(w, true);
+    const [copy] = await w.anna.list(dayStart, dayEnd);
+    // Anna's copy has neither Clew's uid nor the organiser's reference: only the id Exchange gives every copy.
+    expect(copy).toMatchObject({ icalUid: event.icalUid, canCancel: false });
+    expect([copy!.uid, copy!.ref]).not.toContain(event.uid);
+    expect(copy!.ref).not.toBe(event.ref);
+    expect((await reads.dayView(anna, '2030-05-06')).events.map(e => [e.title, e.talk ?? false])).toEqual([
+      ['Utvecklingssamtal', true],
+    ]);
+    expect((await reads.dayView(hillevi, '2030-05-06')).events.map(e => e.talk ?? false)).toEqual([true]);
+  });
+  test('without that id the invitee’s copy is not known, which is why it is stored', async () => {
+    const { reads } = await sent(world(), false);
+    expect((await reads.dayView(anna, '2030-05-06')).events.map(e => e.talk ?? false)).toEqual([false]);
+  });
+});
+
+describe('the development sign-in to the fake of Graph (D69)', () => {
+  test('is the person’s own login, never the address the directory holds for them', async () => {
+    const w = world({
+      people: [...directory.people, { email: 'mikael@clew.test', name: 'Mikael Lund' }],
+    });
+    const settings: Record<string, string | undefined> = {
+      CLEW_POC: 'true',
+      GRAPH_URL: w.url,
+      CALENDAR_ADAPTER: 'microsoft365',
+    };
+    const before = Object.fromEntries(Object.keys(settings).map(k => [k, process.env[k]]));
+    Object.assign(process.env, settings);
+    try {
+      // The directory holds Hillevi's address for Mikael by mistake: he still signs in to his own mailbox.
+      const { provider } = bindCalendar({ id: 'mikael', name: 'Mikael Lund' }, 'hillevi@clew.test');
+      expect(provider.account.email).toBe('hillevi@clew.test');
+      expect(await provider.primaryCalendar()).toBe('calendar-mikael@clew.test');
+    } finally {
+      for (const [k, v] of Object.entries(before))
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+    }
   });
 });
