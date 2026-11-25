@@ -176,6 +176,79 @@ test('postgres refresh coalesces, preserves dismissal, fences stale scans and on
   subjects.push('occurrence:' + occurrence.id);
   expect(occurrence.sourceState).toBe('resolved');
 });
+test('postgres: a source that changes the work of a snoozed card brings it back, and its history says the source woke it (D28)', async () => {
+  const actor = await person(),
+    store = postgresRefreshStore({ durable: testDurable, sealer }, actor.id),
+    threads = postgresThreadStore({ durable: testDurable });
+  let time = Date.parse('2098-11-07T09:00:00.000Z'),
+    revision = '1';
+  const clock = () => new Date(time);
+  const uc = refreshUsecases({
+    store,
+    clock,
+    key: v => createHash('sha256').update(JSON.stringify(v)).digest('hex'),
+    ids: () => crypto.randomUUID(),
+    current: async () => actor,
+    sources: async () => ['reference'],
+    system: () => 'Referenssystemet',
+    scan: async () => ({
+      observation: {
+        scope: 'test:manager',
+        observedAt: clock().toISOString(),
+        version: revision,
+        completeness: 'complete',
+        exhausted: true,
+      },
+      drafts: [
+        {
+          topic: 'snoozed-work',
+          title: 'Test work',
+          summary: revision,
+          area: 'test',
+          reason: 'Source',
+          actions: [],
+          occurrences: [{ key: 'case1', period: 'once', revision }],
+        },
+      ],
+    }),
+  });
+  await uc.request(actor);
+  subjects.push(...(await store.statuses(actor.id)).map(r => 'refresh:' + r.id));
+  await uc.tick();
+  const card = (await threads.listThreads(actor.id, clock().toISOString()))[0]!;
+  subjects.push('thread:' + card.id, 'timer:snooze:' + card.id);
+  const until = '2098-11-09T07:00:00.000Z';
+  await threads.transaction(async tx => {
+    await tx.updateThread(card.id, { snoozedUntil: until });
+    await tx.scheduleTimer({
+      id: `snooze:${card.id}`,
+      personId: actor.id,
+      threadId: card.id,
+      kind: 'snooze',
+      unitId: 'test',
+      authorizationVersion: 'v1',
+      dueAt: until,
+      requestedAt: clock().toISOString(),
+    });
+  });
+  time += 60_001;
+  revision = '2';
+  await uc.request(actor);
+  await uc.tick();
+  expect(await threads.readThread(actor.id, card.id)).toMatchObject({ state: 'open', snoozedUntil: null });
+  expect((await threads.readTimer(`snooze:${card.id}`))?.state).toBe('cancelled');
+  const rows = await database()
+    .select()
+    .from(schema.audit)
+    .where(eq(schema.audit.subject, 'thread:' + card.id))
+    .orderBy(schema.audit.id);
+  expect(rows.map(a => [a.actor, a.action])).toEqual([
+    ['assistant:scan', 'thread.pushed'],
+    ['assistant:scan', 'thread.refreshed'],
+    ['assistant:scan', 'thread.woken'],
+  ]);
+  expect(rows.at(-1)!.details).toEqual({ reason: 'changed', snoozedUntil: until });
+});
 test('attention budget, concurrent tabs, explicit reminders and delayed release share durable records', async () => {
   const actor = await person(),
     store = postgresThreadStore({ durable: testDurable }),

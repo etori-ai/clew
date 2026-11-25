@@ -36,8 +36,8 @@ this paragraph, this paragraph holds.
   The scan comes back every minute, but it reads the manager's calendar only when the round or another manager's
   booking changes a drawn time or a row on the card, and otherwise at most once an hour per card and server process,
   so what only the calendar or the team says reaches the card within the hour.
-  On PostgreSQL the approval projection adds a check of its own, which does not ask the rule
-  (`apps/server/src/composition/execution-projection.ts`). Under a lock per invitee, it refuses a confirmation while
+  The approval projection adds a check of its own, which does not ask the rule
+  (`apps/server/src/threads/usecases/projection.ts`, on both adapters). Under a lock per invitee, it refuses a confirmation while
   another manager's approved invitation to the same person may still be sent: a proposal of that manager's that is
   still `proposed`, with an execution that is running, pending or unknown, inside the approval's 24
   hours ([D45](D45-approved-intent-precedes-source-dispatch.md)) and the period of this confirmation's round.

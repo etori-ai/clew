@@ -519,10 +519,12 @@ test.describe('organisation', () => {
       await open(page, '/admin/organisation');
       await expect(page.getByRole('heading', { name: 'Ingen organisation ännu' })).toBeVisible();
       await expect(page.getByRole('tree')).toHaveCount(0);
+      await expectNoAxeViolations(page);
       api.usersForbidden = true;
       await open(page, '/admin/organisation');
       await expect(page.getByRole('alert').filter({ hasText: 'behörighet' })).toBeVisible();
       expect(await announcements(page)).not.toContainEqual(expect.stringContaining('undefined'));
+      await expectNoAxeViolations(page);
     });
   });
   test.describe('phone', () => {

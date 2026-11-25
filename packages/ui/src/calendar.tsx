@@ -182,10 +182,8 @@ export function EventCalendar({
   );
   // Where the grid scrolls inside itself (`fill`), a row's height is a number of pixels, so the row that makes 07–18
   // fill what is seen is measured from FullCalendar's scroller (found from a row it holds) and measured again when the
-  // window changes; the grid is then put back at 07. The scroller is left as FullCalendar makes it: a tab stop on it
-  // would stand between the grid's row group and its rows, which breaks the table it is part of (axe:
-  // aria-required-children). Every entry is a tab stop and comes into view with the focus, and every hour is reached
-  // through the host's time fields; an empty stretch outside the office day is seen with a wheel or a finger.
+  // window changes; the grid is then put back at 07. The first day cell takes a keyboard stop inside that scroller, including in an empty week.
+  // Keeping the stop on a cell preserves the table's row groups. Entries keep their own keyboard behavior.
   const host = useRef<HTMLDivElement>(null);
   const [fitted, setFitted] = useState<number | null>(null);
   const timed = fill && !isMonth(view) && !isList(view);
@@ -196,14 +194,42 @@ export function EventCalendar({
       scroller = scroller.parentElement;
     if (!scroller || scroller === host.current) return;
     const seen = scroller;
+    const day = seen.querySelector<HTMLElement>('[role="cell"][data-date]');
+    function scrollDay(event: KeyboardEvent) {
+      if (event.target !== day || event.altKey || event.ctrlKey || event.metaKey) return;
+      const distance: Record<string, number> = {
+        ArrowDown: 40,
+        ArrowUp: -40,
+        PageDown: seen.clientHeight,
+        PageUp: -seen.clientHeight,
+        Home: -seen.scrollHeight,
+        End: seen.scrollHeight,
+      };
+      const by = distance[event.key];
+      if (by === undefined) return;
+      event.preventDefault();
+      seen.scrollTop += by;
+    }
+    if (day) {
+      day.tabIndex = 0;
+      day.classList.add('clew-cal-focusable');
+      day.setAttribute('aria-description', 'Använd piltangenterna för att bläddra bland tiderna.');
+      day.addEventListener('keydown', scrollDay);
+    }
     // Never lower than a pointer target (2.5.8): a half-hour meeting is drawn 2 px lower than its row, so a row is
     // at least 26 px, and in a low window the grid scrolls inside itself instead of drawing the meeting under 24 px.
     const fit = () => setFitted(Math.max(SLOT_MIN, Math.floor(seen.clientHeight / pageRows)));
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(seen);
-    return () => observer.disconnect();
-  }, [timed, view]);
+    return () => {
+      observer.disconnect();
+      day?.removeEventListener('keydown', scrollDay);
+      day?.removeAttribute('tabindex');
+      day?.removeAttribute('aria-description');
+      day?.classList.remove('clew-cal-focusable');
+    };
+  }, [timed, view, date]);
   useEffect(() => {
     if (timed && fitted) ref.current?.getApi().scrollToTime(clock(pageDay.start));
   }, [timed, fitted, view]);
@@ -218,9 +244,6 @@ export function EventCalendar({
       <Calendar
         ref={ref}
         plugins={plugins}
-        // The page's calendar scrolls in the page frame's column, the embeds in a pane or a dialog of their own: only the
-        // page's day headers are stuck against the column's inset (calendar-theme.css). FullCalendar adds the class to the theme's.
-        {...(compact ? {} : { className: 'clew-cal-page' })}
         initialView={view}
         initialDate={date}
         locale={sv}

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
-import { audiencedActorOf, receipt, type ExecuteResult } from '../../packages/connectors/src/index';
+import { audiencedActorOf, type ExecuteResult } from '../../packages/connectors/src/index';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { memoryRefreshStore } from '../../apps/server/src/threads/adapters/refresh-memory';
@@ -11,8 +11,8 @@ import { cardDecisions } from '../../apps/server/src/threads/usecases/decisions'
 import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
+import { memoryProjection } from '../../apps/server/src/threads/adapters/projection-memory';
 import type {
-  Execution,
   ExecutionSessions,
   ExecutionSource,
   ExecutionStore,
@@ -32,9 +32,8 @@ import { sessionDesk } from '../session-desk';
  * as `composition/refresh.ts`, `composition/executions.ts` and `composition/index.ts` wire them. `sessionDesk` stands in
  * for `standingSession` in `auth.ts`.
  *
- * One piece is not production code: the memory ledger projects nothing onto the card, because that projection lives only
- * in `composition/execution-projection.ts` over a Postgres transaction. `projectOntoCard` below is its non-calendar path,
- * called where the Postgres ledger calls it (on insert and on update, inside the ledger's transaction).
+ * The ledger's projection onto the card is the server's own (`threads/usecases/projection.ts`) on its memory port
+ * (`memoryProjection`), held to the Postgres port by `tests/projection-contract.ts`.
  */
 const ID = 'nextcloud-approval';
 const secret = 'test-secret-test-secret';
@@ -124,66 +123,12 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
     session: desk.find,
   });
 
-  /** `composition/execution-projection.ts` for a card that is not the calendar's, on the memory thread store. */
-  async function projectOntoCard(e: Execution, stage: 'approval' | 'update') {
-    if (!e.presentation) return;
-    const presentation = e.presentation;
-    await threads.transaction(async tx => {
-      const thread = await tx.lockThread(e.personId, presentation.threadId);
-      if (!thread) throw new Error('Kortet finns inte.');
-      const previous = thread.execution;
-      if (stage === 'approval') {
-        if (thread.updatedAt !== presentation.version || thread.connector !== e.connector)
-          throw new Error('Kortet har ändrats. Läs tillbaka det innan du bekräftar.');
-        if (previous && ['pending', 'running', 'unknown'].includes(previous.state))
-          throw new Error('Ett tidigare beslut väntar redan på besked.');
-        if (e.compensates ? previous?.id !== e.compensates : thread.state !== 'open')
-          throw new Error('Kortet är redan hanterat.');
-      } else if (previous?.id !== e.id) return;
-      const confirmed = e.state === 'succeeded';
-      const projected = e.result ? receipt(e.result, new Date(e.dispatchedAt ?? e.createdAt)) : null;
-      // The port's patch type leaves out the execution fields the Postgres projection writes in SQL; the memory store
-      // applies any patch.
-      const patch: Partial<Thread> = {
-        execution: {
-          id: e.id,
-          decisionId: e.decisionId,
-          operation: e.operation,
-          state: e.state,
-          reason: e.reason,
-          compensates: e.compensates,
-        },
-        updatedAt: e.updatedAt,
-        ...(stage === 'approval' ? { waitingOn: 'källans besked' } : {}),
-        ...(!e.compensates && projected && e.state !== 'running' ? { receipt: projected } : {}),
-        ...(!e.compensates && confirmed ? { state: 'handled' as const, handledAt: e.updatedAt, waitingOn: null } : {}),
-        ...(['unknown', 'partial', 'failed'].includes(e.state) || e.reason ? { waitingOn: null } : {}),
-      };
-      await tx.updateThread(thread.id, patch as Parameters<typeof tx.updateThread>[1]);
-    });
-  }
-  const memoryLedger = memoryExecutionStore();
-  const ledger: ExecutionStore = {
-    readDecision: memoryLedger.readDecision,
-    read: memoryLedger.read,
-    readCard: memoryLedger.readCard,
-    readJob: memoryLedger.readJob,
-    transaction: fn =>
-      memoryLedger.transaction(tx =>
-        fn({
-          ...tx,
-          async insert(e) {
-            const saved = await tx.insert(e);
-            if (saved.inserted) await projectOntoCard(saved.execution, 'approval');
-            return saved;
-          },
-          async update(e) {
-            await tx.update(e);
-            await projectOntoCard(e, 'update');
-          },
-        }),
-      ),
-  };
+  // The ledger projects onto the card through the same projection the server runs (`threads/usecases/projection.ts`),
+  // on its memory port, inside the ledger's transaction.
+  let memoryLedger: ReturnType<typeof memoryExecutionStore>;
+  const projection = memoryProjection(threads, { execution: id => memoryLedger.read(id) });
+  memoryLedger = memoryExecutionStore({ projection });
+  const ledger: ExecutionStore = memoryLedger;
   // As `composition/executions.ts`: the registry validates, executes with the operation id and the delegate it is given.
   const source: ExecutionSource = {
     async authorize(p, operation, input) {
@@ -234,7 +179,6 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
     registry,
     run: run as never,
     calendar: {
-      ensureProposalThread: async () => undefined,
       replan: async (_p, id) => (await threads.readThreadById(id))!,
       dismiss: async (_p, id) => (await threads.readThreadById(id))!,
       todayEvents: async () => [],

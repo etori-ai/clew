@@ -33,6 +33,7 @@ export type ThreadPatch = Partial<
     | 'snoozedUntil'
     | 'handover'
     | 'askedBeside'
+    | 'execution'
   >
 > & {
   /** The source's offer to hand the card on (D139), or null to take it off the card. */
@@ -140,7 +141,10 @@ export interface ThreadTx {
   /** The person's thread, held against concurrent writers until the transaction ends (a row lock in Postgres). */
   lockThreadById(id: string): Promise<Thread | undefined>;
   lockThread(personId: string, id: string): Promise<Thread | undefined>;
-  /** False when an open pushed thread with the same topic already exists for the person: the scan is idempotent. */
+  /**
+   * False when an open pushed thread with the same topic already exists for the person (the scan is idempotent), or
+   * when a thread already has the id; the existing thread is left as it was.
+   */
   insertThread(thread: NewThread): Promise<boolean>;
   updateThread(id: string, patch: ThreadPatch): Promise<void>;
   addMessage(threadId: string, message: NewMessage): Promise<void>;

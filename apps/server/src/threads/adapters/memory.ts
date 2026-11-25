@@ -1,4 +1,4 @@
-import { unresolvedExecution, type Thread } from '@clew/contracts';
+import { stockholmDate, unresolvedExecution, type Thread } from '@clew/contracts';
 import type { AuditEntry, JobInput, ThreadStore, ThreadTx, TimerIntent, WorkflowStart } from '../model';
 import { admitAttention, type AttentionDay } from '../attention-domain';
 import { marksRecordDraft, namedAmong, namedSubjects, reminderWorkflowId, withoutSubject } from '../domain';
@@ -13,6 +13,10 @@ export interface MemoryThreadStore extends ThreadStore {
   audit: AuditEntry[];
   /** What the person is due to be told, by delivery id. */
   deliveries: string[];
+  /** The deliveries admitted for a person and when each is due (D47): Postgres's `attention_delivery`. */
+  admitted(personId: string): Array<{ id: string; threadId: string; kind: 'automatic' | 'reminder'; dueAt: string }>;
+  /** The person's attention day at `at`, as `postgresAttention().day` reads it. */
+  day(personId: string, at: string): { used: number; bundledUntil: string | null };
   jobs: JobInput[];
   /** Every workflow start committed through `enqueue`, in order. */
   enqueued: WorkflowStart[];
@@ -30,7 +34,10 @@ export function memoryThreadStore(): MemoryThreadStore {
   let ended: string[] = [];
   let timerRows = new Map<string, TimerIntent>();
   let days = new Map<string, AttentionDay>(),
-    deliveries = new Set<string>();
+    deliveries = new Map<
+      string,
+      { id: string; personId: string; threadId: string; kind: 'automatic' | 'reminder'; dueAt: string }
+    >();
   let messageSequence = 0;
   let transactions = Promise.resolve();
   const copy = <T>(value: T): T => structuredClone(value);
@@ -58,11 +65,14 @@ export function memoryThreadStore(): MemoryThreadStore {
   const tx: ThreadTx = {
     async admitDelivery(input) {
       if (deliveries.has(input.id)) return;
-      deliveries.add(input.id);
+      let dueAt = input.at;
       if (input.kind === 'automatic') {
         const next = admitAttention(days.get(input.personId), input.personId, input.at);
         days.set(input.personId, next);
+        dueAt = next.dueAt;
       }
+      const { id, personId, threadId, kind } = input;
+      deliveries.set(id, { id, personId, threadId, kind, dueAt });
     },
     async readTimer(id) {
       return copy(timerRows.get(id));
@@ -116,6 +126,8 @@ export function memoryThreadStore(): MemoryThreadStore {
           r.thread.kind === 'pushed',
       );
       if (rest.kind === 'pushed' && rest.state === 'open' && clash) return false;
+      // An id already taken is no new thread, as the primary key refuses it on PostgreSQL: the first stays as it was.
+      if (threads.has(rest.id)) return false;
       threads.set(rest.id, {
         personId,
         thread: {
@@ -214,7 +226,17 @@ export function memoryThreadStore(): MemoryThreadStore {
       return audit;
     },
     get deliveries() {
-      return [...deliveries];
+      return [...deliveries.keys()];
+    },
+    admitted: personId =>
+      [...deliveries.values()]
+        .filter(d => d.personId === personId)
+        .map(({ id, threadId, kind, dueAt }) => ({ id, threadId, kind, dueAt })),
+    day(personId, at) {
+      const d = days.get(personId);
+      return d?.id === personId + ':' + stockholmDate(at)
+        ? { used: d.used, bundledUntil: d.dueAt > at ? d.dueAt : null }
+        : { used: 0, bundledUntil: null };
     },
     get jobs() {
       return jobs;

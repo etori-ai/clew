@@ -303,7 +303,8 @@ export function memoryCompetenceStore(seed: { persons?: SeedPerson[]; ownCards?:
     async open(input) {
       fail('open');
       state.calls.push(structuredClone({ op: 'open' as const, ...input, managers: [...input.managers] }));
-      for (const personId of input.managers) {
+      // One card per manager, a manager named twice once, as composition's port does.
+      for (const personId of new Set(input.managers)) {
         // The card's id is its key, as the thread's primary key is in Postgres.
         if (state.cards.has(input.threadId + ':' + personId)) throw new Error('the approval card exists already');
         state.cards.set(input.threadId + ':' + personId, {

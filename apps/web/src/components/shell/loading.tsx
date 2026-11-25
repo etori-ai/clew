@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from 'react';
-import { Card, Divider, Grid, Skeleton, VStack, VisuallyHidden, useEntryAnimation } from '@clew/ui';
+import { Card, Divider, Grid, Heading, Skeleton, VStack, VisuallyHidden, useEntryAnimation } from '@clew/ui';
 
 type Gap = ComponentProps<typeof VStack>['gap'];
 
@@ -32,19 +32,36 @@ export function AsyncContent({
   );
 }
 
+/**
+ * A page has its level-1 heading in every state: while the thing's own name is not yet read, the page is named by the
+ * kind of thing it shows ("Ärende", "Person"). The heading is heard and not seen, so the placeholder of the title stays
+ * the page's shape until the name comes.
+ */
+function KindHeading({ name }: { name: string }) {
+  return (
+    <VisuallyHidden as="div">
+      <Heading level={1}>{name}</Heading>
+    </VisuallyHidden>
+  );
+}
+
 /** Shared row shape for tools and administration; responsive widths also fit the 320 px layout. */
 export function ContentSkeleton({
   label = 'Hämtar innehåll …',
   rows = 5,
   heading = true,
+  name,
 }: {
   label?: string;
   rows?: number;
   heading?: boolean;
+  /** The page's level-1 heading while the thing's name is not yet read: the kind of thing it is (`KindHeading`). */
+  name?: string | undefined;
 }) {
   return (
     <VStack gap={4}>
       <VisuallyHidden role="status">{label}</VisuallyHidden>
+      {name && <KindHeading name={name} />}
       {heading && <Skeleton height={32} width="45%" />}
       <Card padding={4}>
         <VStack gap={4}>

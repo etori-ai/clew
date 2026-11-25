@@ -13,6 +13,7 @@ import {
   TurnStopped,
 } from '../../apps/server/src/assistant';
 import type { AssistantDeps, ManagedPerson } from '../../apps/server/src/assistant/ports';
+import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
 import { assertionFor, testAuthority, testJwks } from '../connector-authority';
 import { decodeJwt } from 'jose';
@@ -75,8 +76,9 @@ function world(
   const deps = {
     store,
     registry,
-    run: <O>(p: AuthenticatedContext, name: string, input: unknown) =>
-      registry.run<O>(audiencedActorOf(p), name, input),
+    // `run` and `handover` as composition binds them (AM-13): through the registry as the person, with their live
+    // authority.
+    ...assistantFunctions({ registry }),
     // A handed-over turn reaches neither the calendar nor a model: a turn that did would fail on these.
     calendar: {} as AssistantDeps['calendar'],
     models: {
@@ -95,20 +97,6 @@ function world(
     ...(options.people
       ? { people: async (p: AuthenticatedContext) => (p.role === 'manager' ? options.people! : []) }
       : {}),
-    handover: {
-      list: (p: AuthenticatedContext) =>
-        registry.assistantsFor(audiencedActorOf(p), { authorize: () => p.authorize() }),
-      ask: (
-        p: AuthenticatedContext,
-        assistant: string,
-        ask: { question: string; session?: string },
-        signal?: AbortSignal,
-      ) =>
-        registry.ask(audiencedActorOf(p), assistant, ask, {
-          authorize: () => p.authorize(),
-          ...(signal ? { signal } : {}),
-        }),
-    },
   } satisfies AssistantDeps;
   return { registry, store, sent, assistant: assistantUsecases(deps) };
 }

@@ -858,7 +858,7 @@ function FrameBody({
   // A bare column keeps the frame's inset where the window is wide, so the transcript stands under the title; on a phone
   // the transcript's own inset is the page's (ChatLayout pads its messages and its box), so nothing is cut at 320 px.
   const content = bleed ? (
-    <LayoutContent padding={0} isScrollable={pin} {...(label ? { label } : {})}>
+    <LayoutContent padding={0} isScrollable={false} {...(label ? { label } : {})}>
       <VStack height="100%" hAlign="stretch">
         {children}
       </VStack>

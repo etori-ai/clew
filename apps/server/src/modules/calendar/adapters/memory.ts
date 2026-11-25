@@ -43,7 +43,8 @@ const toProposal = (p: ProposalRecord): Proposal => ({
 });
 /**
  * `invitations` is the port the store tells, as `postgresProposalStore`'s option is: a test that runs the talks module
- * beside the calendar passes the talks module's. Every call is recorded in `invitations` either way.
+ * beside the calendar passes the talks module's, which is told when the change commits. Every call is recorded in
+ * `invitations` either way.
  */
 export function memoryProposalStore(options: { invitations?: InvitationsTx } = {}): MemoryProposalStore {
   let rows = new Map<string, Row>();
@@ -58,7 +59,31 @@ export function memoryProposalStore(options: { invitations?: InvitationsTx } = {
       thread: { ...row.thread, proposals: row.proposals.filter(p => p.status !== 'superseded').map(toProposal) },
       proposals: row.proposals,
     });
-  const tx: ProposalTx = {
+  /**
+   * The invitations port of one transaction. A memory store cannot share a transaction with the talks module bound to
+   * it, so each call is recorded at once and told to the binding when the change commits, in order: what the talks
+   * module writes is gone with a change that rolls back, as on Postgres, where it writes in the change's own transaction
+   * (`tests/proposal-store-contract.ts`). A binding that fails fails the change, which is then taken back here too.
+   */
+  const invitationsOf = (pending: Array<() => Promise<void>>): InvitationsTx => ({
+    async established(invitation) {
+      invitations.push({ op: 'established', ...copy(invitation) });
+      pending.push(() => options.invitations?.established(invitation) ?? Promise.resolve());
+    },
+    async observed(seen) {
+      invitations.push({ op: 'observed', ...copy(seen) });
+      pending.push(() => options.invitations?.observed(seen) ?? Promise.resolve());
+    },
+    async moved(move) {
+      invitations.push({ op: 'moved', ...copy(move) });
+      pending.push(() => options.invitations?.moved(move) ?? Promise.resolve());
+    },
+    async ended(end) {
+      invitations.push({ op: 'ended', ...copy(end) });
+      pending.push(() => options.invitations?.ended(end) ?? Promise.resolve());
+    },
+  });
+  const tx: Omit<ProposalTx, 'invitations'> = {
     async lockThread(personId, id) {
       const row = rows.get(id);
       return row?.personId === personId ? view(row) : undefined;
@@ -143,24 +168,6 @@ export function memoryProposalStore(options: { invitations?: InvitationsTx } = {
     async scheduleJob(job) {
       if (!jobs.some(j => j.id === job.id)) jobs.push(copy(job));
     },
-    invitations: {
-      async established(invitation) {
-        invitations.push({ op: 'established', ...copy(invitation) });
-        await options.invitations?.established(invitation);
-      },
-      async observed(seen) {
-        invitations.push({ op: 'observed', ...copy(seen) });
-        await options.invitations?.observed(seen);
-      },
-      async moved(move) {
-        invitations.push({ op: 'moved', ...copy(move) });
-        await options.invitations?.moved(move);
-      },
-      async ended(end) {
-        invitations.push({ op: 'ended', ...copy(end) });
-        await options.invitations?.ended(end);
-      },
-    },
     async inviteeCards(personId) {
       return [...rows.values()]
         .filter(
@@ -237,8 +244,11 @@ export function memoryProposalStore(options: { invitations?: InvitationsTx } = {
       });
       await previous;
       const snapshot = { rows: copy(rows), audit: copy(audit), jobs: copy(jobs), invitations: copy(invitations) };
+      const pending: Array<() => Promise<void>> = [];
       try {
-        return await fn(tx);
+        const result = await fn({ ...tx, invitations: invitationsOf(pending) });
+        for (const told of pending) await told();
+        return result;
       } catch (error) {
         rows = snapshot.rows;
         audit = snapshot.audit;

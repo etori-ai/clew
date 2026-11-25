@@ -1,12 +1,12 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import type { ThreadAction } from '@clew/contracts';
+import { dueTimerFires, morningAfterDue, type ThreadAction } from '@clew/contracts';
 import { DIALOGUE_CONNECTOR } from '@clew/connectors';
 import { schema, type Transaction } from '@clew/db';
 import type { ThreadTx } from '../threads/model';
 import { reminderStart } from '../threads/domain';
 import { authorizationVersion } from '../auth-crypto';
 import type { DialogueWorkItems } from '../modules/dialogue/model';
-import { dueAtFor, swedishDay } from './talk-work-items';
+import { swedishDay } from './talk-work-items';
 import { removeCards } from './card-removal';
 
 /**
@@ -63,7 +63,7 @@ export function dialogueWorkItems(
       threadId,
       kind: 'dialogue-due',
       ...(await authority(personId)),
-      dueAt: dueAtFor(dueOn, at),
+      dueAt: morningAfterDue(dueOn, at),
       requestedAt: at,
     });
     await thread.enqueue(reminderStart(timer));
@@ -189,14 +189,7 @@ export function dialogueWorkItems(
       const card = await lock(threadId);
       if (!card) return false;
       const timer = await thread.readTimer(dialogueDueTimerId(threadId));
-      if (
-        !timer ||
-        timer.kind !== 'dialogue-due' ||
-        timer.generation !== generation ||
-        timer.state !== 'active' ||
-        Date.parse(timer.dueAt) > Date.parse(at)
-      )
-        return false;
+      if (!dueTimerFires(timer, 'dialogue-due', generation, at)) return false;
       await thread.updateTimer({ ...timer, state: 'fired', reason: null, leaseUntil: null });
       if (card.snoozedUntil) await thread.cancelTimer(`snooze:${threadId}`, at);
       const day = card.deadline ? swedishDay(card.deadline) : undefined;
