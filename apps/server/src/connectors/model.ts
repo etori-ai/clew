@@ -18,6 +18,7 @@ import type { ConnectorManifest } from '@clew/connectors/protocol';
  */
 export interface ConnectorRecord {
   id: string;
+  registrationId: string;
   bundled: boolean;
   url: string | null;
   /** The sealed envelope, opaque to the use case. Never leaves the server. */
@@ -103,7 +104,14 @@ export interface ConnectorTx {
    * one. The version is compared in the write itself, so a change made on a row read earlier is never merged into a row
    * changed since (DE-M5). Giving `header` to a row while another holds it throws: at most one row holds it (D88).
    */
-  update(id: string, patch: ConnectorPatch, by: string, at: string, version?: number): Promise<boolean>;
+  update(
+    id: string,
+    patch: ConnectorPatch,
+    by: string,
+    at: string,
+    version?: number,
+    registrationId?: string,
+  ): Promise<boolean>;
   /**
    * Every row, read after taking the lock on the administration writes that span rows: the shared header, which one row
    * holds (D88), and the columns on "Alla", which are counted across rows (D97). Such a write in another transaction
@@ -116,7 +124,7 @@ export interface ConnectorTx {
    */
   approveOffer(
     id: string,
-    offer: { at: string; manifest: unknown; version: number; draftOnly?: boolean },
+    offer: { at: string; manifest: unknown; version: number; registrationId?: string; draftOnly?: boolean },
     manifest: unknown,
     by: string,
     at: string,

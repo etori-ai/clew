@@ -36,13 +36,14 @@ export const pendingOffer = (row: {
   offered: unknown;
   offeredAt: string | null;
   version: number;
+  registrationId: string;
 }): { manifest: ConnectorManifest; at: string; revision: string } | undefined =>
   isManifest(row.offered) && row.offeredAt && !sameManifest(row.manifest, row.offered)
     ? {
         manifest: row.offered,
         at: row.offeredAt,
         revision: createHash('sha256')
-          .update(canonical([row.version, row.offeredAt, row.offered]))
+          .update(canonical([row.registrationId, row.version, row.offeredAt, row.offered]))
           .digest('hex'),
       }
     : undefined;
