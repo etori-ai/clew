@@ -1,6 +1,6 @@
 # D146 · Clew is licensed under the AGPL, as Eneo is
 
-**Status:** accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question) · **Date:** 2026-11-23 · **Area:** platform
+**Status:** accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question; item 3 amended 2026-11-24, finding `BL-15` of the baseline review: the connector protocol's viewer script is served with the notices of every package it bundles, not Scalar's alone, each at the version the script holds, and one package Clew's install does not hold, `unist-util-find-after`, credited from a kept text) · **Date:** 2026-11-23 · **Area:** platform
 
 **Decision.** Clew's own code is licensed under the GNU Affero General Public License, version 3 only.
 
@@ -11,7 +11,7 @@
    `package.json` files under `tests/` only mark their folders as ES modules and name no package.
 3. **What Clew passes on carries its notices.** Every browser build Clew publishes writes `third-party-notices.txt`
    and Clew's own `LICENSE.txt` beside its files: the web app with its workers, the header embed the intranet loads,
-   and the documentation site (`scripts/third-party-notices.ts`). The notice names where Clew's source is, then every
+   and the documentation site (`packages/notices`). The notice names where Clew's source is, then every
    bundled package, a stylesheet's typeface included, with its version, declared licence and its own licence and
    notice files, then the runtime dependencies those packages carry, since a package built ahead of time can hold
    them inside its own files. A package that ships no licence file has its upstream text kept in `licences/`; a build
@@ -20,7 +20,15 @@
    kept in `licences/` too, and a build whose stylesheets bring a typeface with no typeface licence fails. So does a
    build with a bundled module that cannot be traced to a named package, or a dependency that resolves nowhere: a
    notice with a package left out is not whole. The server image is built from the whole repository and holds `LICENSE` and its dependencies' own
-   files; Scalar's notice ships as `apps/server/licences/scalar-MIT.txt` (D60).
+   files. The one script it passes on to a browser, the connector protocol's viewer (D60), is Scalar's packaged
+   build: `/api/protocol/third-party-notices.txt` and `/api/protocol/LICENSE.txt` are served beside it, made by the same
+   code (`packages/notices/src/viewer.ts`) from Scalar's package and the runtime dependencies and peers it carries.
+   Scalar builds the script from its own lockfile, so each package the script's source map names is credited at the
+   version the map names: from the installed copy's licence files when Clew installs that version, or another version
+   whose licence the bundled one declares too (checked with `npm view` and recorded beside the code), and from a text
+   kept in `licences/` when Clew installs no copy at all. The server reads them once and logs, and serves with a word,
+   a notice that cannot vouch for a package; the unit suite fails on one, checked against the script's source map and
+   banners.
 4. **Dependencies may be combined with the AGPL.** A dependency carries an OSI-approved licence that may be combined
    with the AGPL v3 (MIT, Apache-2.0, BSD, ISC, MPL-2.0, the OFL for a typeface), recorded in
    `docs/reference/licences.md`; EPL-2.0 without a secondary licence, the CDDL and GPL-2.0-only cannot be. `CLAUDE.md`

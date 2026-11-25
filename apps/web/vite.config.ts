@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { siteHeaderDemo } from '../../packages/site-header/demo/plugin';
-import { thirdPartyNotices } from '../../scripts/third-party-notices';
+import { thirdPartyNotices } from '@clew/notices';
 
 // Shared by the application and its isolated browser-test build. The intranet stand-in (`/intranat/…`, D87) is served
 // by the dev server only (`apply: 'serve'`); nothing of it is in a build.
@@ -21,7 +21,9 @@ export function webConfig() {
         '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false },
         '/scim': { target: 'http://127.0.0.1:3000', changeOrigin: false },
       },
-      allowedHosts: ['localhost', 'host.docker.internal'],
+      // The browser's own name for it. Keycloak's back-channel logout reaches the BFF on the compose network (app:3000),
+      // never this server.
+      allowedHosts: ['localhost'],
     },
   };
 }

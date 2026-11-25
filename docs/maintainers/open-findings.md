@@ -26,7 +26,6 @@ no batch.
 | 16 | The interface's theme check, spaces and measures | `WA-M1`, `WA-L4`, `WA-L8`, `WA-L9`, `WA-L10`, `WA-L14` | |
 | 17 | Tests and contracts that can see the fault | `WA-M5`, `DE-M4`, `DE-M7`, `ID-9`, `AM-13`, `BD-L6`, `DE-L3` | |
 | 18 | The database: audit gaps, comparisons, indexes and migrations | `DE-L4`, `DE-L7`, `DE-L8`, `DE-L9`, `DE-L10`, `DE-L12`, `DE-L13`, `BD-L4` | |
-| 19 | The build, the images and the documents that span areas | `BL-4`, `BL-5`, `BL-11`, `BL-12`, `BL-13`, `BL-14`, `BL-15` | |
 | 20 | The connector services | `CS-L1`, `CS-L2`, `CS-L4`, `CS-L5`, `CS-L6`, `CS-L7`, `CS-L8` | |
 
 ## Counts
@@ -37,13 +36,13 @@ no batch.
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 0 | 0 | 0 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 0 | 2 | 2 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 3 | 11 | 14 |
-| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
+| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 1 | 1 | 2 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 2 | 2 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 0 | 6 | 6 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 7 | 7 |
-| | **Total** | **0** | **8** | **47** | **55** |
+| | **Total** | **0** | **7** | **41** | **48** |
 
 ## High
 
@@ -73,7 +72,7 @@ and it carries a table of what reaches the model and a table of the tools.
 | Id | Severity | Finding | Where |
 |---|---|---|---|
 | AM-12 | Low | The system prompt tells the model it serves Sundsvalls kommun's Startsidan in every installation. | `apps/server/src/assistant/model.ts:137` |
-| AM-13 | Low | The audit rows of a model's renamed fields (`model.title`, `model.model`, `model.description`), `model.audience`, `model.tools` and `model.removed` have no test, and the assistant's function ports (`run`, `start`, `people`, `handover`) have no contract case, so a test may bind them to something the server does not. | `apps/server/src/assistant/usecases/models.ts`, `apps/server/src/assistant/ports.ts` |
+| AM-13 | Low | Several model administration audit rows have no test, the assistant's function ports have no contract case, and nothing tests what a stopped turn or a model-started item leaves. | `apps/server/src/assistant/usecases/models.ts` |
 
 ## Decisions, durable execution, audit and the database
 
@@ -107,14 +106,7 @@ and it carries the baseline table of every suite, the failing-test table under f
 | Id | Severity | Finding | Where |
 |---|---|---|---|
 | BL-3 | Medium | `main` has no branch protection or ruleset, so no check is required before a change lands. | GitHub settings of the repository |
-| BL-4 | Medium | The local development guide starts a Keycloak container that nothing in the repository creates, pins or describes. | `docs/maintainers/local-development.md:16` |
-| BL-5 | Low | Seven connector images set a SQLite path under `/data`, which the image lacks and `node` cannot write, so they do not start as built. | `connectors/hr/Dockerfile:5` |
 | BL-9 | Low | The web image serves Sundsvall's trademarked dragon from `apps/web/public/branding/`, though the build is said to carry no branding. | `apps/web/Dockerfile:7` |
-| BL-11 | Low | The documentation site's lockfile pins `vite` and `esbuild` with known advisories, and no workflow runs `bun audit`. | `site/package.json` |
-| BL-12 | Low | Connector base images are pinned by tag only and named without a registry, and `bun` is installed globally without integrity. | `connectors/*/Dockerfile` |
-| BL-13 | Low | `bun run deps` does not cruise `apps/web`, where one violation of `clew-does-not-import-connectors` stands in a test. | `package.json` |
-| BL-14 | Low | Documents that span areas state things the repository no longer holds: duplicate decision numbers, protocol 2, Astryx and FullCalendar commands, ports and the trailing slash. | `docs/reference/status.md:29` |
-| BL-15 | Low | The connector protocol's reference page serves Scalar's packaged standalone script, which bundles Vue and other packages, with Scalar's own notice only (`apps/server/licences/scalar-MIT.txt`); the other packages' notices survive in part as `@license` comments. Found by the review of the licence batch, 2026-11-23. | `apps/server/src/routes/protocol.ts:25` |
 
 ## The competence domain
 
