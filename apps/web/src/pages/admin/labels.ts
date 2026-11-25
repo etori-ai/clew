@@ -201,6 +201,8 @@ export const actorLabel = (actor: string) =>
     ? actor.slice(7)
     : actor === 'system:boot'
       ? 'Systemet vid start'
-      : actor.startsWith('bootstrap:')
-        ? 'Kommandoraden'
-        : actor;
+      : actor === 'system:migration'
+        ? 'Uppgraderingen av Clew'
+        : actor.startsWith('bootstrap:')
+          ? 'Kommandoraden'
+          : actor;

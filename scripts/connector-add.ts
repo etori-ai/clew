@@ -3,9 +3,12 @@
  * container with the server's local settings (MASTER_KEY, DATABASE_URL). The work is `connector-registry.ts`, shared with
  * the development chain's `dev-connectors.ts`.
  *
- *   bun scripts/connector-add.ts <id> <url> --secret <shared secret> [--enable]      add or update
- *   bun scripts/connector-add.ts <id> --enable | --disable | --remove                 change state
+ *   bun scripts/connector-add.ts <id> <url> --secret <shared secret> [--enable]      add, or update address and secret
+ *   bun scripts/connector-add.ts <id> --enable | --disable | --remove                 change state, or remove
  *   bun scripts/connector-add.ts --list
+ *
+ * A new connector is a draft unless `--enable`; an existing one keeps its state. Every change that happened is one
+ * audit row, as the administration page writes it, and a run that changes nothing writes none.
  */
 import { resolve } from 'node:path';
 import { closeDatabase } from '@clew/db';
@@ -36,22 +39,37 @@ try {
     );
     process.exit(2);
   } else if (flag('remove')) {
-    await removeConnector(id);
-    console.log(`Connector "${id}" removed.`);
+    const removed = await removeConnector(id);
+    console.log(
+      removed.removed
+        ? `Connector "${id}" removed; ${removed.closedCards} open card(s) closed.`
+        : `Connector "${id}" does not exist.`,
+    );
   } else if (url) {
     const secret = option('secret');
     if (!secret || secret.length < 16) {
       console.error('--secret must be 16 characters or more.');
       process.exit(2);
     }
-    const { manifest, existing, state } = await registerConnector({ id, url, secret, enable: flag('enable') });
+    const { manifest, existing, state, changes } = await registerConnector({ id, url, secret, enable: flag('enable') });
+    const done = !existing
+      ? 'added'
+      : changes.length
+        ? `updated (${changes.map(c => c.replace('connector.', '')).join(', ')})`
+        : 'unchanged';
     console.log(
-      `Connector "${id}" (${manifest.source}) ${existing ? 'updated' : 'added'} as ${state}: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas.`,
+      `Connector "${id}" (${manifest.source}) ${done} as ${state}: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas.`,
     );
   } else if (flag('enable') || flag('disable')) {
     const state = flag('enable') ? ('enabled' as const) : ('disabled' as const);
-    const ok = await setConnectorState(id, state);
-    console.log(ok ? `Connector "${id}" ${state}.` : `Connector "${id}" does not exist.`);
+    const outcome = await setConnectorState(id, state);
+    console.log(
+      outcome === 'missing'
+        ? `Connector "${id}" does not exist.`
+        : outcome === 'unchanged'
+          ? `Connector "${id}" is already ${state}.`
+          : `Connector "${id}" ${state}.`,
+    );
   } else {
     console.error('Nothing to do: give a url with --secret, or --enable, --disable, --remove.');
     process.exit(2);

@@ -27,10 +27,12 @@ const reversed = (value: unknown): unknown =>
             .map(([k, v]) => [k, reversed(v)]),
         )
       : value;
+/** The address a remote row is registered at, and where `recordCheck` says the service was read. */
+const ADDRESS = 'http://hello:4010';
 export const remoteRow = (id: string, overrides: Partial<NewConnector> = {}): NewConnector => ({
   id,
   bundled: false,
-  url: 'http://hello:4010',
+  url: ADDRESS,
   secret: 'sealed:' + id,
   state: 'draft',
   manifest: { protocol: 1, id, kind: 'passthrough', source: 'Hello', areas: [], capabilities: [], scan: false },
@@ -102,13 +104,16 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
         state: 'enabled',
       });
     });
-    test('an update bumps the version and records who and when; an unknown id is false', async () => {
+    test('an update bumps the version and records who and when, the header included; an unknown id is false', async () => {
       const { store, fresh } = await make();
       const id = fresh();
       await store.transaction(tx => tx.insert(remoteRow(id)));
+      // The header is taken as the use case takes it (D88): a row that holds it gives it up in the same transaction.
+      const held = (await store.list()).filter(r => r.header).map(r => r.id);
       expect(
-        await store.transaction(tx =>
-          tx.update(
+        await store.transaction(async tx => {
+          for (const holder of held) await tx.update(holder, { header: false }, 'person:mikael', T1);
+          return tx.update(
             id,
             {
               state: 'enabled',
@@ -118,9 +123,10 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
             },
             'person:mikael',
             T1,
-          ),
-        ),
+          );
+        }),
       ).toBe(true);
+      // Committed, and read back as the one holder.
       expect(await store.read(id)).toMatchObject({
         state: 'enabled',
         audience: { mode: 'selected', roles: ['manager'] },
@@ -130,7 +136,73 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
         updatedAt: T1,
         version: 2,
       });
+      expect((await store.list()).filter(r => r.header).map(r => r.id)).toEqual([id]);
       expect(await store.transaction(tx => tx.update('nope-' + id, { state: 'enabled' }, 'x', T1))).toBe(false);
+      // Given back, so a store shared with other cases holds the header as it did.
+      await store.transaction(async tx => {
+        await tx.update(id, { header: false }, 'person:mikael', T1);
+        for (const holder of held) await tx.update(holder, { header: true }, 'person:mikael', T1);
+      });
+    });
+    test('an update given the version it was made on writes only while that is still the stored version (DE-M5)', async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      expect(await store.transaction(tx => tx.update(id, { scanEnabled: false }, 'person:mikael', T1, 1))).toBe(true);
+      // Made on version 1, which another change has since raised to 2: nothing of it is written.
+      expect(await store.transaction(tx => tx.update(id, { toolsEnabled: false }, 'person:anna', T2, 1))).toBe(false);
+      expect(await store.read(id)).toMatchObject({
+        scanEnabled: false,
+        toolsEnabled: true,
+        updatedBy: 'person:mikael',
+        updatedAt: T1,
+        version: 2,
+      });
+      expect(await store.transaction(tx => tx.update(id, { toolsEnabled: false }, 'person:anna', T2, 2))).toBe(true);
+      expect(await store.read(id)).toMatchObject({ toolsEnabled: false, updatedBy: 'person:anna', version: 3 });
+      expect(await store.transaction(tx => tx.update('nope-' + id, { state: 'enabled' }, 'x', T1, 1))).toBe(false);
+    });
+    test('at most one row holds the shared header: the store refuses a second holder, and the attempt leaves nothing (D88)', async () => {
+      const { store, fresh } = await make();
+      const [a, b] = [fresh(), fresh()];
+      await store.transaction(async tx => {
+        await tx.insert(remoteRow(a));
+        await tx.insert(remoteRow(b));
+      });
+      const holders = async () => (await store.list()).filter(r => r.header).map(r => r.id);
+      const before = await holders();
+      let took: boolean | undefined, held: string[] | undefined;
+      const attempt = store.transaction(async tx => {
+        // Whoever holds it gives it up first, as the use case does, so this row may take it.
+        for (const r of await tx.lockedRows())
+          if (r.header) await tx.update(r.id, { header: false }, 'person:mikael', T1);
+        took = await tx.update(a, { header: true }, 'person:mikael', T1);
+        held = (await tx.lockedRows()).filter(r => r.header).map(r => r.id);
+        // A second holder while the first still holds it.
+        await tx.update(b, { header: true }, 'person:mikael', T1);
+      });
+      await expect(attempt).rejects.toThrow();
+      expect(took).toBe(true);
+      expect(held).toEqual([a]);
+      expect(await holders()).toEqual(before);
+      expect(await store.read(a)).toMatchObject({ header: false, version: 1 });
+    });
+    test('lockedRows waits for another transaction that took the lock, and then reads what it committed (DE-M5)', async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      let held!: () => void;
+      const holding = new Promise<void>(resolve => (held = resolve));
+      const first = store.transaction(async tx => {
+        await tx.lockedRows();
+        held();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        await tx.update(id, { scanEnabled: false }, 'person:mikael', T1);
+      });
+      await holding;
+      const second = store.transaction(async tx => (await tx.lockedRows()).find(r => r.id === id)!.scanEnabled);
+      const [, seen] = await Promise.all([first, second]);
+      expect(seen).toBe(false);
     });
     test("an area's figure switch is stored per area, read back, and kept by an update of something else (D54)", async () => {
       const { store, fresh } = await make();
@@ -148,7 +220,11 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       const id = fresh();
       await store.transaction(tx => tx.insert(remoteRow(id)));
       const approved = (await store.read(id))!.manifest;
-      await store.recordCheck(id, { health: { status: 'unreachable', at: T1, detail: 'ECONNREFUSED' }, at: T1 });
+      await store.recordCheck(id, {
+        url: ADDRESS,
+        health: { status: 'unreachable', at: T1, detail: 'ECONNREFUSED' },
+        at: T1,
+      });
       expect(await store.read(id)).toMatchObject({
         health: { status: 'unreachable', at: T1, detail: 'ECONNREFUSED' },
         version: 1,
@@ -158,25 +234,81 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       });
       const served = { ...(approved as object), source: 'Hello 2', scan: true };
       // A manifest without a check keeps the health as it was.
-      await store.recordCheck(id, { served, at: T1 });
+      await store.recordCheck(id, { url: ADDRESS, served, at: T1 });
       let row = (await store.read(id))!;
       expect(row).toMatchObject({ manifest: approved, manifestAt: T0, offeredAt: T1, version: 1 });
       expect(row.health.status).toBe('unreachable');
       expect((row.offered as { source: string }).source).toBe('Hello 2');
       // The same offer seen again, its keys in the reverse order, keeps the instant it was first seen.
-      await store.recordCheck(id, { health: { status: 'ok', at: T2 }, served: reversed(served), at: T2 });
+      await store.recordCheck(id, { url: ADDRESS, health: { status: 'ok', at: T2 }, served: reversed(served), at: T2 });
       expect((await store.read(id))!.offeredAt).toBe(T1);
-      await store.recordCheck(id, { served: { ...served, source: 'Hello 3' }, at: T2 });
+      await store.recordCheck(id, { url: ADDRESS, served: { ...served, source: 'Hello 3' }, at: T2 });
       expect((await store.read(id))!.offeredAt).toBe(T2);
       // The service serves the approved manifest again, its keys in another order: the offer goes in the same write.
-      await store.recordCheck(id, { health: { status: 'ok', at: T2 }, served: reversed(approved), at: T2 });
+      await store.recordCheck(id, {
+        url: ADDRESS,
+        health: { status: 'ok', at: T2 },
+        served: reversed(approved),
+        at: T2,
+      });
       row = (await store.read(id))!;
       expect(row).toMatchObject({ offered: null, offeredAt: null, manifest: approved, version: 1 });
       // A draft with nothing approved yet: whatever the service serves is the offer.
       const draft = fresh();
       await store.transaction(tx => tx.insert(remoteRow(draft, { manifest: null })));
-      await store.recordCheck(draft, { served, at: T1 });
+      await store.recordCheck(draft, { url: ADDRESS, served, at: T1 });
       expect(await store.read(draft)).toMatchObject({ manifest: null, offeredAt: T1 });
+    });
+    test('recordCheck writes only on the row still at the address read and, given one, with the secret signed with, and says whether it wrote', async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      const served = { ...((await store.read(id))!.manifest as object), source: 'Hello 2' };
+      const moved = 'http://hello-2:4010';
+      // Moved while the old address answered: nothing of that answer is kept, its offer least of all, which approved
+      // would put what the old address serves live at the new one.
+      await store.transaction(tx => tx.update(id, { url: moved }, 'person:anna', T1));
+      expect(
+        await store.recordCheck(id, {
+          url: ADDRESS,
+          health: { status: 'unreachable', at: T1, detail: 'ECONNREFUSED' },
+          served,
+          at: T1,
+        }),
+      ).toBe(false);
+      expect(await store.read(id)).toMatchObject({
+        url: moved,
+        health: { status: 'ok', at: T0 },
+        offered: null,
+        offeredAt: null,
+        version: 2,
+      });
+      // Rekeyed while the check signed with the secret before: its health is about a secret the row no longer has.
+      expect(
+        await store.recordCheck(id, {
+          url: moved,
+          secret: 'sealed:before',
+          health: { status: 'secret-rejected', at: T1 },
+          at: T1,
+        }),
+      ).toBe(false);
+      expect((await store.read(id))!.health).toEqual({ status: 'ok', at: T0 });
+      // At the address it has and with the secret it has, it is recorded; without a secret, the address alone binds it.
+      expect(
+        await store.recordCheck(id, {
+          url: moved,
+          secret: 'sealed:' + id,
+          health: { status: 'secret-rejected', at: T2 },
+          at: T2,
+        }),
+      ).toBe(true);
+      expect(await store.recordCheck(id, { url: moved, served, at: T2 })).toBe(true);
+      expect(await store.read(id)).toMatchObject({
+        health: { status: 'secret-rejected', at: T2 },
+        offeredAt: T2,
+        version: 2,
+      });
+      expect(await store.recordCheck('nope-' + id, { url: ADDRESS, served, at: T2 })).toBe(false);
     });
     test('approveOffer puts the reviewed offer live only while it is still the stored one, and bumps the version (D144)', async () => {
       const { store, fresh } = await make();
@@ -184,10 +316,10 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       await store.transaction(tx => tx.insert(remoteRow(id)));
       const approved = (await store.read(id))!.manifest as object;
       const first = { ...approved, source: 'Hello 2' };
-      await store.recordCheck(id, { served: first, at: T1 });
+      await store.recordCheck(id, { url: ADDRESS, served: first, at: T1 });
       // Another offer took its place after the review: the review's offer is no longer the stored one.
       const second = { ...approved, source: 'Hello 3' };
-      await store.recordCheck(id, { served: second, at: T2 });
+      await store.recordCheck(id, { url: ADDRESS, served: second, at: T2 });
       expect(
         await store.transaction(tx => tx.approveOffer(id, { at: T1, manifest: first }, first, 'person:mikael', T2)),
       ).toBe(false);
@@ -262,6 +394,43 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       ).rejects.toThrow('boom');
       expect(await store.read(id)).toMatchObject({ state: 'draft', version: 1 });
       expect((await store.history(id)).length).toBe(1);
+    });
+    test('a rollback undoes only its own writes: a write to the same row in another transaction waits for it and stays', async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      let wrote!: () => void;
+      const written = new Promise<void>(resolve => (wrote = resolve));
+      const failing = store.transaction(async tx => {
+        await tx.update(id, { toolsEnabled: false }, 'person:mikael', T1);
+        wrote();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        throw new Error('boom');
+      });
+      await written;
+      // Another administrator's change of the same row while the first is still open: it waits for the first to end,
+      // and what it commits is not undone by the first one's rollback.
+      const other = store.transaction(async tx => {
+        const done = await tx.update(id, { scanEnabled: false }, 'person:anna', T2);
+        await tx.writeAudit({
+          actor: 'person:anna',
+          action: 'connector.scan',
+          subject: 'connector:' + id,
+          at: T2,
+          details: { to: false },
+        });
+        return done;
+      });
+      await expect(failing).rejects.toThrow('boom');
+      expect(await other).toBe(true);
+      expect(await store.read(id)).toMatchObject({
+        toolsEnabled: true,
+        scanEnabled: false,
+        updatedBy: 'person:anna',
+        updatedAt: T2,
+        version: 2,
+      });
+      expect((await store.history(id)).map(h => h.action)).toEqual(['connector.scan']);
     });
     test('remove deletes the row; dismissOpenThreadsOf closes the open cards the connector pushed, and counts them', async () => {
       const { store, fresh, openCardFrom, cardState } = await make();

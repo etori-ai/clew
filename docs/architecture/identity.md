@@ -74,7 +74,7 @@ The page (`apps/web/src/pages/admin/organisation.tsx`, behind `admin.users`, D99
 
 ## Clew to a connector
 
-Protocol 2 requires both:
+The protocol requires both:
 
 1. `X-Clew-Connector-Key`: the per-registration transport secret.
 2. `Authorization: Bearer ...`: a short-lived RS256 assertion signed by Clew, bound to the connector's audience and the acting person.

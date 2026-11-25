@@ -13,7 +13,7 @@ connector, and imports nothing from the rest of the repository (D21). Start with
 | `connector.mjs`     | The handlers, the scan, the figures, the write log and the HTTP boundary                                    |
 | `fixture.mjs`       | The records, generated relative to the day the store was seeded                                             |
 | `state.mjs`         | The store: SQLite in the service, memory in tests                                                           |
-| `verification.mjs`  | Protocol 2 identity and transport checks, the copy every connector carries                                  |
+| `verification.mjs`  | Identity and transport checks, the copy every connector carries                                             |
 | `server.mjs`        | The Node HTTP service and its configuration                                                                 |
 
 ## What it answers

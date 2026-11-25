@@ -6,6 +6,7 @@ import {
   CHECKED_AS,
   OPERATOR,
   asProblem,
+  audienceProblem,
   checkAs,
   type CheckAsDeps,
   type Registration,
@@ -34,11 +35,15 @@ const anna: AuthenticatedContext = {
   expiresAt: '2099-01-01T00:00:00.000Z',
   authorize: async () => ({ version: 'v1' }),
 };
-/** The installation's connector rows by id: `hr` a remote service, `calendar` one of Clew's own, as the boot writes it. */
+/**
+ * The installation's connector rows by id: `hr` a remote service, `calendar` one of Clew's own, as the boot writes it.
+ * `people` is one of Clew's own too, internal, and has no row at all.
+ */
 function memory(registered: Record<string, Registration>, people: Record<string, AuthenticatedContext>) {
   const steps: string[] = [];
   const rows: Parameters<CheckAsDeps['audit']>[0][] = [];
   const deps: CheckAsDeps = {
+    own: ['people'],
     registration: async id => {
       steps.push('registered');
       return registered[id];
@@ -122,6 +127,16 @@ describe('before the first signed request', () => {
     expect(elsewhere.steps).toEqual(['registered']);
     expect([...own.rows, ...elsewhere.rows]).toEqual([]);
   });
+  test("one of Clew's own connectors that has no row, as `people` never has, is refused before anything is asked", async () => {
+    const internal = memory(installation, { anna });
+    await expect(
+      checkAs({ id: 'people', url: 'http://people-impostor:4099', userName: 'anna', keys: 1, reads: 1 }, internal.deps),
+    ).rejects.toThrow(
+      "--id people is one of Clew's own connectors, not a registered service; pass the id the service was registered under (bun scripts/connector-add.ts).",
+    );
+    expect(internal.steps).toEqual([]);
+    expect(internal.rows).toEqual([]);
+  });
   test('a failed audit row refuses the check: nothing is signed without the trace', async () => {
     const m = memory(installation, { anna });
     m.deps.audit = async () => {
@@ -130,6 +145,29 @@ describe('before the first signed request', () => {
     await expect(checkAs({ id: 'hr', url: HR, userName: 'anna', keys: 1, reads: 1 }, m.deps)).rejects.toThrow(
       'database unavailable',
     );
+  });
+});
+
+describe('the audience a service names, without --as (CB-13)', () => {
+  const installed = memory(installation, {}).deps;
+  test('an id this installation has not registered, or a registered one at its own address, may be signed for', async () => {
+    expect(await audienceProblem({ id: 'new-service', url: 'http://new:4000' }, installed)).toBeUndefined();
+    expect(await audienceProblem({ id: 'hr', url: HR + '/' }, installed)).toBeUndefined();
+  });
+  test("a registered id at another address, or one of Clew's own, is refused", async () => {
+    expect(await audienceProblem({ id: 'hr', url: 'http://hr-impostor:4040' }, installed)).toBe(
+      'The service at http://hr-impostor:4040 names the id hr, which is registered at http://hr:4040; the check signs for a registered connector only at the address it is registered at.',
+    );
+    expect(await audienceProblem({ id: 'calendar', url: 'http://calendar-impostor:4099' }, installed)).toBe(
+      "The service at http://calendar-impostor:4099 names the id calendar, one of Clew's own connectors; the check signs nothing for it.",
+    );
+  });
+  test("one of Clew's own connectors without a row, as `people` has none, is refused as well", async () => {
+    const { deps, steps } = memory(installation, {});
+    expect(await audienceProblem({ id: 'people', url: 'http://people-impostor:4099' }, deps)).toBe(
+      "The service at http://people-impostor:4099 names the id people, one of Clew's own connectors; the check signs nothing for it.",
+    );
+    expect(steps).toEqual([]);
   });
 });
 
