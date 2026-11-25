@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { ActInput, checkContract } from '../../packages/contracts/src';
+import { ActInput, cardDecisionVersion, checkContract } from '../../packages/contracts/src';
 import type { AuthenticatedContext, PanelViewSpec, Thread } from '../../packages/contracts/src';
 import { cardDecisions } from '../../apps/server/src/threads/usecases/decisions';
 import type { PersonKeys } from '../../apps/server/src/threads/model';
@@ -73,6 +73,20 @@ test('a decision on a work item about one unit hands the approval that unit; non
   await w.uc.act(persona, w.t.id, 'approve');
   expect(w.approvals.map(a => (a as { unit?: string }).unit)).toEqual(['u-a', undefined, undefined]);
 });
+test('two payloads at one clock instant require two different confirmations', async () => {
+  const w = await world();
+  const previous = (await w.store.readThread(persona.id, w.t.id))!;
+  const actions = previous.actions.map(a => ({ ...a, input: { amount: 300 } }));
+  await w.store.transaction(tx => tx.updateThread(w.t.id, { actions, updatedAt: previous.updatedAt }));
+  const current = (await w.store.readThread(persona.id, w.t.id))!;
+  const decide = (t: Thread) =>
+    w.uc.act(persona, t.id, 'approve', undefined, undefined, undefined, cardDecisionVersion(t));
+  expect(current.updatedAt).toBe(previous.updatedAt);
+  await expect(decide(previous)).rejects.toThrow('Ärendet har ändrats');
+  expect(w.approvals).toHaveLength(0);
+  await decide(current);
+  expect(w.approvals).toMatchObject([{ payload: { amount: 300 }, presentation: { decisionRevision: 1 } }]);
+});
 test('a decision is on the item as the person was shown it: a changed item is refused, one already decided is replayed (AM-4)', async () => {
   // The endpoint takes no decision without the version it was made on.
   expect(checkContract(ActInput, { actionId: 'approve' })).toBe(false);
@@ -90,11 +104,12 @@ test('a decision is on the item as the person was shown it: a changed item is re
   );
   await expect(decide(shown)).rejects.toThrow('Ärendet har ändrats sedan du öppnade det.');
   expect(w.approvals).toEqual([]);
-  const now = (await read()).updatedAt;
+  const current = await read();
+  const now = current.updatedAt;
   expect(now).not.toBe(shown);
-  await decide(now);
+  await decide(cardDecisionVersion(current));
   expect(w.approvals).toHaveLength(1);
-  const decisionId = `card:${w.t.id}:approve:${Date.parse(now)}`;
+  const decisionId = `card:${w.t.id}:approve:${Date.parse(now)}:r1`;
   expect(w.approvals[0]).toMatchObject({ decisionId, presentation: { threadId: w.t.id, version: now } });
   // A decision's own progress changes its item; the same decision sent again is replayed, whatever version it names.
   const decided = draft(persona.id, {
@@ -151,9 +166,17 @@ test('a decision that ended without its effect, or with part of it, is decided a
   // Refused: the ledger would answer the same id with the refusal it has, so the person's new decision gets its own,
   // bound to the item as it stands now.
   await settled('failed', '2026-11-04T06:10:00.000Z', [['finance:inv:1', 'failed']]);
-  await w.uc.act(persona, w.t.id, 'approve', undefined, undefined, undefined, '2026-11-04T06:10:00.000Z');
+  await w.uc.act(
+    persona,
+    w.t.id,
+    'approve',
+    undefined,
+    undefined,
+    undefined,
+    cardDecisionVersion((await w.store.readThread(persona.id, w.t.id))!),
+  );
   expect(w.approvals[0]).toMatchObject({
-    decisionId: `card:${w.t.id}:approve:${Date.parse('2026-11-04T06:10:00.000Z')}:after:e1`,
+    decisionId: `card:${w.t.id}:approve:${Date.parse('2026-11-04T06:10:00.000Z')}:r1:after:e1`,
     payload: { refs: ['finance:inv:1', 'finance:inv:2'] },
   });
   // The new decision is still bound to what the person was shown.
@@ -170,7 +193,7 @@ test('a decision that ended without its effect, or with part of it, is decided a
   );
   await w.uc.act(persona, w.t.id, 'approve', ['finance:inv:2']);
   expect(w.approvals[1]).toMatchObject({
-    decisionId: `card:${w.t.id}:approve:${Date.parse('2026-11-04T06:20:00.000Z')}:after:e1`,
+    decisionId: `card:${w.t.id}:approve:${Date.parse('2026-11-04T06:20:00.000Z')}:r1:after:e1`,
     payload: { refs: ['finance:inv:2'] },
   });
   // A decision whose outcome is not known is still replayed under its own id, never decided over.
@@ -192,7 +215,7 @@ test('a decision that ended without its effect, or with part of it, is decided a
   );
   await w.uc.act(persona, w.t.id, 'approve', ['finance:inv:2']);
   expect(w.approvals[3]).toMatchObject({
-    decisionId: `card:${w.t.id}:approve:${Date.parse('2026-11-04T06:40:00.000Z')}:after:e1`,
+    decisionId: `card:${w.t.id}:approve:${Date.parse('2026-11-04T06:40:00.000Z')}:r1:after:e1`,
     payload: { refs: ['finance:inv:2'] },
   });
   expect(w.approvals).toHaveLength(4);

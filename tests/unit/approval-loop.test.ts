@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
+import { cardDecisionVersion, type AuthenticatedContext, type Thread } from '../../packages/contracts/src/index';
 import { audiencedActorOf, type ExecuteResult } from '../../packages/connectors/src/index';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
@@ -214,7 +214,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
   };
   /**
    * A card's button, as `POST /api/threads/:id/act` takes it in the session `binding`, on the version of the card the
-   * person was shown (`thread.updatedAt`, AM-4); then the approved write's workflow runs, after `meanwhile` (what happens
+   * person was shown (`cardDecisionVersion`, AM-4); then the approved write's workflow runs, after `meanwhile` (what happens
    * between the approval and the dispatch).
    */
   async function decide(
@@ -231,7 +231,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
       undefined,
       undefined,
       undefined,
-      thread.updatedAt,
+      cardDecisionVersion(thread),
     );
     const executionId = 'thread' in answer ? answer.thread?.execution?.id : undefined;
     meanwhile();

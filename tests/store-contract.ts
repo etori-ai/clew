@@ -70,6 +70,33 @@ export const draft = (personId: string, overrides: Partial<NewThread> = {}): New
 
 export function storeContract(name: string, make: () => Promise<StoreHarness>) {
   describe(`${name} store`, () => {
+    test('a changed action advances the decision revision even at the same clock instant', async () => {
+      const {
+        store,
+        people: [person],
+      } = await make();
+      const t = draft(person);
+      await store.transaction(tx => tx.insertThread(t));
+      const actions = t.actions.map(a => ({ ...a, input: { amount: 300 } }));
+      await store.transaction(tx => tx.updateThread(t.id, { actions, updatedAt: t.updatedAt }));
+      await store.transaction(tx => tx.updateThread(t.id, { actions, updatedAt: t.updatedAt }));
+      expect(await store.readThread(person, t.id)).toMatchObject({ decisionRevision: 1, updatedAt: t.updatedAt });
+    });
+    test('the hand-over offer and who holds it are part of the decision shown', async () => {
+      const {
+        store,
+        people: [person],
+      } = await make();
+      const t = draft(person);
+      await store.transaction(tx => tx.insertThread(t));
+      const offer = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
+      await store.transaction(tx => tx.updateThread(t.id, { handOn: offer }));
+      await store.transaction(tx => tx.updateThread(t.id, { handOn: offer }));
+      expect((await store.readThread(person, t.id))?.decisionRevision).toBe(1);
+      await store.transaction(tx => tx.updateThread(t.id, { handedOn: { to: 'din chef', at: T0 } }));
+      await store.transaction(tx => tx.updateThread(t.id, { handedOn: null }));
+      expect((await store.readThread(person, t.id))?.decisionRevision).toBe(3);
+    });
     test('timer generations, cancellation and audit share the thread transaction', async () => {
       const {
         store,
