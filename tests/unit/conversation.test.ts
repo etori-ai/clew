@@ -3140,12 +3140,11 @@ describe('a question sent again under its key (WD-L3)', () => {
     await Bun.sleep(0);
     release();
     const [a, b] = await both;
-    expect(calls).toBe(2);
+    expect(calls).toBe(1);
     expect(b.conversationId).toBe(a.conversationId);
     const conversations = (await w.store.listThreads('hillevi', T0)).filter(t => t.kind === 'question');
     expect(conversations.map(t => t.messages.length)).toEqual([2]);
-    // Both model calls are on record (D91): the one written, and the one whose turn could not be written.
-    expect(w.store.audit.map(r => r.action).sort()).toEqual(['conversation.asked', 'conversation.failed']);
+    expect(w.store.audit.map(r => r.action)).toEqual(['conversation.asked']);
   });
   test('a key already written is refused before the model is asked, unless it comes back with the same question: another person’s, another conversation’s, other words, another recipient (WD-L3)', async () => {
     let calls = 0;
