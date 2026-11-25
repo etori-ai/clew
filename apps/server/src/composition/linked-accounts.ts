@@ -16,9 +16,22 @@ import { clock } from './ambient';
  * installation's key; what a connector declares is its approved manifest's `linkedAccount`, read from the registry;
  * and the registry's own rule says whom a connector reaches.
  */
-const publicUrl = (process.env.PUBLIC_URL ?? '').replace(/\/$/, '');
 /** Where a system returns a person after its authorization page; what an administrator registers at the system. */
 export const LINK_REDIRECT_PATH = '/api/linked-accounts/callback';
+/**
+ * The two settings are read when they are used, never when this module is loaded: the server reads its local settings
+ * file in `main.ts` after every import has run, so a value read here at load is not there yet. Read at load, the redirect
+ * address had no host and every plain-http system of the local stack was refused, in the running server alone.
+ */
+const settings = {
+  get redirectUri() {
+    return (process.env.PUBLIC_URL ?? '').replace(/\/$/, '') + LINK_REDIRECT_PATH;
+  },
+  // Plain http to a system only on a local stack, as for the identity provider (`authSettings`).
+  get insecure() {
+    return process.env.AUTH_LOCAL_HTTP === 'true';
+  },
+};
 export const linkedAccounts = linkedAccountUsecases({
   store: postgresLinkStore({ seal: sealSecret, open: openSecret }),
   connectors: {
@@ -35,10 +48,16 @@ export const linkedAccounts = linkedAccountUsecases({
       return registry.visible(audiencedActorOf(persona), connectorId);
     },
   },
-  // Plain http to a system only on a local stack, as for the identity provider (`authSettings`).
-  oauth: oauthAdapter({ clientName: 'Clew', insecure: process.env.AUTH_LOCAL_HTTP === 'true' }),
+  oauth: oauthAdapter({
+    clientName: 'Clew',
+    get insecure() {
+      return settings.insecure;
+    },
+  }),
   clock,
-  redirectUri: publicUrl + LINK_REDIRECT_PATH,
+  get redirectUri() {
+    return settings.redirectUri;
+  },
   // Clew serves no client metadata document yet (D147, not built).
   clientDocumentUrl: null,
   log: logPort('linked-accounts', 'warn'),

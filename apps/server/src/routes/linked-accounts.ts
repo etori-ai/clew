@@ -1,6 +1,7 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { InputError, failure, privateHeaders, type Env } from '../context';
 import { textOfAtMost } from '../bounded-body';
+import { logger } from '../logging';
 import { LinkRefusedError, LinkUnavailableError } from '../modules/linked-accounts/contracts';
 import type { LinkedAccounts } from '../modules/linked-accounts/usecases';
 
@@ -29,15 +30,26 @@ function landing(returnTo: string, outcome: 'linked' | 'declined' | 'failed', co
   if (connectorId) url.searchParams.set('system', connectorId);
   return url.pathname + url.search + url.hash;
 }
+/**
+ * The person is told that linking did not work, in words that say nothing of why; the log says why, by its code, so
+ * whoever runs the installation can tell an unapproved system from one whose server moved or cannot be reached.
+ */
+function refused(error: LinkRefusedError | LinkUnavailableError) {
+  logger.warn({ scope: 'linked-accounts', code: error.code, reason: error.reason }, 'linking refused');
+}
 function linkFailure(c: Context<Env>, error: unknown) {
-  if (error instanceof LinkRefusedError)
+  if (error instanceof LinkRefusedError) {
+    refused(error);
     return c.json(
       { error: error.message, code: error.code },
       error.reason === 'unknown-connector' ? 404 : 400,
       privateHeaders,
     );
-  if (error instanceof LinkUnavailableError)
+  }
+  if (error instanceof LinkUnavailableError) {
+    refused(error);
     return c.json({ error: error.message, code: error.code }, 503, privateHeaders);
+  }
   return failure(c, error);
 }
 export function linkedAccountRoutes(
@@ -55,8 +67,10 @@ export function linkedAccountRoutes(
       return c.redirect(landing(done.returnTo, done.linked ? 'linked' : 'declined', done.connectorId), 303);
     } catch (error) {
       // The person is at a page of their own again whatever went wrong; the page says that it did.
-      if (error instanceof LinkRefusedError || error instanceof LinkUnavailableError)
+      if (error instanceof LinkRefusedError || error instanceof LinkUnavailableError) {
+        refused(error);
         return c.redirect(landing('/', 'failed', 'connectorId' in error ? error.connectorId : undefined), 303);
+      }
       throw error;
     }
   });
