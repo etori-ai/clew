@@ -10,6 +10,7 @@ import {
   invalidateStream,
   pickProposalThread,
   previewThread,
+  readItemsAgain,
   upsertThread,
 } from '../../apps/web/src/thread-cache';
 
@@ -139,6 +140,18 @@ describe('the stream cache (D33)', () => {
     invalidateStream(c);
     expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(true);
     expect(c.getQueryState(keys.attention)?.isInvalidated).toBe(true);
+    expect(c.getQueryState(keys.areas)?.isInvalidated).toBe(false);
+  });
+  test('readItemsAgain after a refused decision marks the list, the counter and every item open on the page (AM-4)', () => {
+    const c = client();
+    c.setQueryData(keys.threads, { threads: [] });
+    c.setQueryData(keys.attention, { budget: 3 });
+    c.setQueryData(keys.thread('a'), thread({ id: 'a' }));
+    c.setQueryData(keys.thread('b'), thread({ id: 'b' }));
+    c.setQueryData(keys.areas, { areas: [] });
+    readItemsAgain(c);
+    for (const key of [keys.threads, keys.attention, keys.thread('a'), keys.thread('b')])
+      expect(c.getQueryState(key)?.isInvalidated).toBe(true);
     expect(c.getQueryState(keys.areas)?.isInvalidated).toBe(false);
   });
   test('a preview is drawn without re-reading anything, and a failed request puts the old thread back', async () => {

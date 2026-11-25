@@ -548,7 +548,9 @@ export const api = {
   claimDelivery: (id: string) => post<{ claimed: boolean }>(`/api/deliveries/${encodeURIComponent(id)}/claim`, {}),
   ask: (question: string) => post<Thread>('/api/ask', { question }),
   reply: (id: string, body: string) => post<Thread>(`/api/threads/${id}/reply`, { body }),
-  confirm: (id: string, proposalIds: string[]) => post<Thread>(`/api/threads/${id}/confirm`, { proposalIds }),
+  /** Send the chosen times, on the planning card's version as the person was shown it (AM-4). */
+  confirm: (id: string, proposalIds: string[], version: string) =>
+    post<Thread>(`/api/threads/${id}/confirm`, { proposalIds, version }),
   undo: (id: string) => post<Thread>(`/api/threads/${id}/undo`),
   replan: (id: string, week: string) => post<Thread>(`/api/threads/${id}/replan`, { week }),
   dismiss: (id: string) => post<Thread>(`/api/threads/${id}/dismiss`),
@@ -579,11 +581,20 @@ export const api = {
   attention: () => call<Attention>('/api/attention'),
   areas: () => call<{ areas: Area[]; menu?: MenuEntry[]; systems?: SystemMark[]; views?: ViewEntry[] }>('/api/areas'),
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
-  /** The human decision on a work item's action (D45/D47), with the person's answers to its asks (D112) in `values`. */
-  act: (id: string, actionId: string, refs?: string[], reviews?: ReviewEvidence[], values?: AskValues) =>
+  /**
+   * The human decision on a work item's action (D45/D47), with the person's answers to its asks (D112) in `values`. It is
+   * on the item as the person was shown it: its `updatedAt` goes with it, and the server refuses an item changed since.
+   */
+  act: (
+    thread: Pick<Thread, 'id' | 'updatedAt'>,
+    actionId: string,
+    refs?: string[],
+    reviews?: ReviewEvidence[],
+    values?: AskValues,
+  ) =>
     post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(
-      `/api/threads/${id}/act`,
-      { actionId, refs, reviews, ...(values ? { values } : {}) },
+      `/api/threads/${thread.id}/act`,
+      { actionId, version: thread.updatedAt, refs, reviews, ...(values ? { values } : {}) },
     ),
   /** "Det här händer" (D112): what the action would write with these rows and answers, from its effect read. Writes nothing. */
   effect: (id: string, actionId: string, refs?: string[], values?: AskValues) =>
