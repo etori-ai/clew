@@ -3,7 +3,7 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { memoryLinkStore } from '../../apps/server/src/modules/linked-accounts/adapters/memory';
 import { oauthAdapter } from '../../apps/server/src/modules/linked-accounts/adapters/oauth';
 import { linkedAccountUsecases } from '../../apps/server/src/modules/linked-accounts/usecases';
-import { linkedAccountRoutes } from '../../apps/server/src/routes/linked-accounts';
+import { linkedAccountAdminRoutes, linkedAccountRoutes } from '../../apps/server/src/routes/linked-accounts';
 import { authorizationServer } from '../authorization-server';
 
 /**
@@ -26,6 +26,7 @@ function stack(who = person('anna')) {
     store,
     connectors: {
       declared: async id => (id === 'hr' ? { resource: vendor.resource, scopes: [] } : null),
+      offered: async () => null,
       reaches: async () => true,
       linkable: async () => [{ connectorId: 'hr', source: 'Personalsystemet' }],
     },
@@ -45,7 +46,14 @@ function stack(who = person('anna')) {
       method,
       ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
     });
-  return { vendor, store, usecases, call };
+  // The administrator's routes, which the administration mounts beside its connectors' own.
+  const administration = linkedAccountAdminRoutes(usecases, guard);
+  const admin = (method: string, id: string, body?: unknown) =>
+    administration.request(`http://clew.local/${id}/linked-account`, {
+      method,
+      ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
+    });
+  return { vendor, store, usecases, call, admin };
 }
 
 describe('linked-account routes', () => {
@@ -174,5 +182,52 @@ describe('linked-account routes', () => {
       ['/hr/link', 'x'.repeat(5000)],
     ] as const)
       expect((await s.call('POST', path, body)).status).toBe(400);
+  });
+
+  test('an administrator reads a connector’s account and approves it, and nobody else does', async () => {
+    const mikael = { ...person('mikael'), name: 'Mikael Lund', capabilities: ['admin.connectors'] };
+    const s = stack(mikael as AuthenticatedContext);
+    const waiting = await s.admin('GET', 'hr');
+    expect([waiting.status, waiting.headers.get('cache-control')]).toEqual([200, 'no-store, private']);
+    expect(await waiting.json()).toMatchObject({
+      account: { connectorId: 'hr', state: 'waiting', approved: null, returnAddress: REDIRECT },
+    });
+    expect(await (await s.admin('GET', 'payroll')).json()).toEqual({ account: null });
+
+    // An empty body approves the server the system names; the answer is the page's new state.
+    const approved = await s.admin('POST', 'hr', {});
+    expect(approved.status).toBe(200);
+    expect(await approved.json()).toMatchObject({
+      account: { state: 'approved', approved: { issuer: s.vendor.issuer, origin: 'discovered', by: 'Mikael Lund' } },
+    });
+    expect(s.store.audit.at(-1)).toMatchObject({ actor: 'person:mikael', action: 'account.server-approved' });
+
+    // What is typed is refused in the administrator's words, and a body of another shape as a request that is not one.
+    const half = await s.admin('POST', 'hr', {
+      server: { authorizationEndpoint: 'https://files.example.test/authorize', tokenEndpoint: 'not an address' },
+      client: { id: 'clew', secret: 'a-secret' },
+    });
+    expect([half.status, await half.json()]).toEqual([
+      400,
+      { error: 'Adresserna måste vara fullständiga webbadresser.' },
+    ]);
+    for (const body of ['{not json', [], { client: 'clew' }, { client: { id: 7 } }, { server: { tokenEndpoint: 'x' } }])
+      expect((await s.admin('POST', 'hr', body)).status).toBe(400);
+    expect((await s.admin('GET', 'Not-A-Connector')).status).toBe(400);
+    const undeclared = await s.admin('POST', 'payroll', {});
+    expect([undeclared.status, await undeclared.json()]).toEqual([
+      400,
+      { error: 'Anslutningen låter inte personer koppla egna konton.' },
+    ]);
+    s.vendor.failing = 503;
+    const down = await s.admin('POST', 'hr', {});
+    expect([down.status, await down.json()]).toEqual([
+      503,
+      { error: 'Systemet svarade inte när Clew frågade var personer loggar in. Försök igen om en stund.' },
+    ]);
+
+    const anna = stack();
+    expect((await anna.admin('GET', 'hr')).status).toBe(403);
+    expect((await anna.admin('POST', 'hr', {})).status).toBe(403);
   });
 });

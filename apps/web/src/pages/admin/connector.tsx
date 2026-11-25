@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ENTITY_COLUMNS_MAX } from '@clew/contracts';
 import type {
@@ -19,6 +19,7 @@ import {
   Collapsible,
   Dialog,
   DialogHeader,
+  Divider,
   DropdownMenu,
   EmptyState,
   FormLayout,
@@ -77,6 +78,15 @@ import { AdminShell } from './shell';
 import { mobileQuery } from '../../media';
 import { DialogFrame } from '../../components/shell/dialog-frame';
 import { DOT } from '../../dot';
+import { ACCOUNT_FACT_LABEL, accountFact, accountNotice, manifestAccountRow } from '../../admin-account';
+import {
+  ACCOUNT_CHANGE_ID,
+  AccountDialogs,
+  AccountFacts,
+  AccountNotice,
+  ReviewRows,
+  type AccountDialog,
+} from './connector-account';
 
 /** One connector (D23): overview and actions, capabilities with their switches, areas, who sees it, and its history. */
 type TabId = 'oversikt' | 'formagor' | 'omraden' | 'publik' | 'historik';
@@ -158,6 +168,25 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const [secretOpen, setSecretOpen] = useState(false);
   const [secret, setSecret] = useState('');
   const [removeOpen, setRemoveOpen] = useState(false);
+  // Where the connector's people link their own account (D147): read only for a connector whose manifest names one.
+  const accountRead = useQuery({ ...adminQueries.connectorAccount(id), enabled: !!c?.linkedAccount });
+  const account = c?.linkedAccount ? accountRead.data : null;
+  const [accountDialog, setAccountDialog] = useState<AccountDialog>(null);
+  const closeAccountDialog = useCallback(() => setAccountDialog(null), []);
+  // A dialog gives the focus back to the button that opened it. When that was the notice's and the approval took the
+  // notice away, the focus is nowhere: the block's button takes it, where the account now stands (2.4.3).
+  const noticed = !!accountNotice(c?.source ?? '', account);
+  const wasNoticed = useRef(noticed);
+  useEffect(() => {
+    const was = wasNoticed.current;
+    wasNoticed.current = noticed;
+    if (!was || noticed) return;
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (!active || active === document.body || !active.isConnected)
+        document.getElementById(ACCOUNT_CHANGE_ID)?.focus();
+    });
+  }, [noticed]);
   // The audience draft follows the saved one whenever the connector itself changes, never on a refetch that changed nothing.
   const [audience, setAudience] = useState<ConnectorAudience | null>(null);
   useEffect(() => {
@@ -410,7 +439,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           }
         />
       )}
-      {error && (
+      {/* Nobody can link yet, or the system names another server than the approved one (D147 item 4). */}
+      <AccountNotice source={c.source} account={account} onOpen={setAccountDialog} />
+      {error && !accountDialog && (
         <Text as="p" role="alert" color="accent">
           {error}
         </Text>
@@ -461,8 +492,19 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   <MetadataListItem label="Får personens inloggning">
                     {c.delegation ? `Ja, för ${c.delegation}` : 'Nej'}
                   </MetadataListItem>
+                  {/* The other way a system knows the person (D147): an account of their own, linked once. */}
+                  <MetadataListItem label={ACCOUNT_FACT_LABEL}>
+                    {accountRead.isError && c.linkedAccount ? 'Kunde inte läsas' : accountFact(account)}
+                  </MetadataListItem>
                   <MetadataListItem label="Funktioner">{`${c.counts.capabilities}\u00a0· ${c.counts.execute} utför\u00a0· ${c.counts.tools} för assistenten`}</MetadataListItem>
                 </MetadataList>
+                {account?.resource && (
+                  <>
+                    <Divider />
+                    <AccountFacts account={account} mobile={mobile} onChange={() => setAccountDialog('enter')} />
+                    <Divider />
+                  </>
+                )}
                 <Collapsible
                   defaultIsOpen={false}
                   chevronPosition="start"
@@ -1019,6 +1061,10 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   }
                 />
               )}
+              {/* Where the system's people link an account of their own (D147 item 4): approved with the system. */}
+              {review.diff.linkedAccount && (
+                <ReviewRows rows={[manifestAccountRow(review.diff.linkedAccount, account?.offered)]} />
+              )}
               {review.diff.fields.map(f => (
                 <ListItem
                   key={'f' + f}
@@ -1030,6 +1076,16 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           )}
         </DialogFrame>
       </Dialog>
+      <AccountDialogs
+        id={id}
+        source={c.source}
+        account={account}
+        open={accountDialog}
+        onClose={closeAccountDialog}
+        run={run}
+        busy={busy}
+        error={actionError}
+      />
       <AlertDialog
         isOpen={removeOpen}
         onOpenChange={setRemoveOpen}

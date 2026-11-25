@@ -70,6 +70,8 @@ import { refresh } from './refresh';
 import { personKeys } from './person-keys';
 import { postgresAttention } from '../threads/adapters/attention-postgres';
 import { logPort } from '../logging';
+import { linkedAccounts } from './linked-accounts';
+import { LinkRefusedError, LinkUnavailableError } from '../modules/linked-accounts/contracts';
 import { currentTraceId, telemetry } from '../telemetry';
 export { refresh } from './refresh';
 
@@ -372,6 +374,7 @@ const sign = (secret: string, audience: string) => (actor: { id: string }) =>
     .setIssuedAt()
     .setExpirationTime('2m')
     .sign(new TextEncoder().encode(secret));
+const accountNotApproved = logPort('linked-accounts', 'warn');
 const connectorStore = postgresConnectorStore();
 export const connectorAdmin = connectorUsecases({
   internal: internalIds,
@@ -382,6 +385,21 @@ export const connectorAdmin = connectorUsecases({
   units: postgresUnits(),
   groups: postgresGroups(),
   clock,
+  // One approval (D147 item 4): a manifest that names a system for its people's own accounts is approved together
+  // with the server that system names. A system that names none, or does not answer, leaves the manifest approved
+  // and the account waiting, which the connector's page says with the way on.
+  approvedWith: async (persona, connectorId, diff) => {
+    if (!diff.linkedAccount?.to) return;
+    try {
+      await linkedAccounts.approve(persona, connectorId);
+    } catch (error) {
+      if (!(error instanceof LinkRefusedError || error instanceof LinkUnavailableError)) throw error;
+      accountNotApproved('The account server was not approved with the manifest', {
+        connector: connectorId,
+        reason: error.reason,
+      });
+    }
+  },
   transport: serviceTransport({
     assert: (id, uses) => assertionFor(id, uses),
     assertForeign: id => sign('wrong-secret-wrong-secret-' + id, id),

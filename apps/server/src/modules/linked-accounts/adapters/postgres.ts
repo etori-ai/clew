@@ -1,4 +1,4 @@
-import { and, asc, eq, lte } from 'drizzle-orm';
+import { and, asc, count, eq, lte } from 'drizzle-orm';
 import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import type { LinkedAccount, PendingLink } from '../contracts';
@@ -31,6 +31,16 @@ export function postgresLinkStore(sealer: Sealer): LinkStore {
   return {
     linksOf: personId => listed(database(), eq(links.personId, personId)),
     putOffBy: personId => putOffBy(database(), personId),
+    // Counted in the database, by two columns that are plain text: no row's tokens are read or opened.
+    counts: async connectorId =>
+      (
+        await database()
+          .select({ issuer: links.issuer, state: links.state, people: count() })
+          .from(links)
+          .where(eq(links.connectorId, connectorId))
+          .groupBy(links.issuer, links.state)
+          .orderBy(asc(links.issuer), asc(links.state))
+      ).map(row => ({ issuer: row.issuer, state: row.state as LinkedAccount['state'], people: Number(row.people) })),
     transaction: fn => database().transaction(tx => fn(within(tx))),
   };
 }

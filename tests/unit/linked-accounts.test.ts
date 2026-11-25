@@ -85,10 +85,13 @@ function world(options: AuthorizationServerOptions & { client?: OAuthClient | nu
       approvedAt: T,
     }),
   );
+  /** What a manifest that waits for approval declares, for the connectors that have one. */
+  const offered = new Map<string, { resource: string; scopes: string[] }>();
   /** The people a connector's audience leaves out. */
   const outside = new Set<string>();
   const connectors: ConnectorLinks = {
     declared: async id => declared.get(id) ?? null,
+    offered: async id => offered.get(id) ?? null,
     reaches: async (who, id) => declared.has(id) && !outside.has(who.id),
     linkable: async who =>
       outside.has(who.id) ? [] : [...declared.keys()].map(id => ({ connectorId: id, source: SOURCES[id] ?? id })),
@@ -108,6 +111,7 @@ function world(options: AuthorizationServerOptions & { client?: OAuthClient | nu
     routing,
     store,
     declared,
+    offered,
     outside,
     links,
     logged,
@@ -512,6 +516,198 @@ describe('an administrator approves where people are sent', () => {
     await expect(w.links.approve(refusedStepUp, 'hr')).rejects.toThrow('step-up refused');
     expect(await refusal(w.links.approve(admin, 'payroll'))).toBe('unknown-connector');
     expect(w.rows()).toEqual([]);
+  });
+});
+
+describe('a connector’s linked account on its administrator’s page', () => {
+  const admin = { ...persona('mikael'), name: 'Mikael Lund', capabilities: ['admin.connectors'] };
+  const found = (vendor: MemoryAuthorizationServer) => ({ issuer: vendor.issuer, registers: true, revocable: true });
+
+  test('says what is approved, what the system names now, how Clew is known there and how many have linked', async () => {
+    const w = world();
+    const before = await w.links.overview(admin, 'hr');
+    expect(before).toEqual({
+      connectorId: 'hr',
+      resource: w.vendor.resource,
+      scopes: ['leave'],
+      state: 'approved',
+      approved: {
+        issuer: w.vendor.issuer,
+        origin: 'discovered',
+        client: 'none',
+        clientId: null,
+        authorizationEndpoint: w.vendor.endpoints.authorize,
+        tokenEndpoint: w.vendor.endpoints.token,
+        revocationEndpoint: w.vendor.endpoints.revoke,
+        by: 'Mikael Lund',
+        at: T,
+      },
+      found: found(w.vendor),
+      answered: true,
+      people: { linked: 0, again: 0 },
+      returnAddress: REDIRECT,
+      offered: null,
+    });
+    // Two people link, and the system then refuses one of them: numbers only, and Clew has registered itself.
+    await w.link(anna);
+    await w.link(bo);
+    await w.links.refused('bo', 'hr', await w.links.tokenFor('bo', 'hr'));
+    const after = (await w.links.overview(admin, 'hr'))!;
+    expect(after.people).toEqual({ linked: 1, again: 1 });
+    expect(after.approved!.client).toBe('registered');
+    const told = JSON.stringify(after);
+    for (const never of ['anna', 'bo', await w.links.tokenFor('anna', 'hr')]) expect(told).not.toContain(never);
+    // Reading it changes nothing and writes no audit row.
+    expect(w.actions().filter(a => a === 'account.server-approved')).toEqual([]);
+  });
+
+  test('is for a connector administrator alone, and is nothing for a connector that declares no account', async () => {
+    const w = world();
+    await expect(w.links.overview(anna, 'hr')).rejects.toThrow('Du saknar behörighet för åtgärden.');
+    await expect(w.links.approveEntered(anna, 'hr', {})).rejects.toThrow('Du saknar behörighet för åtgärden.');
+    expect(await w.links.overview(admin, 'payroll')).toBeNull();
+  });
+
+  test('a server nobody has approved waits, and is approved as the system names it', async () => {
+    const w = world();
+    w.declared.set('ledger', { resource: w.vendor.resource, scopes: [] });
+    expect(await w.links.overview(admin, 'ledger')).toMatchObject({
+      state: 'waiting',
+      approved: null,
+      found: found(w.vendor),
+      answered: true,
+    });
+    await w.links.approveEntered(admin, 'ledger', {});
+    expect(await w.links.overview(admin, 'ledger')).toMatchObject({
+      state: 'approved',
+      approved: { issuer: w.vendor.issuer, origin: 'discovered', client: 'none', by: 'Mikael Lund' },
+    });
+    expect(w.rows().at(-1)).toEqual([
+      'person:mikael',
+      'account.server-approved',
+      'linked-account:ledger',
+      { connector: 'ledger', resource: w.vendor.resource, issuer: w.vendor.issuer, origin: 'discovered', client: null },
+    ]);
+    // A client the administrator registered there themselves is entered beside the server the system names.
+    w.vendor.addClient('clew-by-hand', 'a-secret', REDIRECT);
+    await w.links.approveEntered(admin, 'ledger', { client: { id: ' clew-by-hand ', secret: 'a-secret' } });
+    const entered = (await w.links.overview(admin, 'ledger'))!;
+    expect(entered.approved).toMatchObject({ origin: 'discovered', client: 'entered', clientId: 'clew-by-hand' });
+    expect(JSON.stringify([entered, w.store.audit])).not.toContain('a-secret');
+  });
+
+  test('a system that names no server says so, and is approved with what an administrator enters', async () => {
+    const w = world({ kind: 'legacy' });
+    w.vendor.addClient('clew', 'a-secret', REDIRECT);
+    w.declared.set('files', { resource: w.vendor.resource, scopes: [] });
+    expect(await w.links.overview(admin, 'files')).toMatchObject({
+      state: 'no-server',
+      approved: null,
+      found: null,
+      answered: true,
+    });
+    const server = { authorizationEndpoint: w.vendor.endpoints.authorize, tokenEndpoint: w.vendor.endpoints.token };
+    // An entered server says nothing of what it checks: Clew is a client with a secret there, or nothing is saved.
+    await expect(w.links.approveEntered(admin, 'files', { server })).rejects.toThrow('Klientens id saknas.');
+    await expect(w.links.approveEntered(admin, 'files', { server, client: { id: 'clew' } })).rejects.toThrow(
+      'Klientens hemlighet saknas.',
+    );
+    await expect(
+      w.links.approveEntered(admin, 'files', {
+        server: { ...server, tokenEndpoint: 'not an address' },
+        client: { id: 'clew', secret: 'a-secret' },
+      }),
+    ).rejects.toThrow('Adresserna måste vara fullständiga webbadresser.');
+    expect(w.rows()).toEqual([]);
+
+    await w.links.approveEntered(admin, 'files', { server, client: { id: 'clew', secret: 'a-secret' } });
+    const view = (await w.links.overview(admin, 'files'))!;
+    expect(view).toMatchObject({
+      state: 'approved',
+      // The server is known by the origin of the address people sign in at, and is asked nothing.
+      approved: {
+        issuer: new URL(w.vendor.endpoints.authorize).origin,
+        origin: 'entered',
+        client: 'entered',
+        clientId: 'clew',
+        revocationEndpoint: null,
+      },
+      found: null,
+      answered: false,
+    });
+    expect(JSON.stringify([view, w.store.audit])).not.toContain('a-secret');
+    const { url } = await w.links.begin(anna, 'files');
+    await w.links.complete(anna, await w.vendor.consent(url, 'account-anna'));
+    // Saved again without the secret, the one entered for the same client is kept, and the link works on.
+    await w.links.approveEntered(admin, 'files', { server, client: { id: 'clew' } });
+    expect(w.vendor.accepts(await w.links.tokenFor('anna', 'files'))).toBe('account-anna');
+    expect((await w.links.overview(admin, 'files'))!.people).toEqual({ linked: 1, again: 0 });
+    // A server approved by its addresses with no client (as the operator's command can leave it) lets nobody link,
+    // and the page says so.
+    await w.links.approveAsOperator('files', {
+      server: { issuer: w.vendor.issuer, ...server },
+    });
+    expect(await w.links.overview(admin, 'files')).toMatchObject({ state: 'no-client', approved: { client: 'none' } });
+    await w.links.approveEntered(admin, 'files', { server, client: { id: 'clew', secret: 'a-secret' } });
+    // Another client needs its own secret.
+    await expect(w.links.approveEntered(admin, 'files', { server, client: { id: 'another' } })).rejects.toThrow(
+      'Klientens hemlighet saknas.',
+    );
+  });
+
+  test('a system that names another server is seen as changed, and its people are told once it is approved', async () => {
+    const w = world();
+    await w.link(anna);
+    const moved = authorizationServer({ issuer: 'https://new.vendor.test', resource: w.vendor.resource });
+    w.routing.to = url =>
+      url.startsWith(moved.issuer) || url.includes('/.well-known/oauth-protected-resource') ? moved : w.vendor;
+    expect(await w.links.overview(admin, 'hr')).toMatchObject({
+      state: 'changed',
+      approved: { issuer: w.vendor.issuer },
+      found: found(moved),
+      people: { linked: 1, again: 0 },
+    });
+    // Until an administrator decides, the person's page says nothing new.
+    expect((await w.links.accounts(anna)).map(a => a.state)).toEqual(['linked']);
+    await w.links.approveEntered(admin, 'hr', {});
+    expect(await w.links.overview(admin, 'hr')).toMatchObject({
+      state: 'approved',
+      approved: { issuer: moved.issuer },
+      people: { linked: 0, again: 1 },
+    });
+    // The link to the old server is not used: the person is told before any call finds it out.
+    expect(await w.links.accounts(anna)).toMatchObject([{ connectorId: 'hr', state: 'needs-link', lostAt: null }]);
+  });
+
+  test('a system that does not answer changes nothing that is approved, and the log says it', async () => {
+    const w = world();
+    w.vendor.failing = 503;
+    expect(await w.links.overview(admin, 'hr')).toMatchObject({ state: 'approved', found: null, answered: false });
+    expect(w.logged).toContain('The system did not say where its people sign in');
+    w.declared.set('ledger', { resource: w.vendor.resource, scopes: [] });
+    expect(await w.links.overview(admin, 'ledger')).toMatchObject({ state: 'waiting', found: null, answered: false });
+  });
+
+  test('a manifest that waits says where its people would be sent, before it is approved', async () => {
+    const w = world();
+    // The approved manifest and the one that waits name the same system: the review has nothing to say of it.
+    w.offered.set('hr', { resource: w.vendor.resource, scopes: ['leave'] });
+    expect((await w.links.overview(admin, 'hr'))!.offered).toBeNull();
+    w.offered.set('hr', { resource: w.vendor.resource, scopes: ['leave', 'pay'] });
+    expect((await w.links.overview(admin, 'hr'))!.offered).toEqual({
+      resource: w.vendor.resource,
+      scopes: ['leave', 'pay'],
+      found: found(w.vendor),
+      answered: true,
+    });
+    // A connector whose first manifest waits: nothing is approved to show, only what would be.
+    w.offered.set('new', { resource: w.vendor.resource, scopes: [] });
+    expect(await w.links.overview(admin, 'new')).toMatchObject({
+      resource: null,
+      state: 'waiting',
+      approved: null,
+      offered: { resource: w.vendor.resource, found: found(w.vendor) },
+    });
   });
 });
 

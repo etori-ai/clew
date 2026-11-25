@@ -1,6 +1,7 @@
+import type { LinkedAccountAdminView, LinkedAccountServerFound } from '@clew/contracts';
 import type { LinkedAccountEntry } from '@clew/contracts';
 import type { LinkedAccount, LinkRefusal, LinkView } from './contracts';
-import type { AuthorizationServer, OAuthClient, TokenSet } from './ports';
+import type { Approval, AuthorizationServer, LinkCount, OAuthClient, TokenSet } from './ports';
 
 /**
  * The rules of a linked account (D147), as pure functions: when a stored token is still sent as it is, what a link is
@@ -110,3 +111,50 @@ export function localPath(value: string | null | undefined): string {
   for (const char of value) if (char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f) return '/';
   return value;
 }
+
+/** What an administrator weighs of a server a system names: who it is, and what Clew can do there by itself. */
+export const foundOf = (server: AuthorizationServer): LinkedAccountServerFound => ({
+  issuer: server.issuer,
+  registers: !!server.registrationEndpoint,
+  revocable: !!server.revocationEndpoint,
+});
+
+/**
+ * Whether a connector's people can link (D147 item 4), from what is approved for the address its manifest names and
+ * what the system names now. An entered server is asked nothing, so it is never `changed`. A system that did not
+ * answer changes nothing that is approved: what it would have named is not known. An approved server where Clew is no
+ * client, and cannot register itself, lets nobody link either.
+ */
+export function accountState(
+  approval: Approval | null,
+  now: { found: LinkedAccountServerFound | null; answered: boolean },
+  /** Whether Clew is, or can make itself, a client at the approved server (`clientChoice`). */
+  client = true,
+): LinkedAccountAdminView['state'] {
+  if (!approval) return now.answered && !now.found ? 'no-server' : 'waiting';
+  if (approval.origin !== 'entered' && now.answered) {
+    if (!now.found) return 'no-server';
+    if (now.found.issuer !== approval.server.issuer) return 'changed';
+  }
+  return client ? 'approved' : 'no-client';
+}
+
+/**
+ * How many people hold a link that works with the server approved now, and how many must link again: a link the
+ * system refused, or one to another server than the approved one, which is not used (item 4). With nothing approved
+ * no link works.
+ */
+export function peopleOf(counts: readonly LinkCount[], issuer: string | null): LinkedAccountAdminView['people'] {
+  const people = { linked: 0, again: 0 };
+  for (const count of counts)
+    if (count.state === 'linked' && count.issuer === issuer) people.linked += count.people;
+    else people.again += count.people;
+  return people;
+}
+
+/**
+ * The issuer of a server an administrator entered by its addresses: the origin of the address people sign in at. An
+ * entered server publishes nothing that names it, and the links are kept by this word, so the same addresses give the
+ * same one.
+ */
+export const enteredIssuer = (authorizationEndpoint: string) => new URL(authorizationEndpoint).origin;

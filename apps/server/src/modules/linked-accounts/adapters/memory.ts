@@ -1,5 +1,5 @@
 import type { LinkedAccount, PendingLink } from '../contracts';
-import type { Approval, LinkAuditEntry, LinkStore, OAuthClient } from '../ports';
+import type { Approval, LinkAuditEntry, LinkCount, LinkStore, OAuthClient } from '../ports';
 
 /**
  * The link store in memory (D25, D147): the unit tests' adapter, held to the store contract in
@@ -40,6 +40,18 @@ export function memoryLinkStore(): MemoryLinkStore {
     },
     async putOffBy(personId) {
       return putOffBy(personId);
+    },
+    async counts(connectorId) {
+      const counted = new Map<string, LinkCount>();
+      for (const link of links.values()) {
+        if (link.connectorId !== connectorId) continue;
+        const at = key(link.issuer, link.state);
+        const count = counted.get(at) ?? { issuer: link.issuer, state: link.state, people: 0 };
+        counted.set(at, { ...count, people: count.people + 1 });
+      }
+      return [...counted.values()].sort((a, b) =>
+        a.issuer < b.issuer ? -1 : a.issuer > b.issuer ? 1 : a.state < b.state ? -1 : 1,
+      );
     },
     transaction(fn) {
       const run = queue.then(async () => {

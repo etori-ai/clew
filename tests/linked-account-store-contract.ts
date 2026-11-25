@@ -89,6 +89,27 @@ export function linkStoreContract(name: string, make: () => Promise<LinkStoreHar
       expect(await store.linksOf(prefix + 'nobody')).toEqual([]);
     });
 
+    test("a connector's links are counted by the server that issued them and by what they are, with no person", async () => {
+      const { store, prefix } = await make();
+      expect(await store.counts(prefix + 'hr')).toEqual([]);
+      const lost = { state: 'needs-link', accessToken: null, refreshToken: null, expiresAt: null } as const;
+      await store.transaction(async tx => {
+        await tx.save(link(prefix, 'anna', 'hr'));
+        await tx.save(link(prefix, 'bo', 'hr'));
+        await tx.save(link(prefix, 'cia', 'hr', { ...lost, lastError: 'invalid_grant', lostAt: T }));
+        await tx.save(link(prefix, 'dan', 'hr', { issuer: 'https://old.vendor.test' }));
+        await tx.save(link(prefix, 'anna', 'ledger'));
+      });
+      expect(await store.counts(prefix + 'hr')).toEqual([
+        { issuer: 'https://id.vendor.test', state: 'linked', people: 2 },
+        { issuer: 'https://id.vendor.test', state: 'needs-link', people: 1 },
+        { issuer: 'https://old.vendor.test', state: 'linked', people: 1 },
+      ]);
+      expect(await store.counts(prefix + 'ledger')).toEqual([
+        { issuer: 'https://id.vendor.test', state: 'linked', people: 1 },
+      ]);
+    });
+
     test('a pending authorization is taken once, and the ones whose time has passed are removed', async () => {
       const { store, prefix } = await make();
       const kept = pending(prefix, 'kept', '2026-11-25T08:10:00.000Z');

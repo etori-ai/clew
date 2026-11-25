@@ -73,6 +73,12 @@ export interface AdminDeps {
   units: Units;
   groups: Groups;
   clock: () => Date;
+  /**
+   * What is approved together with a manifest (D144; D147 item 4): the server the system's people link their account
+   * at, when the manifest names another system for that than the one approved before. Called once the manifest is
+   * approved and live; one approval for the administrator, and a failure here leaves the manifest approved.
+   */
+  approvedWith?: (persona: AuthenticatedContext, connectorId: string, diff: ManifestDiff) => Promise<void>;
 }
 export const governanceOf = (
   r: Pick<ConnectorRecord, 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'capabilities'> &
@@ -245,6 +251,7 @@ export function connectorUsecases(deps: AdminDeps) {
       scan: m?.scan ?? false,
       uses: [...(m?.uses ?? [])],
       delegation: m?.delegation?.audience ?? null,
+      linkedAccount: !!(m?.linkedAccount ?? offer?.manifest.linkedAccount),
       offered: offer ? { at: offer.at, revision: offer.revision, diff: manifestDiff(m, offer.manifest) } : null,
       headerCapability: m?.header?.capability ?? registry.connector(row.id)?.header ?? null,
       createdBy: row.createdBy,
@@ -338,6 +345,7 @@ export function connectorUsecases(deps: AdminDeps) {
           // What the administrator approves by adding it (D144): what it reads back as the person and whose token it gets.
           uses: report.manifest?.uses ?? [],
           delegation: report.manifest?.delegation?.audience ?? null,
+          linkedAccount: report.manifest?.linkedAccount?.resource ?? null,
           health: health.status,
         },
       });
@@ -710,6 +718,7 @@ export function connectorUsecases(deps: AdminDeps) {
     if (!approved) throw new InputError(changedAgain);
     const updated = (await store.read(id))!;
     applyLive(updated);
+    await deps.approvedWith?.(persona, id, diff);
     return { diff, connector: await detail(updated) };
   }
   /**

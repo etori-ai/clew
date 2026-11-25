@@ -134,6 +134,8 @@ export const keys = {
     all: ['admin'] as const,
     connectors: ['admin', 'connectors'] as const,
     connector: (id: string) => ['admin', 'connector', id] as const,
+    /** Under the connector's own key, so what reads the connector again reads its linked account again (D147). */
+    connectorAccount: (id: string) => ['admin', 'connector', id, 'account'] as const,
     units: ['admin', 'units'] as const,
     groups: ['admin', 'groups'] as const,
     users: ['admin', 'users'] as const,

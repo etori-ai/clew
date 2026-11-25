@@ -1,4 +1,5 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import type { LinkedAccountApprovalInput } from '@clew/contracts';
 import { InputError, failure, privateHeaders, type Env } from '../context';
 import { textOfAtMost } from '../bounded-body';
 import { logger } from '../logging';
@@ -114,5 +115,94 @@ export function linkedAccountRoutes(
   routes.delete('/:connector', async c =>
     c.json(await links.unlink(c.get('session').context, connectorOf(c)), 200, privateHeaders),
   );
+  return routes;
+}
+
+/** An address an administrator typed: text of a bounded length; what it must be is the use case's to say. */
+const typed = (value: unknown, max = 2000): value is string => typeof value === 'string' && value.length <= max;
+/** The body of an approval, as `LinkedAccountApprovalInput`: nothing, a client, a server's addresses, or both. */
+function approvalOf(text: string | undefined): LinkedAccountApprovalInput {
+  if (text === undefined) throw new InputError('För stor förfrågan.');
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    throw new InputError('Ogiltig förfrågan.');
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new InputError('Ogiltig förfrågan.');
+  const { client, server } = body as { client?: Record<string, unknown>; server?: Record<string, unknown> };
+  const input: LinkedAccountApprovalInput = {};
+  if (client !== undefined) {
+    if (typeof client !== 'object' || client === null || !typed(client.id, 400))
+      throw new InputError('Ogiltig förfrågan.');
+    if (client.secret !== undefined && !typed(client.secret)) throw new InputError('Ogiltig förfrågan.');
+    input.client = { id: client.id, ...(client.secret ? { secret: client.secret } : {}) };
+  }
+  if (server !== undefined) {
+    if (
+      typeof server !== 'object' ||
+      server === null ||
+      !typed(server.authorizationEndpoint) ||
+      !typed(server.tokenEndpoint) ||
+      (server.revocationEndpoint !== undefined && !typed(server.revocationEndpoint))
+    )
+      throw new InputError('Ogiltig förfrågan.');
+    input.server = {
+      authorizationEndpoint: server.authorizationEndpoint.trim(),
+      tokenEndpoint: server.tokenEndpoint.trim(),
+      ...(server.revocationEndpoint?.trim() ? { revocationEndpoint: server.revocationEndpoint.trim() } : {}),
+    };
+  }
+  return input;
+}
+/** Why an approval could not be made, in the administrator's words: what the system did not give, and the way on. */
+function approvalRefusal(error: LinkRefusedError | LinkUnavailableError): string {
+  if (error instanceof LinkUnavailableError)
+    return 'Systemet svarade inte när Clew frågade var personer loggar in. Försök igen om en stund.';
+  if (error.reason === 'no-server') return 'Systemet uppger ingen inloggningsserver. Ange adresserna.';
+  if (error.reason === 'unknown-connector') return 'Anslutningen låter inte personer koppla egna konton.';
+  return 'Uppgifterna kunde inte godkännas. Kontrollera dem och försök igen.';
+}
+
+/**
+ * A connector's linked account for its administrator (D147 items 3 and 4), mounted under `/api/admin/connectors`
+ * behind the administration's guard; the use cases check the grant `admin.connectors` themselves.
+ *
+ * - `GET /:id/linked-account` answers what is approved, what the system names now and how many people have linked; null for a connector
+ *   that declares no linked account. Never a secret or a person.
+ * - `POST /:id/linked-account` approves: with an empty body the server the system names, with `client` a client the administrator
+ *   registered there, with `server` the addresses of a system that names none.
+ */
+export function linkedAccountAdminRoutes(
+  links: Pick<LinkedAccounts, 'overview' | 'approveEntered'>,
+  /** Who is signed in, for a test: the administration mounts these routes behind its own guard. */
+  guard?: MiddlewareHandler<Env>,
+) {
+  const routes = new Hono<Env>();
+  if (guard) routes.use('*', guard);
+  routes.onError((error, c) => {
+    if (error instanceof LinkRefusedError || error instanceof LinkUnavailableError) {
+      refused(error);
+      return c.json(
+        { error: approvalRefusal(error) },
+        error instanceof LinkUnavailableError ? 503 : 400,
+        privateHeaders,
+      );
+    }
+    return failure(c, error);
+  });
+  const connector = (c: Context<Env>) => {
+    const id = c.req.param('id') ?? '';
+    if (!CONNECTOR_ID.test(id)) throw new InputError('Ogiltig förfrågan.');
+    return id;
+  };
+  routes.get('/:id/linked-account', async c =>
+    c.json({ account: await links.overview(c.get('session').context, connector(c)) }, 200, privateHeaders),
+  );
+  routes.post('/:id/linked-account', async c => {
+    const input = approvalOf(await textOfAtMost(c.req.raw, 16_384));
+    await links.approveEntered(c.get('session').context, connector(c), input);
+    return c.json({ account: await links.overview(c.get('session').context, connector(c)) }, 200, privateHeaders);
+  });
   return routes;
 }

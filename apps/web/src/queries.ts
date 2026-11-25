@@ -460,6 +460,13 @@ export const adminQueries = {
   appearance: queryOptions({ queryKey: keys.admin.appearance, queryFn: () => api.admin.appearance() }),
   connector: (id: string) =>
     queryOptions({ queryKey: keys.admin.connector(id), queryFn: () => api.admin.connector(id) }),
+  /** Where the connector's people link their own account (D147); the system is asked what it names, so never retried. */
+  connectorAccount: (id: string) =>
+    queryOptions({
+      queryKey: keys.admin.connectorAccount(id),
+      queryFn: async () => (await api.admin.account(id)).account,
+      retry: false,
+    }),
   preview: (id: string, role: Role) =>
     queryOptions({ queryKey: keys.admin.preview(id, role), queryFn: () => api.admin.preview(id, role) }),
   /** Modeller (D24): the list, one model, one provider. A 400 on a detail is "finns inte", as for a connector. */

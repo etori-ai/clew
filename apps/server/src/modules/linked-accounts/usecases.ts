@@ -1,4 +1,10 @@
-import type { AuthenticatedContext, Capability, LinkedAccountEntry } from '@clew/contracts';
+import type {
+  AuthenticatedContext,
+  Capability,
+  LinkedAccountAdminView,
+  LinkedAccountApprovalInput,
+  LinkedAccountEntry,
+} from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
 import {
   LinkRefusedError,
@@ -9,7 +15,21 @@ import {
   type PendingLink,
   type Revocation,
 } from './contracts';
-import { PENDING_MS, byNeed, clientChoice, entryOf, isFresh, localPath, lost, viewOf, withTokens } from './domain';
+import {
+  PENDING_MS,
+  accountState,
+  byNeed,
+  clientChoice,
+  enteredIssuer,
+  entryOf,
+  foundOf,
+  isFresh,
+  localPath,
+  lost,
+  peopleOf,
+  viewOf,
+  withTokens,
+} from './domain';
 import {
   GrantRefused,
   type Approval,
@@ -42,6 +62,9 @@ export const LINK_SYSTEM_ACTOR = 'system:linked-accounts';
 export const LINK_ADMIN_CAPABILITY: Capability = 'admin.connectors';
 /** The operator's command line, where no person is signed in. */
 const OPERATOR = { actor: 'bootstrap:linked-accounts', name: 'Kommandoraden' };
+
+/** A system that was not asked, or did not answer, what server it names. */
+const UNASKED: Pick<LinkedAccountAdminView, 'found' | 'answered'> = { found: null, answered: false };
 
 /** What an administrator enters beside a connector's declaration: a server that publishes no metadata, a client, or both. */
 export interface ApprovalInput {
@@ -206,6 +229,24 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
       reason: error instanceof GrantRefused ? error.code : 'unreachable',
     });
     return new LinkUnavailableError(connectorId, error instanceof GrantRefused ? error.code : 'unreachable');
+  }
+
+  /**
+   * The server a system names today, for an administrator's page: none when it names none, and not known when it did
+   * not answer, which the log says.
+   */
+  async function named(connectorId: string, resource: string): Promise<typeof UNASKED> {
+    try {
+      const server = await deps.oauth.discover(resource);
+      return { found: server ? foundOf(server) : null, answered: true };
+    } catch (error) {
+      if (error instanceof GrantRefused && error.final) return { found: null, answered: true };
+      deps.log('The system did not say where its people sign in', {
+        connector: connectorId,
+        reason: error instanceof GrantRefused ? error.code : 'unreachable',
+      });
+      return UNASKED;
+    }
   }
 
   /**
@@ -414,6 +455,110 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
     },
 
     /**
+     * A connector's linked account as its administrator's page shows it (D147 items 3 and 4): what is approved for
+     * the address the manifest names, what the system names now, how Clew is known there and how many people have
+     * linked. The system is asked each time, so a server it has changed to is seen here before anybody approves it.
+     * Null for a connector whose manifests, the approved one and one that waits, declare no linked account.
+     */
+    async overview(persona: AuthenticatedContext, connectorId: string): Promise<LinkedAccountAdminView | null> {
+      administrator(persona);
+      const [declared, offered] = await Promise.all([
+        deps.connectors.declared(connectorId),
+        deps.connectors.offered(connectorId),
+      ]);
+      if (!declared && !offered) return null;
+      const { kept, registered } = await deps.store.transaction(async tx => {
+        const kept = declared ? await tx.approval(connectorId) : null;
+        return { kept, registered: kept ? await tx.client(connectorId, kept.server.issuer) : null };
+      });
+      const approval = kept && declared && kept.resource === declared.resource ? kept : null;
+      // An entered server publishes nothing to ask for; every other is asked what it names today.
+      const now = declared && approval?.origin !== 'entered' ? await named(connectorId, declared.resource) : UNASKED;
+      const changes =
+        offered &&
+        (!declared || declared.resource !== offered.resource || declared.scopes.join(' ') !== offered.scopes.join(' '));
+      return {
+        connectorId,
+        resource: declared?.resource ?? null,
+        scopes: declared?.scopes ?? [],
+        state: accountState(
+          approval,
+          now,
+          !approval ||
+            !(
+              'refused' in
+              clientChoice(approval.server, {
+                entered: approval.client,
+                registered,
+                documentUrl: deps.clientDocumentUrl,
+              })
+            ),
+        ),
+        approved: approval
+          ? {
+              issuer: approval.server.issuer,
+              origin: approval.origin,
+              client: approval.client ? 'entered' : registered ? 'registered' : 'none',
+              clientId: approval.client?.id ?? null,
+              authorizationEndpoint: approval.server.authorizationEndpoint,
+              tokenEndpoint: approval.server.tokenEndpoint,
+              revocationEndpoint: approval.server.revocationEndpoint,
+              by: approval.approvedBy,
+              at: approval.approvedAt,
+            }
+          : null,
+        found: now.found,
+        answered: now.answered,
+        people: peopleOf(await deps.store.counts(connectorId), approval?.server.issuer ?? null),
+        returnAddress: deps.redirectUri,
+        offered: changes
+          ? { resource: offered.resource, scopes: offered.scopes, ...(await named(connectorId, offered.resource)) }
+          : null,
+      };
+    },
+
+    /**
+     * What an administrator saves on the connector's page: a client they registered at the system, a server's
+     * addresses for a system that names none, or both; with neither, the server the system names is approved as it
+     * is. A server that is entered says nothing about what it checks, so Clew needs a client with a secret there. A
+     * secret left out keeps the one already entered for the same client, since no page ever shows it again.
+     */
+    async approveEntered(persona: AuthenticatedContext, connectorId: string, input: LinkedAccountApprovalInput) {
+      administrator(persona);
+      await persona.authorize();
+      const before = await deps.store.transaction(tx => tx.approval(connectorId));
+      const id = input.client?.id.trim() ?? '';
+      const secret =
+        input.client?.secret || (before?.client && before.client.id === id ? before.client.secret : null) || null;
+      const server = input.server;
+      if (server) {
+        if (
+          ![
+            server.authorizationEndpoint,
+            server.tokenEndpoint,
+            server.revocationEndpoint || server.tokenEndpoint,
+          ].every(address)
+        )
+          throw new InputError('Adresserna måste vara fullständiga webbadresser.');
+        if (!id) throw new InputError('Klientens id saknas.');
+        if (!secret) throw new InputError('Klientens hemlighet saknas.');
+      }
+      return approved({ actor: actorOf(persona), name: persona.name }, connectorId, {
+        ...(server
+          ? {
+              server: {
+                issuer: enteredIssuer(server.authorizationEndpoint),
+                authorizationEndpoint: server.authorizationEndpoint,
+                tokenEndpoint: server.tokenEndpoint,
+                revocationEndpoint: server.revocationEndpoint || null,
+              },
+            }
+          : {}),
+        ...(input.client ? { client: { id, secret } } : {}),
+      });
+    },
+
+    /**
      * Starts linking: where to send the person. Nothing about them is changed yet; the state and the PKCE verifier are
      * kept until they return, for ten minutes.
      */
@@ -554,10 +699,15 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
       for (const system of systems) {
         const setting = await settingOf(system.connectorId);
         if (typeof setting === 'string') continue;
+        const link = links.find(link => link.connectorId === system.connectorId);
+        // A link to another server or system than the one approved now is not used (item 4): the person is told
+        // that the system needs their account again, before the first call that would have found it out.
+        const unused =
+          link?.state === 'linked' && (link.issuer !== setting.server.issuer || link.resource !== setting.resource);
         entries.push(
           entryOf(
             { ...system, revocable: !!setting.server.revocationEndpoint },
-            links.find(link => link.connectorId === system.connectorId),
+            link && unused ? { ...link, state: 'needs-link', lostAt: null } : link,
             putOff.includes(system.connectorId),
           ),
         );

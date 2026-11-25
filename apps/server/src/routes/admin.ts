@@ -35,6 +35,8 @@ import { operations } from '../composition/operations';
 import { appearance } from '../composition/appearance';
 import { provisionerKeyRoutes } from './provisioner-keys';
 import { appearanceAdminRoutes } from './appearance-admin';
+import { linkedAccountAdminRoutes } from './linked-accounts';
+import { linkedAccounts } from '../composition/linked-accounts';
 import { textOfAtMost } from '../bounded-body';
 
 /**
@@ -168,6 +170,8 @@ adminRoutes.post('/connectors/:id/secret', async c =>
     ),
   ),
 );
+// Where a connector's people link their own account, as approved and as the system names it (D147 items 3 and 4).
+adminRoutes.route('/connectors', linkedAccountAdminRoutes(linkedAccounts));
 adminRoutes.post('/connectors/:id/test', async c =>
   c.json(await connectorAdmin.test(c.get('session').context, c.req.param('id'))),
 );

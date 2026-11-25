@@ -31,6 +31,8 @@ import type {
   ReviewEvidence,
   ReviewPreview,
   SiteHeaderView,
+  LinkedAccountAdminView,
+  LinkedAccountApprovalInput,
   LinkedAccountsView,
   AskValues,
   EffectPreview,
@@ -753,6 +755,11 @@ export const api = {
       post<ConnectorDetail>(`/api/admin/connectors/${id}/secret`, { secret }),
     test: (id: string) =>
       post<CheckReport & { health: ConnectorHealth; offered: boolean }>(`/api/admin/connectors/${id}/test`),
+    // Where the connector's people link their own account (D147): what is approved, what the system names, how many.
+    account: (id: string) =>
+      call<{ account: LinkedAccountAdminView | null }>(`/api/admin/connectors/${id}/linked-account`),
+    approveAccount: (id: string, input: LinkedAccountApprovalInput) =>
+      post<{ account: LinkedAccountAdminView | null }>(`/api/admin/connectors/${id}/linked-account`, input),
     /** `offered` names the offer reviewed, when applying it (D144). */
     refresh: (id: string, input: RefreshManifestInput) =>
       post<{ diff: ManifestDiff; connector: ConnectorDetail }>(`/api/admin/connectors/${id}/refresh`, input),

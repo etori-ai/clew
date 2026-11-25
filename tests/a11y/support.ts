@@ -49,7 +49,14 @@ import { newsItemOutput, newsItemSpec, newsSpec } from './data';
 import { SITE } from './branding-fixtures';
 export { SITE } from './branding-fixtures';
 import { ENTITY_NAMES_MAX, providerAddressProblem, turnPageHash } from '@clew/contracts';
-import type { AssistantReach, LinkedAccountEntry, NewsResult, RecordAction } from '@clew/contracts';
+import type {
+  AssistantReach,
+  LinkedAccountAdminView,
+  LinkedAccountApprovalInput,
+  LinkedAccountEntry,
+  NewsResult,
+  RecordAction,
+} from '@clew/contracts';
 import {
   assistantStatus,
   modelDetail,
@@ -306,6 +313,14 @@ export class MockApi {
    */
   accounts: LinkedAccountEntry[] = [];
   linkOutcome: 'linked' | 'declined' | 'failed' | 'closed' = 'linked';
+  /**
+   * A connector's linked account as its administrator's page reads it (D147 items 3 and 4), by connector id: none
+   * unless a test gives one (and serves the connector with `linkedAccount: true`). An approval is answered as the
+   * server would change it: the server the system names or the one entered is approved, by Mikael Lund, now.
+   */
+  adminAccounts: Record<string, LinkedAccountAdminView> = {};
+  /** What the administrator's page saved, as it sent it. */
+  adminAccountCalls: Array<{ id: string; body: LinkedAccountApprovalInput }> = [];
   /** What the page asked about linked accounts, as it asked: the method, the path after `/linked-accounts`, the body. */
   accountCalls: Array<{ method: string; path: string; body: unknown }> = [];
 
@@ -1237,6 +1252,48 @@ export class MockApi {
             report: { ok: true, items: checkReport.items.filter(i => i.level === 'ok') },
           },
         });
+      }
+      if (path === `/admin/connectors/${cid}/linked-account`) {
+        const account = this.adminAccounts[cid] ?? null;
+        if (method === 'GET') return json({ account });
+        const body = (request.postDataJSON() ?? {}) as LinkedAccountApprovalInput;
+        this.adminAccountCalls.push({ id: cid, body });
+        const issuer = body.server
+          ? new URL(body.server.authorizationEndpoint).origin
+          : (account?.found?.issuer ?? account?.approved?.issuer);
+        if (!account || !issuer)
+          return route.fulfill({
+            status: 400,
+            json: { error: 'Systemet uppger ingen inloggningsserver. Ange adresserna.' },
+          });
+        const moved = !!account.approved && account.approved.issuer !== issuer;
+        const next: LinkedAccountAdminView = {
+          ...account,
+          state: 'approved',
+          approved: {
+            issuer,
+            origin: body.server ? 'entered' : 'discovered',
+            client: body.client
+              ? 'entered'
+              : !moved && account.approved?.client === 'registered'
+                ? 'registered'
+                : 'none',
+            clientId: body.client?.id ?? null,
+            authorizationEndpoint: body.server?.authorizationEndpoint ?? issuer + '/authorize',
+            tokenEndpoint: body.server?.tokenEndpoint ?? issuer + '/token',
+            revocationEndpoint: body.server
+              ? (body.server.revocationEndpoint ?? null)
+              : account.found?.revocable
+                ? issuer + '/revoke'
+                : null,
+            by: 'Mikael Lund',
+            at: NOW,
+          },
+          // Links to another server than the one approved now are not used.
+          people: moved ? { linked: 0, again: account.people.linked + account.people.again } : account.people,
+        };
+        this.adminAccounts = { ...this.adminAccounts, [cid]: next };
+        return json({ account: next });
       }
       if (path === `/admin/connectors/${cid}/test`)
         return json({ ...checkReport, health: { status: 'secret-rejected', at: NOW }, offered: false });

@@ -305,9 +305,12 @@ product owner the same day (canvas "Clew · linking an account (D147)",
 
 Where it differs from the items above:
 
-- **Item 4.** The approval is kept in the module's own table and made by an operator with
-  `bun scripts/connector-link.ts <connector id>`. D144's review does not name the field yet, and no page enters
-  addresses.
+- **Item 4.** The approval is kept in the module's own table, not with the approved manifest. Until 2026-11-25 only
+  an operator made it, with `bun scripts/connector-link.ts <connector id>`; the connector's page now does (below).
+  A system that names another server sends nobody new anywhere, as the item says, but the links to the approved
+  server are used as before until an administrator approves the new one: a call sends the token it holds and
+  refreshes it at the approved server's own addresses. The item says the links stop being used meanwhile. The page
+  says what is built, and which of the two should hold is the product owner's to decide.
 - **Item 6.** The button does not go to a route that redirects. The page asks `POST /api/linked-accounts/:connector/link`
   for the system's address, with the session's CSRF token, and then sends its window there (or leaves for it in the
   same tab): a link that could be started by a plain address could be started by any other site.
@@ -381,7 +384,41 @@ Linking in a window of its own (item 6 as amended, 2026-11-25):
   line went, a browser that opens no window, a closed window, and the return page that cannot close. Not tested:
   a system whose sign-in really cuts the windows apart, and a phone, where the window is a tab.
 
-Not built: the administrator's review and the entered addresses on Administration › Anslutna system; a client
+The administrator's side (items 3 and 4), drawn first and chosen by the product owner on 2026-11-25 (A: the facts
+under Översikt, with the count of people):
+
+- **One approval.** The diff of a changed system names `linkedAccount` (`ManifestDiff.linkedAccount`), and the
+  review that exists (D144) says it in one row: that people link an account of their own, the server the system
+  names, what Clew asks for and how Clew is known there. When the administrator approves the manifest, the server the
+  system names is approved in the same request (`approvedWith` on the connector administration, bound in
+  composition), with its own audit row `account.server-approved`. It is not one transaction: the server is found by
+  asking the system. A system that names none, or does not answer, leaves the manifest approved and the account
+  waiting, which the page says with the way on.
+- **Under Översikt.** One fact beside "Får personens inloggning" ("Personer kopplar eget konto"), and the block
+  "Personernas konton": the server and who named it, how Clew is known there, whether the system is told when a link
+  ends, how many people have linked and how many must link again, and who approved it. The count is
+  `LinkStore.counts`, grouped in the database: no token is opened and no person is named.
+- **A read of its own.** `GET /api/admin/connectors/:id/linked-account` (`overview`) asks the system what it names
+  each time, so a changed server is seen before anybody approves it; `POST` on the same address approves
+  (`approveEntered`). Both are behind `admin.connectors`, and the approval behind the step-up.
+- **States.** `approved`; `waiting` (nothing approved for the address the manifest names); `no-server` (the system
+  names none); `no-client` (the server is approved but Clew is no client there and cannot register itself);
+  `changed` (the system names another server). Each of the last four is a notice of the page's own kind with one
+  button.
+- **Entering it.** A dialog with Clew's return address to copy, the client's id and secret, and, only for a system
+  that names no server, its three addresses in plain words. An entered server is known by the origin of the address
+  people sign in at, since it publishes nothing that names it and the form has no field for an issuer. A secret left
+  empty keeps the one saved for the same client; it is never shown again.
+- **Another server.** A review that says from what to what and how many people must link again. Once it is
+  approved, a person whose link is to the old server is told that the system needs their account before any call
+  finds it out (`accounts`).
+- Differs from the canvas: the notice for another server says that the linked accounts are used as before (see item
+  4 above); the dialog is the page's scrolling dialog frame, so its buttons stay on a low screen; and two states the
+  canvas did not draw have words of their own (`waiting` with a server to review, and `no-client`).
+- Tested: the use cases with their audit rows, the store's count on memory and Postgres, the routes, the words as
+  pure functions, and `tests/a11y/admin-account.spec.ts` at 1280 and 320 px.
+
+Not built: a client
 metadata document served by Clew; the callback for a person whose session ended while they were at the system; a
 mark on the person's menu when a link is lost (the unsent decision already raises the count).
 

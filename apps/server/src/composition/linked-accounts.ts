@@ -2,6 +2,7 @@ import { CapabilityError, audiencedActorOf } from '@clew/connectors';
 import { readConnector } from '@clew/db/connectors';
 import { openSecret, sealSecret } from '../auth-crypto';
 import { useLinkedAccounts } from '../connectors/remote';
+import { isManifest, sameManifest } from '../connectors/manifests';
 import { registry } from '../connectors/registry';
 import { logPort } from '../logging';
 import { oauthAdapter } from '../modules/linked-accounts/adapters/oauth';
@@ -41,6 +42,13 @@ export const linkedAccounts = linkedAccountUsecases({
       const manifest = (await readConnector(connectorId))?.manifest as
         { linkedAccount?: { resource: string; scopes?: string[] } } | null | undefined;
       const declared = manifest?.linkedAccount;
+      return declared ? { resource: declared.resource, scopes: declared.scopes ?? [] } : null;
+    },
+    // The manifest that waits for an administrator (D144), while it differs from the approved one.
+    async offered(connectorId) {
+      const row = await readConnector(connectorId);
+      if (!row || !row.offeredAt || !isManifest(row.offered) || sameManifest(row.manifest, row.offered)) return null;
+      const declared = row.offered.linkedAccount;
       return declared ? { resource: declared.resource, scopes: declared.scopes ?? [] } : null;
     },
     async reaches(persona, connectorId) {

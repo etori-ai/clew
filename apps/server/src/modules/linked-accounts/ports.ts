@@ -64,6 +64,11 @@ export interface LinkSetting {
 export interface ConnectorLinks {
   /** What the connector's approved manifest declares as its linked account; null for a connector that declares none. */
   declared(connectorId: string): Promise<{ resource: string; scopes: string[] } | null>;
+  /**
+   * What a manifest that waits for an administrator's approval declares as its linked account (D144); null when no
+   * manifest waits or the one that does declares none.
+   */
+  offered(connectorId: string): Promise<{ resource: string; scopes: string[] } | null>;
   /** Whether the connector is in this person's scope and audience today. A person outside it cannot tell it exists. */
   reaches(persona: AuthenticatedContext, connectorId: string): Promise<boolean>;
   /**
@@ -158,9 +163,18 @@ export interface LinkTx {
   audit(entry: LinkAuditEntry): Promise<void>;
 }
 
+/** How many people hold a link to one connector, by the server that issued it and by what the link is. No person. */
+export interface LinkCount {
+  issuer: string;
+  state: LinkedAccount['state'];
+  people: number;
+}
+
 export interface LinkStore {
   linksOf(personId: string): Promise<LinkedAccount[]>;
   putOffBy(personId: string): Promise<string[]>;
+  /** The connector's links counted, by issuer and then state: what an administrator is shown, with no token opened. */
+  counts(connectorId: string): Promise<LinkCount[]>;
   /** One transaction: everything in it is written, with its audit rows, or nothing is. */
   transaction<T>(fn: (tx: LinkTx) => Promise<T>): Promise<T>;
 }
