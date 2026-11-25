@@ -110,9 +110,14 @@ export function keyedDigest(purpose: string, value: unknown) {
   return createHmac('sha256', masterKey()).update(JSON.stringify({ purpose, value })).digest('hex');
 }
 export function localReturnTo(value: string | null) {
-  if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\r\n]/.test(value)) return '/';
+  if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\t\r\n]/.test(value)) return '/';
   const url = new URL(value, 'https://clew.invalid');
-  if (url.origin !== 'https://clew.invalid' || url.pathname.startsWith('/api/') || url.pathname === '/login')
+  if (
+    url.origin !== 'https://clew.invalid' ||
+    url.pathname.startsWith('//') ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname === '/login'
+  )
     return '/';
   return url.pathname + url.search;
 }
