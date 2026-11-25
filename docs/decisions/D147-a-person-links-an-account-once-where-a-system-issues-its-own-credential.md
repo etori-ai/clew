@@ -355,6 +355,9 @@ Open after the pages:
 
 - The dialog for a system that cannot be told says "ta också bort Clew i dina inställningar där". The canvas named
   the place in Nextcloud; Clew does not know a system's own menus, and a connector cannot say them yet.
+- A link that is lost while a page is open is seen with the next read of the person's accounts (at most a minute
+  old when a page is opened); no change signal says it. Where a session stands behind the scan, the cards' read takes
+  the blocked scan up again itself, so its status does not say that the system needs the account.
 - A system that stays unlinked is asked for a scan on every read of the cards from a signed-in session, which
   writes a `refresh.requested` and a `refresh.failed` audit row each time. That is how a blocked request has always
   been taken up when its person comes back; with "Inte nu" the state can now last for months.

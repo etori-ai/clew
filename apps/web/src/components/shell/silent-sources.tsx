@@ -65,15 +65,19 @@ export function useSilentSources() {
   }, [named, sources, marks, threads?.threads, accounts]);
   const of = useCallback((connector: string) => list.find(s => s.connector === connector), [list]);
   // What a row of an open item asks: whether what it shows may be old. That holds for a system that does not answer,
-  // and for one whose scan is blocked because it no longer accepts the person's account (D147): its kept cards are
-  // as they were when it last did.
-  const blocked = useMemo(
-    () => (sources ?? []).filter(s => s.error === 'authorization-required').map(s => s.connector),
-    [sources],
+  // and for one that has no account of the person's it accepts (D147): a scan that cannot read closes no card, so the
+  // cards Clew kept are as they were when the account last worked. The accounts' own read says which systems those
+  // are; the cards' read says it too where no session stands behind the scan, and there it is not taken up again.
+  const without = useMemo(
+    () => [
+      ...(accounts ? needingAccount(accounts) : []),
+      ...(sources ?? []).filter(s => s.error === 'authorization-required').map(s => s.connector),
+    ],
+    [accounts, sources],
   );
   const stale = useCallback(
-    (connector: string) => list.some(s => s.connector === connector) || blocked.includes(connector),
-    [list, blocked],
+    (connector: string) => list.some(s => s.connector === connector) || without.includes(connector),
+    [list, without],
   );
   return { list, of, stale, named };
 }

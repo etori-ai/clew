@@ -249,30 +249,35 @@ test.describe('linked accounts beside the rest of the page', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('a system that no longer accepts the account is not said to be silent, and its kept cards say they may be old', async ({
-    page,
-    api,
-  }) => {
-    api.threads = api.threads.filter(t => t.id === 'fakturor');
-    api.accounts = [entry('finance', 'Ekonomisystemet', 'needs-link')];
-    api.sources = [
-      {
-        connector: 'finance',
-        state: 'blocked',
-        lastSuccess: '2026-11-03T07:00:00.000Z',
-        error: 'authorization-required',
-      },
-    ];
-    await open(page, '/');
-    await expect(needs(page).getByText('Ekonomisystemet godtar inte längre ditt konto', { exact: true })).toBeVisible();
-    await expect(
-      needs(page).getByText('Sedan 3 november kan Clew inte läsa det som är ditt där.', { exact: true }),
-    ).toBeVisible();
-    // The card Clew kept from the system stands as it was when the account last worked, and says so.
-    await expect(page.locator('#work-fakturor')).toContainText('kan vara gammal');
-    await expect(page.getByText(/svarar inte/)).toHaveCount(0);
-    expect((await announcements(page)).filter(said => said.includes('svarar inte'))).toEqual([]);
-  });
+  // The cards' read names the system as blocked where no session stands behind its scan; where one does, the scan is
+  // taken up again by the read itself and the status says nothing. The page says the same in both.
+  for (const status of ['blocked', 'taken up again'] as const)
+    test(`a system that no longer accepts the account is not said to be silent, and its kept cards say they may be old (${status})`, async ({
+      page,
+      api,
+    }) => {
+      api.threads = api.threads.filter(t => t.id === 'fakturor');
+      api.accounts = [entry('finance', 'Ekonomisystemet', 'needs-link')];
+      api.sources = [
+        {
+          connector: 'finance',
+          state: status === 'blocked' ? 'blocked' : 'pending',
+          lastSuccess: '2026-11-03T07:00:00.000Z',
+          error: status === 'blocked' ? 'authorization-required' : null,
+        },
+      ];
+      await open(page, '/');
+      await expect(
+        needs(page).getByText('Ekonomisystemet godtar inte längre ditt konto', { exact: true }),
+      ).toBeVisible();
+      await expect(
+        needs(page).getByText('Sedan 3 november kan Clew inte läsa det som är ditt där.', { exact: true }),
+      ).toBeVisible();
+      // The card Clew kept from the system stands as it was when the account last worked, and says so.
+      await expect(page.locator('#work-fakturor')).toContainText('kan vara gammal');
+      await expect(page.getByText(/svarar inte/)).toHaveCount(0);
+      expect((await announcements(page)).filter(said => said.includes('svarar inte'))).toEqual([]);
+    });
 
   test('the system’s own list says it where its rows would be, with the one button', async ({ page, api }) => {
     const area: Area = {
