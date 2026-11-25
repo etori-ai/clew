@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, type CalendarRef, type EventInput } from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/react/timegrid';
 import dayGridPlugin from '@fullcalendar/react/daygrid';
@@ -121,7 +121,35 @@ const SLOT_MIN = 26;
  * stretched; everything else is read-only. The same component, `compact`,
  * is the day strip and the list inside a panel, a dialog or a chat bubble (D32).
  */
-export function EventCalendar({
+export function EventCalendar({ onItemClick, onDraftChange, onMoveProposal, onSelectRange, ...display }: Props) {
+  // Keep a drag attached to its calendar while a host read settles. Receiving new handlers alone
+  // must not replace FullCalendar's view context between pointer-down and pointer-up.
+  const latest = useRef({ onItemClick, onDraftChange, onMoveProposal, onSelectRange });
+  useLayoutEffect(() => {
+    latest.current = { onItemClick, onDraftChange, onMoveProposal, onSelectRange };
+  }, [onItemClick, onDraftChange, onMoveProposal, onSelectRange]);
+  const handlers = useMemo(
+    () => ({
+      onItemClick: (item: AgendaItem) => latest.current.onItemClick?.(item),
+      onDraftChange: (start: string, end: string) => latest.current.onDraftChange?.(start, end),
+      onMoveProposal: (item: AgendaItem, start: string, end: string) =>
+        latest.current.onMoveProposal?.(item, start, end),
+      onSelectRange: (start: string, end: string) => latest.current.onSelectRange?.(start, end),
+    }),
+    [],
+  );
+  return (
+    <CalendarGrid
+      {...display}
+      onItemClick={onItemClick && handlers.onItemClick}
+      onDraftChange={onDraftChange && handlers.onDraftChange}
+      onMoveProposal={onMoveProposal && handlers.onMoveProposal}
+      onSelectRange={onSelectRange && handlers.onSelectRange}
+    />
+  );
+}
+
+const CalendarGrid = memo(function CalendarGrid({
   view,
   date,
   items: all,
@@ -412,7 +440,7 @@ export function EventCalendar({
       />
     </div>
   );
-}
+});
 
 /** The day header as a heading in the document outline, read as "ons 4 nov." like the agenda; shown as the number over the weekday in a grid and as one line in a list, today in the accent. FullCalendar hands over the real instant, so the Stockholm date is derived, never the UTC one. */
 function DayHeading({
