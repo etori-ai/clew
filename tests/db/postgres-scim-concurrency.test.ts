@@ -5,7 +5,8 @@ import { database, schema } from '../../packages/db/src/index';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
 import type { ProvisionStore, ProvisionTx } from '../../apps/server/src/modules/people/ports';
 import { scimUsecases, usersAdminUsecases } from '../../apps/server/src/modules/people/usecases';
-import type { AuthenticatedContext } from '@clew/contracts';
+import { SCIM_EMPLOYMENT_SCHEMA, type AuthenticatedContext } from '@clew/contracts';
+import { waitForBlockedTransaction } from './wait-for-blocked-transaction';
 
 /**
  * Two SCIM requests at once on Postgres (D68): what the memory adapter cannot show. A derivation locks the person, so
@@ -682,42 +683,39 @@ test('groups that share their members, renamed while members come and go, writte
       id === outOf(5, 2) ? undefined : { role: 'employee', capabilities: id === outOf(5, 0) ? [] : ['admin.users'] },
     );
 });
-test('concurrent user patches preserve the name and the deactivation', async () => {
-  const { deps, p, store, user, scim } = stack();
+test('concurrent user patches preserve both employment additions, the name and the deactivation', async () => {
+  const { deps, p, user, scim } = stack();
+  const unitId = p.id + '-school';
+  await scim.createGroup(p, { externalId: 'unit:' + unitId, displayName: 'School' }, BASE);
   const { id } = await scim.createUser(p, user(1), BASE);
-  const slow = paused(store);
-  const patch = (path: string, value: string | boolean) => ({
+  const patch = (path: string, value: string | boolean, title: string) => ({
     schemas: [PATCH],
-    Operations: [{ op: 'replace', path, value }],
+    Operations: [
+      { op: 'replace', path, value },
+      { op: 'add', path: SCIM_EMPLOYMENT_SCHEMA + ':employments', value: [{ unitId, title }] },
+    ],
   });
-  const first = scimUsecases({ store: slow.store, ...deps }).patchUser(p, id, patch('active', false), BASE);
-  await slow.atRead;
-  // The first write is uncommitted. A second writer must read the committed inactive state.
-  let reading!: () => void;
-  const started = new Promise<void>(resolve => {
-    reading = resolve;
+  const firstWritten = Promise.withResolvers<void>();
+  const first = database().transaction(async tx => {
+    const writer = scimUsecases({ ...deps, store: postgresProvisionStore({ db: () => tx }) });
+    await writer.patchUser(p, id, patch('active', false, 'Teacher'), BASE);
+    firstWritten.resolve();
+    await waitForBlockedTransaction(tx);
   });
-  const observed: ProvisionStore = {
-    transaction: fn =>
-      store.transaction(tx =>
-        fn({
-          ...tx,
-          readUser: (...args) => {
-            reading();
-            return tx.readUser(...args);
-          },
-        }),
-      ),
-  };
-  const second = scimUsecases({ store: observed, ...deps }).patchUser(p, id, patch('displayName', 'New name'), BASE);
-  try {
-    await started;
-    await new Promise(resolve => setTimeout(resolve, 100));
-  } finally {
-    slow.release();
-  }
-  await Promise.all([first, second]);
-  expect(await scim.getUser(p, id, BASE)).toMatchObject({ active: false, displayName: 'New name' });
+  const second = firstWritten.promise.then(() =>
+    scim.patchUser(p, id, patch('displayName', 'New name', 'Tutor'), BASE),
+  );
+  const [, written] = await Promise.all([first, second]);
+  const jobs = [
+    { unitId, title: 'Teacher' },
+    { unitId, title: 'Tutor' },
+  ];
+  expect(written[SCIM_EMPLOYMENT_SCHEMA]?.employments).toEqual(jobs);
+  expect(await scim.getUser(p, id, BASE)).toMatchObject({
+    active: false,
+    displayName: 'New name',
+    [SCIM_EMPLOYMENT_SCHEMA]: { employments: jobs },
+  });
   const rows = await database()
     .select({ action: schema.audit.action })
     .from(schema.audit)
