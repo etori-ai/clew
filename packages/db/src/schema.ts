@@ -166,7 +166,13 @@ export const groups = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  t => [uniqueIndex('auth_group_external_id').on(t.externalId), index('auth_group_parent_unit').on(t.parentUnitId)],
+  t => [
+    uniqueIndex('auth_group_external_id').on(t.externalId),
+    index('auth_group_parent_unit').on(t.parentUnitId),
+    // The organisation tree's nodes, its `unit:` groups, by the organisation and the key's prefix (DE-L12): the operator
+    // class compares bytes, so `like 'unit:%'` is a range of the index whatever the database's collation.
+    index('auth_group_organisation_key').on(t.organisationId, t.externalId.op('text_pattern_ops')),
+  ],
 );
 export const groupMembers = pgTable(
   'auth_group_member',
@@ -364,6 +370,13 @@ export const threads = pgTable(
       .on(t.personId, t.updatedAt.desc().nullsFirst(), t.id.desc().nullsFirst())
       .where(sql`${t.kind} = 'question'`),
     check('thread_kind', sql`${t.kind} IN ('pushed', 'question')`),
+    // A person's unresolved work, which every read of the stream lists in full (DE-L12): the condition is `UNRESOLVED`
+    // of `threads.ts` written out, so the planner sees that the list's condition is the index's.
+    index('thread_unresolved')
+      .on(t.personId, t.createdAt)
+      .where(
+        sql`${t.kind} = 'pushed' AND (${t.state} = 'open' OR coalesce(${t.execution}->>'state' IN ('pending','running','unknown','partial','failed'), false))`,
+      ),
     // One open pushed thread per topic and person: the scan is idempotent even when two requests race.
     uniqueIndex('thread_open_topic')
       .on(t.personId, t.topic)
@@ -797,14 +810,255 @@ export const policyChanges = pgTable('policy_change', {
   id: text('id').primaryKey(),
   revision: bigint('revision', { mode: 'number' }).notNull().default(0),
 });
-// Installation-wide content counters, one row per thing an administration page shows that is no one person's: the
-// change stream folds a row into the revision of those who may see that page. `competence-source`: a source's read
-// under Administration › Kompetens › Källor (WD-L8), bumped by `competence_source_changed` (migration 0087).
-export const contentChanges = pgTable('content_change', {
-  id: text('id').primaryKey(),
-  revision: bigint('revision', { mode: 'number' }).notNull().default(0),
-});
-
+/**
+ * The change signals (D46): deferred constraint triggers, hand-written in migrations, which a generated migration knows
+ * nothing of, so a migration that recreates a table here must make its trigger again. A table the browser draws has one,
+ * and every other table is in `unsignalledTables` with the reason; `tests/db/postgres-changes.test.ts` holds the
+ * database to both lists, trigger by trigger, so a new table is classified before it lands. What each function moves:
+ *
+ * - `clew_content_changed`: the content counter of the row's `person_id`.
+ * - `clew_people_changed`: the content counter of every person the columns named as its arguments hold, before and
+ *   after the change, in id order, so a person taken off a row sees it go.
+ * - `clew_boarding_changed`: the same for a boarding plan's people (its person, buddy, starter and holders), besides a
+ *   row's own owner and who marked it done.
+ * - `clew_person_policy_changed`: the person's policy counter, which makes the browser read everything again.
+ * - `clew_connector_policy_changed`: the installation's policy counter, unless only the columns its arguments name changed.
+ * - `clew_shared_changed`: the installation-wide content counter its first argument names, at most once a transaction,
+ *   unless only the columns its further arguments name changed. A counter is a sequence of its own,
+ *   `content_change_<id>` (migration 0090, hand-written as these triggers are), moved by `nextval`, which no transaction
+ *   holds a lock on, so a provisioner's parallel requests never queue on it. `SHARED_CONTENT` in
+ *   `apps/server/src/shared-content.ts` says whose revision folds each counter in.
+ * - `clew_aimed_changed`: a row aimed at one person, by the column its second argument names, moves that person's
+ *   content counter, the old row's and the new row's; a row aimed at no one person moves the installation counter its
+ *   first argument names, as `clew_shared_changed` does.
+ *
+ * A column added later counts unless it is named as not drawn, so most columns need no change here; a new column naming
+ * a person who should see the row is added to its table's arguments.
+ */
+export const changeSignals: ReadonlyArray<{ table: string; trigger: string; fn: string; args?: readonly string[] }> = [
+  { table: 'thread', trigger: 'thread_content_changed', fn: 'clew_content_changed' },
+  { table: 'execution', trigger: 'execution_content_changed', fn: 'clew_content_changed' },
+  { table: 'execution_job', trigger: 'execution_job_content_changed', fn: 'clew_content_changed' },
+  { table: 'proposal', trigger: 'proposal_content_changed', fn: 'clew_content_changed' },
+  { table: 'timer_intent', trigger: 'timer_content_changed', fn: 'clew_content_changed' },
+  { table: 'refresh_request', trigger: 'refresh_content_changed', fn: 'clew_content_changed' },
+  { table: 'attention_delivery', trigger: 'delivery_content_changed', fn: 'clew_content_changed' },
+  { table: 'followup_policy', trigger: 'followup_content_changed', fn: 'clew_content_changed' },
+  { table: 'model_choice', trigger: 'model_choice_content_changed', fn: 'clew_content_changed' },
+  {
+    table: 'competence_holding',
+    trigger: 'competence_holding_content_changed',
+    fn: 'clew_people_changed',
+    args: ['person_id', 'registered_by', 'decided_by', 'validated_by', 'revoked_by'],
+  },
+  {
+    table: 'talk',
+    trigger: 'talk_content_changed',
+    fn: 'clew_people_changed',
+    args: ['employee_id', 'held_by', 'booked_by'],
+  },
+  {
+    table: 'talk_commitment',
+    trigger: 'talk_commitment_content_changed',
+    fn: 'clew_people_changed',
+    args: ['employee_id', 'owner_id', 'created_by', 'done_by'],
+  },
+  {
+    table: 'dialogue_activity',
+    trigger: 'dialogue_activity_content_changed',
+    fn: 'clew_people_changed',
+    args: ['owner_id', 'created_by', 'done_by'],
+  },
+  {
+    table: 'dialogue_assessment',
+    trigger: 'dialogue_assessment_content_changed',
+    fn: 'clew_people_changed',
+    args: ['author_id'],
+  },
+  { table: 'dialogue_note', trigger: 'dialogue_note_content_changed', fn: 'clew_people_changed', args: ['author_id'] },
+  { table: 'boarding_plan', trigger: 'boarding_plan_content_changed', fn: 'clew_boarding_changed' },
+  { table: 'boarding_plan_holder', trigger: 'boarding_plan_holder_content_changed', fn: 'clew_boarding_changed' },
+  { table: 'boarding_item', trigger: 'boarding_item_content_changed', fn: 'clew_boarding_changed' },
+  { table: 'auth_person', trigger: 'person_policy_changed', fn: 'clew_person_policy_changed' },
+  { table: 'auth_access_grant', trigger: 'grant_policy_changed', fn: 'clew_person_policy_changed' },
+  {
+    table: 'connector',
+    trigger: 'connector_policy_changed',
+    fn: 'clew_connector_policy_changed',
+    // What only Administration › Anslutna system draws (the `connectors` counter), and who changed it when.
+    args: [
+      'health',
+      'manifest_offered',
+      'manifest_offered_at',
+      'manifest_at',
+      'secret_changed_at',
+      'created_by',
+      'updated_by',
+      'created_at',
+      'updated_at',
+      'version',
+    ],
+  },
+  // Everyone's revision folds these in.
+  { table: 'talk_round', trigger: 'talk_round_changed', fn: 'clew_shared_changed', args: ['talk-round'] },
+  // What a person's own model menu draws (its name, description, state, audience and the default): not the model the
+  // provider runs, its tools or reasoning, or who changed it when. A provider draws nothing there; its models do.
+  {
+    table: 'model',
+    trigger: 'model_menu_changed',
+    fn: 'clew_shared_changed',
+    args: [
+      'model-menu',
+      'model',
+      'tools',
+      'reasoning',
+      'created_by',
+      'updated_by',
+      'created_at',
+      'updated_at',
+      'version',
+    ],
+  },
+  {
+    table: 'competence_type',
+    trigger: 'competence_type_changed',
+    fn: 'clew_shared_changed',
+    args: ['competence-catalogue'],
+  },
+  // A requirement of a position or a unit is the catalogue's; one of a single person reaches that person alone.
+  {
+    table: 'competence_requirement',
+    trigger: 'competence_requirement_changed',
+    fn: 'clew_aimed_changed',
+    args: ['competence-catalogue', 'person_id'],
+  },
+  {
+    table: 'competence_share_target',
+    trigger: 'competence_share_target_changed',
+    fn: 'clew_shared_changed',
+    args: ['competence-catalogue'],
+  },
+  { table: 'dialogue_area', trigger: 'dialogue_area_changed', fn: 'clew_shared_changed', args: ['dialogue-setup'] },
+  {
+    table: 'dialogue_question',
+    trigger: 'dialogue_question_changed',
+    fn: 'clew_shared_changed',
+    args: ['dialogue-setup'],
+  },
+  // Those who hold `admin.connectors`: Administration › Modeller, every change to a provider or a model, a key, a test's
+  // health and who changed it included.
+  { table: 'model_provider', trigger: 'model_provider_changed', fn: 'clew_shared_changed', args: ['models'] },
+  { table: 'model', trigger: 'model_changed', fn: 'clew_shared_changed', args: ['models'] },
+  // Those who hold `admin.connectors`: a check's health and an offered manifest, besides what the policy counter moves.
+  { table: 'connector', trigger: 'connector_changed', fn: 'clew_shared_changed', args: ['connectors'] },
+  { table: 'follow_binding', trigger: 'follow_binding_changed', fn: 'clew_shared_changed', args: ['connectors'] },
+  // Those who hold `admin.competence`: Administration › Kompetens › Källor. A lease renewed between pages draws nothing.
+  {
+    table: 'competence_source',
+    trigger: 'competence_source_changed',
+    fn: 'clew_shared_changed',
+    args: ['competence-source', 'lease_until'],
+  },
+  {
+    table: 'competence_source_mapping',
+    trigger: 'competence_source_mapping_changed',
+    fn: 'clew_shared_changed',
+    args: ['competence-source'],
+  },
+  // Those who hold `admin.boarding`: the layers plans are assembled from.
+  { table: 'boarding_layer', trigger: 'boarding_layer_changed', fn: 'clew_shared_changed', args: ['boarding-layers'] },
+  {
+    table: 'boarding_layer_item',
+    trigger: 'boarding_layer_item_changed',
+    fn: 'clew_shared_changed',
+    args: ['boarding-layers'],
+  },
+  // Those who hold `admin.appearance`. Every other browser reads the appearance when it loads the page.
+  {
+    table: 'installation_appearance',
+    trigger: 'installation_appearance_changed',
+    fn: 'clew_shared_changed',
+    args: ['appearance'],
+  },
+  // Those who hold `admin.users`: the organisation as provisioned and mapped, once a transaction however many rows it
+  // writes. SCIM has no bulk request, so a push of ten thousand people is ten thousand transactions and as many moves,
+  // which take no lock that one of them holds to its commit. A person's own access moves with their grant, and a
+  // provisioner's last request draws nothing new.
+  {
+    table: 'auth_person',
+    trigger: 'auth_person_changed',
+    fn: 'clew_shared_changed',
+    args: ['organisation', 'updated_at'],
+  },
+  { table: 'auth_unit', trigger: 'auth_unit_changed', fn: 'clew_shared_changed', args: ['organisation'] },
+  {
+    table: 'auth_group',
+    trigger: 'auth_group_changed',
+    fn: 'clew_shared_changed',
+    args: ['organisation', 'updated_at'],
+  },
+  {
+    table: 'auth_group_member',
+    trigger: 'auth_group_member_changed',
+    fn: 'clew_shared_changed',
+    args: ['organisation'],
+  },
+  { table: 'auth_assignment', trigger: 'auth_assignment_changed', fn: 'clew_shared_changed', args: ['organisation'] },
+  { table: 'auth_position', trigger: 'auth_position_changed', fn: 'clew_shared_changed', args: ['organisation'] },
+  {
+    table: 'auth_person_position',
+    trigger: 'auth_person_position_changed',
+    fn: 'clew_shared_changed',
+    args: ['organisation'],
+  },
+  {
+    table: 'auth_group_capability',
+    trigger: 'auth_group_capability_changed',
+    fn: 'clew_shared_changed',
+    args: ['organisation'],
+  },
+  {
+    table: 'auth_group_relation',
+    trigger: 'auth_group_relation_changed',
+    fn: 'clew_shared_changed',
+    args: ['organisation'],
+  },
+  {
+    table: 'auth_provisioner',
+    trigger: 'auth_provisioner_changed',
+    fn: 'clew_shared_changed',
+    args: ['organisation', 'last_seen_at'],
+  },
+];
+/** The tables with no change signal, and why: none is drawn by the browser except through a row that has one. */
+export const unsignalledTables: Readonly<Record<string, string>> = {
+  thread_message: 'written with its thread, whose updated_at moves',
+  thread_subject: "an index of a thread's rows, written with the thread",
+  audit: 'written in the transaction of the change it records, which has its own signal',
+  auth_audit: 'a log of sign-ins and provisioning; no page follows it as it grows',
+  competence_read_log: 'a log of reads; signalling it would make every read notify its own reader',
+  competence_retention: "drawn by no page; an operator's setting",
+  competence_erasure: "the erasure engine's state, drawn by no page",
+  auth_session: 'changes with every sign-in and token refresh; the people pages read it again when opened',
+  auth_identity_binding: 'changes with a first sign-in; the people pages read it again when opened',
+  auth_login_transaction: 'a sign-in under way',
+  auth_logout_receipt: 'a sign-out under way',
+  attention_day: "the attention budget's counter; the deliveries it admits are signalled",
+  work_occurrence: 'the source occurrence behind a thread, drawn through the thread',
+  watch_intent: "a watch step's timer, drawn through its job's thread",
+  dispatch_outbox: 'the dispatch queue of an execution, drawn through the execution',
+  job: 'scheduled work, drawn through what it changes',
+  connector_signing_key: 'key material, never drawn',
+  person_change: 'a change counter',
+  policy_change: 'a change counter',
+};
+type ChangeSignal = (typeof changeSignals)[number];
+/** The installation counter a signal moves, by its first argument; undefined for a signal that moves none. */
+export const sharedCounterOf = (signal: ChangeSignal) =>
+  signal.fn === 'clew_shared_changed' || signal.fn === 'clew_aimed_changed' ? signal.args?.[0] : undefined;
+/** The columns a signal's arguments name: every argument after the counter, if it moves one. */
+export const signalColumns = (signal: ChangeSignal) =>
+  (sharedCounterOf(signal) === undefined ? (signal.args ?? []) : (signal.args ?? []).slice(1)) as readonly string[];
 // Desired timer state is also its coalesced outbox: acknowledgement is fenced by
 // generation, state and delivery attempt. No source payload enters a workflow.
 export const timerIntents = pgTable(
@@ -882,7 +1136,8 @@ export const refreshRequests = pgTable(
     // as the person runs with while it is active (D26). Null when no session asked since the last request without one.
     session: text('session'),
   },
-  t => [index('refresh_due').on(t.nextAt)],
+  // By person for the statuses every read of the stream asks for (DE-L12), and by when the next is due for the worker.
+  t => [index('refresh_due').on(t.nextAt), index('refresh_person').on(t.personId, t.connector)],
 );
 export const workOccurrences = pgTable(
   'work_occurrence',
@@ -932,7 +1187,9 @@ export const deliveries = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     claimedAt: timestamp('claimed_at', { withTimezone: true }),
   },
-  t => [index('delivery_person_due').on(t.personId, t.dueAt)],
+  // A person's deliveries ready to be shown, without reading the claimed ones of every earlier day, and a batch's, which
+  // its release and a claim read (DE-L12).
+  t => [index('delivery_person_state').on(t.personId, t.state, t.dueAt), index('delivery_batch').on(t.batch, t.state)],
 );
 
 // The installation's appearance (D98): one row for the whole installation, `installation`, absent until an
@@ -1185,7 +1442,8 @@ export const boardingLayers = pgTable(
     check('boarding_layer_event', sql`${t.event} IN ('introduction', 'leaving')`),
     check('boarding_layer_condition', sql`${t.conditionKind} IN ('all', 'unit', 'position', 'employment_type')`),
     check('boarding_layer_value', sql`(${t.conditionKind} = 'all') = (${t.conditionValue} IS NULL)`),
-    uniqueIndex('boarding_layer_name').on(t.organisationId, t.event, sql`lower(${t.name})`),
+    // Folded by ICU's root locale, as a user name is, so Å and å are one letter whatever the database's collation (DE-L8).
+    uniqueIndex('boarding_layer_name').on(t.organisationId, t.event, sql`lower(${t.name} collate "und-x-icu")`),
   ],
 );
 /** D124: one template item of a layer, in its place in the list: template text an administrator wrote, never sealed. */
@@ -1354,8 +1612,9 @@ export const competenceTypes = pgTable(
       'competence_type_merged',
       sql`${t.mergedInto} IS NULL OR (${t.archivedAt} IS NOT NULL AND ${t.mergedInto} <> ${t.id})`,
     ),
+    // Folded by ICU's root locale, as a user name is, so Å and å are one letter whatever the database's collation (DE-L8).
     uniqueIndex('competence_type_name')
-      .on(t.organisationId, sql`lower(${t.name})`)
+      .on(t.organisationId, sql`lower(${t.name} collate "und-x-icu")`)
       .where(sql`${t.archivedAt} IS NULL`),
     uniqueIndex('competence_type_source_uri')
       .on(t.organisationId, t.sourceUri)

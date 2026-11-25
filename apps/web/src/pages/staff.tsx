@@ -305,10 +305,9 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
           </VStack>
         ) : (
           <AsyncContent pending={pending} fallback={<ContentSkeleton />} gap={SECTION_GAP}>
-            {/* A source's refusal of an action from a row's menu, said aloud as it came (entity-actions.ts). */}
-            {(action.error || silent.length > 0 || lensLine) && (
+            {/* A source's refusal of an action from a row's menu is said in its dialog alone (entity-actions.ts). */}
+            {(silent.length > 0 || lensLine) && (
               <VStack gap={2}>
-                {action.error && <Text as="p">{action.error}</Text>}
                 {lensLine && <Text type="supporting">{lensLine}</Text>}
                 {silentLine}
               </VStack>

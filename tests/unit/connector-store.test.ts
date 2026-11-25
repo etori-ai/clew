@@ -15,5 +15,13 @@ connectorStoreContract('memory', async () => {
     async cardState(threadId) {
       return store.threads.find(t => t.id === threadId)?.state;
     },
+    async copiedFrom(connector) {
+      store.copied.push(
+        { connector, kind: 'source' },
+        { connector, kind: 'holding' },
+        { connector, kind: 'holding' },
+        { connector, kind: 'mapping' },
+      );
+    },
   };
 });

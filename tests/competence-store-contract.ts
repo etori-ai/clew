@@ -1125,6 +1125,12 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         );
         expect(found.map(p => p.id).sort()).toEqual([w.anna, w.p + '-cia'].sort());
         expect(await w.store.transaction(tx => tx.activeByUserName([]))).toEqual([]);
+        // Å, Ä and Ö fold as A to Z do, and a name written decomposed (NFD) is the same letters (DE-L8).
+        await w.seedPerson(person(w.p + '-asa', w.org, 'Åsa.Öberg.' + w.p));
+        for (const asked of ['åsa.öberg.' + w.p, ('ÅSA.ÖBERG.' + w.p).normalize('NFD')])
+          expect((await w.store.transaction(tx => tx.activeByUserName([asked]))).map(p => p.id)).toEqual([
+            w.p + '-asa',
+          ]);
       });
 
       test('erasure takes copied rows with the person, and the export carries copied rows and mappings', async () => {
