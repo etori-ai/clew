@@ -270,6 +270,26 @@ branch is not ready for `main`.
   so every link was refused there. Both are now read at each use, and a refusal's reason is logged. Nothing in the
   web app starts linking yet: the start was a call from the browser's console.
 
+- **The outside test** (item 14, the third of the three), run on 2026-11-25 against the development stack's
+  Nextcloud 35.0.2 with [linked-account-nextcloud-check.ts](../../scripts/linked-account-nextcloud-check.ts), four
+  times. Every check held from the second run; the first run's one failure was the check's own expectation about
+  Nextcloud, below. The Approval connector of D101 runs in its linked mode
+  (`NEXTCLOUD_ACCOUNT=linked`), and nothing else in it changes. A client is made in Nextcloud with
+  `occ oauth2:add-client`; the authorize address as a browser reaches Nextcloud, the token address as the server
+  reaches it, and the client with its secret are entered, since Nextcloud publishes nothing to discover. Two people
+  sign in at Nextcloud's own sign-in page and grant access on its own page; Nextcloud answers the code with tokens
+  though it is sent PKCE and a resource it does not know; each person reads their own waiting files (three and two,
+  none shared) and a scan raises a card per file, with no session; a token made to look due is refreshed and the
+  rotated refresh token kept; a file is approved in Nextcloud and read back (and undone with the seed's reset); a
+  token removed in Nextcloud makes the connector answer `authorization-required`, the link is lost as
+  `refused-by-system` with its audit row, and linking again restores the list. Clew's code did not change for it.
+  What it showed about the product:
+  - Nextcloud keeps taking the access token a refresh replaced, for a while. Clew never sends it again, so nothing
+    follows from it here.
+  - A token Clew drops when a person unlinks stays valid at Nextcloud: it has no revocation endpoint. Nextcloud's own
+    call to remove a token (`DELETE /ocs/v2.php/core/apppassword`, as the token) does end it. That is one answer to
+    the open item on unlinking, and it would be the connector's to make.
+
 Where it differs from the items above:
 
 - **Item 4.** The approval is kept in the module's own table and made by an operator with
@@ -293,7 +313,15 @@ Where it differs from the items above:
 
 Not built: both pages and anything in the web app that starts linking; the administrator's review and the entered
 addresses on Administration › Anslutna system; a client metadata document served by Clew; the callback for a person
-whose session ended while they were at the system; and, of item 14, the outside test against Nextcloud's own server.
+whose session ended while they were at the system.
+
+Against item 15, what holds and what does not: two approvers linked and see different files, a scan with no session
+raised their cards, a decision was written and read back with no session, a link taken away in Nextcloud reads as
+`needs-link` and linking again restores it, and the fixture passed discovery, registration, rotation and revocation.
+Not yet: the scheduled nightly scan itself has not run with a linked account (the scan was asked for directly, and
+the ledger's path was run with the purchasing fixture, not with Nextcloud); a person disabled by provisioning losing
+their links is unit-tested and bound, not run live; and the linking flow has no page, so it has had no pass with a
+screen reader. The record stays provisional.
 
 ## Sources
 
