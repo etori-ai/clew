@@ -109,7 +109,7 @@ export interface ActionDialogProps {
   initialValues?: AskValues;
   /** The values typed so far, held by the caller so a closed and reopened dialog keeps them; with `onValuesChange`. */
   values?: AskValues;
-  onValuesChange?: (values: AskValues) => void;
+  onValuesChange?: (update: (current: AskValues) => AskValues) => void;
   /**
    * Sends the decision with the values as the server takes them (trimmed, empty optional answers left out). Resolves
    * null once it went through (the caller closes the dialog), or the server's Swedish refusal, which the dialog places.
@@ -165,8 +165,8 @@ export function ActionDialog({
   const announce = useAnnounce();
   const [own, setOwn] = useState<AskValues>(initialValues ?? {});
   const values = held ?? own;
-  const setValues = (next: AskValues) => (onValuesChange ? onValuesChange(next) : setOwn(next));
-  const setValue = (property: string, value: string) => setValues({ ...values, [property]: value });
+  const setValues = onValuesChange ?? setOwn;
+  const setValue = (property: string, value: string) => setValues(current => ({ ...current, [property]: value }));
   // Where the dialog is: chosen afresh each time it opens, from the values it opens with.
   const [session, setSession] = useState(() => ({
     open: false,
@@ -618,7 +618,7 @@ function MeetingField({
   const onSlot = slots.some(s => s.start === value);
   const [other, setOther] = useState<{ date?: string; time?: string } | null>(null);
   // A value that is not one of the times offered is "Annan tid" (a value from an assistant's draft, or typed before).
-  const choice = other || (value && known && !onSlot) ? OTHER : onSlot ? value : (slots[0]?.start ?? OTHER);
+  const choice = !slots.length || other || (value && !onSlot) ? OTHER : value;
   useEffect(() => {
     // The first free time is chosen until the person chooses otherwise (the template: a sensible default).
     if (!value && !other && slots[0]) onChange(slots[0].start);

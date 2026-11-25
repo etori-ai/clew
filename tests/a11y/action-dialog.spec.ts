@@ -143,6 +143,51 @@ test.describe('the action dialog on a work item', () => {
     await expect(item.getByRole('list', { name: 'Kvitto, rad för rad' })).toHaveCount(0);
   });
 
+  test('a new booking keeps both required meeting times when their suggestions are already loaded', async ({
+    page,
+    api,
+  }) => {
+    const item = api.threads.find(thread => thread.id === 'omtanke')!;
+    item.actions = item.actions.map(action =>
+      action.id === 'book'
+        ? {
+            ...action,
+            path: {
+              ...BOOK_TALK_PATH,
+              asks: [
+                ...BOOK_TALK_PATH.asks,
+                { kind: 'meeting', property: 'followup', label: 'Uppföljning', required: true, durationMinutes: 45 },
+              ],
+            },
+          }
+        : action,
+    );
+    await open(page, '/todo?item=omtanke');
+    const book = pane(page).getByRole('button', { name: 'Boka samtalet' });
+    await book.click();
+    const dialog = dialogOf(page);
+    const suggested = (label: RegExp) =>
+      dialog.getByRole('radiogroup', { name: label }).getByRole('radio', { name: /^Torsdag 5 november/ });
+    await expect(suggested(/^När/)).toBeChecked();
+    await expect(suggested(/^Uppföljning/)).toBeChecked();
+
+    // Closing the work item discards its draft. Its calendar suggestions are still cached for the next booking.
+    await dialog.getByRole('button', { name: 'Avbryt' }).click();
+    await pane(page).getByRole('button', { name: 'Stäng ärendet' }).click();
+    await page.locator('a[href="/todo?item=omtanke"]').first().click();
+    await book.click();
+    await expect(suggested(/^När/)).toBeChecked();
+    await expect(suggested(/^Uppföljning/)).toBeChecked();
+    await dialog.getByRole('textbox', { name: 'Plats' }).fill('Rum 12');
+    await dialog.getByRole('button', { name: 'Nästa' }).click();
+    await expect
+      .poll(() => api.effectReads.at(-1)?.body)
+      .toEqual({
+        actionId: 'book',
+        values: { when: '2026-11-05T12:15:00.000Z', followup: '2026-11-05T12:15:00.000Z', place: 'Rum 12' },
+      });
+  });
+
   test('by keyboard alone: a time chosen with the arrows, the values kept when Esc closes it, and nothing sent', async ({
     page,
     api,
@@ -790,6 +835,7 @@ test.describe('an action on a work item whose system does not answer', () => {
     await pane(page).getByRole('button', { name: 'Boka samtalet' }).click();
     const dialog = dialogOf(page);
     await dialog.getByRole('textbox', { name: 'Plats' }).fill('Bergsåkers skola, rum 12');
+    await expect(dialog.getByRole('group', { name: 'Din dag, torsdag 5 november' })).toBeVisible();
     await dialog.getByRole('button', { name: 'Nästa' }).click();
     await expect(dialog.getByText('Personalsystemet svarar inte sedan 06:00', { exact: true })).toBeVisible();
     await expect(

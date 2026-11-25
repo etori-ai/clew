@@ -248,7 +248,7 @@ export function useEntityAction(): EntityActionStart {
         },
         ...(asking.startAt ? { startAt: asking.startAt } : {}),
         values: drafts[asking.draft] ?? {},
-        onValuesChange: values => setDrafts(d => ({ ...d, [asking.draft]: values })),
+        onValuesChange: update => setDrafts(d => ({ ...d, [asking.draft]: update(d[asking.draft] ?? {}) })),
         onSend: send,
       })
     : null;

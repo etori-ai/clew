@@ -476,7 +476,7 @@ export function useCardAction({
       }}
       {...(dialog.startAt ? { startAt: dialog.startAt } : {})}
       values={drafts[dialog.action.id] ?? {}}
-      onValuesChange={values => setDrafts(d => ({ ...d, [dialog.action.id]: values }))}
+      onValuesChange={update => setDrafts(d => ({ ...d, [dialog.action.id]: update(d[dialog.action.id] ?? {}) }))}
       onSend={sendDialog}
     />
   ) : null;
