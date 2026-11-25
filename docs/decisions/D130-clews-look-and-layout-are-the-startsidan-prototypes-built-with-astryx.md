@@ -278,8 +278,8 @@ a row leads to the item's page.
    width.
 
 What narrows the rows, what is said aloud when it does, the addresses, where a row leads and where the focus goes are
-unchanged. Not changed either, and still over the first row on a phone: the four key figures of item 19, two by two
-at 375 px and one under the other at 320 px.
+unchanged. Not changed either, and still over the first row on a phone: the four key figures of item 19, one under
+the other below 480 px (item 3 of the amendment above).
 
 The choices in items 2 to 4 are the build's own; nobody outside the repository has used them. The two canvases that
 draw Att göra on a phone (boards PhoneInbox of D112's canvas and the phone frames of D126's) could not be opened from

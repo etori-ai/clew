@@ -28,6 +28,12 @@ const upload = (page: Page, label: string | RegExp, name: string, mimeType: stri
     .getByLabel(label, { exact: true })
     .and(page.locator('input[type="file"]'))
     .setInputFiles({ name, mimeType, buffer });
+/**
+ * Text drawn on the page, not its copy in a live region: Astryx's field status is also said through the polite region,
+ * which holds the same words for a while, so an exact-text locator alone would match both.
+ */
+const drawn = (page: Page, text: string) =>
+  page.getByRole('main').getByText(text, { exact: true }).and(page.locator(':not([aria-live])'));
 const themeFile = (page: Page, buffer: Buffer) =>
   upload(page, 'Temafil', 'tema.tokens.json', 'application/json', buffer);
 const accent = (page: Page) =>
@@ -57,7 +63,7 @@ test.describe('appearance administration', () => {
         // The preview is drawn in the candidate's own colours, in both appearances: axe checks their contrast as drawn.
         await expect(page.getByRole('heading', { level: 3, name: 'Mörkt läge' })).toBeVisible();
         // The field answers the file with a status that fades in (165 ms): its contrast is what it settles at.
-        await expect(page.getByText('Temat håller: Sundsvalls kommun, 50 färger.', { exact: true })).toBeVisible();
+        await expect(drawn(page, 'Temat håller: Sundsvalls kommun, 50 färger.')).toBeVisible();
         await page.evaluate(() =>
           Promise.all(
             document

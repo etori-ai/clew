@@ -79,7 +79,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     // are Att göra's tabs and filter, not pages here, and Start carries no word of its own (rule 8).
     await expect(nav.getByRole('link', { name: 'Start', exact: true })).toHaveAttribute('href', '/');
     await expect(nav.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('href', '/todo');
-    await expect(nav.getByRole('link', { name: /^Att göra/ })).toContainText('6');
+    await expect(nav.getByRole('link', { name: /^Att göra/ })).toContainText('7');
     await expect(nav.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
     // Without a tool an administrator placed there is no Verktyg (D40).
     await expect(nav.getByRole('button', { name: 'Verktyg' })).toHaveCount(0);
@@ -126,8 +126,9 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page.getByRole('heading', { level: 1, name: /^Omtankesamtal med Anna Lindqvist/ })).toBeVisible();
     await open(page, '/todo?tab=done');
     await expect(heading(page, 1, 'Att göra')).toBeVisible();
-    // The queue is a table (board Att göra, the `table-inbox` template): its header row and the two items done.
-    await expect(page.getByRole('table', { name: 'Klart' }).getByRole('row')).toHaveCount(3);
+    // The queue is a table (board Att göra, the `table-inbox` template): its header row and the item done; the
+    // decision with a row in doubt waits on the person under Behöver dig.
+    await expect(page.getByRole('table', { name: 'Klart' }).getByRole('row')).toHaveCount(2);
   });
 
   for (const path of ['/', '/todo?item=fakturor'])
@@ -425,6 +426,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors, on Hem (D
     // The whole tile opens its figure's page, without the model: a click on its text follows the link.
     await card.getByText('4,2 %', { exact: true }).click();
     await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.absenceOverview\?/);
+    await expect(page.getByRole('main').getByText('Anna Lindqvist', { exact: true })).toBeVisible();
   });
   test('a source that does not answer is no tile on Hem: Visa alla counts it, and the unit’s page says it', async ({
     page,
@@ -489,10 +491,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors, on Hem (D
     await expect(lage(page)).toHaveAttribute('aria-busy', 'true');
     await expect(lage(page)).toHaveAttribute('aria-busy', 'false', { timeout: 5000 });
   });
-  test('on a phone the tiles stand two by two and at 320 px one under the other, whole, and nothing overflows', async ({
-    page,
-    api: _,
-  }) => {
+  test('on a phone the tiles stand one under the other, whole, and nothing overflows', async ({ page, api: _ }) => {
     for (const viewport of [phone, narrow]) {
       await page.setViewportSize(viewport);
       await open(page, '/');
@@ -500,15 +499,9 @@ test.describe('D54 Läget: the areas’ figures from their connectors, on Hem (D
         .locator(TILES)
         .evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
       expect(tops).toHaveLength(4);
-      if (viewport === phone) {
-        // Two in a row (`FigureRow`), the second pair under the first.
-        expect(tops[1]).toBe(tops[0]);
-        expect(tops[3]).toBe(tops[2]);
-        expect(tops[2]).toBeGreaterThan(tops[0]! + 50);
-      } else {
-        // At 320 px two do not fit beside each other: one under the other.
-        for (let i = 1; i < tops.length; i++) expect(tops[i]).toBeGreaterThan(tops[i - 1]! + 50);
-      }
+      // Under 480 px a key figure has a row to itself (`FigureRow`, D130's amendment of 2026-11-23, item 3): two side
+      // by side broke a value over two lines.
+      for (let i = 1; i < tops.length; i++) expect(tops[i]).toBeGreaterThan(tops[i - 1]! + 50);
       expect(await lage(page).evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false);
       // No word of a tile is cut or pushed outside it (1.4.10).
       expect(await reflowProblems(page, lage(page))).toEqual([]);

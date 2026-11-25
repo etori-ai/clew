@@ -20,11 +20,10 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 3 | The accessibility suite is green and its mock answers as the server does | `BL-1`, `WA-M4`, `WA-L1`, `WA-L2`, `WA-L3` | |
 | 4 | What a page may load and keep | `ID-4`, `BL-10`, `CB-8`, `ID-5`, `ID-6` | The content security policy |
 | 5 | A limit on what another party sends | `CB-4`, `CB-5`, `CB-6`, `CS-M1`, `CS-L3`, `ID-8`, `ID-10` | |
 | 6 | A decision is bound to what the person was shown | `AM-4`, `DE-M9`, `DE-L5`, `DE-L6` | |
-| 7 | A decision that failed or whose outcome is unknown has a way forward | `DE-M1`, `DE-M2`, `DE-M3`, `DE-L1`, `DE-L2`, `DE-L11` | |
+| 7 | A decision that failed or whose outcome is unknown has a way forward | `DE-M1`, `DE-M2`, `DE-M3`, `DE-L1`, `DE-L2`, `DE-L11`, `DE-L17` | |
 | 8 | Erasure reaches everything | `DE-M6`, `BD-M1`, `BD-M2`, `BD-L1`, `BD-L3`, `BD-L5` | |
 | 9 | Who may see and change what | `ID-3`, `ID-7`, `CO-M1`, `CO-L1`, `CB-7`, `BD-L2`, `CS-M2` | |
 | 10 | The assistant's prompt, tools, provider and record | `AM-2`, `AM-3`, `AM-5`, `AM-6`, `AM-7`, `AM-8`, `AM-9`, `AM-10` | |
@@ -33,7 +32,7 @@ no batch.
 | 13 | The conversation's state | `WD-L1`, `WD-L3`, `WD-L5`, `WD-L6`, `WD-L7`, `WD-L8` | |
 | 14 | The calendar's time zones, entries and talk meetings | `DE-M8`, `DE-L14`, `DE-L15`, `DE-L16`, `WA-M2`, `WA-L5` | |
 | 15 | No installation's name or brand in the code, and Swedish where a person reads | `AM-12`, `BL-9`, `WA-L6`, `WA-L7`, `WA-L11`, `WA-L12`, `WA-L13` | |
-| 16 | The interface's theme check, spaces and measures | `WA-M1`, `WA-L4`, `WA-L8`, `WA-L9`, `WA-L10` | |
+| 16 | The interface's theme check, spaces and measures | `WA-M1`, `WA-L4`, `WA-L8`, `WA-L9`, `WA-L10`, `WA-L14` | |
 | 17 | Tests and contracts that can see the fault | `WA-M5`, `DE-M4`, `DE-M7`, `ID-9`, `AM-13`, `BD-L6`, `DE-L3` | |
 | 18 | The database: audit gaps, comparisons, indexes and migrations | `DE-L4`, `DE-L7`, `DE-L8`, `DE-L9`, `DE-L10`, `DE-L12`, `DE-L13`, `BD-L4` | |
 | 19 | The build, the images and the documents that span areas | `BL-4`, `BL-5`, `BL-11`, `BL-12`, `BL-13`, `BL-14`, `BL-15` | |
@@ -46,20 +45,18 @@ no batch.
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 2 | 6 | 8 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 4 | 6 | 10 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 6 | 5 | 11 |
-| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 9 | 16 | 25 |
-| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 1 | 2 | 8 | 11 |
+| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 9 | 17 | 26 |
+| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 8 | 10 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 1 | 1 | 2 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 6 | 8 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
-| WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 4 | 13 | 17 |
+| WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 2 | 8 | 10 |
-| | **Total** | **1** | **36** | **78** | **115** |
+| | **Total** | **0** | **35** | **77** | **112** |
 
 ## High
 
-| Id | Finding | Where |
-|---|---|---|
-| BL-1 | The accessibility suite is red on `main`: seven tests left behind by interface changes fail, and two more fail by race under the load of a whole run, so the suite cannot tell a new fault from a stale test. | `tests/a11y/action-dialog.spec.ts:61` |
+No high finding is open.
 
 ## Identity, sessions and authorization
 
@@ -147,6 +144,7 @@ ports with no contract under M7.
 | DE-L14 | Low | The CalDAV adapter mishandles time zones in events other clients wrote: a process-wide zone registry, floating times read in the server's zone, and invalid `TZID` with UTC. | `packages/calendar/src/nextcloud.ts:148-151` |
 | DE-L15 | Low | A meeting made all-day and then adopted books the talk from midnight UTC. | `apps/server/src/modules/calendar/usecases/invitations.ts:53-54` |
 | DE-L16 | Low | A nonexistent date gives a 500 in the calendar's reads, and an availability check for eight participants and a room is refused by both adapters. | `apps/server/src/modules/calendar/usecases/events.ts:81-84` |
+| DE-L17 | Low | Undoing sent invitations leaves their proposals `undone` and the planning card open with none proposed, so it offers neither "Skicka" nor "Vecka N i stället"; the next scan marks the rows "behöver en tid", and only another week draws them. Found while making the accessibility suite's mock answer as the server does, 2026-11-23, by reading; not run against the server. | `apps/server/src/composition/execution-projection.ts:186-203`, `apps/web/src/components/work/thread.tsx:186` |
 
 ## Baseline, build and supply chain
 
@@ -156,7 +154,6 @@ and it carries the baseline table of every suite, the failing-test table under f
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| BL-1 | High | The accessibility suite is red on `main`: seven tests left behind by interface changes fail, and two more fail by race under the load of a whole run, so the suite cannot tell a new fault from a stale test. | `tests/a11y/action-dialog.spec.ts:61` |
 | BL-3 | Medium | `main` has no branch protection or ruleset, so no check is required before a change lands. | GitHub settings of the repository |
 | BL-4 | Medium | The local development guide starts a Keycloak container that nothing in the repository creates, pins or describes. | `docs/maintainers/local-development.md:16` |
 | BL-5 | Low | Seven connector images set a SQLite path under `/data`, which the image lacks and `node` cannot write, so they do not start as built. | `connectors/hr/Dockerfile:5` |
@@ -227,11 +224,7 @@ fixtures the server cannot produce).
 |---|---|---|---|
 | WA-M1 | Medium | The theme check does not test the focus ring, marks, icons or success and information text against the card's ground. | `packages/contracts/src/theme-file.ts:143-169` |
 | WA-M2 | Medium | A calendar entry is a button wherever it is drawn, and in four places pressing it does nothing, while the spoken summary says Enter opens it. | `packages/ui/src/calendar.tsx:168` |
-| WA-M4 | Medium | The suite's mock answers a decision final at once, so the pending state and the receipt's later arrival are never drawn, and two fixtures show unreachable states. | `tests/a11y/support.ts:1787-1834` |
 | WA-M5 | Medium | Most pages' read failures, several empty states and loading surfaces have no spec, and twelve drawn states run no axe check. | `tests/a11y/` (the coverage map) |
-| WA-L1 | Low | Three work items in the fixtures could not be decided on the server, and a catch-all answers any unknown read. | `tests/a11y/data.ts:196-244` |
-| WA-L2 | Low | A spec asserts a person's link by user name, an address D122 answers with 404. | `tests/a11y/answer.spec.ts:180` |
-| WA-L3 | Low | The mock sends error answers the routes never send, and a calendar decision card the server never makes. | `tests/a11y/support.ts:1765` |
 | WA-L4 | Low | An entry in the pane beside a conversation opens a dialog over the conversation page, against D126 rule 3. | `apps/web/src/pages/conversation.tsx:173` |
 | WA-L5 | Low | `agendaItems` recognises a talk's meeting by its title, which D133 forbids. | `packages/ui/src/agenda-items.ts:26` |
 | WA-L6 | Low | "Startsidan" is hard-coded in tab titles, the sign-in and error pages and several sentences, where the installation's site name belongs. | `apps/web/src/page-title.ts:7` |
@@ -242,6 +235,7 @@ fixtures the server cannot produce).
 | WA-L11 | Low | Astryx's English fallbacks reach a Swedish reader in dialogs, date and number fields and on a phone. | `packages/ui/src/locale.ts` |
 | WA-L12 | Low | Raw technical and browser messages, such as "Failed to fetch" and JSON details, are shown as they come. | `apps/web/src/components/shell/shell.tsx:218-223` |
 | WA-L13 | Low | The English protocol pages render Astryx's own words and some model sentences in Swedish without marking them `lang="sv"`. | `apps/web/src/pages/protocol.tsx:96` |
+| WA-L14 | Low | Under Behöver dig, a work item's line takes the label of the row that names a person as whom the item is about, and drops the reason; the HR connector labels such rows "Ansökan" and "Medarbetare" and names the person by key only (D97), so the line names no one. The key is Clew's own (D62), so the name can come from Clew. Found while making the accessibility suite's mock rows match the HR connector's, 2026-11-23. | `apps/web/src/pages/todo.tsx:161-165`, `connectors/hr/connector.mjs:592` |
 
 ## The connector services
 

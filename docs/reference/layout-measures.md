@@ -38,7 +38,7 @@ Spacing is written in Astryx's steps (`gap={6}` is 24 px).
 | A card's heading | Inside the card, 24 px from its sides and 20 px from its top; 17 px, 800; the count after it, 12 px bold | `BoardCard` |
 | A card's content | 24 px from the sides and the foot, 16 px under the heading or the tools; a list's rows 12 px, since a row insets itself | `BoardCard` |
 | What stands in a card | Starts on the heading's line: a table stands inside the card's inset, never flush to its edge under a heading | `BoardCard` (`flush` only where the card has no heading over the table) |
-| Key figure | 20 px by 24 px inset; label 11 px bold small capitals; value 30 px, 800, in its status colour or, for a plain count, the identity colour; four to a row, two on a phone | `KeyFigure`, `FigureRow` in `measures.tsx`, `theme.ts` |
+| Key figure | 20 px by 24 px inset; label 11 px bold small capitals; value 30 px, 800, in its status colour or, for a plain count, the identity colour; four to a row where they fit, two on a narrow window, one under the other below 480 px | `KeyFigure`, `FigureRow` in `measures.tsx`, `theme.ts` |
 | A list beside its reading pane | No card and no inset of its own: the frame's card and inset are its | `BoardCard` (`bare`) |
 | A row that needs the person | The ground's colour, 6 px corners, a 4 px edge in its status colour, 12 px inset, 8 px between rows | `StatusRow`, `theme.ts` |
 | Register table | 65 px rows (Astryx `Table` `density="spacious"`), 40 px initials on the identity colour | `registerTable` and `PersonAvatar` in `measures.tsx`, `theme.ts` |
