@@ -216,7 +216,7 @@ export const grantRelations = (grant: { relations?: readonly string[] } | undefi
   relationGrantsOf(grant?.relations);
 /**
  * Whether a group with this key can give its members anything: a key with meaning (`unit:`, `unit-manager:`,
- * `capability:`, read as `deriveAuthority` reads it, and `position:`, which `derivePositions` reads), or one a D85 row
+ * `capability:`, read as `deriveAuthority` reads it, and `position:`, which `derivePositions` reads), or one a capability or relation mapping
  * of the organisation names. A write of any other group moves nobody's grant, whatever it does to the group, so nobody
  * is derived for it. A key whose shape is written
  * wrong is one: a reserved word in another case or with space in or before it, or a prefix without an id or a name or
@@ -225,7 +225,10 @@ export const grantRelations = (grant: { relations?: readonly string[] } | undefi
  * but its members are derived when it is written, so a name a later release takes off the list is taken back from
  * them. `protected` is matched only because `deriveAuthority` reads it, on a row stored before D93.
  */
-export function givesAuthority(key: string | null, rules: readonly GroupCapabilityRule[]): boolean {
+export function givesAuthority(
+  key: string | null,
+  rules: readonly (GroupCapabilityRule | GroupRelationRule)[],
+): boolean {
   return (
     key !== null &&
     (readScimGroupKey(key) !== undefined || key === PROTECTED_KEY || rules.some(row => row.groupExternalId === key))

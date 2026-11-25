@@ -85,13 +85,21 @@ import {
 import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
 
 /**
- * D85's rows of one organisation as a write that derives many of its people read them, once, after any change it made
+ * One organisation's capability and relation mappings as a group write read them, once, after any change it made
  * to them: a group of thousands is not thousands of reads of the same rows. Read only while the rows are held
  * (`lockGroupCapabilities`), so that no change to them commits before the write that derives from them does.
  */
 export interface OrganisationRules {
   organisationId: string;
   rules: readonly GroupCapabilityRule[];
+  relationRules: readonly GroupRelationRule[];
+}
+async function organisationRules(tx: ProvisionTx, organisationId: string): Promise<OrganisationRules> {
+  return {
+    organisationId,
+    rules: await tx.groupCapabilities(organisationId),
+    relationRules: await tx.groupRelations(organisationId),
+  };
 }
 /**
  * Deriving authority (D68, D85): the only path from memberships and the group-capability rows to the grant a person acts
@@ -116,11 +124,8 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     const person = await tx.lockPerson(personId);
     if (!person) return undefined;
     const memberships = await tx.memberships(personId),
-      rules =
-        known?.organisationId === person.organisationId
-          ? known.rules
-          : await tx.groupCapabilities(person.organisationId),
-      relationRules = await tx.groupRelations(person.organisationId);
+      { rules, relationRules } =
+        known?.organisationId === person.organisationId ? known : await organisationRules(tx, person.organisationId);
     // Every unit the memberships name, as the unit table knows it: the label of a managed unit without a `unit:` group,
     // and the comparison that lets an unchanged derivation write nothing (a reconciliation replays every person).
     const named = [...new Set(memberships.flatMap(m => unitOfKey(m.externalId) ?? []))];
@@ -317,17 +322,15 @@ export function scimUsecases(deps: {
   };
   /**
    * Whether a group write can move anyone's grant, asked of the keys the group had and gets (`givesAuthority`) with the
-   * organisation's D85 rows. The rows are read here once, and handed on to every derivation the write makes. They are
+   * organisation's capability and relation mappings. They are read once and handed on to every derivation. They are
    * held first: read before the people are locked, they would otherwise be what they were before an administrator's
    * change that commits while this write waits for a person, and a capability the change took away would come back.
    */
   const authorityOf = async (tx: ProvisionTx, p: Provisioner, ...keys: Array<string | null>) => {
     await tx.lockGroupCapabilities(p.organisationId, 'read');
-    const known: OrganisationRules = {
-      organisationId: p.organisationId,
-      rules: await tx.groupCapabilities(p.organisationId),
-    };
-    return { gives: keys.some(key => givesAuthority(key, known.rules)), known };
+    const known = await organisationRules(tx, p.organisationId);
+    const mappings = [...known.rules, ...known.relationRules];
+    return { gives: keys.some(key => givesAuthority(key, mappings)), known };
   };
   /**
    * The managers of the unit a `unit:` group names. Their grant carries the unit's label without their being members of
@@ -1132,6 +1135,7 @@ export function usersAdminUsecases(deps: {
       if (group ? group.organisationId !== persona.organisationId : present)
         throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
       if (group) await tx.readGroup(persona.organisationId, group.id, true);
+      await tx.lockGroupCapabilities(persona.organisationId, 'change');
       const changed = await tx.setGroupRelation(persona.organisationId, input.groupExternalId, input.relation, present);
       if (changed) {
         await tx.audit({
@@ -1187,10 +1191,7 @@ export function usersAdminUsecases(deps: {
         });
         // The organisation's rows as this change leaves them, read once for every member of the group: they are held, so
         // no other change to them and no group write that reads them runs until this one commits.
-        const known = {
-          organisationId: persona.organisationId,
-          rules: await tx.groupCapabilities(persona.organisationId),
-        };
+        const known = await organisationRules(tx, persona.organisationId);
         // The row applies to the members of the organisation's own group alone; a key another organisation's group
         // holds names none of this organisation's people (D101).
         if (holder)
@@ -1354,6 +1355,7 @@ export function usersAdminUsecases(deps: {
         const group = await tx.findGroup('externalId', input.groupExternalId);
         if (!group || group.organisationId !== organisationId) return false;
         await tx.readGroup(organisationId, group.id, true);
+        await tx.lockGroupCapabilities(organisationId, 'change');
         if (!(await tx.setGroupRelation(organisationId, input.groupExternalId, input.relation, true))) return false;
         await tx.audit({
           actor,
