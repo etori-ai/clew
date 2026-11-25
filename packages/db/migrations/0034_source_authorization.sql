@@ -1,1 +1,0 @@
-ALTER TABLE "thread" ADD COLUMN "source_authorization" text;
