@@ -41,6 +41,7 @@ export function memoryThreadStore(): MemoryThreadStore {
     >();
   let messageSequence = 0;
   let transactions = Promise.resolve();
+  const handoverTurns = new Set<string>();
   const copy = <T>(value: T): T => structuredClone(value);
   // Same decision fields as the PostgreSQL trigger. A message alone leaves the content revision alone.
   const revised = (old: Thread, next: Thread): Thread => {
@@ -331,6 +332,11 @@ export function memoryThreadStore(): MemoryThreadStore {
         threads: page.map(withTimers),
         next: all.length > limit && last ? { at: last.updatedAt, id: last.id } : null,
       };
+    },
+    async claimHandover(turn) {
+      if (handoverTurns.has(turn)) return false;
+      handoverTurns.add(turn);
+      return true;
     },
     async turnWritten(turn) {
       const row = [...threads.values()].find(r =>

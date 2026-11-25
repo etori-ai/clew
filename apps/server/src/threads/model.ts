@@ -251,6 +251,8 @@ export interface ThreadStore {
    * carries it.
    */
   turnWritten(turn: string): Promise<{ personId: string; threadId: string } | undefined>;
+  /** Reserve a keyed external question before the network call. A reservation survives an ambiguous outcome. */
+  claimHandover(turn: string, personId: string): Promise<boolean>;
   /** One of the person's threads; undefined when it does not exist or is not theirs. */
   readThread(personId: string, id: string): Promise<Thread | undefined>;
   /** For timers that know only the thread. */
