@@ -28,6 +28,11 @@ export interface UserReads {
    */
   userName(personId: string): Promise<string | null>;
   /**
+   * The person's address as the directory holds it (D68, the provisioned `emails`): what makes an event in their
+   * calendar theirs (D11). Null for an unknown person or one provisioned without one.
+   */
+  email(personId: string): Promise<string | null>;
+  /**
    * Who holds these user names now in the reader's organisation, active or not (D122: a source's key is resolved to the
    * person's id when a row or an action arrives), compared without regard to case and in the composed form (NFC) on
    * both sides; keyed by the name as asked. A name nobody of the reader's organisation holds is absent, and so is a name
