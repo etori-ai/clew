@@ -1188,7 +1188,7 @@
       "number": 99,
       "path": "docs/decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md",
       "title": "D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports",
-      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); the order inside the unit overlay of item 6 and where its close returns the focus are amended by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) (2026-11-13, provisional, built 2026-11-13: see the last paragraph of \"As built\"); an amendment of item 6 of 2026-11-12 (a unit's people as a page) was withdrawn in the merge with D124, see that amendment; item 4 (the reporting line) replaced by [D147](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) (2026-11-25, provisional): who reports to whom is read from the manager each employment names, never from the tree; Administration › Organisation still shows a unit as item 4 read it",
+      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); the order inside the unit overlay of item 6 and where its close returns the focus are amended by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) (2026-11-13, provisional, built 2026-11-13: see the last paragraph of \"As built\"); an amendment of item 6 of 2026-11-12 (a unit's people as a page) was withdrawn in the merge with D124, see that amendment; item 4 (the reporting line) replaced by [D147](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) (2026-11-25, provisional): who reports to whom is read from the manager each employment names, never from the tree; Administration › Organisation shows who leads a unit and whom each person reports to as two facts, and who reports to nobody",
       "date": "2026-11-10",
       "area": "identity, product"
     },
@@ -1719,7 +1719,7 @@
       "number": 147,
       "path": "docs/decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md",
       "title": "D147 · An employment is a row of its own and names the person it reports to",
-      "status": "provisional (Max Eriksson, 2026-11-25: build the storage first, then the line that reads it; accepted once a provisioner has pushed managers from a real directory and the people it names have used Personal); items 1 to 8 are built, item 9 is the direction they were built for and is built by nothing yet",
+      "status": "provisional (Max Eriksson, 2026-11-25: build the storage first, then the line that reads it; accepted once a provisioner has pushed managers from a real directory and the people it names have used Personal); items 1 to 8 are built, item 9 is a proposal that waits for a decision and is built by nothing",
       "date": "2026-11-25",
       "area": "identity"
     }
@@ -3574,6 +3574,7 @@
       "category": "maintainer-guide",
       "headings": [
         "Waiting for the product owner",
+        "Who reports to whom (D147)",
         "After the redesign on one pattern (D126)",
         "Handing a conversation to another system's assistant (D125)",
         "Records whose status needs a look",

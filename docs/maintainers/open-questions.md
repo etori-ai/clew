@@ -67,6 +67,17 @@ file as they stood there and have not been checked against the code since.
 | May a boarding layer match on the employment type as the directory writes it? It is free text compared exactly; the directory has no concept of a consultant or of any other kind of engagement, so a layer for consultants depends on how one source happens to spell it. | 2026-11-13 | Same |
 | Should an `order` item of a plan close by itself when the service desk closes the request it was ordered through ([D123](../decisions/D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md))? Today every item kind is a plain to-do that a person ticks off. | 2026-11-13 | Same |
 
+## Who reports to whom (D147)
+
+The reporting line is read from the manager each employment names. These stand open after it.
+
+| Question | Last stated | Where it comes from |
+|---|---|---|
+| Who is a manager? The session's role, the rail and every scope that asks for `manager` still follow from leading a unit: the primary assignment is manager before employee ([D135](../decisions/D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) item 1). Someone people report to who leads no unit is answered by Personal's read and reaches no page that shows it, and a manager who is employed on one unit and leads others acts as one of the units they lead. [D147](../decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) item 9 proposes that belonging and leading become two tables, that the unit a person acts as is one they belong to, and that being a manager follows from leading a unit or from having someone report to you. That changes D135 item 1, what every source is told of a person, and whom a scope and an audience reach, and it ends work in flight for every manager whose unit moves. Waits for the product owner and for whoever holds D135. | 2026-11-25 | [D147](../decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md), the reading of Sundsvall's test directory |
+| When the directory names one person as manager on an employment and another as responsible for the unit, which does the provisioner trust for which? In the test environment the two named different people for a quarter of the units with staff. Clew keeps them as two facts and merges neither. Waits for the owner of the directory. | 2026-11-25 | Same |
+| A quarter of the employments in the test environment named a manager who had no current employment there. Have they left, are they employed by one of the municipality's companies, or is it the test data? Until it is known, a quarter of the people would report to nobody. Waits for the owner of the directory. | 2026-11-25 | Same |
+| Does a unit keep its id through a reorganisation of the directory? An employment, a membership and a card all name a unit by it. Asked of Sundsvall's records in D99 and not answered. | 2026-11-25 | Same, [D99](../decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) |
+
 ## After the redesign on one pattern (D126)
 
 Each of these waits for the product owner.

@@ -486,6 +486,49 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         // Nobody's employment names these two, and the manager is never their own report.
         expect(await tx.reportsTo(p + '-org', a)).toEqual([]);
         expect(await tx.reportsTo(p + '-org', p + '-nobody')).toEqual([]);
+        // D147: whom the organisation's people name as manager, a pair for each person and manager. The three
+        // employments of `a` that name the boss are one pair, and the one that names nobody is none. A deactivated
+        // person's pair is there, for the use case to decide, and another organisation's person is not.
+        expect(await tx.managersNamed(p + '-org')).toEqual([
+          { personId: a, managerId: boss },
+          { personId: off, managerId: boss },
+        ]);
+        // The manager is named as stored: the other organisation's person names one who is not of it.
+        expect(await tx.managersNamed(p + '-elsewhere')).toEqual([{ personId: other, managerId: boss }]);
+        // Of the people asked for only, each pair once however often a person is asked for, and within the
+        // organisation: an id does not reach another organisation's person, and one nobody holds gives nothing.
+        expect(await tx.managersNamed(p + '-org', [off, off, other, p + '-nobody'])).toEqual([
+          { personId: off, managerId: boss },
+        ]);
+        expect(await tx.managersNamed(p + '-org', [boss])).toEqual([]);
+        // No ids is nobody, not everybody: a caller hands over the managers it found, and may have found none.
+        expect(await tx.managersNamed(p + '-org', [])).toEqual([]);
+        // By person and then by manager, each compared character by character (an upper-case letter before a lower-case
+        // one), whatever order the employments stand in. A deactivated manager is among them, as stored.
+        const upper = p + '-Zed';
+        await tx.insertUser(userRow(upper, p + '-org', { employments: [{ unitId: 'office', managerId: boss }] }));
+        await tx.updateUser(boss, {
+          employments: [
+            { unitId: 'office', managerId: off },
+            { unitId: 'office', managerId: a },
+            { unitId: 'depot', managerId: upper },
+          ],
+          updatedAt: T,
+        });
+        expect(await tx.managersNamed(p + '-org')).toEqual([
+          { personId: upper, managerId: boss },
+          { personId: a, managerId: boss },
+          { personId: boss, managerId: upper },
+          { personId: boss, managerId: a },
+          { personId: boss, managerId: off },
+          { personId: off, managerId: boss },
+        ]);
+        expect(await tx.managersNamed(p + '-org', [boss, a])).toEqual([
+          { personId: a, managerId: boss },
+          { personId: boss, managerId: upper },
+          { personId: boss, managerId: a },
+          { personId: boss, managerId: off },
+        ]);
         expect(await tx.bound(a)).toBe(false);
       });
       await h.bind(a);

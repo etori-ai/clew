@@ -484,6 +484,19 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
         .map(a => ({ unitId: a.unitId, unitLabel: state.units.get(a.unitId)?.label ?? a.unitId, role: a.role }))
         .sort((a, b) => a.unitId.localeCompare(b.unitId));
     },
+    async managersNamed(organisationId, personIds) {
+      const asked = personIds && new Set(personIds),
+        byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+      return [...state.users.values()]
+        .filter(u => u.organisationId === organisationId && (!asked || asked.has(u.id)))
+        .flatMap(u =>
+          [...new Set(u.employments.flatMap(job => (job.managerId ? [job.managerId] : [])))].map(managerId => ({
+            personId: u.id,
+            managerId,
+          })),
+        )
+        .sort((a, b) => byCodeUnit(a.personId, b.personId) || byCodeUnit(a.managerId, b.managerId));
+    },
     async reportsTo(organisationId, managerId) {
       const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
       return [...state.users.values()]

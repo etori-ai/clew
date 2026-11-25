@@ -423,9 +423,9 @@ describe('the rule, resolved from the directory', () => {
       { asked: 'boss', key: 'boss', relation: 'colleague' },
     ]);
     expect(await people.relations.relate(hillevi, 'person', ['cohead', 'director', 'boss'], ['managed'])).toEqual([]);
-    // Personal lists those whose employments name her (D147), so no co-manager of the unit is on it. Boss is: his
-    // employment on the school names her. He is a colleague all the same, since he also manages her, and a reader of
-    // the line stops where it comes round.
+    // Personal lists those whose employments name her (D147), so no co-manager of the unit is on it. Nor is Boss,
+    // though his employment on the school names her: he also manages her, and where a chain of managers comes round
+    // neither is on the other's list.
     const entities = entityUsecases({
       directory: people.staff,
       sources: { reads: async () => [], actions: async () => [] },
@@ -435,7 +435,8 @@ describe('the rule, resolved from the directory', () => {
     const listed = (await entities.list(people.persona('hillevi'), 'person')).groups.flatMap(g =>
       g.entities.map(e => e.key),
     );
-    expect(listed).toEqual(expect.arrayContaining(['boss', 'anna', 'olle']));
+    expect(listed).toEqual(expect.arrayContaining(['anna', 'olle']));
+    expect(listed).not.toContain('boss');
     expect(listed).not.toContain('cohead');
     expect(listed).not.toContain('director');
     // And the opened page says how she stands to each, by the same rule.

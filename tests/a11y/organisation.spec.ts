@@ -15,9 +15,11 @@ import {
 } from './support';
 
 /**
- * Organisation (D99, D124): the organisation tree as the catalogue pushed it, a ledger on a wide screen, with who leads
- * each unit, how many are placed on it and in its branch, what a push left wrong as one card, and a unit as an overlay
- * over the tree that is walked one step up and one step down. Keyboard, structure, focus, announcements, axe and
+ * Organisation (D99, D124, D147): the organisation tree as the catalogue pushed it, a ledger on a wide screen, with who
+ * leads each unit, how many are placed on it and in its branch, what a push left wrong as one card, and a unit as an
+ * overlay over the tree that is walked one step up and one step down. Whom a person reports to is said on the person,
+ * from their employments, and never read from the tree: a unit is led by its own managers or by nobody, and the people
+ * who report to nobody are counted on their unit and in the card. Keyboard, structure, focus, announcements, axe and
  * reflow, at desktop, phone and 320 px.
  */
 /**
@@ -86,9 +88,9 @@ test.describe('organisation', () => {
       // The roots are open from the start, so the level under each is read without a click; deeper levels are not.
       const kommunen = tree.getByRole('treeitem', { name: /Kommunen/ }).first();
       await expect(kommunen).toHaveAttribute('aria-expanded', 'true');
-      // The row reads as a sentence: the name, who leads the unit, its own count and its branch's.
+      // The row reads as a sentence: the name and its mark, who leads the unit, its own count and its branch's.
       await expect(kommunen).toHaveAccessibleName(
-        'Kommunen , Chef: Yusuf Lundgren , 1 person , 15 med enheterna under',
+        'Kommunen 1 person utan chef , Chef: Yusuf Lundgren , 1 person , 15 med enheterna under',
       );
       const utbildning = tree.getByRole('treeitem', { name: /Barn och utbildning/ }).first();
       await expect(utbildning).toBeVisible();
@@ -132,12 +134,14 @@ test.describe('organisation', () => {
           expect(under.y).toBeGreaterThan(box.y);
         }
         // The line under the name says who leads the unit, and no count.
-        await expect(row.getByText(/(Chef|Chefer): |Leds från|Ingen chef$/).first()).not.toContainText('person');
+        await expect(row.getByText(/(Chef|Chefer): |Ingen chef$/).first()).not.toContainText('person');
       }
       expect(new Set(edges).size).toBe(1);
-      // A unit nobody leads says so where the leader stands, and the mark is beside the name.
+      // A unit nobody leads says so where the leader stands, and the marks are beside the name.
       const kultur = tree.getByRole('treeitem', { name: /Kultur och fritid/ }).first();
-      await expect(kultur).toHaveAccessibleName('Kultur och fritid Saknar chef , Ingen chef , 2 personer');
+      await expect(kultur).toHaveAccessibleName(
+        'Kultur och fritid Saknar chef 2 personer utan chef , Ingen chef , 2 personer',
+      );
     });
     test('what a push left wrong is one card above the tree, a row per problem, and is marked on the unit', async ({
       page,
@@ -151,9 +155,15 @@ test.describe('organisation', () => {
       // One row per problem, the state's mark first: colour never says it alone.
       await expect(rows).toHaveText([
         /^Ingen åtkomst\s*2 personer saknar enhet/,
-        /^Saknar chef\s*1 enhet har personer men ingen chef: Kultur och fritid/,
+        /^Utan chef\s*5 personer på 3 enheter har ingen chef: Hagaskolan, Kommunen och Kultur och fritid/,
+        /^Saknar chef\s*2 enheter har personer men ingen chef: Hagaskolan och Kultur och fritid/,
         /^Saknar enhetsgrupp\s*1 enhet saknar enhetsgrupp: unit-okand/,
       ]);
+      // The tree passes no line on (D147), so nothing says that a unit nobody leads is led from anywhere else.
+      await expect(rows.nth(2)).toContainText(
+        'Ingen leder enheten. Personerna där kan ändå ha en chef: vem de rapporterar till anges på deras anställningar.',
+      );
+      await expect(card).not.toContainText('ovanför');
       // One card, where three warnings stood one over the other.
       await expect(page.locator('.astryx-banner')).toHaveCount(0);
       // The link lands on the people it is about: the list narrowed to those without access (D100).
@@ -169,13 +179,127 @@ test.describe('organisation', () => {
       // A unit under a unit nobody leads, with nobody on it and nothing under it.
       await expect(tree.getByRole('treeitem', { name: /Arkivet/ })).toContainText('Tom');
       await expect(tree.getByRole('treeitem', { name: /unit-okand/ })).toContainText('Saknar enhetsgrupp');
-      // An area nobody is placed on is a heading, not an emptied unit, and its unit is led from above.
+      // An area nobody is placed on is a heading, not an emptied unit. Nobody leads it, whatever stands above it, and
+      // with nobody on it there is nobody for the mark to be about.
       await kommunenOpen(page, 'Vård och omsorg');
       const hemtjanst = tree.getByRole('treeitem', { name: /^Hemtjänst(?! Centrum)/ }).first();
-      await expect(hemtjanst).toHaveAccessibleName(
-        'Hemtjänst , Leds från enheten ovanför , 0 personer , 4 med enheterna under',
-      );
+      await expect(hemtjanst).toHaveAccessibleName('Hemtjänst , Ingen chef , 0 personer , 4 med enheterna under');
       await expect(hemtjanst).not.toContainText('Tom');
+      await expect(hemtjanst).not.toContainText('Saknar chef');
+    });
+    test('a unit that holds people who report to nobody says how many, in the tree, on the unit and where it is listed', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      // Nobody reports to Grundskola's manager from elsewhere, so both units below it are listed under it.
+      api.organisationReports['unit-grundskola'] = [];
+      await open(page, '/admin/organisation?unit=unit-grundskola');
+      const grundskola = page.getByRole('dialog', { name: 'Personer på Grundskola' });
+      const under = grundskola.getByRole('list', { name: 'Enheter under · Grundskola' }).getByRole('listitem');
+      // The mark counts people, in words: one that nobody leads and where two report to nobody has both marks.
+      await expect(under).toHaveText([
+        /^Bergsåkers skola\s*Chefer: Hillevi Berg och Karin Åberg\s·\s3 personer$/,
+        /^Hagaskolan\s*Saknar chef\s*2 personer utan chef\s*Ingen chef\s·\s3 personer$/,
+      ]);
+      // The step down shows the unit with the same marks beside how many it holds.
+      await under.nth(1).getByRole('button').click();
+      const hagaskolan = page.getByRole('dialog', { name: 'Personer på Hagaskolan' });
+      await expect(hagaskolan.getByRole('status').filter({ hasText: 'personer' })).toHaveText('3 personer på enheten');
+      await expect(hagaskolan.getByText('Saknar chef', { exact: true })).toBeVisible();
+      await expect(hagaskolan.getByText('2 personer utan chef', { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(hagaskolan).toBeHidden();
+      const tree = page.getByRole('tree', { name: 'Organisationsträd' });
+      const row = (name: RegExp) => tree.getByRole('treeitem', { name }).first();
+      // The count is in the row's name, one person in the singular; a unit whose people all have a manager has no mark.
+      await expect(row(/^Hagaskolan/)).toHaveAccessibleName(
+        'Hagaskolan Saknar chef 2 personer utan chef , Ingen chef , 3 personer',
+      );
+      // A row is named by its own label, which the rows nested under it are not part of.
+      await expect(row(/^Kommunen/)).toHaveAccessibleName(/^Kommunen 1 person utan chef , Chef: Yusuf Lundgren ,/);
+      await expect(row(/^Bergsåkers skola/)).not.toHaveAccessibleName(/utan chef/);
+      await expect(row(/^Grundskola/)).not.toHaveAccessibleName(/utan chef/);
+      await expectRowsNamedByWhatTheyShow(page);
+    });
+    test('people who report to nobody are a row of the problems card, and a unit it names opens over the tree with each person’s reason', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/organisation');
+      const row = page
+        .getByRole('region', { name: 'Att rätta i katalogen' })
+        .getByRole('listitem')
+        .filter({ hasText: /^Utan chef/ });
+      // How many, each person once, and the units that hold them; then what it means and where it is mended.
+      await expect(row).toContainText(
+        '5 personer på 3 enheter har ingen chef: Hagaskolan, Kommunen och Kultur och fritid',
+      );
+      await expect(row).toContainText(
+        'Katalogen anger ingen aktiv chef på deras anställningar, så de står inte på någons lista i Personal och ingen kan agera som deras chef. Rätta chefen på anställningen i katalogen.',
+      );
+      await expect(row.getByRole('link')).toHaveText(['Hagaskolan', 'Kommunen', 'Kultur och fritid']);
+      const link = row.getByRole('link', { name: 'Hagaskolan' });
+      await expect(link).toHaveAttribute('href', '/admin/organisation?unit=unit-hagaskolan');
+      await link.focus();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(/\/admin\/organisation\?unit=unit-hagaskolan$/);
+      const people = page.getByRole('dialog', { name: 'Personer på Hagaskolan' });
+      await expect(people.getByRole('heading', { level: 2, name: 'Hagaskolan' })).toBeFocused();
+      // Nobody leads the unit, which says nothing of whom its people report to: one of the three has a manager.
+      await expect(
+        people.getByText(
+          'Ingen leder enheten. Personerna här kan ändå ha en chef: vem de rapporterar till anges på deras anställningar.',
+        ),
+      ).toBeVisible();
+      await expect(people.getByRole('heading', { level: 3 })).toHaveText(['Medarbetare']);
+      // Each person says whom they report to, or in words why to nobody: a manager who is deactivated, none named.
+      await expect(people.getByRole('list', { name: 'Medarbetare · Hagaskolan' }).getByRole('listitem')).toHaveText([
+        /^Omar Hosseini\s*Chef: Mattias Eriksson$/,
+        // The reason is in words, and a warning at the row's end finds the two among many.
+        /^Petra Holm\s*Chefen är avstängd\s*Utan chef$/,
+        /^Rut Sand\s*Ingen chef angiven\s*Utan chef$/,
+      ]);
+      await expectNoAxeViolations(page, { without: TREE_LABEL_RULE });
+      // No step was taken, so closing gives the focus back to the link that opened the overlay (rule 7).
+      await page.keyboard.press('Escape');
+      await expect(people).toBeHidden();
+      await expect(link).toBeFocused();
+    });
+    test('a person on a unit says whom they report to: one manager, two, two who name each other, and nothing for a deactivated person', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/organisation?unit=unit-skola');
+      const skola = page.getByRole('dialog', { name: 'Personer på Bergsåkers skola' });
+      // A leader's line has the manager before the e-mail, and the manager alone where there is no e-mail.
+      await expect(skola.getByRole('list', { name: 'Chefer · Bergsåkers skola' }).getByRole('listitem')).toHaveText([
+        /^Hillevi Berg\s*Chef: Mattias Eriksson\s·\shillevi@clew\.test$/,
+        /^Karin Åberg\s*Chef: Mattias Eriksson$/,
+      ]);
+      // Two employments under two managers are two managers. A deactivated person's row is as it was: the employment
+      // may still name a manager, and the person reports to nobody.
+      await expect(
+        skola.getByRole('list', { name: 'Medarbetare · Bergsåkers skola' }).getByRole('listitem'),
+      ).toHaveText([/^Anna Lindqvist\s*Chefer: Hillevi Berg och Karin Åberg$/, /^Vera Öst\s*Avstängd$/]);
+      // Everybody here has a manager, so the unit has no mark and no note.
+      await expect(skola).not.toContainText('utan chef');
+      await expect(skola.getByRole('status').filter({ hasText: 'personer' })).toHaveText(
+        '3 personer på enheten och 1 avstängd',
+      );
+      // Two who name each other as manager: neither is the other's, and each row names whom the ring is with.
+      await open(page, '/admin/organisation?unit=unit-kultur');
+      const kultur = page.getByRole('dialog', { name: 'Personer på Kultur och fritid' });
+      await expect(
+        kultur.getByRole('list', { name: 'Medarbetare · Kultur och fritid' }).getByRole('listitem'),
+      ).toHaveText([
+        /^Dalia Nyström\s*Rapporterar i cirkel med Ebbe Holm\s*Utan chef$/,
+        /^Ebbe Holm\s*Rapporterar i cirkel med Dalia Nyström\s*Utan chef$/,
+      ]);
+      await expect(kultur.getByText('2 personer utan chef', { exact: true })).toBeVisible();
+      await expectNoAxeViolations(page, { without: TREE_LABEL_RULE });
     });
     test('a unit named in the problems card opens over the tree, says what is wrong with it, and closes back to its link', async ({
       page,
@@ -183,8 +307,11 @@ test.describe('organisation', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/organisation');
+      // The unit is named in two rows of the card, one per thing that is wrong with it; this is the row about the unit.
       const link = page
         .getByRole('region', { name: 'Att rätta i katalogen' })
+        .getByRole('listitem')
+        .filter({ hasText: /^Saknar chef/ })
         .getByRole('link', { name: 'Kultur och fritid' });
       await link.focus();
       await page.keyboard.press('Enter');
@@ -192,7 +319,13 @@ test.describe('organisation', () => {
       const people = page.getByRole('dialog', { name: 'Personer på Kultur och fritid' });
       // The overlay opens with the focus on the unit's heading.
       await expect(people.getByRole('heading', { level: 2, name: 'Kultur och fritid' })).toBeFocused();
-      await expect(people.getByText('Varken enheten eller någon enhet ovanför har en chef')).toBeVisible();
+      await expect(
+        people.getByText(
+          'Ingen leder enheten. Personerna här kan ändå ha en chef: vem de rapporterar till anges på deras anställningar.',
+        ),
+      ).toBeVisible();
+      await expect(people.getByRole('status').filter({ hasText: 'personer' })).toHaveText('2 personer på enheten');
+      await expect(people.getByText('Saknar chef', { exact: true })).toBeVisible();
       // The unit under it is a step down; it is empty, and says so.
       const under = people.getByRole('list', { name: 'Enheter under · Kultur och fritid' }).getByRole('listitem');
       await expect(under).toHaveText([/Arkivet\s*Tom\s*Ingen chef\s·\s0 personer/]);
@@ -233,22 +366,27 @@ test.describe('organisation', () => {
         '3 personer på enheten och 1 avstängd',
       );
       // The step up stands first, then the status line, then who leads the unit and last the others placed on it;
-      // nobody reports from below and no unit is under it.
+      // nobody reports from another unit and no unit is under it.
       const up = people.getByRole('button', { name: 'Ingår i Grundskola, Chef: Mattias Eriksson' });
       await expect(up).toBeVisible();
       await expect(people.getByRole('heading', { level: 3 })).toHaveText(['Chefer', 'Medarbetare']);
       const leaders = people.getByRole('list', { name: 'Chefer · Bergsåkers skola' }).getByRole('listitem');
       await expect(leaders).toHaveCount(2);
-      // A leader's row: the avatar at 48 px, the name and the e-mail under it. No row shows a user name.
-      await expect(leaders.first()).toHaveText(/Hillevi Berg\s*hillevi@clew\.test$/);
+      // A leader's row: the avatar at 48 px, the name, and under it whom they report to and the e-mail. No row shows a
+      // user name.
+      await expect(leaders.first()).toHaveText(/Hillevi Berg\s*Chef: Mattias Eriksson\s·\shillevi@clew\.test$/);
       expect(await leaders.first().locator('.astryx-avatar').boundingBox()).toMatchObject({ width: 48, height: 48 });
       // The avatar beside a name is decoration, as in the tree: the name is said once, by its link.
       await expect(leaders.first().locator('.astryx-avatar')).toHaveAttribute('aria-hidden', 'true');
       await expect(people.getByRole('img')).toHaveCount(0);
       const others = people.getByRole('list', { name: 'Medarbetare · Bergsåkers skola' }).getByRole('listitem');
       await expect(others).toHaveCount(2);
-      // The others are one line each: the avatar at 24 px, the name, and "Avstängd" at the end where it applies.
-      await expect(others).toHaveText(['Anna Lindqvist', /^Vera Öst\s*Avstängd$/]);
+      // The others: the avatar at 24 px, the name with whom they report to under it, and "Avstängd" at the end where
+      // it applies, on a row of one line.
+      await expect(others).toHaveText([
+        /^Anna Lindqvist\s*Chefer: Hillevi Berg och Karin Åberg$/,
+        /^Vera Öst\s*Avstängd$/,
+      ]);
       expect(await others.first().locator('.astryx-avatar').boundingBox()).toMatchObject({ width: 24, height: 24 });
       await expect(people).not.toContainText('anna.lindqvist');
       await expect(people).not.toContainText('karin.aberg');
@@ -281,7 +419,15 @@ test.describe('organisation', () => {
             unitLabel: 'Bergsåkers skola',
             people: [
               ...organisationPeople['unit-skola']!,
-              { id: 'ture', name: 'Ture Väst', userName: 'ture.vast', email: null, role: 'employee', enabled: false },
+              {
+                id: 'ture',
+                name: 'Ture Väst',
+                userName: 'ture.vast',
+                email: null,
+                role: 'employee',
+                enabled: false,
+                managers: [],
+              },
             ],
             reports: [],
           },
@@ -345,7 +491,7 @@ test.describe('organisation', () => {
       await expect(named.getByText('Anna Lindqvist')).toBeVisible();
       await expect(named.getByRole('heading', { name: 'Bergsåkers skola' })).toBeVisible();
     });
-    test('a unit says who reports to its manager from the units below, each with the unit they lead as the step down', async ({
+    test('a unit says who reports to its manager from other units, each with the unit they lead as the step to it', async ({
       page,
       api,
     }) => {
@@ -356,13 +502,14 @@ test.describe('organisation', () => {
       // step down on a reporting row, so no "Enheter under" repeats them.
       await expect(people.getByRole('heading', { level: 3 })).toHaveText(['Chef', 'Rapporterar till Mattias Eriksson']);
       await expect(people.getByRole('list', { name: 'Chef · Grundskola' }).getByRole('listitem')).toHaveText([
-        /Mattias Eriksson\s*mattias\.eriksson@clew\.test/,
+        /Mattias Eriksson\s*Chef: Elin Lindqvist\s·\smattias\.eriksson@clew\.test/,
       ]);
       const reports = people
         .getByRole('list', { name: 'Rapporterar till Mattias Eriksson · Grundskola' })
         .getByRole('listitem');
       await expect(reports).toHaveCount(3);
-      // The managers of the nearest led unit, each named by the unit they lead, and a person on a unit nobody leads.
+      // Two whose employments name the manager and who lead a unit, each named by it, and one who leads none, named
+      // by the unit of the employment.
       await expect(reports.nth(0)).toContainText('Chef för Bergsåkers skola · hillevi@clew.test');
       // A reporting row is two lines, with the avatar at 36 px.
       expect(await reports.nth(0).locator('.astryx-avatar').boundingBox()).toMatchObject({ width: 36, height: 36 });
@@ -374,8 +521,48 @@ test.describe('organisation', () => {
         '/admin/organisation?unit=unit-skola',
       );
       await expect(reports.nth(2).getByRole('link', { name: 'Hagaskolan' })).toBeVisible();
-      await expect(people.getByText('Från enheterna under')).toBeVisible();
+      // What the group holds is said as it is read (D147): from the employments, not from the units below.
+      await expect(
+        people.getByText('Personer på andra enheter som enligt sin anställning rapporterar till enhetens chef.'),
+      ).toBeVisible();
+      await expect(people).not.toContainText('Från enheterna under');
       await expectNoAxeViolations(page, { without: TREE_LABEL_RULE });
+    });
+    test('a unit two people lead says that a report names one of them', async ({ page, api }) => {
+      api.admin = true;
+      api.organisationReports['unit-skola'] = [
+        {
+          id: 'omar',
+          name: 'Omar Hosseini',
+          userName: 'omar.hosseini',
+          email: null,
+          role: 'employee',
+          enabled: true,
+          below: [{ unitId: 'unit-hagaskolan', unitLabel: 'Hagaskolan', role: 'employee' }],
+        },
+      ];
+      await open(page, '/admin/organisation?unit=unit-skola');
+      const people = page.getByRole('dialog', { name: 'Personer på Bergsåkers skola' });
+      await expect(people.getByRole('heading', { level: 3 })).toHaveText([
+        'Chefer',
+        'Rapporterar till Hillevi Berg och Karin Åberg',
+        'Medarbetare',
+      ]);
+      await expect(
+        people.getByText(
+          'Personer på andra enheter som enligt sin anställning rapporterar till någon av enhetens chefer.',
+        ),
+      ).toBeVisible();
+      // The unit on the row is beside this one in the tree, not below it: the step goes there all the same.
+      const reports = people
+        .getByRole('list', { name: 'Rapporterar till Hillevi Berg och Karin Åberg · Bergsåkers skola' })
+        .getByRole('listitem');
+      await expect(reports).toHaveText([/^Omar Hosseini\s*Medarbetare på Hagaskolan$/]);
+      await reports.getByRole('link', { name: 'Hagaskolan' }).press('Enter');
+      await expect(page).toHaveURL(/\?unit=unit-hagaskolan$/);
+      await expect(
+        page.getByRole('dialog', { name: 'Personer på Hagaskolan' }).getByRole('heading', { level: 2 }),
+      ).toBeFocused();
     });
     test('a unit lists the units below that no reporting row names, after the reports and before the others', async ({
       page,
@@ -384,20 +571,22 @@ test.describe('organisation', () => {
       api.admin = true;
       await open(page, '/admin/organisation?unit=unit-omsorg');
       const people = page.getByRole('dialog', { name: 'Personer på Vård och omsorg' });
-      // Hemtjänst has no manager of its own, so the manager two levels down reports here, with their own unit as the
-      // step; Hemtjänst itself is the unit under.
+      // The manager of Hemtjänst Centrum, two levels down, names this unit's manager on their employment and reports
+      // here with their own unit as the step; Hemtjänst between them, which nobody leads, is the unit under.
       await expect(people.getByRole('heading', { level: 3 })).toHaveText([
         'Chef',
         'Rapporterar till Amir Sjöberg',
         'Enheter under',
       ]);
       const under = people.getByRole('list', { name: 'Enheter under · Vård och omsorg' }).getByRole('listitem');
-      await expect(under).toHaveText([/Hemtjänst\s*Leds från enheten ovanför\s·\s0 personer, 4 med enheterna under/]);
-      // A unit nobody is placed on says so, says where its people's line goes, and still offers its steps.
+      await expect(under).toHaveText([/Hemtjänst\s*Ingen chef\s·\s0 personer, 4 med enheterna under/]);
+      // A unit nobody is placed on says so and still offers its steps. It claims no line from the unit above (D147),
+      // and with nobody on it there is nobody whose manager a note would be about.
       await under.getByRole('button').click();
       const hemtjanst = page.getByRole('dialog', { name: 'Personer på Hemtjänst' });
       await expect(hemtjanst.getByRole('heading', { name: 'Ingen är placerad på enheten' })).toBeVisible();
-      await expect(hemtjanst.getByText('Enheten har ingen egen chef. Den leds från enheten ovanför.')).toBeVisible();
+      await expect(hemtjanst).not.toContainText('Leds från');
+      await expect(hemtjanst).not.toContainText('Ingen leder enheten');
       await expect(hemtjanst.getByRole('button', { name: /^Ingår i Vård och omsorg/ })).toBeVisible();
       await expect(hemtjanst.getByRole('list', { name: 'Enheter under · Hemtjänst' }).getByRole('listitem')).toHaveText(
         [/Hemtjänst Centrum\s*Chef: Sara Pettersson\s·\s4 personer/],
@@ -516,7 +705,7 @@ test.describe('organisation', () => {
       api,
     }) => {
       api.admin = true;
-      api.organisation = { units: [], unplaced: 0 };
+      api.organisation = { units: [], unplaced: 0, unmanaged: 0 };
       await open(page, '/admin/organisation');
       await expect(page.getByRole('heading', { name: 'Ingen organisation ännu' })).toBeVisible();
       await expect(page.getByRole('tree')).toHaveCount(0);
@@ -540,9 +729,14 @@ test.describe('organisation', () => {
       await expect(tree.getByRole('treeitem', { name: /^Kommunen/ }).first()).toContainText(
         'Chef: Yusuf Lundgren\u00a0· 1 person, 15 med enheterna under',
       );
+      // A unit's marks are in the row with its name, and the people who report to nobody are counted there.
+      await expect(tree.getByRole('treeitem', { name: /^Kultur och fritid/ }).first()).toHaveAccessibleName(
+        /^Kultur och fritid Saknar chef 2 personer utan chef /,
+      );
       // The problems card stacks the mark, the words and the way on.
       const card = page.getByRole('region', { name: 'Att rätta i katalogen' });
-      await expect(card.getByRole('listitem')).toHaveCount(3);
+      await expect(card.getByRole('listitem')).toHaveCount(4);
+      await expect(card.getByRole('listitem').nth(1)).toHaveText(/^Utan chef\s*5 personer på 3 enheter har ingen chef/);
       await open(page, '/admin/organisation?unit=unit-grundskola');
       const sheet = page.getByRole('dialog', { name: 'Personer på Grundskola' });
       await expect(sheet.getByRole('heading', { level: 2, name: 'Grundskola' })).toBeVisible();
@@ -574,7 +768,8 @@ test.describe('organisation', () => {
       await expect(people).toBeHidden();
       await expect(tree.getByRole('treeitem', { name: /Bergsåkers skola/ }).first()).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
-      // A unit with a group of its manager, and the people who report to them from below with the units they lead.
+      // A unit with a group of its manager, and the people who report to them from other units with the units they
+      // lead.
       await open(page, '/admin/organisation?unit=unit-grundskola');
       const reports = page.getByRole('dialog', { name: 'Personer på Grundskola' });
       await expect(reports.getByText('Medarbetare på Hagaskolan')).toBeVisible();
@@ -584,6 +779,19 @@ test.describe('organisation', () => {
       const under = page.getByRole('dialog', { name: 'Personer på Vård och omsorg' });
       await expect(under.getByRole('heading', { name: 'Enheter under' })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
+      // A unit with two marks and its note, whose people each say whom they report to or why to nobody; its row, four
+      // levels down, has both marks behind the sheet.
+      await open(page, '/admin/organisation?unit=unit-hagaskolan');
+      const gaps = page.getByRole('dialog', { name: 'Personer på Hagaskolan' });
+      await expect(gaps.getByText('Chefen är avstängd')).toBeVisible();
+      await expect(gaps.getByText('2 personer utan chef', { exact: true })).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+      await gaps.getByRole('button', { name: /Stäng/ }).click();
+      await expect(gaps).toBeHidden();
+      await expect(tree.getByRole('treeitem', { name: /^Hagaskolan/ }).first()).toContainText('2 personer utan chef');
+      expect(await reflowProblems(page)).toEqual([]);
+      // The card's rows at their narrowest, the new one with three units to name.
+      await expect(page.getByRole('region', { name: 'Att rätta i katalogen' }).getByRole('listitem')).toHaveCount(4);
     });
   });
 });

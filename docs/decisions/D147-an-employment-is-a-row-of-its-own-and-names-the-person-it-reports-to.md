@@ -1,6 +1,6 @@
 # D147 · An employment is a row of its own and names the person it reports to
 
-**Status:** provisional (Max Eriksson, 2026-11-25: build the storage first, then the line that reads it; accepted once a provisioner has pushed managers from a real directory and the people it names have used Personal); items 1 to 8 are built, item 9 is the direction they were built for and is built by nothing yet · **Date:** 2026-11-25 · **Area:** identity
+**Status:** provisional (Max Eriksson, 2026-11-25: build the storage first, then the line that reads it; accepted once a provisioner has pushed managers from a real directory and the people it names have used Personal); items 1 to 8 are built, item 9 is a proposal that waits for a decision and is built by nothing · **Date:** 2026-11-25 · **Area:** identity
 
 **Decision.** Who a person reports to is a fact of the employment, sent by the directory. Clew stores it where the
 directory holds it and reads the reporting line from it, and from nothing else.
@@ -39,8 +39,9 @@ The line:
    name as manager (`reach.above`), and their reports are the people whose employments name them (`reportsTo` in the
    people store). An employment without a manager gives none: Clew does not fall back on the tree, since the relation
    decides what a manager may read about a person and a guessed manager is the wrong person with access. A deactivated
-   manager is nobody's manager. Someone who is both on a person's list and among their managers, which only a chain
-   that comes round gives, is neither's report: the relation `managed` and the units below leave them out.
+   manager is nobody's manager. Where two people's employments name each other, the chain comes round: neither is the
+   other's manager or report, neither is on the other's list in Personal, and what either leads is not below the
+   other.
 8. **Two managers see the same.** Someone with two employments under two managers has two managers. Clew cannot divide
    a person by employment, since a talk or a competence is the person's, so both stand in the same relation to them. A
    source still decides for itself what each of them may read there.
@@ -50,27 +51,34 @@ assistant's people) through `staffUsecases.overview` and `reach`; who may be ask
 ([D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)); the units a
 manager follows up, which are the units they lead and the units led by people who report to them, wherever those stand
 in the tree ([D117](D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)); competence and
-introduction and leaving, which take a manager's reports and a leaver's managers from the same place. Personal lists a
+introduction and leaving, which take a manager's reports and a leaver's managers from the same place; and
+Administration › Organisation, which shows who leads each unit, whom each person on it reports to, and who reports to
+nobody and why (no employment of theirs names a manager, the manager named is deactivated, or the two name each
+other), per unit and for the organisation. Personal lists a
 report under the unit of the employment that names the reader, so a manager of four workplaces has four cards, and a
 unit the reader leads has its card whether or not anybody on it reports to them. A report who leads units carries them
 (`below`). The refusal is "Sidan Personal är för den som är chef.", for someone who leads no unit and whom nobody reports
 to.
 
-The direction, built by nothing yet:
+Proposed, and built by nothing:
 
 9. **Belonging and leading become two tables.** `auth_assignment` holds both in one row with a role, so a row that says
    manager does not say whether the person works on the unit or only leads it. They are split, the unit a person acts
    as is one they belong to, and being a manager follows from leading a unit or from having someone report to you.
+   It is a proposal and waits for a decision ([open questions](../maintainers/open-questions.md)): it changes the
+   primary assignment of
+   [D135](D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) item 1, and with it what every source
+   is told of a person and whom a scope and an audience reach.
 
 **Known limits.**
 
 - Being a manager still follows from leading a unit: the session's role, the rail and every scope that asks for
   `manager` read the grant's role. Someone whose only claim is that people report to them is answered by
   `staffUsecases` and reaches no page that shows it until item 9 is built.
-- Administration › Organisation still shows a unit as D99 read it, from the tree and from who leads a unit, and does
-  not yet say who lacks a manager. Until it does, a gap is silent: when a manager is deactivated before the directory
-  names another on the employments of the people who reported to them, those people are on nobody's list, a
-  self-registered competence finds nobody to approve it, and a plan held for one of them who leaves is held by nobody.
+- A gap in the directory is shown and mended nowhere in Clew. When a manager is deactivated before the directory names
+  another on the employments of the people who reported to them, those people are on nobody's list, a self-registered
+  competence finds nobody to approve it, and a plan held for one of them who leaves is held by nobody, until the
+  directory is corrected. The organisation's own head reports to nobody and is counted with them.
 - A unit a person only has a report on is called by its `unit:` group's name, else by the unit table's, else by its id.
 - A unit's page lists a unit below it, and the unit below leads back, only where the manager of the unit below is
   employed on the reader's own unit. Any other unit below is in the list of units and under no unit of the reader's.
@@ -111,19 +119,20 @@ the people with a current employment: a fallback would have given each of those 
 who the person reports to. It still gives no access to a unit or a capability.
 
 **Replaces.** [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) item 4
-(the reporting line) for everything but Administration › Organisation, and with it the walk up the tree in introduction
+(the reporting line) everywhere it was read, and with it the walk up the tree in introduction
 and leaving; [D94](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) item 2 as D99 amended it
 (Personal lists the people whose employments name the reader, not the people on their units); the definitions of
 `managed` and of the units below in both records numbered D117, which now rest on the employments. D99's tree, its
 moves and its rule that a manager works with their direct reports stand.
 
-**Will replace, when item 9 is built.** D101 items 7 and 8 and D135 item 1 where they choose the unit a person acts as
+**Would replace, if item 9 is decided.** D101 items 7 and 8 and D135 item 1 where they choose the unit a person acts as
 by the manager's role first.
 
 **Evidence.** The storage: `tests/unit/scim-as-clients-send-it.test.ts` (the manager told back, audited, refused and
 left beside a deactivation), `tests/scim-store-contract.ts` on both adapters, `tests/db/person-erase.test.ts`, and the
 migration run against a database that held a list. The line: `tests/unit/staff.test.ts`,
 `tests/unit/asked-about.test.ts` (who is `managed`, a chain that comes round, the units below),
-`tests/boarding-directory-contract.ts` on both adapters (a leaver's managers), and `tests/unit/provisioner.test.ts`
+`tests/boarding-directory-contract.ts` on both adapters (a leaver's managers), `tests/unit/organisation-tree.test.ts`
+(who reports to nobody, and why), `tests/a11y/organisation.spec.ts`, and `tests/unit/provisioner.test.ts`
 (the development directory and the published school walkthrough send managers, and a second push is silent).
 `tests/named-managers.ts` gives a hand-built directory the managers its tree used to imply.

@@ -317,6 +317,15 @@ export interface ProvisionTx {
   searchUsers(organisationId: string, search: UserSearch, page: Page): Promise<Listed<UserRecord>>;
   assignmentsOf(personId: string): Promise<Array<{ unitId: string; unitLabel: string; role: Assignment['role'] }>>;
   /**
+   * D147: who the people of the organisation name as manager on their current employments, a pair for each person and
+   * manager, each once, by person id and then manager id. With `personIds`, of those people only. The manager is named
+   * as stored: a deactivated one, or one of another organisation by a row written before the check, is among them.
+   */
+  managersNamed(
+    organisationId: string,
+    personIds?: readonly string[],
+  ): Promise<Array<{ personId: string; managerId: string }>>;
+  /**
    * D147: the people of the organisation with a current employment that names `managerId`, by person id, each once:
    * with the units of those employments in the employments' order, each once, and the units they lead themselves, by
    * unit id. A deactivated person is among them with `enabled` false, as `unitPeople` gives them; the use case decides.

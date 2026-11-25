@@ -2732,10 +2732,11 @@ describe("a manager's reports are those whose employments name them, never someo
 
   test('a co-manager, whose employment names another, and the reader’s own manager, though an employment of theirs names the reader, are in no read and take no write', async () => {
     const w = world();
-    // Personal lists whoever's employment names Hillevi, the Director among them. The co-manager is not on it: placed
-    // on the school and leading it, she reports to the Director, whom her employment names.
+    // Personal lists whoever's employment names Hillevi, without anyone she reports to herself: the Director's
+    // employment on the school names her and hers names him, a chain that comes round, so he is not on her list. The
+    // co-manager is not on it either: placed on the school and leading it, she reports to the Director.
     const listed = (await w.staff.overview(w.hillevi)).units.flatMap(u => u.people.map(p => p.id));
-    expect(listed.sort()).toEqual(['anna', 'director', 'erik']);
+    expect(listed.sort()).toEqual(['anna', 'erik']);
 
     const hlr = await w.competence.addType(admin, { name: 'HLR', area: 'Akut', kind: 'course' });
     // Required of everyone placed on the school, the two managers included.

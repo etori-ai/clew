@@ -215,8 +215,9 @@ export function managedPerson(reach: Reach, id: string): Managed | undefined {
 }
 /**
  * Whether someone on the reader's list reports to the reader (D147): everyone on it does, since the list is the people
- * whose employments name the reader as manager, except someone who also manages the reader (`above`), which only a
- * chain of managers that comes round can give. A reader of the line stops there: neither is the other's report.
+ * whose employments name the reader as manager and leaves out anyone who also manages the reader (`above`), which only
+ * a chain of managers that comes round can give. Asked all the same wherever a person is taken for a report, so that a
+ * list built some other way cannot make a manager of somebody's own manager.
  */
 export const reportsTo = (reach: Pick<Reach, 'above'>, person: { id: string }) => !reach.above.includes(person.id);
 /**

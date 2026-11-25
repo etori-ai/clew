@@ -2088,9 +2088,11 @@ export const siteHeader = (): SiteHeaderView => ({
 });
 
 /**
- * Administration › Organisation (D99): a tree of four levels as a catalogue pushed it, with what a push can leave
- * wrong: an administration nobody leads whose unit is led from nowhere above it either, a unit nobody is placed on, a
- * unit people are on that no unit group names, and two people placed on no unit.
+ * Administration › Organisation (D99, D147): a tree of four levels as a catalogue pushed it, with what a push can leave
+ * wrong: units with people that nobody leads (an administration at the root, a school under a led unit), an area nobody
+ * is placed on or leads, a unit nobody is placed on, a unit people are on that no unit group names, two people placed
+ * on no unit, and five people who report to nobody: two of Hagaskolan's three, both of Kultur och fritid's, and the
+ * manager at the top, whom no directory gives a manager.
  */
 export const organisationOverview = (): OrganisationOverview => {
   const unit = (
@@ -2100,7 +2102,7 @@ export const organisationOverview = (): OrganisationOverview => {
     managers: string[],
     placed: number,
     branch: number,
-    line: 'own' | 'above' | 'none',
+    unmanaged = 0,
     pushed = true,
   ) => ({
     unitId,
@@ -2109,27 +2111,35 @@ export const organisationOverview = (): OrganisationOverview => {
     managers: managers.map(name => ({ id: name.toLowerCase().replace(/\W+/g, '-'), name })),
     placed,
     branch,
-    line,
+    // A unit is led by its own managers or by nobody (D147): the tree passes no line on.
+    line: managers.length ? ('own' as const) : ('none' as const),
+    unmanaged,
     pushed,
   });
   return {
     units: [
-      unit('unit-arkiv', 'Arkivet', 'unit-kultur', [], 0, 0, 'none'),
-      unit('unit-utbildning', 'Barn och utbildning', 'unit-kommun', ['Elin Lindqvist'], 2, 9, 'own'),
-      unit('unit-skola', 'Bergsåkers skola', 'unit-grundskola', ['Hillevi Berg', 'Karin Åberg'], 3, 3, 'own'),
-      unit('unit-grundskola', 'Grundskola', 'unit-utbildning', ['Mattias Eriksson'], 1, 7, 'own'),
-      unit('unit-hagaskolan', 'Hagaskolan', 'unit-grundskola', [], 3, 3, 'above'),
-      unit('unit-hemtjanst', 'Hemtjänst', 'unit-omsorg', [], 0, 4, 'above'),
-      unit('unit-omsorg-centrum', 'Hemtjänst Centrum', 'unit-hemtjanst', ['Sara Pettersson'], 4, 4, 'own'),
-      unit('unit-kommun', 'Kommunen', null, ['Yusuf Lundgren'], 1, 15, 'own'),
-      unit('unit-kultur', 'Kultur och fritid', null, [], 2, 2, 'none'),
-      unit('unit-okand', 'unit-okand', null, ['Nils Öberg'], 1, 1, 'own', false),
-      unit('unit-omsorg', 'Vård och omsorg', 'unit-kommun', ['Amir Sjöberg'], 1, 5, 'own'),
+      unit('unit-arkiv', 'Arkivet', 'unit-kultur', [], 0, 0),
+      unit('unit-utbildning', 'Barn och utbildning', 'unit-kommun', ['Elin Lindqvist'], 2, 9),
+      unit('unit-skola', 'Bergsåkers skola', 'unit-grundskola', ['Hillevi Berg', 'Karin Åberg'], 3, 3),
+      unit('unit-grundskola', 'Grundskola', 'unit-utbildning', ['Mattias Eriksson'], 1, 7),
+      unit('unit-hagaskolan', 'Hagaskolan', 'unit-grundskola', [], 3, 3, 2),
+      unit('unit-hemtjanst', 'Hemtjänst', 'unit-omsorg', [], 0, 4),
+      unit('unit-omsorg-centrum', 'Hemtjänst Centrum', 'unit-hemtjanst', ['Sara Pettersson'], 4, 4),
+      unit('unit-kommun', 'Kommunen', null, ['Yusuf Lundgren'], 1, 15, 1),
+      unit('unit-kultur', 'Kultur och fritid', null, [], 2, 2, 2),
+      unit('unit-okand', 'unit-okand', null, ['Nils Öberg'], 1, 1, 0, false),
+      unit('unit-omsorg', 'Vård och omsorg', 'unit-kommun', ['Amir Sjöberg'], 1, 5),
     ],
     unplaced: 2,
+    unmanaged: 5,
   };
 };
-/** The people of the units of `organisationOverview()` that a test opens; a unit not listed has nobody placed on it. */
+/**
+ * The people of the units of `organisationOverview()` that a test opens, each with whom they report to (D147); a unit
+ * not listed has nobody placed on it. Bergsåkers skola's people all have a manager, one of them two. Hagaskolan, which
+ * nobody leads, holds one person with a manager, one whose only manager is deactivated and one whose employment names
+ * none. Kultur och fritid's two name each other, so neither is the other's manager.
+ */
 export const organisationPeople: Record<string, OrganisationUnitPeople['people']> = {
   'unit-skola': [
     {
@@ -2139,6 +2149,10 @@ export const organisationPeople: Record<string, OrganisationUnitPeople['people']
       email: 'anna.lindqvist@clew.test',
       role: 'employee',
       enabled: true,
+      managers: [
+        { id: 'hillevi', name: 'Hillevi Berg' },
+        { id: 'karin', name: 'Karin Åberg' },
+      ],
     },
     {
       id: 'hillevi',
@@ -2147,10 +2161,28 @@ export const organisationPeople: Record<string, OrganisationUnitPeople['people']
       email: 'hillevi@clew.test',
       role: 'manager',
       enabled: true,
+      managers: [{ id: 'mattias', name: 'Mattias Eriksson' }],
     },
-    { id: 'karin', name: 'Karin Åberg', userName: 'karin.aberg', email: null, role: 'manager', enabled: true },
-    // Deactivated: listed with the mark, and not among the three the tree's row counts.
-    { id: 'vera', name: 'Vera Öst', userName: 'vera.ost', email: null, role: 'employee', enabled: false },
+    {
+      id: 'karin',
+      name: 'Karin Åberg',
+      userName: 'karin.aberg',
+      email: null,
+      role: 'manager',
+      enabled: true,
+      managers: [{ id: 'mattias', name: 'Mattias Eriksson' }],
+    },
+    // Deactivated: listed with the mark, and not among the three the tree's row counts. Her employment still names a
+    // manager, which the server answers and the row does not say: a deactivated person reports to nobody.
+    {
+      id: 'vera',
+      name: 'Vera Öst',
+      userName: 'vera.ost',
+      email: null,
+      role: 'employee',
+      enabled: false,
+      managers: [{ id: 'hillevi', name: 'Hillevi Berg' }],
+    },
   ],
   'unit-grundskola': [
     {
@@ -2160,6 +2192,62 @@ export const organisationPeople: Record<string, OrganisationUnitPeople['people']
       email: 'mattias.eriksson@clew.test',
       role: 'manager',
       enabled: true,
+      managers: [{ id: 'elin', name: 'Elin Lindqvist' }],
+    },
+  ],
+  'unit-hagaskolan': [
+    {
+      id: 'omar',
+      name: 'Omar Hosseini',
+      userName: 'omar.hosseini',
+      email: 'omar.hosseini@clew.test',
+      role: 'employee',
+      enabled: true,
+      managers: [{ id: 'mattias', name: 'Mattias Eriksson' }],
+    },
+    {
+      id: 'petra',
+      name: 'Petra Holm',
+      userName: 'petra.holm',
+      email: 'petra.holm@clew.test',
+      role: 'employee',
+      enabled: true,
+      managers: [],
+      gap: 'inactive',
+    },
+    {
+      id: 'rut',
+      name: 'Rut Sand',
+      userName: 'rut.sand',
+      email: null,
+      role: 'employee',
+      enabled: true,
+      managers: [],
+      gap: 'none',
+    },
+  ],
+  'unit-kultur': [
+    {
+      id: 'dalia',
+      name: 'Dalia Nyström',
+      userName: 'dalia.nystrom',
+      email: 'dalia.nystrom@clew.test',
+      role: 'employee',
+      enabled: true,
+      managers: [],
+      circle: [{ id: 'ebbe', name: 'Ebbe Holm' }],
+      gap: 'round',
+    },
+    {
+      id: 'ebbe',
+      name: 'Ebbe Holm',
+      userName: 'ebbe.holm',
+      email: null,
+      role: 'employee',
+      enabled: true,
+      managers: [],
+      circle: [{ id: 'dalia', name: 'Dalia Nyström' }],
+      gap: 'round',
     },
   ],
   'unit-omsorg': [
@@ -2170,13 +2258,15 @@ export const organisationPeople: Record<string, OrganisationUnitPeople['people']
       email: 'amir.sjoberg@clew.test',
       role: 'manager',
       enabled: true,
+      managers: [{ id: 'yusuf', name: 'Yusuf Lundgren' }],
     },
   ],
 };
 /**
- * Who reports to a unit's managers from the units below it (D99 item 4), for the units a test opens: under Grundskola
- * the two who lead Bergsåkers skola, and a person placed on Hagaskolan, which nobody leads; under Vård och omsorg the
- * manager of Hemtjänst Centrum, two levels down, since Hemtjänst between them has no manager of its own.
+ * Who reports to a unit's managers without being placed on it (D147), for the units a test opens: the people elsewhere
+ * whose employments name one of them. Under Grundskola the two who lead Bergsåkers skola, each under the unit they
+ * lead, and a person employed on Hagaskolan, who leads no unit and is under the unit of that employment; under Vård och
+ * omsorg the manager of Hemtjänst Centrum, two levels down in the tree, which the reporting line does not read.
  */
 export const organisationReports: Record<string, OrganisationUnitPeople['reports']> = {
   'unit-grundskola': [

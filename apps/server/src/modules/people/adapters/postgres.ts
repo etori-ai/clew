@@ -844,6 +844,28 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
         .where(eq(schema.assignments.personId, personId))
         .orderBy(schema.assignments.unitId);
     },
+    async managersNamed(organisationId, personIds) {
+      if (personIds && !personIds.length) return [];
+      const pairs: Array<{ personId: string; managerId: string }> = [];
+      const ids = personIds ? [...new Set(personIds)].filter(id => !id.includes('\u0000')) : [undefined];
+      for (let at = 0; at < ids.length; at += MEMBER_BATCH) {
+        const slice = personIds ? (ids.slice(at, at + MEMBER_BATCH) as string[]) : undefined;
+        const rows = await tx
+          .selectDistinct({ personId: schema.employments.personId, managerId: schema.employments.managerId })
+          .from(schema.employments)
+          .innerJoin(schema.people, eq(schema.people.id, schema.employments.personId))
+          .where(
+            and(
+              eq(schema.people.organisationId, organisationId),
+              isNotNull(schema.employments.managerId),
+              slice ? inArray(schema.employments.personId, slice) : undefined,
+            ),
+          );
+        for (const row of rows) if (row.managerId) pairs.push({ personId: row.personId, managerId: row.managerId });
+      }
+      const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+      return pairs.sort((a, b) => byCodeUnit(a.personId, b.personId) || byCodeUnit(a.managerId, b.managerId));
+    },
     async reportsTo(organisationId, managerId) {
       const rows = await tx
         .select({
