@@ -130,7 +130,7 @@ export async function recordCheck(
 export async function approveOffer(
   tx: Transaction,
   id: string,
-  offer: { at: Date; manifest: unknown; version: number; draftOnly?: boolean },
+  offer: { at: Date; manifest: unknown; version: number; registrationId?: string; draftOnly?: boolean },
   manifest: unknown,
   by: string,
   at: Date,
@@ -150,6 +150,7 @@ export async function approveOffer(
       and(
         eq(connectors.id, id),
         eq(connectors.version, offer.version),
+        offer.registrationId === undefined ? undefined : eq(connectors.registrationId, offer.registrationId),
         offer.draftOnly ? eq(connectors.state, 'draft') : undefined,
         eq(connectors.offeredAt, offer.at),
         sql`${connectors.offered} = ${JSON.stringify(offer.manifest)}::jsonb`,

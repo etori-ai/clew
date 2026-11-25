@@ -442,11 +442,8 @@ test.describe('administration', () => {
       await expect(dialog).toHaveCount(0);
       await expect(page.getByRole('table').getByRole('link', { name: 'Nytt system' })).toBeVisible();
     });
-    for (const activated of [false, true]) {
-      test(`the add dialog retries only its own draft (${activated ? 'activated elsewhere' : 'still a draft'})`, async ({
-        page,
-        api,
-      }) => {
+    for (const outcome of ['still a draft', 'activated elsewhere', 'replaced'] as const) {
+      test(`the add dialog retries only its own draft (${outcome})`, async ({ page, api }) => {
         api.admin = true;
         const draft = {
           ...connectorDetail(api.connectors.find(c => c.id === 'hello')!),
@@ -468,8 +465,9 @@ test.describe('administration', () => {
         const offer = { revision: 'c'.repeat(64), at: '2026-11-04T07:00:00.000Z', diff };
         const current = {
           ...draft,
-          state: activated ? 'enabled' : 'draft',
-          version: activated ? 2 : 1,
+          state: outcome === 'activated elsewhere' ? 'enabled' : 'draft',
+          version: outcome === 'activated elsewhere' ? 2 : 1,
+          registrationId: outcome === 'replaced' ? '00000000-0000-4000-8000-000000000002' : draft.registrationId,
           offered: offer,
         };
         const approvals: unknown[] = [];
@@ -501,13 +499,15 @@ test.describe('administration', () => {
         await dialog.getByLabel(/Delad nyckel/).fill('en-tillräckligt-lång-nyckel');
         await dialog.getByRole('button', { name: 'Kontrollera' }).click();
         await dialog.getByRole('button', { name: 'Försök igen' }).click();
-        if (activated) {
+        if (outcome !== 'still a draft') {
           await expect(page).toHaveURL('/admin/connectors/hello');
           await expect(page.getByRole('button', { name: 'Granska ändringen' })).toBeVisible();
           expect(approvals).toEqual([]);
         } else {
           await expect(dialog.getByText('Anslutningen fungerar.', { exact: true })).toBeVisible();
-          expect(approvals).toEqual([{ apply: true, offered: offer.revision, draftVersion: 1 }]);
+          expect(approvals).toEqual([
+            { apply: true, offered: offer.revision, draft: { registrationId: draft.registrationId, version: 1 } },
+          ]);
         }
       });
     }

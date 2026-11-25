@@ -1250,6 +1250,7 @@ export const connectorDetail = (
   figuresOff: string[] = [],
 ): ConnectorDetail => ({
   ...c,
+  registrationId: '00000000-0000-4000-8000-000000000001',
   protocol: 1,
   scan: true,
   // The economy system declares a header capability in the suite, so its page offers the switch (D88).
