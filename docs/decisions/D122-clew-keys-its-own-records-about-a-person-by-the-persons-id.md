@@ -167,7 +167,7 @@ until 2026-11-13 every resolution read every person in the installation. `tests/
 plans for a few names and for 300 on a database of a thousand people per organisation. Migration 0060 brings older
 stored user names into the NFC form SCIM and sign-in compare. Each person keeps their id. Two people whose names
 would become equal need distinct names from the source owner before the upgrade can proceed
-([upgrade and recovery](../maintainers/reliability-operations.md#upgrading-scim-user-names)).
+([upgrade and recovery](https://github.com/etori-ai/clew/blob/e9fd204bdf1dce30618e1484632ca1a23c482d2c/docs/maintainers/reliability-operations.md#upgrading-scim-user-names)).
 Tests: `tests/unit/entities-cards.test.ts` (a renamed person keeps the cards that named them, a reused user name
 reaches only rows that arrive after, and a rename the source has not made rewrites a row and keeps a card's snooze),
 `tests/unit/entities-actions.test.ts` (an execute about a person erased since cannot be decided),

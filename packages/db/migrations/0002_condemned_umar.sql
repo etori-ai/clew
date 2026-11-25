@@ -1,1 +1,0 @@
-CREATE UNIQUE INDEX "thread_open_topic" ON "thread" USING btree ("person_id","topic") WHERE "thread"."state" = 'open' AND "thread"."kind" = 'pushed';
