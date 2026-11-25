@@ -116,7 +116,7 @@ describe('what a conversation has named, for the menu on the pane beside it', ()
     const sections = namedInConversation(
       said({ cards: ['leave'] }, {}),
       at('?card=move'),
-      { ...known, source: () => 'Startsidan' },
+      { ...known, source: () => 'Clew' },
       before,
     );
     expect(sections.map(s => s.title)).toEqual(['Ärenden · 2', 'Vyer · 1']);
@@ -125,7 +125,7 @@ describe('what a conversation has named, for the menu on the pane beside it', ()
       ['Flytta samtalet', true],
     ]);
     // A view the person opened has stood beside the transcript, whatever its kind says; its system is the word after "Vy".
-    expect(sections[1]!.things[0]).toMatchObject({ label: 'Källor', detail: 'Vy · Startsidan', current: false });
+    expect(sections[1]!.things[0]).toMatchObject({ label: 'Källor', detail: 'Vy · Clew', current: false });
     expect(leadsElsewhere(sections)).toBe(true);
   });
 

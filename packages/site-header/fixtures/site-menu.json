@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "site": { "name": "Startsidan", "href": "/portal/" },
+  "site": { "name": "Medarbetarwebben", "href": "/portal/" },
   "items": [
     { "id": "start", "label": "Start", "href": "/portal/" },
     {

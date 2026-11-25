@@ -28,7 +28,7 @@ const requestArea: Area = {
   id: 'requests',
   title: 'Beställningar och felanmälningar',
   connector: 'clew',
-  source: 'Startsidan',
+  source: 'Clew',
   icon: 'clock',
   figure: null,
   needsYou: 0,
@@ -68,7 +68,7 @@ const row = (page: Page) => toolRow(page, LABEL);
 const named = (page: Page) => rail(page).getByRole('button', { name: LABEL, exact: true });
 const serve = (page: Page, output: RequestsResult = seven) =>
   page.route('**/api/cap/clew.requests**', route =>
-    route.fulfill({ json: { output, source: 'Startsidan', view: requestsSpec } }),
+    route.fulfill({ json: { output, source: 'Clew', view: requestsSpec } }),
   );
 
 test.describe('Beställningar och felanmälningar as a tool', () => {
@@ -115,7 +115,7 @@ test.describe('Beställningar och felanmälningar as a tool', () => {
     api.areas.push(requestArea);
     await serve(page);
     await open(page, '/tools');
-    const own = page.getByRole('region', { name: 'Startsidan' });
+    const own = page.getByRole('region', { name: 'Clew' });
     const tile = own.getByRole('link', { name: LABEL, exact: true });
     await expect(tile).toHaveAttribute('href', `${PAGE}?from=%2Ftools`);
     await expect(own.getByText('Beställningar och felanmälningar', { exact: true })).toBeVisible();
@@ -126,7 +126,7 @@ test.describe('Beställningar och felanmälningar as a tool', () => {
     await expect(named(page)).toBeVisible();
     await page.goBack();
     await expect(page).toHaveURL('/tools');
-    await expect(page.getByRole('region', { name: 'Startsidan' }).getByRole('link', { name: LABEL })).toBeFocused();
+    await expect(page.getByRole('region', { name: 'Clew' }).getByRole('link', { name: LABEL })).toBeFocused();
   });
 
   test('a person without a service desk has no such tool, in the menu or on Alla verktyg', async ({ page, api }) => {
@@ -149,7 +149,7 @@ test.describe('Beställningar och felanmälningar as a tool', () => {
             status: 400,
             json: { error: 'Inget av systemen för beställningar och felanmälningar svarar just nu.' },
           })
-        : route.fulfill({ json: { output: requestsOutput, source: 'Startsidan', view: requestsSpec } }),
+        : route.fulfill({ json: { output: requestsOutput, source: 'Clew', view: requestsSpec } }),
     );
     await open(page, PAGE);
     const main = page.getByRole('main');

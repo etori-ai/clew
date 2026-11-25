@@ -47,6 +47,7 @@ import type {
 import type { MenuEntry, NewsResult, PanelViewSpec } from '@clew/contracts';
 import { newsCapabilities } from '../../apps/server/src/modules/news/capabilities';
 import { brandskyddMark, mariaMark } from './competence';
+import { SITE } from './branding-fixtures';
 import { manifest as communicationNewsManifest } from '../../connectors/communication/connector.mjs';
 
 /** Synthetic data, typed against the contracts so the suite follows the API. The clock is frozen to this Wednesday. */
@@ -944,7 +945,7 @@ export const conversation = (
   if (/ramlat/i.test(text)) {
     const body =
       '1. Lyft inte själv [1].\n2. Ring sjuksköterskan på jourtelefonen [1].\n3. Skriv avvikelse i avvikelsesystemet innan passet slutar [2].';
-    const view = { capability: 'clew.search', input: { query: text }, title: 'Källor', source: 'Startsidan' };
+    const view = { capability: 'clew.search', input: { query: text }, title: 'Källor', source: 'Clew' };
     const reply = thread({
       id: conversationId,
       title: text.slice(0, 80),
@@ -960,7 +961,7 @@ export const conversation = (
           body,
           createdAt: NOW,
           meta: {
-            source: 'Startsidan',
+            source: 'Clew',
             shape: 'steg',
             view,
             sources: citations,
@@ -974,7 +975,7 @@ export const conversation = (
       thread: reply,
       shape: 'steg',
       assistant: 'model',
-      answer: { body, source: 'Startsidan', at: NOW },
+      answer: { body, source: 'Clew', at: NOW },
       view,
       clewActions: [],
       followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'],
@@ -1208,6 +1209,7 @@ export const connectors = (): ConnectorSummary[] => [
     id: 'calendar',
     source: 'Kalendern',
     bundled: true,
+    kind: 'core',
     url: null,
     secretChangedAt: null,
     counts: { capabilities: 7, execute: 2, tools: 4 },
@@ -1344,6 +1346,8 @@ export const checkReport: CheckReport = {
       group: 'capabilities',
       label: 'Dagens möten',
       description: 'Svarar inte för chef. En förmåga som anropar Clew behöver att Clew är igång.',
+      // What the runtime said, in its own English words, for the administrator to pass on (WA-L12).
+      cause: 'fetch failed: connect ECONNREFUSED 10.0.0.5:4010',
       capability: 'hello.dayWithMeetings',
     },
     {
@@ -2075,9 +2079,9 @@ export function entityDetail(list: EntityList, key: string): EntityDetail | unde
   };
 }
 
-/** The shared header (D88) as the suite draws it: Clew's default, no connector behind it. */
+/** The shared header (D88) as the suite draws it: Clew's default, no connector behind it, named as the installation. */
 export const siteHeader = (): SiteHeaderView => ({
-  menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] },
+  menu: { version: 1, site: { name: SITE, href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] },
   logo: null,
   source: null,
 });
@@ -2228,7 +2232,7 @@ export const newsSpec = {
   ...declaredNews.view!,
   capability: 'clew.news',
   connector: 'clew',
-  source: 'Startsidan',
+  source: 'Clew',
   chip: false,
   rowViews: true,
 } as PanelViewSpec;
@@ -2369,7 +2373,7 @@ export function asNotice(base: Thread, id = base.id, over: Partial<Thread> = {})
 /** "Alla nyheter" placed in the rail under Verktyg by an administrator (D40), as the registry lists it. */
 export const newsMenuRow: MenuEntry = {
   connector: 'clew',
-  source: 'Startsidan',
+  source: 'Clew',
   capability: 'clew.news',
   title: 'Nyheter',
   label: 'Nyheter',
@@ -2380,7 +2384,7 @@ export const TOOLBOX_HREF = 'https://intranat.example/verktyg';
 export const siteHeaderWithToolbox = (): SiteHeaderView => ({
   menu: {
     version: 1,
-    site: { name: 'Startsidan', href: '/' },
+    site: { name: 'Intranätet', href: '/' },
     items: [
       { id: 'start', label: 'Start', href: '/' },
       {

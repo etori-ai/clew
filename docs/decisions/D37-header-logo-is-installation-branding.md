@@ -18,7 +18,8 @@ database, upload service or administration page. Public build values require a V
 
 **Why.** The product owner requested Sundsvall's dragon while allowing other municipalities to pick
 their own mark. One shell and one resolved profile cover all surfaces, with no municipality logic in
-pages. The original assets, provenance and ownership are in `apps/web/public/branding/README.md`.
+pages. The original assets, provenance and ownership are in `themes/sundsvall/README.md` (moved there from
+`apps/web/public/branding/` on 2026-11-24, D98 item 9 as amended).
 
 **Replaces.** Extends D31/D34's shared navigation heading with installation branding and this narrow
 native-image exception. The current rail/landing/overview design is preserved. The private reference

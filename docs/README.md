@@ -1,6 +1,6 @@
 # Clew documentation
 
-Clew brings an employee's work across systems into one workspace. It connects the information, decisions and follow-up around that work while each source remains responsible for its business records. Startsidan is Clew's Swedish employee interface.
+Clew brings an employee's work across systems into one workspace. It connects the information, decisions and follow-up around that work while each source remains responsible for its business records. Its Swedish employee interface carries the installation's own name, Clew until an administrator names it (D98).
 
 ## Understand Clew first
 

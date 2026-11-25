@@ -450,7 +450,14 @@ describe('the model and a view it may not read', () => {
       ],
     });
     expect(
-      systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: [] }),
+      systemPrompt({
+        name: 'x',
+        role: 'employee',
+        unitLabel: 'y',
+        now: new Date(now),
+        week: 45,
+        objects: [],
+      }),
     ).toContain('resultatet visas i en vy');
   });
   test('the answer carries the declared view with the input the model chose, so the person sees the rows the model did not', async () => {

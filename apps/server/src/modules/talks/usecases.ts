@@ -59,8 +59,11 @@ const NOT_ALLOWED = 'Du kan inte ändra den här åtgärdspunkten.';
 const BAD_DAY = 'Ange ett giltigt datum.';
 const BAD_SPAN = 'Ange en giltig start- och sluttid, med högst ett dygn emellan.';
 const HELD_ALREADY = 'Samtalet är redan markerat som hållet.';
-/** A booking an invitation carries is changed by what happens to the invitation, never by hand (D132 item 4). */
-const INVITED = 'Samtalet är bokat genom en inbjudan från Clew, så tiden kan inte ändras här.';
+/**
+ * A booking an invitation carries is changed by what happens to the invitation, never by hand (D132 item 4). The
+ * sentence names who sent the invitation, the installation by its name (D98); it is only shown, never matched on.
+ */
+const INVITED = (site: string) => `Samtalet är bokat genom en inbjudan från ${site}, så tiden kan inte ändras här.`;
 const CHANGED = 'Samtalet har ändrats. Läs om sidan.';
 /** Whether two readings of a talk's booking are the same booking: by whom, when recorded and what carries it. */
 const sameBooking = (a: TalkBooking | null | undefined, b: TalkBooking | null | undefined) =>
@@ -587,12 +590,13 @@ export function talkUsecases(deps: TalkDeps) {
       if (!span) throw new TalkError(BAD_SPAN);
       const at = now().toISOString();
       const { before, invited } = await bookingBefore(persona, employeeId);
+      const refused = invited ? INVITED(await deps.siteName()) : null;
       return deps.store.transaction(async tx => {
         const round = await openRoundOf(tx, persona.organisationId);
         const existing = await tx.talk(round.id, employeeId);
         if (existing?.heldOn) throw new TalkError(HELD_ALREADY);
         if (!sameBooking(existing?.booking, before)) throw new TalkError(CHANGED);
-        if (invited) throw new TalkError(INVITED);
+        if (refused) throw new TalkError(refused);
         const current = existing?.booking;
         // The same time by the same manager again changes nothing.
         const same =
@@ -630,12 +634,13 @@ export function talkUsecases(deps: TalkDeps) {
       await employeeOf(persona, employeeId);
       const at = now().toISOString();
       const { before, invited } = await bookingBefore(persona, employeeId);
+      const refused = invited ? INVITED(await deps.siteName()) : null;
       await deps.store.transaction(async tx => {
         const round = await openRoundOf(tx, persona.organisationId);
         const existing = await tx.talk(round.id, employeeId);
         if (!existing?.booking) return;
         if (!sameBooking(existing.booking, before)) throw new TalkError(CHANGED);
-        if (invited) throw new TalkError(INVITED);
+        if (refused) throw new TalkError(refused);
         await tx.saveTalk({ ...existing, booking: null, updatedAt: at });
         await tx.audit({
           actor: persona.principal.id,

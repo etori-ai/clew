@@ -148,6 +148,7 @@ function world() {
       new Set(
         (managers.get(managerId)?.units ?? []).flatMap(u => u.people.map(p => p.id)).filter(id => id !== managerId),
       ),
+    siteName: async () => 'Medarbetarwebben',
     clock,
     ids,
   });
@@ -174,7 +175,7 @@ function world() {
   registry.register({
     id: SEARCH_CONNECTOR,
     kind: 'core',
-    source: 'Startsidan',
+    source: 'Clew',
     areas: [],
     ...talkSeamCapabilities(seam, actor => !!registry.talkSource(actor)),
   });

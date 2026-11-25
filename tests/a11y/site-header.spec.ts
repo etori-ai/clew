@@ -95,7 +95,7 @@ test.describe('shared header on the intranet', () => {
     await page.emulateMedia({ colorScheme: 'dark' });
     await openIntranet(page, '/organisation');
     // This band's dark ground calls for the white logo in both appearances.
-    expect(await look()).toEqual({ logo: '/branding/sundsvall-dragon-white.png', item: 'rgb(255, 255, 255)' });
+    expect(await look()).toEqual({ logo: '/intranat/logo-dark.svg', item: 'rgb(255, 255, 255)' });
     await expectNoAxeViolations(page);
 
     // A choice made in Clew wins over the system, and is followed when it changes.
@@ -103,13 +103,13 @@ test.describe('shared header on the intranet', () => {
     await page.evaluate(() => localStorage.setItem('clew:color-mode', 'dark'));
     await openIntranet(page, '/organisation');
     await expect(header).toHaveAttribute('data-site-header-mode', 'dark');
-    expect((await look()).logo).toBe('/branding/sundsvall-dragon-white.png');
+    expect((await look()).logo).toBe('/intranat/logo-dark.svg');
     await page.evaluate(() => {
       localStorage.setItem('clew:color-mode', 'light');
       window.dispatchEvent(new StorageEvent('storage', { key: 'clew:color-mode' }));
     });
     await expect(header).toHaveAttribute('data-site-header-mode', 'light');
-    await expect.poll(look).toEqual({ logo: '/branding/sundsvall-dragon-white.png', item: 'rgb(255, 255, 255)' });
+    await expect.poll(look).toEqual({ logo: '/intranat/logo-dark.svg', item: 'rgb(255, 255, 255)' });
   });
 
   test('a light intranet band uses its light-ground logo in both page appearances', async ({ page }) => {
@@ -122,7 +122,7 @@ test.describe('shared header on the intranet', () => {
     const header = page.locator('site-header');
     for (const mode of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: mode });
-      await expect(header.getByRole('img')).toHaveAttribute('src', '/branding/sundsvall-dragon.png');
+      await expect(header.getByRole('img')).toHaveAttribute('src', '/intranat/logo.svg');
       await expect(header.getByRole('link', { name: 'Organisation' })).toHaveCSS('color', 'rgb(0, 0, 0)');
     }
   });

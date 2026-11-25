@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { BoardingMock } from './boarding';
 import {
+  SITE,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -72,7 +73,7 @@ test.describe('Administration › Introduktion och avslut', () => {
     await open(page, '/admin/connectors');
     await adminRow(page).click();
     await expect(page).toHaveURL('/admin/boarding');
-    await expect(page).toHaveTitle('Introduktion och avslut · Startsidan');
+    await expect(page).toHaveTitle(`Introduktion och avslut · ${SITE}`);
     await expect(adminItem(page)).toHaveAttribute('aria-current', 'true');
     await expect(page.getByRole('heading', { level: 1, name: 'Introduktion och avslut' })).toBeVisible();
     const intro = page.getByRole('table', { name: 'Lager för introduktion' });

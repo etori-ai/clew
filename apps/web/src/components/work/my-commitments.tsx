@@ -6,6 +6,7 @@ import { Badge, Button, Card, Heading, HStack, Link, List, ListItem, Text, VStac
 import { api } from '../../api';
 import { useTalkAction } from '../../mutations';
 import { commitmentsQuery } from '../../queries';
+import { errorMessage } from '../../query-policy';
 import { dueText, isOverdue, splitMine, type CommitmentEntry } from '../../talks';
 import { personPageHref } from '../../person-address';
 import { ContentArrival } from '../shell/loading';
@@ -91,7 +92,8 @@ export function MyCommitments() {
         <Card padding={0}>
           <VStack gap={2} padding={4}>
             <Text as="p" role="alert">
-              {read.error instanceof Error ? read.error.message : 'Åtgärdspunkterna kunde inte hämtas just nu.'}
+              {/* Clew's own words, or these: never the browser's ("Failed to fetch") or an abort's (WA-L12). */}
+              {errorMessage(read.error, 'Åtgärdspunkterna kunde inte hämtas just nu.')}
             </Text>
             <HStack>
               <Button

@@ -945,6 +945,8 @@ export const installationAppearance = pgTable(
   {
     id: text('id').primaryKey(),
     revision: integer('revision').notNull(),
+    // The installation's name (D98 as amended 2026-11-24); null until an administrator names it.
+    name: text('name'),
     theme: jsonb('theme').$type<InstallationTheme>(),
     logoAlt: text('logo_alt'),
     logoLightType: text('logo_light_type').$type<LogoMediaType>(),

@@ -1,5 +1,15 @@
 import type { Page } from '@playwright/test';
-import { announcements, expect, expectNoAxeViolations, heading, narrow, open, reflowProblems, test } from './support';
+import {
+  SITE,
+  announcements,
+  expect,
+  expectNoAxeViolations,
+  heading,
+  narrow,
+  open,
+  reflowProblems,
+  test,
+} from './support';
 import { ENTITY_UNIT, TALK_LENS, user } from './data';
 import { BELOW_UNIT, MEMBER_UNIT, SICK_UNIT, TALK_UNITS, Units, unitAction, unitCard } from './unit-data';
 
@@ -37,7 +47,7 @@ test.describe('the unit as a page', () => {
   }) => {
     await new Units().route(page);
     await open(page, `${school}?from=%2F`);
-    await expect(page).toHaveTitle(`${ENTITY_UNIT.label} · Startsidan`);
+    await expect(page).toHaveTitle(`${ENTITY_UNIT.label} · ${SITE}`);
     await expect(heading(page, 1, ENTITY_UNIT.label)).toBeVisible();
     await expect(wayBack(page, 'Hem')).toHaveAttribute('href', '/');
     const strip = page.getByRole('navigation', { name: `Om ${ENTITY_UNIT.label}` });
@@ -146,7 +156,7 @@ test.describe('the unit as a page', () => {
     await new Units().route(page);
     await open(page, '/units/okand?from=%2F');
     await expect(heading(page, 1, 'Enheten finns inte')).toBeVisible();
-    await expect(page).toHaveTitle('Enheten finns inte · Startsidan');
+    await expect(page).toHaveTitle(`Enheten finns inte · ${SITE}`);
     await expect(page.getByRole('link', { name: 'Till startsidan' })).toHaveAttribute('href', '/');
     await expectNoAxeViolations(page);
   });

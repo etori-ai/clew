@@ -166,6 +166,7 @@ test('the talks routes (D96, D132, D133): thin writes over the use cases, Swedis
     staff: async p =>
       p.id === 'boss' ? { units: [{ unitId: 'u1', unitLabel: 'Enheten', people: [anna] }] } : { units: [] },
     reports: async managerId => new Set(managerId === 'boss' ? ['anna'] : []),
+    siteName: async () => 'Medarbetarwebben',
     clock: () => new Date('2026-11-10T09:00:00.000Z'),
     ids: () => 'id-' + ++n,
   });

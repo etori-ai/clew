@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { CheckGroup, CheckItem, CheckLevel, CheckReport } from '@clew/contracts';
+import { useBranding } from '../../branding';
 import { Banner, Code, Collapsible, CollapsibleGroup, HStack, List, ListItem, StatusDot, Text, VStack } from '@clew/ui';
 
 /**
@@ -7,10 +8,10 @@ import { Banner, Code, Collapsible, CollapsibleGroup, HStack, List, ListItem, St
  * with a count on each. A group with something to look at opens by itself, its problems first; a group that passed stays
  * shut and says so. Colour never stands alone: every dot has its word.
  */
-const GROUPS: Array<{ id: CheckGroup; label: string }> = [
+const GROUPS = (site: string): Array<{ id: CheckGroup; label: string }> => [
   { id: 'connection', label: 'Anslutning' },
   { id: 'capabilities', label: 'Funktioner' },
-  { id: 'surfaces', label: 'I Startsidan' },
+  { id: 'surfaces', label: `I ${site}` },
 ];
 const SEVERITY: Record<CheckLevel, number> = { fail: 0, warn: 1, ok: 2 };
 const DOT = {
@@ -18,6 +19,20 @@ const DOT = {
   warn: { variant: 'warning', label: 'Varning' },
   fail: { variant: 'error', label: 'Fel' },
 } as const;
+
+/**
+ * What a system, a model's endpoint or the network answered, in its own words (WA-L12): shown to an administrator, who
+ * may need it to tell the system's owner, named as the technical cause and marked as English (3.1.2), since that is the
+ * language a runtime's errors are in. Never shown to anyone outside the administration.
+ */
+export const TechnicalCause = ({ detail }: { detail: string }) => (
+  <>
+    Teknisk orsak, på engelska:{' '}
+    <span lang="en">
+      <Code size="inherit">{detail}</Code>
+    </span>
+  </>
+);
 
 /** One check's level as a dot with its word. */
 export const LevelDot = ({ level }: { level: CheckLevel }) => <StatusDot {...DOT[level]} />;
@@ -70,10 +85,13 @@ export function CheckResult({
   failure?: Failure;
   action?: ReactNode;
 }) {
-  const groups = GROUPS.map(g => ({
-    ...g,
-    items: report.items.filter(i => i.group === g.id).sort((a, b) => SEVERITY[a.level] - SEVERITY[b.level]),
-  })).filter(g => g.items.length);
+  const site = useBranding().name;
+  const groups = GROUPS(site)
+    .map(g => ({
+      ...g,
+      items: report.items.filter(i => i.group === g.id).sort((a, b) => SEVERITY[a.level] - SEVERITY[b.level]),
+    }))
+    .filter(g => g.items.length);
   const open = groups.filter(g => g.items.some(i => i.level !== 'ok')).map(g => g.id);
   return (
     <VStack gap={3}>
@@ -102,6 +120,11 @@ export function CheckResult({
                   description={
                     <VStack gap={0}>
                       {item.description && <Text type="supporting">{item.description}</Text>}
+                      {item.cause && (
+                        <Text type="supporting">
+                          <TechnicalCause detail={item.cause} />
+                        </Text>
+                      )}
                       {item.capability && (
                         <Text type="supporting">
                           <Code size="inherit">{item.capability}</Code>

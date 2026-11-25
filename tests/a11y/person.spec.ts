@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import {
+  SITE,
   announcements,
   expect,
   expectNoAxeViolations,
@@ -60,7 +61,7 @@ test.describe('the person as a page', () => {
   }) => {
     await new People().route(page);
     await open(page, '/people/johan?from=%2Fstaff');
-    await expect(page).toHaveTitle('Johan Byström · Startsidan');
+    await expect(page).toHaveTitle(`Johan Byström · ${SITE}`);
     const main = page.getByRole('main');
     await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
     await expect(wayBack(page, 'Personal')).toHaveAttribute('href', '/staff');
@@ -121,7 +122,7 @@ test.describe('the person as a page', () => {
     const strip = tabs(page);
     await strip.getByRole('link', { name: 'Kontakt' }).click();
     await expect(page).toHaveURL(`/people/johan?section=${CONTACT}&from=%2Fstaff`);
-    await expect(page).toHaveTitle('Kontakt · Johan Byström · Startsidan');
+    await expect(page).toHaveTitle(`Kontakt · Johan Byström · ${SITE}`);
     await expect(strip.getByRole('link', { name: 'Kontakt' })).toHaveAttribute('aria-current', 'true');
     expect(await sectionsOf(page)).toEqual(['Kontakt']);
     await page.reload();
@@ -278,7 +279,7 @@ test.describe('the person as a page', () => {
     await new People().route(page);
     await open(page, '/people/okand');
     await expect(page.getByRole('heading', { level: 1, name: 'Personen finns inte' })).toBeVisible();
-    await expect(page).toHaveTitle('Personen finns inte · Startsidan');
+    await expect(page).toHaveTitle(`Personen finns inte · ${SITE}`);
     await expect(page.getByRole('complementary', { name: 'Uppgifter' })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
@@ -525,7 +526,7 @@ test.describe('a conversation about a person', () => {
       // The address carries the person; the tab only says what the pane shows first.
       await expect(page).toHaveURL(`/conversations/new?person=johan&section=${section}`);
       await expect(page.getByRole('heading', { level: 1, name: 'Fråga om Johan Byström' })).toBeVisible();
-      await expect(page).toHaveTitle('Fråga om Johan Byström · Startsidan');
+      await expect(page).toHaveTitle(`Fråga om Johan Byström · ${SITE}`);
       await expect(page.getByText('Samtal med assistenten', { exact: true })).toBeVisible();
       await expect(page.getByText('Fråga om Johan', { exact: true })).toBeVisible();
       await expect(box(page)).toBeFocused();

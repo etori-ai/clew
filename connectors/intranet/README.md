@@ -9,14 +9,14 @@ the protocol and draws it on every page for the people in the connector's audien
 Sitevision tree lists for a signed-in visitor, so the header reads the same on Clew's pages and on the intranet's;
 a real connector lists what the acting person may read in the content system.
 
-**What it answers is configuration, not code.** `menu.json` beside the connector holds the site's name, the logo and the
-places with their own pages, in the protocol's `SiteHeaderOutput` shape; a place or a page with `"roles": ["manager"]`
+**What it answers is configuration, not code.** `menu.json` beside the connector holds the site's name and the places
+with their own pages, in the protocol's `SiteHeaderOutput` shape, and may hold a logo; a place or a page with `"roles": ["manager"]`
 is listed to that role only. A person the file lists no place for is answered `denied` with HTTP 403, as a content
 system that lists nothing for someone answers, and Clew draws its own header for them. Edit the file, or point
 `INTRANET_MENU_FILE` at another, and restart the service (`sh scripts/compose.sh restart intranet` in the development
-stack). Supply the logo for a dark ground as a path on Clew's origin (`/branding/…`, served from `apps/web/public`)
-or an https address. On a pale band, Clew gives the logo a dark plate. The installation chooses the band's colour
-in Administration › Utseende (D88, D98).
+stack). The file gives no logo, so the band shows the one the installation saved on Administration › Utseende (D98);
+a `logo` for a dark ground, a path on Clew's origin or an https address, takes its place. On a pale band, Clew gives the logo a dark plate.
+The installation chooses the band's colour there too (D88, D98).
 
 Run it beside Clew with the development stack (`bun run dev:connectors` registers it on port 4049), or on its own:
 

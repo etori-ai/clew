@@ -88,6 +88,7 @@ function world() {
     store: talkStore,
     staff: async p => staffOf(p.id),
     reports: async id => new Set((teams.get(id) ?? []).map(m => m.personId)),
+    siteName: async () => 'Medarbetarwebben',
     clock: () => now,
     ids,
   });

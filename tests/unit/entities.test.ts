@@ -1178,7 +1178,7 @@ describe('the registry names the sources about an entity', () => {
     registry.register({
       id: 'clew',
       kind: 'core',
-      source: 'Startsidan',
+      source: 'Clew',
       areas: [],
       capabilities: [
         {
