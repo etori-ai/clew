@@ -207,9 +207,9 @@ connected?" without settling the rest of that question. D45, D47, D75, D86, D121
 
 ## As built
 
-Three slices on the branch `linked-accounts`, 2026-11-25 and 2026-11-26: everything but the pages and the
-administrator's review, with the development stack's test written and not yet run. A person cannot link from the web
-app yet, so the branch is not ready for `main`.
+Three slices on the branch `linked-accounts`, 2026-11-25: everything but the pages and the administrator's review,
+with the development stack's test run against the real Keycloak. A person cannot link from the web app yet, so the
+branch is not ready for `main`.
 
 - **The protocol.** `LinkedAccountSchema` and the manifest's `linkedAccount` in
   [protocol.ts](../../packages/connectors/src/protocol.ts); the rule that a manifest declares one way and an address
@@ -251,8 +251,15 @@ app yet, so the branch is not ready for `main`.
   [linked-account-check.ts](../../scripts/linked-account-check.ts) runs the whole of it against the real Keycloak
   without a browser: discovery, registration, two people who sign in and consent at the realm's own pages, calls with
   no session, a scan, a decision and its read-back, the rotated refresh token, a link the system takes away and one
-  the person takes away. **It has not been run**: the realm needs Keycloak's administrator, which this session was
-  not given. The fixture's own tests sign tokens with a key of the test's.
+  the person takes away. **Run on 2026-11-25** against Keycloak 26.2.5, on a database of the branch's own, twice:
+  all 21 checks held both times, and the second run registered no new client. What it showed for the first time
+  against a server not written here: the realm's metadata is found after its issuer's path, where the adapter looks
+  second; Clew registers itself as a client without a secret and the realm then asks the person's consent; the code
+  is redeemed with PKCE and the issuer on return; a one-minute access token is refreshed on the next call and the
+  refresh token rotated; the spent one is refused; a session ended at the realm loses the link as `invalid_grant`
+  with its audit row; and unlinking is revoked there. No code of Clew's or of the fixture's changed for it. The
+  check's own driver of Keycloak's pages did, twice: it loads connectors through the server's composition, since the
+  registry's governance is installed there, and it resolves a form's address against its page.
 
 Where it differs from the items above:
 
@@ -277,8 +284,7 @@ Where it differs from the items above:
 
 Not built: both pages and anything in the web app that starts linking; the administrator's review and the entered
 addresses on Administration › Anslutna system; a client metadata document served by Clew; the callback for a person
-whose session ended while they were at the system; and, of item 14, the run of the stack's test and the outside test
-against Nextcloud's own server.
+whose session ended while they were at the system; and, of item 14, the outside test against Nextcloud's own server.
 
 ## Sources
 

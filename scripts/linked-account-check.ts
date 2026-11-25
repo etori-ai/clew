@@ -43,7 +43,9 @@ try {
 }
 const { linkedAccounts, LINK_REDIRECT_PATH } = await import('../apps/server/src/composition/linked-accounts');
 const { registry } = await import('../apps/server/src/connectors/registry');
-const { registerConnector: load, sourceOf } = await import('../apps/server/src/connectors/remote');
+// The server's own composition: `refreshConnectors` puts every enabled row in the registry with its governance, as a
+// request to the running server does before it answers.
+const { refreshConnectors } = await import('../apps/server/src/composition');
 const { signingAuthority } = await import('../apps/server/src/connectors/signing');
 const { postgresLinkStore } = await import('../apps/server/src/modules/linked-accounts/adapters/postgres');
 const { openSecret, sealSecret } = await import('../apps/server/src/auth-crypto');
@@ -109,11 +111,31 @@ async function atTheSystem(start: string, account: string, password: string): Pr
     return next.startsWith(redirect) ? next : visit(next);
   };
   const form = (html: string) => /<form[^>]*action="([^"]+)"/.exec(html)?.[1]?.replace(/&amp;/g, '&');
+  /** What a page of Keycloak's says, for when it is not the page the check expected: its title and its message. */
+  const said = (html: string) =>
+    [
+      /<title>([^<]*)<\/title>/,
+      /id="kc-error-message"[^>]*>\s*<p[^>]*>([^<]*)</,
+      /class="[^"]*alert[^"]*"[^>]*>([\s\S]{0,200}?)<\/div>/,
+    ]
+      .map(pattern =>
+        pattern
+          .exec(html)?.[1]
+          ?.replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      )
+      .filter(Boolean)
+      .join(' · ');
   let page = await visit(start);
   for (let step = 0; step < 4 && typeof page !== 'string'; step++) {
     const html = await page.text();
-    const action = form(html);
-    if (!action) throw new Stop(`Keycloak answered ${page.status} with no form at ${new URL(page.url).pathname}`);
+    const found = form(html);
+    const action = found && URL.canParse(found, page.url) ? new URL(found, page.url).href : undefined;
+    if (!action || !action.includes('/login-actions/'))
+      throw new Stop(
+        `Keycloak answered ${page.status} at ${new URL(page.url).pathname} with no sign-in or consent form: ${said(html) || 'nothing it says'}`,
+      );
     const body = action.includes('/login-actions/consent')
       ? new URLSearchParams({ accept: 'Yes' })
       : new URLSearchParams({ username: account, password, credentialId: '' });
@@ -192,9 +214,12 @@ async function main() {
     ok('the system is up and says who issues its tokens');
 
     // 2. Registered, and approved by discovery.
-    const registered = await registerConnector({ id: CONNECTOR, url, secret, enable: true });
-    const row = (await readConnector(CONNECTOR))!;
-    load(registry, sourceOf(row), registered.manifest);
+    await registerConnector({ id: CONNECTOR, url, secret, enable: true });
+    await refreshConnectors();
+    check(
+      !!registry.connector(CONNECTOR)?.linkedAccount,
+      'it is registered, and the registry knows it declares a linked account',
+    );
     const approval = await linkedAccounts.approveAsOperator(CONNECTOR);
     check(
       approval.issuer === VENDOR_ISSUER && approval.origin === 'discovered',
@@ -316,3 +341,5 @@ try {
 } finally {
   await closeDatabase();
 }
+// The server's composition keeps timers of its own; the check is done.
+process.exit(process.exitCode ?? 0);
