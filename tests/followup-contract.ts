@@ -61,6 +61,7 @@ export function followupFixture(id: string): FollowupSnapshot {
         eventRef: 'test',
         eventRevision: 'v1',
         eventUid: 'test',
+        eventIcalUid: 'test-ical',
         confirmedAt: '2026-11-02T08:00:00.000Z',
         undoUntil: null,
         reminders: 0,

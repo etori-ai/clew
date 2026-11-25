@@ -80,6 +80,21 @@ to be kept in step.
   Instants and ids only.
 - An invitation whose meeting is gone and that the manager settles is marked `undone`, as one the manager undid.
 - The card in Att göra can lag the page by one scan: the talk's tab is right as soon as the reading back has run.
+- A meeting made all-day in the calendar is read back as the days it covers, from the start of its first day in
+  Clew's zone to the start of the day after its last, never from midnight UTC. A meeting made all-day or recurring
+  has no one time the talk could take, so moving the talk to it is refused, with what to do in the calendar first;
+  the talk keeps its time (2026-11-24).
+- The calendar family knows a talk's meeting by `CalendarEvent.talk`, which the server sets from the event ids of
+  Clew's own standing invitations, the reader's and those that invite the reader; a renamed meeting is still the
+  talk's and another meeting with a talk's title is not (2026-11-24). The reader's own invitations are known by the
+  event's ref, its uid and its iCalUId; those that invite the reader by the uid and the iCalUId alone, the ids every
+  copy keeps, never by the organiser's ref, which may name another event in the reader's calendar. Microsoft 365 gives
+  the invitee's copy an id of its own and keeps only the iCalUId shared, so the booking stores the organiser copy's
+  iCalUId beside its uid (migration 0086). On Kalender, an address that names the meeting of a manager's own talk
+  (`entry=<event id>`, from Dagens möten or Hela veckan) opens the proposal that the meeting is drawn as
+  (2026-11-24).
+- The times are read in Clew's zone, Europe/Stockholm, which is fixed in the code; whether an installation sets its
+  own zone is an [open question](../maintainers/open-questions.md#the-calendar) (2026-11-24).
 
 **Not established.**
 

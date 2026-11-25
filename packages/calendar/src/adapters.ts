@@ -10,8 +10,11 @@ import { NextcloudProvider } from './nextcloud';
 export type CalendarAdapterKind = CalendarCredential['kind'];
 
 export type CalendarCredential =
-  /** CalDAV with iCalendar scheduling (RFC 4791, 6638). Nextcloud in dev; any CalDAV server in production. */
-  | { kind: 'caldav'; url: string; user: string; password: string }
+  /**
+   * CalDAV with iCalendar scheduling (RFC 4791, 6638). Nextcloud in dev; any CalDAV server in production. `user` signs
+   * in; `account` is the person as Clew's directory holds them, whose address makes an event theirs.
+   */
+  | { kind: 'caldav'; url: string; user: string; password: string; account: { email: string; name: string } }
   /**
    * Microsoft 365 through Microsoft Graph. Exchange Online has no CalDAV endpoint and EWS is retired from
    * October 2026. `token` yields a delegated Graph access token for the account's user; see
@@ -22,7 +25,7 @@ export type CalendarCredential =
 export function createCalendarProvider(credential: CalendarCredential): CalendarProvider {
   switch (credential.kind) {
     case 'caldav':
-      return new NextcloudProvider(credential.user, credential.password, credential.url);
+      return new NextcloudProvider(credential.user, credential.password, credential.account, credential.url);
     case 'microsoft365':
       return new Microsoft365Provider(credential.token, credential.account, credential.url);
   }

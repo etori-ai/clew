@@ -357,6 +357,11 @@ export const CalendarEventSchema = object({
   canCancel: Type.Boolean(),
   recurring: Type.Boolean(),
   organizer: Type.String(),
+  /**
+   * The meeting of an invitation to a talk that Clew sent and that still stands (D133): found by the event's id among
+   * Clew's own invitations, the reader's or one that invites the reader, never by its title. Absent for any other event.
+   */
+  talk: Type.Optional(Type.Literal(true)),
 });
 export type CalendarEvent = Static<typeof CalendarEventSchema>;
 
@@ -3853,7 +3858,18 @@ export type ReviewPreview = Static<typeof ReviewPreviewSchema>;
 export const ReceiptRowSchema = object({
   ref: Type.String(),
   label: Type.String(),
-  source: Type.Optional(object({ ref: Type.String(), revision: Type.String(), uid: Type.Optional(Type.String()) })),
+  /**
+   * The source's evidence for a row that is done: the event's handle and revision, Clew's uid for it and the id every
+   * copy of the meeting carries (`icalUid`, WA-L5), which differs from the uid where Clew's uid is the organiser's alone.
+   */
+  source: Type.Optional(
+    object({
+      ref: Type.String(),
+      revision: Type.String(),
+      uid: Type.Optional(Type.String()),
+      icalUid: Type.Optional(Type.String()),
+    }),
+  ),
   outcome: Type.Union([Type.Literal('done'), Type.Literal('unknown'), Type.Literal('failed'), Type.Literal('skipped')]),
   detail: Type.String(),
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { CalendarProvider, EventOccurrence } from '../packages/calendar/src/model';
+import { FREE_BUSY_TARGETS, type CalendarProvider, type EventOccurrence } from '../packages/calendar/src/model';
 
 /**
  * The calendar's adapter contract (D69). Every `CalendarProvider` that talks to a real protocol must pass it, so a use
@@ -83,6 +83,7 @@ export function calendarProviderContract(name: string, harness: CalendarHarness,
         organizer: provider.account.email,
         canCancel: true,
         roomResponse: 'none',
+        icalUid: created.icalUid,
       });
       expect(found.participants.find(p => p.email === harness.guestEmail)).toMatchObject({
         resource: false,
@@ -126,6 +127,35 @@ export function calendarProviderContract(name: string, harness: CalendarHarness,
       expect(await provider.availability(at(9), at(10), [guest])).toEqual([{ ref: 'guest', state: 'busy' }]);
       expect(await provider.availability(at(14), at(15), [guest])).toEqual([{ ref: 'guest', state: 'free' }]);
       expect(await provider.availability(at(9), at(10), [])).toEqual([]);
+      await provider.cancel(event.ref, (await provider.lookup(event.ref))!.revision);
+    });
+    test('eight people and a room are answered in one request, and more than one request takes is refused', async () => {
+      const provider = harness.organizer(),
+        at = hour(),
+        room = (await provider.resources()).find(r => r.name === 'Eken')!,
+        guest = { ref: 'guest', email: harness.guestEmail },
+        others = Array.from({ length: 7 }, (_, i) => ({ ref: `other-${i}`, email: `finns-inte-${i}@clew.test` }));
+      const event = await provider.create(harness.uid(), meeting(at, [harness.guestEmail]));
+      const targets = [guest, ...others, { ref: room.ref, email: room.email }];
+      expect((await provider.availability(at(9), at(10), targets)).map(a => [a.ref, a.state])).toEqual([
+        ['guest', 'busy'],
+        ...others.map(o => [o.ref, 'unknown']),
+        [room.ref, 'free'],
+      ]);
+      expect((await provider.freeBusy(at(8), at(11), targets)).map(b => b.ref)).toEqual(targets.map(t => t.ref));
+      // As many as one request takes are answered, every one of them; one more is refused.
+      const many = Array.from({ length: FREE_BUSY_TARGETS + 1 }, (_, i) => ({
+        ref: `p${i}`,
+        email: `p${i}@clew.test`,
+      }));
+      const full = [guest, ...many.slice(0, FREE_BUSY_TARGETS - 1)];
+      expect((await provider.availability(at(9), at(10), full)).map(a => a.ref)).toEqual(full.map(t => t.ref));
+      expect((await provider.freeBusy(at(8), at(11), full)).map(b => [b.ref, b.state])).toEqual([
+        ['guest', 'known'],
+        ...full.slice(1).map(t => [t.ref, 'unknown']),
+      ]);
+      expect(await refused(provider.availability(at(9), at(10), many))).toBe(true);
+      expect(await refused(provider.freeBusy(at(9), at(10), many))).toBe(true);
       await provider.cancel(event.ref, (await provider.lookup(event.ref))!.revision);
     });
     test('a room accepts a free time, shows as busy, and declines the next booking', async () => {
@@ -178,6 +208,8 @@ export function calendarProviderContract(name: string, harness: CalendarHarness,
       const event = await provider.create(harness.uid(), meeting(at, [harness.guestEmail]));
       const invitation = (await guest.list(at(0), at(23))).find(e => e.start === at(9))!;
       expect(invitation.organizer).toBe(provider.account.email);
+      // Each copy is the guest's own, and carries the id every copy of the meeting carries (WA-L5).
+      expect(invitation.icalUid).toBe(event.icalUid);
       expect(await guest.lookup(event.ref).catch(() => null)).toBeNull();
       const accepted = await guest.accept(invitation.ref, invitation.revision);
       expect(accepted.participants.find(p => p.email === harness.guestEmail)?.response).toBe('accepted');

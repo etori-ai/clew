@@ -3,10 +3,11 @@ import { CalendarError, type CalendarProvider } from './model';
 import { createCalendarProvider, type CalendarAdapterKind, type CalendarCredential } from './adapters';
 
 /**
- * Synthetic calendar accounts for the POC. The real system would resolve a person's calendar account from the
- * directory; here the bindings are explicit and local-only. Who a manager plans for is not here: that is the people
- * provisioned on the units they manage (D96 item 3), and the colleagues below are the same people with the same
- * addresses as Bergsåkers skola in `scripts/provisioner/directory.ts`.
+ * Synthetic calendar accounts for the POC. Who a person is in their calendar is their address in Clew's directory,
+ * which the binding is handed (`bindCalendar`); how they sign in to the calendar is what is synthetic and local-only
+ * here. Who a manager plans for is not here: that is the people provisioned on the units they manage (D96 item 3), and
+ * the colleagues below are the same people with the same addresses as Bergsåkers skola in
+ * `scripts/provisioner/directory.ts`.
  */
 const calendarUrl = () => process.env.CALENDAR_URL ?? 'http://calendar';
 const graphUrl = () => process.env.GRAPH_URL ?? 'http://graph:4010/v1.0';
@@ -26,21 +27,32 @@ const adapterFor = (user: string): CalendarAdapterKind => {
   if (forced === 'microsoft365' || forced === 'caldav') return forced;
   return user === 'mikael' ? 'microsoft365' : 'caldav';
 };
-const credential = (user: string, name = user): CalendarCredential => {
-  const email = `${user}@clew.test`;
-  return adapterFor(user) === 'microsoft365'
-    ? { kind: 'microsoft365', url: graphUrl(), account: { email, name }, token: async () => fakeGraphToken(email) }
-    : { kind: 'caldav', url: calendarUrl(), user, password: `calendar-${user}-local-only` };
-};
+/**
+ * The address the development directory gives every synthetic person, for the seeds, and the login a synthetic person
+ * signs in to the fake of Graph with.
+ */
+const fixtureAddress = (user: string) => `${user}@clew.test`;
+/**
+ * The calendar sign-in for `user`, as `person`: their address and name as the directory holds them. The sign-in is the
+ * person's own login, never their address: the directory's address is not unique (`auth_person.email`), so a token
+ * minted from it could open another person's mailbox for someone given the same or a wrong address.
+ */
+const credential = (user: string, person: { email: string; name: string }): CalendarCredential =>
+  adapterFor(user) === 'microsoft365'
+    ? {
+        kind: 'microsoft365',
+        url: graphUrl(),
+        account: person,
+        token: async () => fakeGraphToken(fixtureAddress(user)),
+      }
+    : { kind: 'caldav', url: calendarUrl(), user, password: `calendar-${user}-local-only`, account: person };
+/** The people with a calendar sign-in, the development directory's (`scripts/provisioner/directory.ts`). */
 const names: Record<string, string> = {
   hillevi: 'Hillevi Berg',
   hassan: 'Hassan Ali',
   mikael: 'Mikael Lund',
   ingrid: 'Ingrid Holm',
 };
-const accounts = Object.fromEntries(
-  Object.entries(names).map(([user, name]) => [user, { name, credential: credential(user, name) }]),
-);
 /** Calendar accounts without a sign-in: Hillevi's school, as `.devcontainer/calendar/seed.php` creates them. */
 const colleagues: Record<string, string> = {
   anna: 'Anna Lindqvist',
@@ -53,22 +65,30 @@ const colleagues: Record<string, string> = {
 export interface CalendarBinding {
   provider: CalendarProvider;
 }
-export function bindCalendar(persona: Pick<AuthenticatedContext, 'id'>): CalendarBinding {
+/**
+ * The person's own calendar, as the person `address` names in Clew's directory: the address an event they organise
+ * carries, never one made from how they sign in. A person the directory holds no address for has no calendar.
+ */
+export function bindCalendar(
+  persona: Pick<AuthenticatedContext, 'id' | 'name'>,
+  address: string | null,
+): CalendarBinding {
   if (process.env.CLEW_POC !== 'true')
     throw new Error('CLEW_POC=true is required: the calendar bindings are synthetic development fixtures.');
-  const account = accounts[persona.id];
-  if (!account) throw new CalendarError('Ditt konto har ingen kalender kopplad.');
-  return { provider: createCalendarProvider(account.credential) };
+  if (!Object.hasOwn(names, persona.id) || !address) throw new CalendarError('Ditt konto har ingen kalender kopplad.');
+  return { provider: createCalendarProvider(credential(persona.id, { email: address, name: persona.name })) };
 }
 /** Seed-only access to a member's own calendar, for fixtures. Never used by the application. */
 export function fixtureProvider(user: string) {
-  return createCalendarProvider(credential(user, names[user]));
+  return createCalendarProvider(
+    credential(user, { email: fixtureAddress(user), name: names[user] ?? colleagues[user] ?? user }),
+  );
 }
 /** Which adapter the directory binds a user to, for scripts that say where a seed went. */
 export const fixtureAdapter = (user: string) => adapterFor(user);
 /** The same synthetic people and rooms as the Nextcloud seed, for the local fake of Microsoft Graph (D69). */
 export const fixtureDirectory = () => ({
-  people: Object.entries({ ...names, ...colleagues }).map(([user, name]) => ({ email: `${user}@clew.test`, name })),
+  people: Object.entries({ ...names, ...colleagues }).map(([user, name]) => ({ email: fixtureAddress(user), name })),
   rooms: [
     { name: 'Granen', email: 'granen@clew.test', capacity: 2, equipment: ['skärm'] },
     { name: 'Aspen', email: 'aspen@clew.test', capacity: 4, equipment: ['skärm', 'video'] },

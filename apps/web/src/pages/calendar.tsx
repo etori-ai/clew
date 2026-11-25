@@ -42,6 +42,7 @@ import {
   percent,
   pixel,
   useAnnounce,
+  entryOf,
   inviteeName,
   useMediaQuery,
   useResizable,
@@ -52,6 +53,7 @@ import {
   addDays,
   dayLabel,
   displayDate,
+  isCalendarDate,
   monthLabel,
   occursOn,
   rangeLabel,
@@ -91,7 +93,6 @@ import { SilentNotice, useSaySilent, useSilentSources } from '../components/shel
 type View = 'day' | 'week' | 'month';
 const views: View[] = ['day', 'week', 'month'];
 const viewLabels: Record<View, string> = { day: 'Dag', week: 'Vecka', month: 'Månad' };
-const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 const monthStart = (date: string) => date.slice(0, 8) + '01';
 const addMonths = (date: string, months: number) => {
   const d = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1 + months, 1));
@@ -482,7 +483,8 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const { pathname, search, state: routed } = useLocation();
   const navigate = useNavigate();
   const requested = params.get('date') ?? params.get('week');
-  const date = requested && isoDate.test(requested) ? requested : today();
+  // A date of the right shape that does not exist (2026-02-30) is no date either: the page opens on today (DE-L16).
+  const date = requested && isCalendarDate(requested) ? requested : today();
   const view: View = views.includes(params.get('view') as View) ? (params.get('view') as View) : 'week';
   const anchor = view === 'week' ? weekStart(date) : view === 'month' ? monthStart(date) : date;
   const go = (next: { date?: string; view?: View }) =>
@@ -586,9 +588,9 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   // is kept is the entry as the calendar answered it, never the time a move being made puts it at.
   const entryId = params.get(ENTRY_PARAM);
   const seen = useRef(new Map<string, AgendaItem>());
-  for (const i of agenda) seen.current.set(i.id, i);
+  for (const i of agenda) for (const id of [i.id, ...(i.covers ?? [])]) seen.current.set(id, i);
   const entryItem =
-    entryId && entryId !== CHOSEN_ID ? (agenda.find(i => i.id === entryId) ?? seen.current.get(entryId) ?? null) : null;
+    entryId && entryId !== CHOSEN_ID ? (entryOf(agenda, entryId) ?? seen.current.get(entryId) ?? null) : null;
   const dayItems = useMemo(
     () => (acting ? items.filter(i => occursOn(i, displayDate(acting.item.start))) : []),
     [items, acting],
@@ -1162,7 +1164,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       }
       fill={fill}
       weekends
-      selectedId={movingId ?? entryId ?? (shown?.id === 'booking' ? CHOSEN_ID : undefined)}
+      selectedId={movingId ?? entryItem?.id ?? entryId ?? (shown?.id === 'booking' ? CHOSEN_ID : undefined)}
       {...(draftId ? { draftId, onDraftChange: placeDraft } : {})}
       onItemClick={openItem}
       onMoveProposal={proposed.length ? moveProposal : undefined}
