@@ -31,6 +31,7 @@ import { memoryModelHealth } from '../assistant/adapters/memory';
 import { modelUsecases } from '../assistant/usecases/models';
 import type { KeySealer } from '../assistant/ports';
 import { assistantUsecases } from '../assistant';
+import { managedPeople } from '../assistant/people';
 import { followedUnits, personKey, unitRelation } from '../modules/entities/domain';
 import { staff } from './people';
 import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres';
@@ -357,18 +358,7 @@ export const assistant = assistantUsecases({
         ...(signal ? { signal } : {}),
       }),
   },
-  // The people the asker manages (D115): Personal's list, read on every turn; only people who can be asked about (D97).
-  people: async persona =>
-    (await staff.reach(persona)).managed.flatMap(unit =>
-      // By Clew's key, the person's id (D122), as the cards about them and their page name them, with the user name a
-      // read that takes a person is given (D117); only someone who can be asked about.
-      unit.people.flatMap(p => {
-        const userName = personKey(p);
-        return userName ? [{ key: p.id, userName, name: p.name, unit: unit.unitLabel }] : [];
-      }),
-    ),
-  // The units the asker manages or follows up (D117, D136 item 5): the units of the entity list a manager leads or
-  // follows up below, by the rule the unit's page and the registry ask (`unitRelation`); never one they are only on.
+  people: async persona => managedPeople((await staff.reach(persona)).managed, personKey),
   units: async persona => {
     const reach = await staff.reach(persona);
     return followedUnits(reach)

@@ -1,4 +1,4 @@
-import { CapabilityError, type Actor } from '@clew/connectors';
+import { CapabilityError, type Actor, type SourceOptions } from '@clew/connectors';
 import { ErrandsOutputSchema, checkContract, openRef, type ErrandsInput, type ErrandsResult } from '@clew/contracts';
 import { merge, systemReport, unanswered, type SystemOutcome } from './domain';
 import { DEFAULT_BUDGET, type ErrandCall, type ErrandDeps, type ErrandSourceRef } from './model';
@@ -31,8 +31,13 @@ export function errandUsecases(deps: ErrandDeps) {
     }
   }
   /** List as the actor: `call` is the registry handle for this run, so every system's scope applies to the same person. */
-  async function list(actor: Actor, input: ErrandsInput, call: ErrandCall): Promise<ErrandsResult> {
-    const sources = deps.sources(actor);
+  async function list(
+    actor: Actor,
+    input: ErrandsInput,
+    call: ErrandCall,
+    options: SourceOptions = {},
+  ): Promise<ErrandsResult> {
+    const sources = deps.sources(actor, options);
     const asked: ErrandsInput = input.view ? { view: input.view } : {};
     const pending = sources.map(s => askSystem(s, asked, call));
     const settled = await withinBudget(Promise.all(pending), budget.totalMs);

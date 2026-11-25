@@ -20,6 +20,26 @@ export type { ManagedPerson };
  * waiting on someone else, or handled.
  */
 
+/**
+ * The people port as the server binds it (D115, D122): Personal's list for the asker, every unit they manage, each
+ * person by Clew's key (their id, which the cards about them and the index from entity to cards name them by) and by
+ * the user name a read about them takes (`userNameOf`: the entities module's `personKey`, undefined for someone who
+ * cannot be asked about, D97, who is left out). Composition and the tests that build the list from Personal's units
+ * bind the port with this function, so they hand the model the keys the running server does; a test may still bind the
+ * port to a list of its own, and no contract case holds the port to this one (`AM-13`).
+ */
+export function managedPeople<P extends { id: string; name: string }>(
+  managed: ReadonlyArray<{ unitLabel: string; people: readonly P[] }>,
+  userNameOf: (person: P) => string | undefined,
+): ManagedPerson[] {
+  return managed.flatMap(unit =>
+    unit.people.flatMap(p => {
+      const userName = userNameOf(p);
+      return userName ? [{ key: p.id, userName, name: p.name, unit: unit.unitLabel }] : [];
+    }),
+  );
+}
+
 /** How one name as the asker wrote it resolves: one person, several, or nobody. */
 export type NameMatch =
   { match: 'one'; person: ManagedPerson } | { match: 'several'; people: ManagedPerson[] } | { match: 'none' };
@@ -296,8 +316,9 @@ const workLine = (turn: PeopleInTurn, person: ManagedPerson, now: string) => {
 };
 /**
  * The prompt's lines about the people the question names (Swedish, as the prompt is): who each name is, with the user
- * name a read about one person takes (D122: the registry resolves it as the asker's report, or refuses it), or that it
- * may be several, and the asker's open work about each one by title, source, last day and buttons.
+ * name a read about one person takes (D122: the registry resolves it as the asker's report, or refuses it; never Clew's
+ * id, which no read takes and no answer may carry), or that it may be several, and the asker's open work about each
+ * one by title, source, last day and buttons.
  */
 export function peopleLines(turn: PeopleInTurn, now: string): string[] {
   return turn.named.map(n => {
