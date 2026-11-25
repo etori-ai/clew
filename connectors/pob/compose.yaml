@@ -1,15 +1,16 @@
-# The POB connector next to the devcontainer. An administrator registers it in Clew (Administration › Anslutna system,
-# or `bun scripts/connector-add.ts`), so nothing on Clew's container names it (D23).
+# The POB connector on its own, next to a Clew and a POB it can reach. An administrator registers it in Clew
+# (Administration › Anslutna system, or `bun scripts/connector-add.ts`), so nothing on Clew's container names it (D23).
+# In development it runs inside the app container instead (README.md, "Run and check").
 #
-#   POB_SECRET=<16+ characters> CLEW_URL=http://host.docker.internal:3000 \
+#   POB_SECRET=<16+ characters> CLEW_URL=https://clew.example POB_ADAPTER=api \
 #   POB_IDP_ISSUER=<the identity provider's issuer> POB_IDP_JWKS_URL=<where its keys are> \
 #   docker compose -f connectors/pob/compose.yaml up pob
-# and register it from inside the app container with the same secret:
-#   docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts pob http://host.docker.internal:4055 --secret <the secret>
 #
-# Without POB_ADAPTER the connector serves the made-up errands in cases.mjs. Against a POB (a draft adapter that has
-# met none, README.md): POB_ADAPTER=api with POB_URL, a credential, POB_USER_MATCH, POB_CUSTOMER_MATCH,
-# POB_STATUS_KINDS and POB_CASE_TYPES.
+# CLEW_URL is https: the connector fetches Clew's public keys from it, and over plain http only from a host of the
+# development stack. POB_ADAPTER has no default: the connector does not start without it. `api` (a draft adapter that
+# has met no POB, README.md) needs POB_URL, a credential, POB_USER_MATCH, POB_CUSTOMER_MATCH, POB_STATUS_KINDS and
+# POB_CASE_TYPES. `POB_ADAPTER=fixture` serves the made-up errands in cases.mjs instead, for development only, and is
+# refused beside a POB address or credential.
 services:
   pob:
     build: .
@@ -19,7 +20,7 @@ services:
       POB_IDP_ISSUER: ${POB_IDP_ISSUER:?set POB_IDP_ISSUER to the identity provider's issuer}
       POB_IDP_JWKS_URL: ${POB_IDP_JWKS_URL:?set POB_IDP_JWKS_URL to where the identity provider's keys are}
       POB_INSECURE_HTTP_HOSTS: ${POB_INSECURE_HTTP_HOSTS:-}
-      POB_ADAPTER: ${POB_ADAPTER:-fixture}
+      POB_ADAPTER: ${POB_ADAPTER:?set POB_ADAPTER to api (with POB_URL and a credential), or to fixture for made-up development data}
       POB_AUDIENCE: ${POB_AUDIENCE:-}
       POB_ACCOUNT_CLAIM: ${POB_ACCOUNT_CLAIM:-}
       POB_SOURCE_LABEL: ${POB_SOURCE_LABEL:-}

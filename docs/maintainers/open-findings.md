@@ -26,7 +26,6 @@ no batch.
 | 16 | The interface's theme check, spaces and measures | `WA-M1`, `WA-L4`, `WA-L8`, `WA-L9`, `WA-L10`, `WA-L14` | |
 | 17 | Tests and contracts that can see the fault | `WA-M5`, `DE-M4`, `DE-M7`, `ID-9`, `AM-13`, `BD-L6`, `DE-L3` | |
 | 18 | The database: audit gaps, comparisons, indexes and migrations | `DE-L4`, `DE-L7`, `DE-L8`, `DE-L9`, `DE-L10`, `DE-L12`, `DE-L13`, `BD-L4` | |
-| 20 | The connector services | `CS-L1`, `CS-L2`, `CS-L4`, `CS-L5`, `CS-L6`, `CS-L7`, `CS-L8` | |
 
 ## Counts
 
@@ -41,8 +40,8 @@ no batch.
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 2 | 2 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 0 | 6 | 6 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
-| CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 7 | 7 |
-| | **Total** | **0** | **7** | **41** | **48** |
+| CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 0 | 0 |
+| | **Total** | **0** | **7** | **34** | **41** |
 
 ## High
 
@@ -170,12 +169,4 @@ fixtures the server cannot produce).
 carries tables of acting as the person, the conformance check per connector, `model: true` capabilities, the manifest
 fields an administrator never sees, writes and their deduplication, and error messages per connector.
 
-| Id | Severity | Finding | Where |
-|---|---|---|---|
-| CS-L1 | Low | The verifier never records `jti` and the operation id is outside the binding, so a captured write sent under a new operation id runs again in five connectors. | `connectors/*/verification.mjs:62` |
-| CS-L2 | Low | Fifteen connectors run a capability on a path the verifier does not bind to a capability, so D117's capability binding does not hold. | `connectors/*/verification.mjs:12-34` |
-| CS-L4 | Low | The supportmanagement and pob compose files give a `CLEW_URL` over `http:` that the verifier refuses to fetch keys from. | `connectors/supportmanagement/compose.yaml:4` |
-| CS-L5 | Low | `reference` answers 401 to an employee, which Clew reads as the source unavailable, and fails the conformance check. | `connectors/reference/connector.mjs:98` |
-| CS-L6 | Low | `hello` puts the underlying error's text in its answer. | `connectors/hello/connector.mjs:295` |
-| CS-L7 | Low | Five real-system connectors serve made-up fixture data when the adapter is left unset. | `connectors/supportmanagement/server.mjs:37` |
-| CS-L8 | Low | `connectors/README.md` counts four reads for communication, whose manifest has five. | `connectors/README.md:49` |
+No finding of this area is open.

@@ -2,16 +2,17 @@
 # (Administration › Anslutna system, or `bun scripts/connector-add.ts` until that page exists), so nothing on
 # Clew's container names it (D23). Replace `hello` with your connector.
 #
-# Clew's own image is not published yet; until then run the connector next to the devcontainer:
-#   HELLO_SECRET=<16+ characters> docker compose -f connectors/hello/compose.yaml up hello
-# and register it from inside the app container with the same secret:
-#   docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts hello http://host.docker.internal:4010 --secret <the secret> --enable
+#   HELLO_SECRET=<16+ characters> CLEW_URL=https://clew.example docker compose -f connectors/hello/compose.yaml up hello
+#
+# CLEW_URL is https: the connector fetches Clew's public keys from it, and over plain http only from a host of the
+# development stack; it does not start without one. Clew's own image is not published yet; until then, in development,
+# run the connector inside the app container instead, where CLEW_URL=http://127.0.0.1:3000 (README.md, "Run locally").
 services:
   hello:
     build: .
     environment:
       CLEW_CONNECTOR_SECRET: ${HELLO_SECRET:?set HELLO_SECRET to a shared secret of 16+ characters}
-      CLEW_URL: http://clew:3000
+      CLEW_URL: ${CLEW_URL:?set CLEW_URL to Clew's base URL, https outside local development}
     ports:
       - "127.0.0.1:4010:4010"
   # clew:
@@ -19,5 +20,4 @@ services:
   #   environment:
   #     HOST: 0.0.0.0                      # connectors reach /api/connectors/call over the compose network
   #     DATABASE_URL: postgres://clew:...@postgres:5432/clew
-  #     TEMPORAL_ADDRESS: temporal:7233
   #     MASTER_KEY: ...                    # seals connector secrets at rest

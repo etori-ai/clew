@@ -1,6 +1,7 @@
 // Serves connector.mjs over HTTP. Environment (README.md has the full table):
 //   PORT (default 4052), CLEW_CONNECTOR_SECRET (shared with Clew), CLEW_URL (where Clew's keys are fetched)
-//   NEXTCLOUD_ADAPTER       "fixture" (default: the in-memory stand-in in approvals.mjs) or "nextcloud" (the real API)
+//   NEXTCLOUD_ADAPTER       "nextcloud" (the real API) or "fixture" (the in-memory stand-in in approvals.mjs, whose
+//                           files are made up: development and tests only). Required: there is no default (`adapterOf`)
 //   NEXTCLOUD_URL           Nextcloud's base address, as the connector reaches it. Required for nextcloud
 //   NEXTCLOUD_ALLOW_HTTP    "true" lets NEXTCLOUD_URL be plain http on a private development network
 //   NEXTCLOUD_AUDIENCE      what the person's token is issued for (default "nextcloud")
@@ -8,14 +9,20 @@
 //   NEXTCLOUD_PUBLIC_URL    Nextcloud's address in the person's browser, for links to a file (optional)
 import { createServer } from 'node:http';
 import { listener } from './http.mjs';
-import { createConnector } from './connector.mjs';
+import { adapterOf, createConnector } from './connector.mjs';
 import { createFixtureApproval } from './approvals.mjs';
 import { createNextcloudApproval } from './nextcloud.mjs';
+import { keysAddress } from './verification.mjs';
+
+// CLEW_URL is where Clew's public keys are fetched on the first call: one they cannot be fetched from is refused here.
+if (!keysAddress(process.env.CLEW_URL))
+  throw new Error(
+    "CLEW_URL must be Clew's base URL, where its public keys are fetched: https, or plain http only on a host of the " +
+      'development stack.',
+  );
 
 const env = process.env;
-const adapter = env.NEXTCLOUD_ADAPTER || 'fixture';
-if (adapter !== 'fixture' && adapter !== 'nextcloud')
-  throw new Error(`Unknown NEXTCLOUD_ADAPTER "${adapter}". Known: fixture, nextcloud.`);
+const adapter = adapterOf(env);
 
 const audience = env.NEXTCLOUD_AUDIENCE || 'nextcloud';
 if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(audience))

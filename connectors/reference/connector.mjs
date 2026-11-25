@@ -82,21 +82,24 @@ export function createConnector({ path, secret, clewUrl, jwks, fault = '' }) {
   const verify = createVerifier({ secret, clewUrl, jwks }, 'reference');
   const json = (value, status = 200) =>
     new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
-  const fail = (message, status = 400) =>
-    json({ error: { code: status === 401 ? 'denied' : 'invalid', message } }, status);
+  // The protocol's codes: 401 is Clew's key or assertion refused, 403 the person refused, 404 a route that is not here.
+  const CODES = { 401: 'denied', 403: 'denied', 404: 'not-found' };
+  const fail = (message, status = 400) => json({ error: { code: CODES[status] ?? 'invalid', message } }, status);
   const personKey = actor => actor.unitId + ':' + actor.id;
   const item = actor =>
     db.prepare('SELECT revision, done FROM item WHERE person = ?').get(personKey(actor)) ?? { revision: 1, done: 0 };
   async function handle(request) {
     const path = new URL(request.url).pathname;
     if (request.method === 'GET' && path === '/clew/manifest') return json(manifest);
+    // Only the routes Clew posts to, before any key is fetched: the scan, and a capability's own route.
+    if (request.method !== 'POST' || (path !== '/clew/scan' && !path.startsWith('/clew/capabilities/')))
+      return fail('Okänd adress.', 404);
     const actor = await verify(
       (request.headers.get('authorization') ?? '').replace(/^Bearer /, ''),
       request.headers.get('x-clew-connector-key'),
       request,
     );
-    if (!actor || actor.role !== 'manager') return fail('Du saknar behörighet.', 401);
-    if (request.method !== 'POST') return fail('Okänd adress.', 404);
+    if (!actor) return fail('Ogiltigt behörighetsbevis.', 401);
     let body;
     try {
       body = await request.json();
@@ -105,6 +108,8 @@ export function createConnector({ path, secret, clewUrl, jwks, fault = '' }) {
     }
     if (path === '/clew/scan') {
       const current = item(actor);
+      // The test item is a manager's: an employee has nothing to handle here, which is an empty scan, not a refusal.
+      const open = actor.role === 'manager' && !current.done;
       return json({
         observation: {
           scope: actor.unitId + ':' + actor.role,
@@ -113,7 +118,7 @@ export function createConnector({ path, secret, clewUrl, jwks, fault = '' }) {
           completeness: 'complete',
           exhausted: true,
         },
-        drafts: current.done
+        drafts: !open
           ? []
           : [
               {
@@ -137,6 +142,8 @@ export function createConnector({ path, secret, clewUrl, jwks, fault = '' }) {
             ],
       });
     }
+    // Every capability is a manager's (the manifest's scope), checked again here: a person refused is 403.
+    if (actor.role !== 'manager') return fail('Du saknar behörighet.', 403);
     const name = decodeURIComponent(path.slice('/clew/capabilities/'.length));
     if (name === 'reference.items') return json({ output: { rows: [{ ref: 'reference:item:1', ...item(actor) }] } });
     if (name === 'reference.lookup') {

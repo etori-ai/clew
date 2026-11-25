@@ -1,6 +1,7 @@
 // Serves connector.mjs over HTTP. Environment (README.md has the full table):
 //   PORT (default 4050), CLEW_CONNECTOR_SECRET (shared with Clew), CLEW_URL (where Clew's keys are fetched)
-//   SM_ADAPTER            "fixture" (default: the made-up errands in errands.mjs) or "api" (SupportManagement)
+//   SM_ADAPTER            "api" (SupportManagement) or "fixture" (the made-up errands in errands.mjs: development and
+//                         tests only). Required: there is no default (`adapterOf` in connector.mjs)
 //   SM_AUDIENCE           what the person's token is issued for (default "supportmanagement")
 //   SM_SOURCE_LABEL       the system's name as a person reads it (default "Ärendesystemet")
 //   SM_MUNICIPALITY_ID    the municipality id, part of every ref. Required for api
@@ -16,10 +17,18 @@
 //   SM_REPLY_ADDRESSES    JSON object: namespace -> the address its e-mail reader reads (the fixture has its own)
 //   SM_STATE_SECONDS      how long an errand's state for its owner is kept (default 120)
 import { createServer } from 'node:http';
-import { STATUS_KINDS, createConnector } from './connector.mjs';
+import { STATUS_KINDS, adapterOf, createConnector } from './connector.mjs';
 import { createFixtureErrands, fixtureReplyAddresses } from './errands.mjs';
 import { createSupportManagementErrands } from './supportmanagement.mjs';
 import { listener } from './http.mjs';
+import { keysAddress } from './verification.mjs';
+
+// CLEW_URL is where Clew's public keys are fetched on the first call: one they cannot be fetched from is refused here.
+if (!keysAddress(process.env.CLEW_URL))
+  throw new Error(
+    "CLEW_URL must be Clew's base URL, where its public keys are fetched: https, or plain http only on a host of the " +
+      'development stack.',
+  );
 
 /** A JSON object of strings from the environment, or `{}` when the variable is unset. */
 const strings = name => {
@@ -41,9 +50,7 @@ const strings = name => {
   return value;
 };
 
-const adapter = process.env.SM_ADAPTER ?? 'fixture';
-if (adapter !== 'fixture' && adapter !== 'api')
-  throw new Error(`Unknown SM_ADAPTER "${adapter}". Known: fixture, api.`);
+const adapter = adapterOf(process.env);
 
 const audience = process.env.SM_AUDIENCE || 'supportmanagement';
 if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(audience)) throw new Error('SM_AUDIENCE is not a valid audience.');

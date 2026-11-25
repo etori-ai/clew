@@ -736,7 +736,8 @@ describe('the Moodle connector', () => {
 
   test("only the installation is answered: a person's assertion on its route, the installation's on a person's route, and one bound to another body or name are refused", async () => {
     const { service, registry, learning, asInstallation } = stack();
-    const url = 'http://moodle-connector/clew/installation/moodle.holdings';
+    const route = '/clew/installation/moodle.holdings';
+    const url = 'http://moodle-connector' + route;
     const text = JSON.stringify({ input: {} });
     const send = (token: string, at = url, body = text) =>
       service.handle(
@@ -754,23 +755,24 @@ describe('the Moodle connector', () => {
     const before = { ...learning.controls.calls };
     // A person's assertion, valid and bound to this very request, whoever the person is: refused, nothing read.
     for (const actor of [hillevi, anna, rektor])
-      expect(
-        (await send(await authority.assert(ID, actor, [], [], { body: text, capability: 'moodle.holdings' }))).status,
-      ).toBe(401);
+      expect((await send(await authority.assert(ID, actor, [], [], { path: route, body: text }))).status).toBe(401);
     expect(learning.controls.calls).toEqual(before);
     // The installation's own assertion, on a person's route: not a person, so refused there.
     const personUrl = 'http://moodle-connector/clew/capabilities/moodle.person';
     const personBody = JSON.stringify({ actor: hillevi, input: { keys: ['hillevi'] } });
-    const onPersonRoute = await authority.installation(ID, { body: personBody, capability: 'moodle.person' });
+    const onPersonRoute = await authority.installation(ID, {
+      path: '/clew/installation/moodle.person',
+      body: personBody,
+    });
     expect((await send(onPersonRoute, personUrl, personBody)).status).toBe(401);
     // Bound to another body, or to another name: refused.
-    const installation = await authority.installation(ID, { body: text, capability: 'moodle.holdings' });
+    const installation = await authority.installation(ID, { path: route, body: text });
     expect((await send(installation, url, JSON.stringify({ input: { cursor: '3:1' } }))).status).toBe(401);
     expect((await send(installation, 'http://moodle-connector/clew/installation/moodle.other')).status).toBe(401);
     // Signed by another installation: refused.
     const foreign = await (
       await testAuthority('another-secret-entirely')
-    ).installation(ID, { body: text, capability: 'moodle.holdings' });
+    ).installation(ID, { path: route, body: text });
     expect((await send(foreign)).status).toBe(401);
     // No assertion at all.
     expect((await send('')).status).toBe(401);
