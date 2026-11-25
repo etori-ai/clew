@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 4 | What a page may load and keep | `ID-4`, `BL-10`, `CB-8`, `ID-5`, `ID-6` | The content security policy |
 | 5 | A limit on what another party sends | `CB-4`, `CB-5`, `CB-6`, `CS-M1`, `CS-L3`, `ID-8`, `ID-10` | |
 | 6 | A decision is bound to what the person was shown | `AM-4`, `DE-M9`, `DE-L5`, `DE-L6` | |
 | 7 | A decision that failed or whose outcome is unknown has a way forward | `DE-M1`, `DE-M2`, `DE-M3`, `DE-L1`, `DE-L2`, `DE-L11`, `DE-L17` | |
@@ -42,17 +41,17 @@ no batch.
 
 | Area | Review | High | Medium | Low | Total |
 |---|---|---|---|---|---|
-| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 2 | 6 | 8 |
-| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 4 | 6 | 10 |
+| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 1 | 4 | 5 |
+| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 4 | 5 | 9 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 6 | 5 | 11 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 9 | 17 | 26 |
-| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 8 | 10 |
+| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 1 | 1 | 2 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 6 | 8 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 2 | 8 | 10 |
-| | **Total** | **0** | **35** | **77** | **112** |
+| | **Total** | **0** | **34** | **73** | **107** |
 
 ## High
 
@@ -66,9 +65,6 @@ points, and it carries a section on the earlier SCIM reviews.
 | Id | Severity | Finding | Where |
 |---|---|---|---|
 | ID-3 | Medium | `followedUnits` builds the signed `units` from every assignment, so a unit a manager is only placed on is told to a source as one they follow up. | `apps/server/src/composition/people.ts:116` |
-| ID-4 | Medium | The web image and the hosting guide's proxy example send no content security policy, framing rule, `Strict-Transport-Security` or `Referrer-Policy`. Same as `BL-10`. | `apps/web/nginx.conf.template` |
-| ID-5 | Low | The session cookie is named `clew-session`, not `__Host-clew-session`, so a sibling host can shadow it with a cookie set for the parent domain. | `apps/server/src/auth.ts:56` |
-| ID-6 | Low | The logo's SVG check is a list of text patterns that lets through namespaced elements, CSS escapes and character references it says it refuses. | `apps/server/src/modules/appearance/domain.ts:11` |
 | ID-7 | Low | The mapping to Kompetenssökning is not held as a capability mapping is: decided before the group is held, a NUL answers 503, and some stale rows cannot be removed. | `apps/server/src/modules/people/usecases.ts:1126` |
 | ID-8 | Low | The back-channel logout address refetches the provider's keys for every unknown `kid` and reads the whole body before measuring it. | `apps/server/src/auth.ts:449` |
 | ID-9 | Low | No test covers a sign-in that succeeds, a second sign-in replacing the first, the mutation guard, `access-revoked`, sign-out or `localReturnTo`. | `tests/unit/auth-*.test.ts` |
@@ -85,7 +81,6 @@ It carries no tables of its own.
 | CB-5 | Medium | A connector's answer to a capability call, scan, figure or manifest is read into memory whatever its size. | `packages/connectors/src/remote.ts:236` |
 | CB-6 | Medium | The public manifest dry run compiles every capability's schema into one module-wide `Ajv` that keeps them all, so memory grows without bound. | `apps/server/src/routes/protocol.ts:21` |
 | CB-7 | Medium | A job proposal names a connector, with its id, name and capability, to a person outside its audience. | `packages/connectors/src/index.ts:1517-1527` |
-| CB-8 | Low | Four link fields from a source (`SearchHit.link`, `ErrandRow.link`, `SourceCitation.link`, `clew.openSource`'s `url`) carry no scheme rule. | `packages/contracts/src/index.ts:1080` |
 | CB-9 | Low | Adding or testing a connector whose service does not answer ends in "Något gick fel", and `unreachable` is never recorded. | `apps/server/src/composition/index.ts:403-405` |
 | CB-10 | Low | Several connector administration audit rows and the signing key's rows have no scenario test that asserts them. | `apps/server/src/connectors/usecases/admin.ts:609-618` |
 | CB-11 | Low | The registration script sets a re-registered connector to draft under one `connector.secret` row and writes state and removal rows for changes that did not happen. | `scripts/connector-registry.ts:48-77` |
@@ -158,7 +153,6 @@ and it carries the baseline table of every suite, the failing-test table under f
 | BL-4 | Medium | The local development guide starts a Keycloak container that nothing in the repository creates, pins or describes. | `docs/maintainers/local-development.md:16` |
 | BL-5 | Low | Seven connector images set a SQLite path under `/data`, which the image lacks and `node` cannot write, so they do not start as built. | `connectors/hr/Dockerfile:5` |
 | BL-9 | Low | The web image serves Sundsvall's trademarked dragon from `apps/web/public/branding/`, though the build is said to carry no branding. | `apps/web/Dockerfile:7` |
-| BL-10 | Low | The web image's nginx template sets no security headers beyond `Cache-Control`, and the hosting guide's proxy example has the same gap. Same as `ID-4`. | `apps/web/nginx.conf.template` |
 | BL-11 | Low | The documentation site's lockfile pins `vite` and `esbuild` with known advisories, and no workflow runs `bun audit`. | `site/package.json` |
 | BL-12 | Low | Connector base images are pinned by tag only and named without a registry, and `bun` is installed globally without integrity. | `connectors/*/Dockerfile` |
 | BL-13 | Low | `bun run deps` does not cruise `apps/web`, where one violation of `clew-does-not-import-connectors` stands in a test. | `package.json` |

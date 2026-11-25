@@ -5421,7 +5421,8 @@
         },
         "link": {
           "type": "string",
-          "maxLength": 1000
+          "maxLength": 1000,
+          "pattern": "^https?://[^\\s]+$"
         },
         "source": {
           "type": "string",
@@ -5542,7 +5543,8 @@
               },
               "link": {
                 "type": "string",
-                "maxLength": 1000
+                "maxLength": 1000,
+                "pattern": "^https?://[^\\s]+$"
               },
               "source": {
                 "type": "string",
@@ -5695,6 +5697,7 @@
         "link": {
           "type": "string",
           "maxLength": 1000,
+          "pattern": "^https?://[^\\s]+$",
           "description": "The errand in its own system."
         }
       },
@@ -5791,6 +5794,7 @@
               "link": {
                 "type": "string",
                 "maxLength": 1000,
+                "pattern": "^https?://[^\\s]+$",
                 "description": "The errand in its own system."
               }
             },

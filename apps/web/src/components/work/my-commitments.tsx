@@ -10,6 +10,7 @@ import { dueText, isOverdue, splitMine, type CommitmentEntry } from '../../talks
 import { personPageHref } from '../../person-address';
 import { ContentArrival } from '../shell/loading';
 import { DOT } from '../../dot';
+import { isWebAddress } from '../../web-address';
 
 /** The area of the talks domain (D96 item 7): with it chosen, Hem still shows the person's action points. */
 export const TALKS_AREA = 'talks';
@@ -227,7 +228,7 @@ function CommitmentRow({
     <ListItem
       align="start"
       label={
-        !writable && row.link ? (
+        !writable && row.link && isWebAddress(row.link) ? (
           <Link href={row.link} isExternalLink weight="semibold" hasUnderline>
             {row.text}
           </Link>

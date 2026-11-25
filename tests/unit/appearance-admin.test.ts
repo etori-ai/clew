@@ -208,6 +208,91 @@ describe('Utseende', () => {
         ),
       ),
     ).toBeNull();
+    // The spellings the plain patterns let through (ID-6 of the 2026-11-23 review): an element is known by its namespace,
+    // a value is read after its references, and a stylesheet may not escape a character.
+    const svgns = 'xmlns:s="http://www.w3.org/2000/svg"';
+    expect(refused(wrap(`<s:script ${svgns}>alert(1)</s:script>`))).toContain('skript');
+    expect(
+      refused(wrap(`<s:foreignObject ${svgns}><b xmlns="http://www.w3.org/1999/xhtml"/></s:foreignObject>`)),
+    ).toContain('inbäddat innehåll');
+    expect(refused(wrap('<h:script xmlns:h="http://www.w3.org/1999/xhtml">alert(1)</h:script>'))).toContain('skript');
+    expect(refused(wrap('<h:img xmlns:h="http://www.w3.org/1999/xhtml" src="https://example.org/a.png"/>'))).toContain(
+      'inbäddat innehåll',
+    );
+    expect(refused(wrap('<rect style="fill:\\75rl(https://example.org/a.png)"/>'))).toContain('kodade tecken');
+    expect(refused(wrap('<style>@\\69mport "https://example.org/a.css";</style>'))).toContain('kodade tecken');
+    expect(refused(wrap('<set attributeName="href" to="&#106;avascript:alert(1)"/>'))).toContain('skriptadresser');
+    expect(refused(wrap('<rect fill="&#117;rl(https://example.org/a.png)"/>'))).toContain('resurser utanför bilden');
+    expect(refused(wrap('<a href="java&#9;script:alert(1)"><rect/></a>'))).toContain('skriptadresser');
+    // A stylesheet is its text as the browser joins it, across comments and sections.
+    expect(refused(wrap('<style>@im<!-- -->port "https://example.org/a.css";</style>'))).toContain('importerade');
+    expect(refused(wrap('<style>.a{background:image-set("https://example.org/a.png" 1x)}</style>'))).toContain(
+      'resurser utanför bilden',
+    );
+    expect(refused(wrap('<style><rect/></style>'))).toContain('inbäddat innehåll');
+    expect(refused(wrap('<animate attributeName="fill" to="red"/>'))).toContain('animering');
+    expect(refused(wrap('<marquee/>'))).toContain('elementet <marquee>');
+    expect(refused('<?xml-stylesheet href="https://example.org/a.css"?>' + wrap('<rect/>'))).toContain(
+      'bearbetningsinstruktion',
+    );
+    // What a browser would not read as XML, or reads as something other than an SVG, is not a logo.
+    expect(refused(wrap('<rect>'))).toBe('Logotypen går inte att läsa som SVG-bild.');
+    expect(refused(wrap('<rect x="1" x="2"/>'))).toBe('Logotypen går inte att läsa som SVG-bild.');
+    expect(refused(wrap('<p:rect/>'))).toBe('Logotypen går inte att läsa som SVG-bild.');
+    expect(refused(wrap('<text>&nbsp;</text>'))).toBe('Logotypen går inte att läsa som SVG-bild.');
+    expect(refused(wrap('<rect/>') + '<svg xmlns="http://www.w3.org/2000/svg"/>')).toBe(
+      'Logotypen går inte att läsa som SVG-bild.',
+    );
+    expect(refused('<svg><rect/></svg>')).toBe('Logotypen är inte en SVG-bild.');
+    // An editor's export: its own namespaces are inert metadata, and a stylesheet in a section is read as one.
+    expect(
+      refused(
+        '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n<!-- Created with a drawing tool -->\n' +
+          '<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" ' +
+          'xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" ' +
+          'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" sodipodi:docname="logo.svg" viewBox="0 0 8 8" ' +
+          'xml:space="preserve"><sodipodi:namedview inkscape:zoom="1"/><metadata><rdf:RDF/></metadata>' +
+          '<style type="text/css"><![CDATA[ .st0{fill:#0A3D62;} ]]></style>' +
+          '<g inkscape:label="Lager 1" inkscape:groupmode="layer"><path class="st0" d="M0 0h8v8z"/>' +
+          '<text x="1" y="7" font-family="\'Open Sans\'">Kommun &amp; region</text></g></svg>\n',
+      ),
+    ).toBeNull();
+    // Only what a browser reads as CSS is held to the stylesheet rules: an editor's metadata and an accessible name may
+    // hold a backslash, as a Windows path does, and still be a logo; a presentation attribute that takes an address
+    // may not escape one.
+    expect(
+      refused(
+        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" ' +
+          'xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" ' +
+          'inkscape:export-filename="C:\\Users\\anna\\logo.png" sodipodi:docbase="C:\\Bilder" ' +
+          'aria-label="Kommunens vapen \\ logotyp"><rect/></svg>',
+      ),
+    ).toBeNull();
+    expect(refused(wrap('<rect fill="\\75rl(https://example.org/a.png)"/>'))).toContain('kodade tecken');
+    expect(refused(wrap('<rect clip-path="url(https://example.org/a.svg#c)"/>'))).toContain('resurser utanför bilden');
+    // What else an editor writes and a browser draws, or ignores: a switch, a view, Inkscape's flowed text, meshes and
+    // an element of its own named in any script; an embedded raster image as GIF or WebP, its base64 broken by spaces.
+    expect(
+      refused(
+        wrap(
+          '<switch><g systemLanguage="sv"><rect/></g></switch><view id="v" viewBox="0 0 1 1"/>' +
+            '<flowRoot><flowRegion><rect/></flowRegion><flowPara>Text</flowPara></flowRoot>' +
+            '<defs><meshgradient id="m"><meshrow><meshpatch><stop/></meshpatch></meshrow></meshgradient></defs>' +
+            '<x:märke xmlns:x="https://example.org/editor"/>' +
+            '<image href="data:image/gif;base64,R0lG ODlh"/><image href="data:image/webp;base64,UklGRg=="/>',
+        ),
+      ),
+    ).toBeNull();
+    expect(refused(wrap('<image href="data:image/svg+xml;base64,PHN2Zz4="/>'))).toContain('länkar ut ur bilden');
+    // A file read as UTF-8 that names another encoding is one a browser reads otherwise: in ISO-2022-JP the escape
+    // sequences turn what this check reads as a comment into text, and the script after it runs.
+    expect(
+      refused(
+        '<?xml version="1.0" encoding="ISO-2022-JP"?><svg xmlns="http://www.w3.org/2000/svg"><desc>\u001b$B<!--' +
+          '\u001b(B<script>alert(1)</script>--></desc></svg>',
+      ),
+    ).toBe('Logotypen är inte en SVG-bild i UTF-8.');
+    expect(refused("<?xml version='1.0' encoding='utf8'?>" + wrap('<rect/>'))).toBeNull();
     const large = logoImageOf(
       { mediaType: 'image/png', data: base64(new Uint8Array(LOGO_MAX_BYTES + 1)) },
       'Logotypen',

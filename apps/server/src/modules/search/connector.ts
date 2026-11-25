@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 import { CapabilityError, SEARCH_CONNECTOR, type Connector } from '@clew/connectors';
-import { SearchHitSchema, SearchKind, SearchResultSchema } from '@clew/contracts';
+import { SearchHitSchema, SearchKind, SearchResultSchema, SourceLinkSchema } from '@clew/contracts';
 import { FetchInputSchema, SearchInputSchema, type FetchInput, type SearchInput } from './contracts';
 import type { SearchUsecases } from './usecases';
 
@@ -56,7 +56,7 @@ export function searchConnector(search: SearchUsecases, cards: AnswerCards = {})
         model: false,
         description: 'Länken till ett dokument som en tidigare sökning hittade.',
         input: Type.Object({ ref: Type.String({ minLength: 3, maxLength: 260 }) }, { additionalProperties: false }),
-        output: Type.Object({ url: Type.String() }),
+        output: Type.Object({ url: SourceLinkSchema }),
         scope: () => true,
         run: async (actor, input: { ref: string }, clew) => {
           const parsed = parseSourceRef(input.ref);

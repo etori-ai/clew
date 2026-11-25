@@ -21,8 +21,10 @@ import { authRoutes } from '../../apps/server/src/routes/auth';
  * without a grant, the person a changed subject's claim names, the person who holds a subject whose claim names someone
  * else, and a person who has left; nobody when the claim names nobody or the ID token carries none. A sign-out at the
  * provider ends the sessions of its `sid` by either channel (D121): front-channel logout from a cross-site frame
- * without a cookie, back-channel logout as before, with its receipt against a replayed token. The server's logger is
- * watched while the file runs. Run with `bun run test:db` inside the devcontainer.
+ * without a cookie, back-channel logout as before, with its receipt against a replayed token. The session's cookie is
+ * read under its `__Host-` name only (D145): a bare one that a sibling host set opens no protected route and is not what
+ * a sign-out ends. The server's logger is watched while the file runs. Run with `bun run test:db` inside the
+ * devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -105,7 +107,9 @@ async function signInStarted() {
   return cookie;
 }
 const callback = (cookie: string) =>
-  authRoutes.request('/callback?code=code-1&state=state-' + suffix, { headers: { Cookie: 'clew-login=' + cookie } });
+  authRoutes.request('/callback?code=code-1&state=state-' + suffix, {
+    headers: { Cookie: '__Host-clew-login=' + cookie },
+  });
 
 describe('a callback the provider or its ID token refuses', () => {
   test('a refused code says the OAuth error and its status, never the description that names the account', async () => {
@@ -503,5 +507,38 @@ describe('a sign-out at the identity provider ends the sessions of its sid', () 
     expect(await state(again)).toEqual({ open: true, tokens: 'sealed-desktop-again' });
     expect(await logged('backchannel-logout')).toBe(1);
     expect(said).toEqual([]);
+  });
+});
+
+describe('the session cookie is read under its __Host- name only (D145)', () => {
+  const asSent = (cookie: string, extra: Record<string, string> = {}) => ({ headers: { Cookie: cookie, ...extra } });
+  test('a bare clew-session from a sibling host reaches no session; the __Host- one does', async () => {
+    const raw = randomToken();
+    const digest = tokenDigest(raw);
+    await session('cookie-read', { digest });
+    const bare = await authRoutes.request('/session', asSent('clew-session=' + raw));
+    expect(bare.status).toBe(401);
+    expect(await state(digest)).toEqual({ open: true, tokens: 'sealed-cookie-read' });
+    // The prefixed one reaches the session: here it names a person nobody signs in as, so it is refused and ended.
+    const own = await authRoutes.request('/session', asSent('__Host-clew-session=' + raw));
+    expect(own.status).toBe(403);
+    expect(await state(digest)).toEqual({ open: false, tokens: '' });
+  });
+  test('a sign-out ends the session of the __Host- cookie, never one a bare cookie names', async () => {
+    const raw = randomToken();
+    const digest = tokenDigest(raw);
+    await session('cookie-logout', { digest });
+    const signOut = (cookie: string) =>
+      authRoutes.request('/logout', {
+        method: 'POST',
+        ...asSent(cookie, { Origin: settings.PUBLIC_URL!, 'X-CSRF-Token': 'csrf' }),
+      });
+    const bare = await signOut('clew-session=' + raw);
+    expect(bare.status).toBe(200);
+    expect(await state(digest)).toEqual({ open: true, tokens: 'sealed-cookie-logout' });
+    const own = await signOut('__Host-clew-session=' + raw);
+    expect(own.status).toBe(200);
+    expect(await state(digest)).toEqual({ open: false, tokens: '' });
+    expect(own.headers.get('set-cookie')).toStartWith('__Host-clew-session=;');
   });
 });
