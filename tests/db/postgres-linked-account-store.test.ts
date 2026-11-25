@@ -66,6 +66,7 @@ test('no token, verifier or client secret is stored as it is, and a connector ta
       refreshToken: 'plain-refresh-token',
       expiresAt: null,
       lastError: null,
+      lostAt: null,
       linkedAt: '2026-11-25T08:00:00.000Z',
     });
     await tx.pend({

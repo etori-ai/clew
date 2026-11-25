@@ -20,17 +20,26 @@ export function memoryLinkStore(): MemoryLinkStore {
   let pendings = new Map<string, PendingLink>();
   let clients = new Map<string, OAuthClient>();
   let approvals = new Map<string, Approval>();
+  let later = new Map<string, { personId: string; connectorId: string; at: string }>();
   let queue: Promise<unknown> = Promise.resolve();
   const listed = (keep: (link: LinkedAccount) => boolean) =>
     [...links.values()]
       .filter(keep)
       .sort(byConnector)
       .map(link => structuredClone(link));
+  const putOffBy = (personId: string) =>
+    [...later.values()]
+      .filter(l => l.personId === personId)
+      .map(l => l.connectorId)
+      .sort();
   const self: MemoryLinkStore = {
     audit: [],
     pending: () => [...pendings.values()].map(p => structuredClone(p)),
     async linksOf(personId) {
       return listed(link => link.personId === personId);
+    },
+    async putOffBy(personId) {
+      return putOffBy(personId);
     },
     transaction(fn) {
       const run = queue.then(async () => {
@@ -39,6 +48,7 @@ export function memoryLinkStore(): MemoryLinkStore {
           pendings: new Map(pendings),
           clients: new Map(clients),
           approvals: new Map(approvals),
+          later: new Map(later),
           audit: self.audit.length,
         };
         try {
@@ -72,6 +82,16 @@ export function memoryLinkStore(): MemoryLinkStore {
             approve: async (connectorId, approval) => {
               approvals.set(connectorId, structuredClone(approval));
             },
+            putOff: async (personId, connectorId, at) => {
+              if (!later.has(key(personId, connectorId)))
+                later.set(key(personId, connectorId), { personId, connectorId, at });
+            },
+            putOffBy: async personId => putOffBy(personId),
+            takeUp: async (personId, connectorId) => {
+              for (const [k, l] of later)
+                if (l.personId === personId && (connectorId === undefined || l.connectorId === connectorId))
+                  later.delete(k);
+            },
             audit: async entry => {
               self.audit.push(structuredClone(entry));
             },
@@ -81,6 +101,7 @@ export function memoryLinkStore(): MemoryLinkStore {
           pendings = before.pendings;
           clients = before.clients;
           approvals = before.approvals;
+          later = before.later;
           self.audit.length = before.audit;
           throw error;
         }

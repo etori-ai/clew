@@ -33,6 +33,7 @@ export function linkStoreContract(name: string, make: () => Promise<LinkStoreHar
       refreshToken: 'refresh-1',
       expiresAt: '2026-11-25T09:00:00.000Z',
       lastError: null,
+      lostAt: null,
       linkedAt: T,
       ...overrides,
     }) satisfies LinkedAccount;
@@ -60,6 +61,7 @@ export function linkStoreContract(name: string, make: () => Promise<LinkStoreHar
         refreshToken: null,
         expiresAt: null,
         lastError: 'invalid_grant',
+        lostAt: '2026-11-25T08:30:00.000Z',
         scopes: [],
       });
       await store.transaction(tx => tx.save(lost));
@@ -147,6 +149,33 @@ export function linkStoreContract(name: string, make: () => Promise<LinkStoreHar
       };
       await store.transaction(tx => tx.approve(prefix + 'hr', entered));
       expect(await store.transaction(tx => tx.approval(prefix + 'hr'))).toEqual(entered);
+    });
+
+    test('a system a person put off stays put off until it is taken up, said once however often it is said', async () => {
+      const { store, prefix } = await make();
+      const [anna, bo, hr, ledger] = [prefix + 'anna', prefix + 'bo', prefix + 'hr', prefix + 'ledger'];
+      expect(await store.putOffBy(anna)).toEqual([]);
+      await store.transaction(async tx => {
+        await tx.putOff(anna, ledger, T);
+        await tx.putOff(anna, hr, T);
+        await tx.putOff(anna, hr, '2026-11-26T08:00:00.000Z');
+        await tx.putOff(bo, hr, T);
+        expect(await tx.putOffBy(anna)).toEqual([hr, ledger]);
+      });
+      expect(await store.putOffBy(anna)).toEqual([hr, ledger]);
+      await store.transaction(tx => tx.takeUp(anna, hr));
+      expect(await store.putOffBy(anna)).toEqual([ledger]);
+      await store.transaction(tx => tx.takeUp(anna));
+      expect(await store.putOffBy(anna)).toEqual([]);
+      // Another person's is their own.
+      expect(await store.putOffBy(bo)).toEqual([hr]);
+      await expect(
+        store.transaction(async tx => {
+          await tx.putOff(anna, hr, T);
+          throw new Error('stopped');
+        }),
+      ).rejects.toThrow('stopped');
+      expect(await store.putOffBy(anna)).toEqual([]);
     });
 
     test('a transaction that throws writes nothing, its audit row included', async () => {

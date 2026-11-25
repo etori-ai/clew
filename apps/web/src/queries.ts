@@ -249,6 +249,17 @@ export const documentQuery = (request: DocumentRequest) =>
     retry: false,
   });
 
+/**
+ * The systems the person can link an account at (D147), with what each link is: read by the shell on every page (the
+ * person's menu leads to their list only when there is one, and a return from a system is said by the system's name),
+ * by Hem and by the list itself. The person's own presses write the cache; a link lost meanwhile is read again when the
+ * cards' read says a system needs the account (`useFollowAccounts`).
+ */
+export const linkedAccountsQuery = queryOptions({
+  queryKey: keys.linkedAccounts,
+  queryFn: () => api.linkedAccounts(),
+  staleTime: 60_000,
+});
 /** Administration (D23). The detail read keeps its 400 for the page to turn into "Anslutningen finns inte". */
 /** The shared header (D88): what the person's header connector lists for them, read once per visit. */
 export const headerQuery = queryOptions({ queryKey: keys.header, queryFn: () => api.header(), staleTime: Infinity });

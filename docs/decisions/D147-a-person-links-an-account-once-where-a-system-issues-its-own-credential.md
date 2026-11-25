@@ -207,9 +207,10 @@ connected?" without settling the rest of that question. D45, D47, D75, D86, D121
 
 ## As built
 
-Three slices on the branch `linked-accounts`, 2026-11-25: everything but the pages and the administrator's review,
-with the development stack's test run against the real Keycloak. A person cannot link from the web app yet, so the
-branch is not ready for `main`.
+Four slices on the branch `linked-accounts`, 2026-11-25: everything but the administrator's review, with the
+development stack's test run against the real Keycloak. The fourth slice is the pages, drawn first and chosen by the
+product owner the same day (canvas "Clew · linking an account (D147)",
+`https://claude.ai/artifact/MCGMtaNHsp2ShnkR4Fg49u`): a person links, puts off and ends a link from the web app.
 
 - **The protocol.** `LinkedAccountSchema` and the manifest's `linkedAccount` in
   [protocol.ts](../../packages/connectors/src/protocol.ts); the rule that a manifest declares one way and an address
@@ -311,17 +312,60 @@ Where it differs from the items above:
 - **The conformance check.** `connector-check` takes `authorization-required` from a connector that declares
   `linkedAccount` as the expected answer, on a capability and on the scan, and says the scan is not verified.
 
-Not built: both pages and anything in the web app that starts linking; the administrator's review and the entered
-addresses on Administration › Anslutna system; a client metadata document served by Clew; the callback for a person
-whose session ended while they were at the system.
+- **The pages (the fourth slice).** Where a system needs the person's account it is said where its content is missing,
+  the pattern of D116, never as a banner and never as a counted row (the product owner chose this over a row among
+  the rows, 2026-11-25):
+  - **Hem**, under the rows of "Behöver dig" after a rule (`AccountLines` in
+    [account-lines.tsx](../../apps/web/src/components/accounts/account-lines.tsx)). A link that was lost and a first
+    link are two weights of one line. Lost: "<System> godtar inte längre ditt konto", the badge "Behöver kopplas
+    igen", since when, "Koppla igen"; it cannot be put off. First: "<System> behöver ditt konto", what the sign-in is,
+    "Koppla ditt konto" and "Inte nu". One system of a kind is named and linked from the line; two or more of a kind
+    are one line that leads to the page; there are never more than two lines, and when both kinds are several they
+    are one line with the lost ones first. The rules and every word are pure functions in
+    [linked-accounts.ts](../../apps/web/src/linked-accounts.ts).
+  - **"Inte nu"** is `POST /api/linked-accounts/later` and the use case `later`: one row per person and system in
+    `linked_account_later` (migration `0002_linked_account_list`), with the audit row `account.link-put-off` in the
+    same transaction. Only a system never linked can be put off. Linking takes it up again; a person who takes their
+    link away has put the system off by that press, so Hem does not ask for what they just ended. A leaver's rows go
+    in the transaction that deactivates them.
+  - **The system's own list** (a tool's page): the same line where the rows would have been, with no "Inte nu" and
+    no empty state. The capability route answers a read that needs the account with the code
+    `authorization-required` beside its 400, which is what the page reads; no other refusal of a source has a code.
+  - **A decision that waits** (`needs-link`): its notice's move is "Koppla ditt konto igen" while the account is
+    missing, and "Kontrollera status" once it is linked. Linking does not send what waited (as after a new sign-in,
+    D45): the person presses.
+  - **Back from the system**: the callback's `account` and `system` in the address are read once by the shell, said
+    in a toast by the system's name (linked, or failed as an error; a person who declined is told nothing), and taken
+    out of the address.
+  - **"Kopplade konton"** at `/accounts`, from the person's menu beside "Min sida" when there is a system to list:
+    `GET /api/linked-accounts` now answers every system the person may link at (`accounts`, with the system's word,
+    the state, since when it is linked or was lost, whether it is put off and whether the system can be told), what
+    needs the person first. "Koppla från" is done at once where the system has a revocation address and asked first
+    where it has none, since the account then lives on there until the person removes it.
+  - `linked_account` has `lost_at`. A system that needs the account is no longer named among the systems that do not
+    answer.
+  - Read at linking: nothing new was needed. The cards' read asks for a scan of a blocked system again when a person's
+    own session visits (`requestChange`), so the system's work comes with the first read after the return.
+
+Not built: the administrator's review and the entered addresses on Administration › Anslutna system; a client
+metadata document served by Clew; the callback for a person whose session ended while they were at the system; a
+mark on the person's menu when a link is lost (the unsent decision already raises the count).
+
+Open after the pages:
+
+- The dialog for a system that cannot be told says "ta också bort Clew i dina inställningar där". The canvas named
+  the place in Nextcloud; Clew does not know a system's own menus, and a connector cannot say them yet.
+- A system that stays unlinked is asked for a scan on every read of the cards from a signed-in session, which
+  writes a `refresh.requested` and a `refresh.failed` audit row each time. That is how a blocked request has always
+  been taken up when its person comes back; with "Inte nu" the state can now last for months.
 
 Against item 15, what holds and what does not: two approvers linked and see different files, a scan with no session
 raised their cards, a decision was written and read back with no session, a link taken away in Nextcloud reads as
 `needs-link` and linking again restores it, and the fixture passed discovery, registration, rotation and revocation.
 Not yet: the scheduled nightly scan itself has not run with a linked account (the scan was asked for directly, and
 the ledger's path was run with the purchasing fixture, not with Nextcloud); a person disabled by provisioning losing
-their links is unit-tested and bound, not run live; and the linking flow has no page, so it has had no pass with a
-screen reader. The record stays provisional.
+their links is unit-tested and bound, not run live; and the pages pass the accessibility suite
+(`tests/a11y/accounts.spec.ts`) but have had no manual pass with a screen reader. The record stays provisional.
 
 ## Sources
 

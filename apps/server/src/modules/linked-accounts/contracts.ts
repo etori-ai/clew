@@ -27,6 +27,8 @@ export interface LinkedAccount {
   expiresAt: string | null;
   /** Why the link was lost, as a code; null while it is linked. */
   lastError: string | null;
+  /** When the link was lost; null while it is linked. */
+  lostAt: string | null;
   linkedAt: string;
 }
 

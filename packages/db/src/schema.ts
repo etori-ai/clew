@@ -1058,7 +1058,9 @@ export const unsignalledTables: Readonly<Record<string, string>> = {
   attention_day: "the attention budget's counter; the deliveries it admits are signalled",
   work_occurrence: 'the source occurrence behind a thread, drawn through the thread',
   linked_account:
-    "a person's link to a system (D147), read when it is asked for and drawn by no page yet; it gets a signal with the page that lists it",
+    "a person's link to a system (D147): the page that lists it reads it when it opens and after the person's own change, and a link lost meanwhile is seen with the next read of the cards, whose status names the system",
+  linked_account_later:
+    "a system a person put off, changed only by that person's own press, which reads the list again",
   linked_account_pending: 'a link under way',
   linked_account_client: "Clew's client at a system's authorization server, drawn by no page",
   linked_account_server:
@@ -2035,6 +2037,7 @@ export const linkedAccounts = pgTable(
     tokens: text('tokens'),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     lastError: text('last_error'),
+    lostAt: timestamp('lost_at', { withTimezone: true }),
     linkedAt: timestamp('linked_at', { withTimezone: true }).notNull(),
   },
   t => [
@@ -2044,6 +2047,20 @@ export const linkedAccounts = pgTable(
     check('linked_account_tokens', sql`(${t.state} = 'linked') = (${t.tokens} IS NOT NULL)`),
     index('linked_account_connector').on(t.connectorId),
   ],
+);
+// A system a person put off (D147): they answered "Inte nu" to a first link, or took their link away. The system is
+// then not said on Hem, only on the page that lists their linked accounts. Linking it forgets the row; a connector's
+// rows go with the connector, a leaver's in the transaction that deactivates them.
+export const linkedAccountLater = pgTable(
+  'linked_account_later',
+  {
+    personId: text('person_id').notNull(),
+    connectorId: text('connector_id')
+      .notNull()
+      .references(() => connectors.id, { onDelete: 'cascade' }),
+    at: timestamp('at', { withTimezone: true }).notNull(),
+  },
+  t => [primaryKey({ columns: [t.personId, t.connectorId] })],
 );
 // An authorization a person started and has not returned from (D147 item 6): taken once, and removed when its time has
 // passed. The PKCE verifier is sealed.

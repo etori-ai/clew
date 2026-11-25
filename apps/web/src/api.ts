@@ -31,6 +31,7 @@ import type {
   ReviewEvidence,
   ReviewPreview,
   SiteHeaderView,
+  LinkedAccountsView,
   AskValues,
   EffectPreview,
   MeetingTimes,
@@ -176,7 +177,10 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new ApiError(response.status, 'Tjänsten svarade oväntat.');
   }
-  if (!response.ok) throw new ApiError(response.status, (data as { error?: string }).error ?? 'Något gick fel.');
+  if (!response.ok) {
+    const { error, code } = data as { error?: string; code?: unknown };
+    throw new ApiError(response.status, error ?? 'Något gick fel.', typeof code === 'string' ? code : undefined);
+  }
   return data as T;
 }
 /**
@@ -676,6 +680,18 @@ export const api = {
   // Administration (D23). Every call is checked again on the server; no secret ever comes back.
   /** The shared header (D88): what the person's header connector lists for them, else Clew's default. */
   header: () => call<SiteHeaderView>('/api/header'),
+  /** The systems the person can link an account at (D147), with what each link is. */
+  linkedAccounts: () => call<LinkedAccountsView>('/api/linked-accounts'),
+  /** Starts linking: the address of the system's own sign-in, which the page then leaves for in the same tab. */
+  linkAccount: (connector: string, returnTo: string) =>
+    post<{ url: string }>(`/api/linked-accounts/${encodeURIComponent(connector)}/link`, { returnTo }),
+  /** "Inte nu": Hem stops saying that these systems need the person's account. */
+  putOffAccounts: (connectors: string[]) => post<{ putOff: string[] }>('/api/linked-accounts/later', { connectors }),
+  /** Takes the person's link away; the answer says whether the system could be told. */
+  unlinkAccount: (connector: string) =>
+    del<{ unlinked: boolean; revocation: 'revoked' | 'not-offered' | 'failed' }>(
+      `/api/linked-accounts/${encodeURIComponent(connector)}`,
+    ),
   /**
    * `clew.news` (D112, amended 2026-11-11): the news from every source the person may read, newest first. Refused for a
    * person with no news source; `queries.ts` turns that refusal into `null`.

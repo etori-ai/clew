@@ -1,3 +1,4 @@
+import type { LinkedAccountEntry } from '@clew/contracts';
 import type { LinkedAccount, LinkRefusal, LinkView } from './contracts';
 import type { AuthorizationServer, OAuthClient, TokenSet } from './ports';
 
@@ -32,13 +33,47 @@ export function withTokens(link: LinkedAccount, tokens: TokenSet, now: Date): Li
     expiresAt: tokens.expiresIn === null ? null : new Date(now.getTime() + tokens.expiresIn * 1000).toISOString(),
     scopes: tokens.scopes ?? link.scopes,
     lastError: null,
+    lostAt: null,
   };
 }
 
-/** The link once the system refused its tokens for good: it says why and holds no token. */
-export function lost(link: LinkedAccount, code: string): LinkedAccount {
-  return { ...link, state: 'needs-link', accessToken: null, refreshToken: null, expiresAt: null, lastError: code };
+/** The link once the system refused its tokens for good: it says why and since when, and holds no token. */
+export function lost(link: LinkedAccount, code: string, now: Date): LinkedAccount {
+  return {
+    ...link,
+    state: 'needs-link',
+    accessToken: null,
+    refreshToken: null,
+    expiresAt: null,
+    lastError: code,
+    lostAt: now.toISOString(),
+  };
 }
+
+/**
+ * A system as the person's list shows it: what its link is, since when, and whether it is said on Hem. A system put
+ * off is one the person answered "Inte nu" for or took their link away from; a link that was lost is never put off,
+ * since something that worked has stopped.
+ */
+export function entryOf(
+  system: { connectorId: string; source: string; revocable: boolean },
+  link: LinkedAccount | undefined,
+  putOff: boolean,
+): LinkedAccountEntry {
+  return {
+    connectorId: system.connectorId,
+    source: system.source,
+    state: link ? link.state : 'not-linked',
+    linkedAt: link?.linkedAt ?? null,
+    lostAt: link?.state === 'needs-link' ? link.lostAt : null,
+    putOff: !link && putOff,
+    revocable: system.revocable,
+  };
+}
+/** What needs the person stands first: a link that was lost, then a system not linked, then the linked; by name within. */
+const RANK = { 'needs-link': 0, 'not-linked': 1, linked: 2 } as const;
+export const byNeed = (a: LinkedAccountEntry, b: LinkedAccountEntry) =>
+  RANK[a.state] - RANK[b.state] || a.source.localeCompare(b.source, 'sv');
 
 export const viewOf = (link: LinkedAccount): LinkView => ({
   connectorId: link.connectorId,

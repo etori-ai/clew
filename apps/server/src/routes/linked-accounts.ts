@@ -9,7 +9,8 @@ import type { LinkedAccounts } from '../modules/linked-accounts/usecases';
  * A person's linked accounts (D147), mounted under `/api/linked-accounts` behind the session guard. Thin: parse, call
  * one use case, map its refusals.
  *
- * - `GET /` lists the person's links, never a token.
+ * - `GET /` lists every system the person can link an account at, with what its link is; never a token.
+ * - `POST /later` puts off the systems the body names ("Inte nu"), so that Hem stops saying they need the account.
  * - `POST /:connector/link` starts linking and answers the address of the system's authorization page; the page then
  *   leaves for it in the same tab. A post, so that it carries the session's CSRF token and no other site can start it.
  * - `GET /callback` is where the system returns the person. It finishes the link and redirects to the page they left,
@@ -18,6 +19,8 @@ import type { LinkedAccounts } from '../modules/linked-accounts/usecases';
  * - `DELETE /:connector` takes the link away and says whether the system could be told.
  */
 const CONNECTOR_ID = /^[a-z][a-z0-9-]{0,39}$/;
+/** The most systems one "Inte nu" puts off: the line on Hem names every system it is about. */
+const MAX_LATER = 20;
 function connectorOf(c: Context<Env>) {
   const id = c.req.param('connector') ?? '';
   if (!CONNECTOR_ID.test(id)) throw new InputError('Ogiltig förfrågan.');
@@ -53,14 +56,31 @@ function linkFailure(c: Context<Env>, error: unknown) {
   return failure(c, error);
 }
 export function linkedAccountRoutes(
-  links: Pick<LinkedAccounts, 'list' | 'begin' | 'complete' | 'unlink'>,
+  links: Pick<LinkedAccounts, 'accounts' | 'later' | 'begin' | 'complete' | 'unlink'>,
   /** Who is signed in, for a test: the API mounts these routes behind its own session guard. */
   guard?: MiddlewareHandler<Env>,
 ) {
   const routes = new Hono<Env>();
   if (guard) routes.use('*', guard);
   routes.onError((error, c) => linkFailure(c, error));
-  routes.get('/', async c => c.json({ links: await links.list(c.get('session').context) }, 200, privateHeaders));
+  routes.get('/', async c => c.json({ accounts: await links.accounts(c.get('session').context) }, 200, privateHeaders));
+  routes.post('/later', async c => {
+    const text = await textOfAtMost(c.req.raw, 4096);
+    let connectors: unknown;
+    try {
+      connectors = text ? (JSON.parse(text) as { connectors?: unknown })?.connectors : undefined;
+    } catch {
+      throw new InputError('Ogiltig förfrågan.');
+    }
+    if (
+      !Array.isArray(connectors) ||
+      connectors.length < 1 ||
+      connectors.length > MAX_LATER ||
+      !connectors.every((id): id is string => typeof id === 'string' && CONNECTOR_ID.test(id))
+    )
+      throw new InputError('Ogiltig förfrågan.');
+    return c.json(await links.later(c.get('session').context, connectors), 200, privateHeaders);
+  });
   routes.get('/callback', async c => {
     try {
       const done = await links.complete(c.get('session').context, c.req.url);

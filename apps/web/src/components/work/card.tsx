@@ -53,6 +53,7 @@ import { invalidateStream } from '../../thread-cache';
 import { useConversation } from '../conversation/conversation-context';
 import { executionStatus, releaseQuestion } from '../../execution-status';
 import { statusOf, type ItemStatus, type StatusMoveWords } from '../../status-of';
+import { useAccounts, useLinkAccount } from '../accounts/account-lines';
 import { whenWord } from '../../when-word';
 import { QUEUED_LINE, silentLine, useSilentSources } from '../shell/silent-sources';
 import type { Marks } from '../../marks';
@@ -570,6 +571,10 @@ export const reviewedAction = (thread: Thread) =>
 export function useItemStatus(thread: Thread): ItemStatus {
   const silent = useSilentSources().of(thread.connector);
   const undoMinutes = useMinutesLeft(thread.receipt?.undoUntil ?? null);
+  // A decision that waits for the account the person links at the item's system (D147): whether it is still missing.
+  const { accounts } = useAccounts();
+  const linked =
+    thread.execution?.reason === 'needs-link' ? accounts.find(a => a.connectorId === thread.connector) : undefined;
   return statusOf(thread, {
     now: new Date().toISOString(),
     today: today(),
@@ -578,6 +583,7 @@ export function useItemStatus(thread: Thread): ItemStatus {
     undoMinutes,
     reviewed: !!reviewedAction(thread),
     reopenable: reopenable(thread),
+    account: linked ? (linked.state === 'linked' ? 'linked' : 'needed') : undefined,
   });
 }
 
@@ -929,6 +935,7 @@ export function ActionRow({
   const reopen = async () => {
     await run(() => api.reopen(thread.id), { optimistic: reopened(thread) });
   };
+  const account = useLinkAccount();
   /** A move of the state's as the notice draws it: a button that runs, a link, or the reminder's times. */
   const moveOf = (m: StatusMoveWords): StatusMove | undefined => {
     switch (m.kind) {
@@ -936,6 +943,13 @@ export function ActionRow({
         return { label: m.label, clickAction: () => run(() => api.checkExecution(thread.id)) };
       case 'release':
         return { label: m.label, clickAction: actions.release };
+      case 'link':
+        // Leaves for the item's system in the same tab and comes back to this page (D147).
+        return {
+          label: m.label,
+          isLoading: account.linking === thread.connector,
+          clickAction: () => account.link(thread.connector),
+        };
       case 'review':
         return { label: m.label, href: reviewHref(thread.id, { from }), ref: review };
       case 'undo':

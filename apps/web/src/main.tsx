@@ -43,6 +43,8 @@ import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
 import { ToolsPage } from './pages/tools';
 import { NewsPage } from './pages/news';
+import { AccountsPage } from './pages/accounts';
+import { ACCOUNTS_PATH } from './linked-accounts';
 import { LoginPage } from './pages/login';
 import { ManifestReferencePage } from './pages/protocol';
 import { ManifestPreviewPage } from './pages/protocol-preview';
@@ -361,6 +363,11 @@ function App() {
       <Route
         path="/calendar"
         element={<Protected>{shell => <CalendarPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* "Kopplade konton" (D147): the person's linked accounts, from the person's menu. */}
+      <Route
+        path={ACCOUNTS_PATH}
+        element={<Protected>{shell => <AccountsPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       {/* "Alla nyheter" (D112, amended 2026-11-11): the combined news list at a tool's address, placed in the rail or not. */}
       <Route

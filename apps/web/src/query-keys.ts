@@ -57,6 +57,8 @@ export const keys = {
   manifestReference: ['protocol', 'manifest-reference'] as const,
   /** The shared header (D88): the person's, kept for the visit. */
   header: ['header'] as const,
+  /** The systems the person can link an account at (D147). */
+  linkedAccounts: ['linked-accounts'] as const,
   /** The news from every news source the person may read (D112, amended 2026-11-11), Hem's "Nyheter". */
   news: ['news'] as const,
   /** Personal (D94): the manager's units and their people. */

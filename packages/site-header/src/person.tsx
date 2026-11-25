@@ -36,6 +36,11 @@ type PersonProps = {
    * Without a rail the band's person is the one place of the shell that leads there.
    */
   pageHref?: string;
+  /**
+   * Further pages of the person's own in the host, after "Min sida": the web app's "Kopplade konton" (D147), when the
+   * person has a system to link. Each is a way on through the host's router, as `pageHref` is.
+   */
+  ways?: ReadonlyArray<{ label: string; href: string }> | undefined;
   /** What the settings open in: under the person (the web app), or a dialog where a popover cannot hold the focus (the embed). */
   surface?: 'popover' | 'dialog';
 };
@@ -62,6 +67,7 @@ export function SiteHeaderPerson({
   onSignOut,
   appearance,
   pageHref,
+  ways: more,
   detail,
   surface = 'popover',
 }: PersonProps) {
@@ -81,6 +87,9 @@ export function SiteHeaderPerson({
   const ways = (width?: '100%') => (
     <>
       {pageHref ? <Button label="Min sida" variant="secondary" href={pageHref} width={width} onClick={close} /> : null}
+      {more?.map(way => (
+        <Button key={way.href} label={way.label} variant="secondary" href={way.href} width={width} onClick={close} />
+      ))}
       {onSignOut ? (
         <Button
           label="Logga ut"

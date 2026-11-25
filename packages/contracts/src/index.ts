@@ -5636,6 +5636,27 @@ export interface SiteHeaderView {
   source: { id: string; label: string } | null;
 }
 
+/**
+ * One system a person can link an account at (D147), as `GET /api/linked-accounts` lists it for them: never a token,
+ * an issuer or a scope. `not-linked` is a system the person has never linked or has taken their link away from;
+ * `needs-link` one whose link the system stopped accepting, with when Clew found out.
+ */
+export interface LinkedAccountEntry {
+  connectorId: string;
+  /** The system's word, as the person reads it on a card: "Inköpssystemet". */
+  source: string;
+  state: 'linked' | 'needs-link' | 'not-linked';
+  linkedAt: string | null;
+  lostAt: string | null;
+  /** The person put a first link off, or took their link away: the system is not said on Hem, only on the page. */
+  putOff: boolean;
+  /** Whether the system can be told when the link is taken away; where it cannot, the person ends it there themselves. */
+  revocable: boolean;
+}
+export interface LinkedAccountsView {
+  accounts: LinkedAccountEntry[];
+}
+
 // The assistants profile and the handover of a conversation, in a file of its own. Named one by one, as below.
 export {
   ASK_ANSWER_MAX,

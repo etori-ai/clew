@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuthenticatedContext } from '@clew/contracts';
+import type { AuthenticatedContext, LinkedAccountEntry } from '@clew/contracts';
 import { manifestProblems } from '../../packages/connectors/src/remote';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
 import { memoryLinkStore } from '../../apps/server/src/modules/linked-accounts/adapters/memory';
@@ -35,6 +35,8 @@ import {
 const REDIRECT = 'https://clew.example.test/api/linked-accounts/callback';
 const T = '2026-11-25T08:00:00.000Z';
 const SUBJECT = 'linked-account:hr';
+/** The systems' words, as a person reads them. */
+const SOURCES: Record<string, string> = { hr: 'Personalsystemet', ledger: 'Ekonomisystemet', buy: 'Inköpssystemet' };
 const persona = (id: string): AuthenticatedContext => ({
   id,
   name: 'Namn Namnsson',
@@ -88,6 +90,8 @@ function world(options: AuthorizationServerOptions & { client?: OAuthClient | nu
   const connectors: ConnectorLinks = {
     declared: async id => declared.get(id) ?? null,
     reaches: async (who, id) => declared.has(id) && !outside.has(who.id),
+    linkable: async who =>
+      outside.has(who.id) ? [] : [...declared.keys()].map(id => ({ connectorId: id, source: SOURCES[id] ?? id })),
   };
   const logged: string[] = [];
   const links = linkedAccountUsecases({
@@ -323,6 +327,7 @@ describe('a call with a linked account', () => {
       refreshToken: null,
       expiresAt: null,
       lastError: 'invalid_grant',
+      lostAt: '2026-11-25T09:00:00.000Z',
     });
     expect((await w.links.list(anna))[0]!.state).toBe('needs-link');
     expect(w.rows().at(-1)).toEqual([
@@ -339,7 +344,7 @@ describe('a call with a linked account', () => {
 
     expect((await w.link(anna)).linked).toBe(true);
     expect(w.vendor.accepts(await w.links.tokenFor('anna', 'hr'))).toBe('account-anna');
-    expect(await w.held('anna')).toMatchObject({ state: 'linked', lastError: null });
+    expect(await w.held('anna')).toMatchObject({ state: 'linked', lastError: null, lostAt: null });
   });
 
   test('an authorization server that is down or busy keeps the link, and the call says the source is unavailable', async () => {
@@ -577,6 +582,95 @@ describe('unlinking', () => {
       ['person:admin', 'account.unlinked', SUBJECT, ended('bo', 'connector-removed')],
       ['person:admin', 'account.unlinked', SUBJECT, ended('carl', 'connector-removed')],
     ]);
+  });
+});
+
+describe('the systems a person can link', () => {
+  /** A second and a third system at the same authorization server, approved as the first is. */
+  async function more(w: ReturnType<typeof world>, ...ids: string[]) {
+    for (const id of ids) {
+      w.declared.set(id, { resource: w.vendor.resource, scopes: [] });
+      await w.links.approveAsOperator(id);
+    }
+  }
+  const entry = (connectorId: string, state: LinkedAccountEntry['state'], more: Partial<LinkedAccountEntry> = {}) => ({
+    connectorId,
+    source: SOURCES[connectorId]!,
+    state,
+    linkedAt: null,
+    lostAt: null,
+    putOff: false,
+    revocable: true,
+    ...more,
+  });
+
+  test('are listed with what their link is, what needs the person first, and never one that is not theirs', async () => {
+    const w = world();
+    await more(w, 'ledger', 'buy');
+    expect(await w.links.accounts(anna)).toEqual([
+      entry('ledger', 'not-linked'),
+      entry('buy', 'not-linked'),
+      entry('hr', 'not-linked'),
+    ]);
+    await w.link(anna);
+    expect((await w.links.accounts(anna)).map(a => [a.connectorId, a.state, a.linkedAt])).toEqual([
+      ['ledger', 'not-linked', null],
+      ['buy', 'not-linked', null],
+      ['hr', 'linked', T],
+    ]);
+    // The system stops accepting the account: the link that was lost stands first, with when Clew found out.
+    w.advance(3600);
+    w.vendor.removeAccount('account-anna');
+    await w.links.tokenFor('anna', 'hr').catch(() => undefined);
+    expect((await w.links.accounts(anna))[0]).toEqual(
+      entry('hr', 'needs-link', { linkedAt: T, lostAt: '2026-11-25T09:00:00.000Z' }),
+    );
+    // A system no administrator has approved, and a person outside the audience: nothing to list, and no token in any of it.
+    w.declared.set('payroll', { resource: 'https://payroll.vendor.test', scopes: [] });
+    expect((await w.links.accounts(anna)).map(a => a.connectorId)).toEqual(['hr', 'ledger', 'buy']);
+    w.outside.add('bo');
+    expect(await w.links.accounts(bo)).toEqual([]);
+    expect(JSON.stringify(await w.links.accounts(anna))).not.toMatch(/token|issuer|scope/i);
+  });
+
+  test('a first link is put off with its audit row, once, and a link that is held or was lost is not', async () => {
+    const w = world();
+    await more(w, 'ledger', 'buy');
+    await w.link(anna);
+    const before = w.actions().length;
+    expect(await w.links.later(anna, ['ledger', 'buy', 'hr', 'ledger'])).toEqual({ putOff: ['ledger', 'buy'] });
+    expect(w.rows().slice(before)).toEqual([
+      ['person:anna', 'account.link-put-off', 'linked-account:ledger', { connector: 'ledger', person: 'anna' }],
+      ['person:anna', 'account.link-put-off', 'linked-account:buy', { connector: 'buy', person: 'anna' }],
+    ]);
+    expect((await w.links.accounts(anna)).map(a => [a.connectorId, a.putOff])).toEqual([
+      ['ledger', true],
+      ['buy', true],
+      ['hr', false],
+    ]);
+    // Said again, nothing is written; another person's page is their own.
+    expect(await w.links.later(anna, ['ledger'])).toEqual({ putOff: [] });
+    expect(w.actions().length).toBe(before + 2);
+    expect((await w.links.accounts(bo)).every(a => !a.putOff)).toBe(true);
+    // A connector that is not the person's is refused whole, and nothing of the request is put off.
+    w.outside.add('bo');
+    expect(await refusal(w.links.later(bo, ['buy', 'hr']))).toBe('unknown-connector');
+    expect(await refusal(w.links.later(anna, ['buy', 'nothing']))).toBe('unknown-connector');
+  });
+
+  test('linking takes a system up again, and a person who takes their link away has put it off', async () => {
+    const w = world();
+    await w.links.later(anna, ['hr']);
+    expect((await w.links.accounts(anna))[0]).toMatchObject({ state: 'not-linked', putOff: true });
+    await w.link(anna);
+    expect((await w.links.accounts(anna))[0]).toMatchObject({ state: 'linked', putOff: false });
+    await w.links.unlink(anna, 'hr');
+    expect((await w.links.accounts(anna))[0]).toMatchObject({ state: 'not-linked', putOff: true, linkedAt: null });
+    // A leaver's choices go with their links.
+    await w.store.transaction(tx =>
+      linkedAccountLeavers(tx).deactivated({ actor: 'scim:provisioner', personId: 'anna' }),
+    );
+    expect(await w.store.putOffBy('anna')).toEqual([]);
   });
 });
 

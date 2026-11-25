@@ -7,7 +7,9 @@ import { Button, EmptyState, Heading, HStack, Skeleton, StatusNotice, Text, VSta
 import { areasQuery, entityDetailQuery, recordActionsQuery } from '../queries';
 import { mobileQuery } from '../media';
 import { EntityActions } from '../components/people/entity-sections';
-import { errorMessage, refused } from '../query-policy';
+import { errorMessage, needsAccount, refused } from '../query-policy';
+import { connectorOf } from '../linked-accounts';
+import { NeedsAccountNotice, useAccounts } from '../components/accounts/account-lines';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
 import { opensAsPage, viewOpenHref } from '../view-address';
@@ -180,6 +182,11 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     if (active instanceof HTMLElement && active !== document.body && active.isConnected) return;
     document.getElementById(TITLE_ID)?.focus();
   }, [!!tool, capability]);
+  const { accounts } = useAccounts();
+  const account =
+    main.failed && needsAccount(main.failed)
+      ? (accounts.find(a => a.connectorId === connectorOf(capability) && a.state !== 'linked') ?? null)
+      : null;
   const failed =
     areasQ.isError && areasQ.data === undefined
       ? {
@@ -204,8 +211,14 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   );
   // The status vocabulary's notice (D126 item 13): the read failed, and its one move, "Försök igen", stands in it,
   // never behind an "Expandera" (errands.spec, requests.spec).
-  const banner = failed && (
-    <StatusNotice kind="failed" title={failed.message} action={{ label: 'Försök igen', clickAction: failed.retry }} />
+  // A list whose system needs the account the person links there (D147): the one line and its button where the rows
+  // would have been, in the read's failure's place.
+  const banner = account ? (
+    <NeedsAccountNotice account={account} />
+  ) : (
+    failed && (
+      <StatusNotice kind="failed" title={failed.message} action={{ label: 'Försök igen', clickAction: failed.retry }} />
+    )
   );
   // One thing (D126 rule 1): the thing's page, as a work item's is drawn.
   const thing = tool?.spec && ONE_THING.has(tool.spec.kind) ? tool : null;

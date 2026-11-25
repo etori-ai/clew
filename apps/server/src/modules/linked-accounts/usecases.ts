@@ -1,4 +1,4 @@
-import type { AuthenticatedContext, Capability } from '@clew/contracts';
+import type { AuthenticatedContext, Capability, LinkedAccountEntry } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
 import {
   LinkRefusedError,
@@ -8,7 +8,7 @@ import {
   type LinkView,
   type Revocation,
 } from './contracts';
-import { PENDING_MS, clientChoice, isFresh, localPath, lost, viewOf, withTokens } from './domain';
+import { PENDING_MS, byNeed, clientChoice, entryOf, isFresh, localPath, lost, viewOf, withTokens } from './domain';
 import {
   GrantRefused,
   type Approval,
@@ -30,7 +30,8 @@ import {
  * what a call asks before it is sent; `refused` is what a call reports when the system would not take the token;
  * `unlink` is the person's own; `forgetPerson` and `forgetConnector` end the links of a person or a connector that
  * leaves. Linking, unlinking and a link lost each write an audit row in the transaction that changes the link
- * (`account.linked`, `account.unlinked`, `account.link-lost`), as do a client Clew registers
+ * (`account.linked`, `account.unlinked`, `account.link-lost`), as do a system the person puts off
+ * (`account.link-put-off`), a client Clew registers
  * (`account.client-registered`) and an administrator's approval (`account.server-approved`). A row names the connector, the issuer and the person's id, never a token, an account
  * or a name. A refresh that succeeds changes nothing a person or an administrator did and writes none, as a session's
  * refresh writes none.
@@ -261,7 +262,7 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
 
   /** Writes the link as lost, with its audit row, inside the caller's transaction. */
   async function lose(tx: LinkTx, link: LinkedAccount, reason: string) {
-    await tx.save(lost(link, reason));
+    await tx.save(lost(link, reason, deps.clock()));
     await tx.audit({
       actor: LINK_SYSTEM_ACTOR,
       action: 'account.link-lost',
@@ -300,6 +301,8 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
     actor: string,
     reason: string | null,
     pick: (tx: LinkTx) => Promise<LinkedAccount[]>,
+    /** What else the same transaction does, once the links are gone. */
+    also?: (tx: LinkTx, links: LinkedAccount[]) => Promise<void>,
   ): Promise<Array<{ link: LinkedAccount; revocation: Revocation }>> {
     const removed = await deps.store.transaction(async tx => {
       const links = await pick(tx);
@@ -317,6 +320,7 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
           },
         });
       }
+      await also?.(tx, links);
       return links;
     });
     const ended: Array<{ link: LinkedAccount; revocation: Revocation }> = [];
@@ -431,6 +435,7 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
             refreshToken: null,
             expiresAt: null,
             lastError: null,
+            lostAt: null,
             linkedAt: now.toISOString(),
           },
           tokens,
@@ -441,6 +446,8 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
       }
       await deps.store.transaction(async tx => {
         await tx.save(link);
+        // Linked now, so no longer put off: taken away again later, it is put off anew by that press.
+        await tx.takeUp(link.personId, link.connectorId);
         await tx.audit({
           actor: actorOf(persona),
           action: 'account.linked',
@@ -512,23 +519,95 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
     },
 
     /**
+     * Every system this person can link an account at, as their pages show it: the systems in their scope and audience
+     * that declare a linked account an administrator has approved, each with what its link is, since when, and whether
+     * the person put it off. What needs them stands first. A system outside their audience is not in the list, so
+     * nothing here tells them it exists.
+     */
+    async accounts(persona: AuthenticatedContext): Promise<LinkedAccountEntry[]> {
+      const systems = await deps.connectors.linkable(persona);
+      if (!systems.length) return [];
+      const [links, putOff] = await Promise.all([
+        deps.store.linksOf(person(persona)),
+        deps.store.putOffBy(person(persona)),
+      ]);
+      const entries: LinkedAccountEntry[] = [];
+      for (const system of systems) {
+        const setting = await settingOf(system.connectorId);
+        if (typeof setting === 'string') continue;
+        entries.push(
+          entryOf(
+            { ...system, revocable: !!setting.server.revocationEndpoint },
+            links.find(link => link.connectorId === system.connectorId),
+            putOff.includes(system.connectorId),
+          ),
+        );
+      }
+      return entries.sort(byNeed);
+    },
+
+    /**
+     * "Inte nu": the person puts off linking these systems, and Hem stops saying that they need the account. Only a
+     * system never linked can be put off: a link that is held or was lost is left as it is. Each system put off writes
+     * its audit row in the same transaction; saying it again changes nothing and writes none.
+     */
+    async later(persona: AuthenticatedContext, connectorIds: string[]): Promise<{ putOff: string[] }> {
+      for (const connectorId of connectorIds) await settingFor(persona, connectorId);
+      const personId = person(persona);
+      const at = deps.clock().toISOString();
+      const putOff = await deps.store.transaction(async tx => {
+        const already = await tx.putOffBy(personId);
+        const done: string[] = [];
+        for (const connectorId of new Set(connectorIds)) {
+          if (already.includes(connectorId) || (await tx.link(personId, connectorId))) continue;
+          await tx.putOff(personId, connectorId, at);
+          await tx.audit({
+            actor: actorOf(persona),
+            action: 'account.link-put-off',
+            subject: linkSubject(connectorId),
+            details: { connector: connectorId, person: personId },
+          });
+          done.push(connectorId);
+        }
+        return done;
+      });
+      return { putOff };
+    },
+
+    /**
      * The person takes their link away. The row goes with its audit row; the tokens are then revoked at the system
-     * where it offers that, and the answer says whether it did, so the page can say when a token lives on there.
+     * where it offers that, and the answer says whether it did, so the page can say when a token lives on there. The
+     * system is put off in the same transaction: a person who took their link away is not told on Hem to link it.
      */
     async unlink(
       persona: AuthenticatedContext,
       connectorId: string,
     ): Promise<{ unlinked: boolean; revocation: Revocation }> {
-      const [ended] = await end(actorOf(persona), null, async tx => {
-        const link = await tx.link(person(persona), connectorId);
-        return link ? [link] : [];
-      });
+      const at = deps.clock().toISOString();
+      const [ended] = await end(
+        actorOf(persona),
+        null,
+        async tx => {
+          const link = await tx.link(person(persona), connectorId);
+          return link ? [link] : [];
+        },
+        async (tx, links) => {
+          for (const link of links) await tx.putOff(link.personId, link.connectorId, at);
+        },
+      );
       return ended ? { unlinked: true, revocation: ended.revocation } : { unlinked: false, revocation: 'not-offered' };
     },
 
     /** A person who is disabled or removed keeps no link (D147 item 10). `actor` is who or what removed them. */
     async forgetPerson(personId: string, actor: string): Promise<number> {
-      return (await end(actor, 'person-removed', tx => tx.linksOf(personId))).length;
+      return (
+        await end(
+          actor,
+          'person-removed',
+          tx => tx.linksOf(personId),
+          tx => tx.takeUp(personId),
+        )
+      ).length;
     },
 
     /**
@@ -541,10 +620,15 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
 
     /** A person who is now outside a connector's audience keeps no link to it. */
     async forgetLink(personId: string, connectorId: string, actor: string): Promise<boolean> {
-      const ended = await end(actor, 'outside-audience', async tx => {
-        const link = await tx.link(personId, connectorId);
-        return link ? [link] : [];
-      });
+      const ended = await end(
+        actor,
+        'outside-audience',
+        async tx => {
+          const link = await tx.link(personId, connectorId);
+          return link ? [link] : [];
+        },
+        tx => tx.takeUp(personId, connectorId),
+      );
       return ended.length > 0;
     },
   };
@@ -575,6 +659,7 @@ export function linkedAccountLeavers(tx: LinkTx) {
           },
         });
       }
+      await tx.takeUp(change.personId);
     },
     /** A person who is active again links again themselves. */
     async reactivated(): Promise<void> {},

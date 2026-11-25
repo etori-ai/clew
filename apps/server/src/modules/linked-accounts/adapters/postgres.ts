@@ -18,7 +18,8 @@ export interface Sealer {
 const links = schema.linkedAccounts,
   pendings = schema.linkedAccountPending,
   clients = schema.linkedAccountClients,
-  servers = schema.linkedAccountServers;
+  servers = schema.linkedAccountServers,
+  later = schema.linkedAccountLater;
 const linkPurpose = (personId: string, connectorId: string) => `linked-account:${connectorId}:${personId}`;
 const clientPurpose = (connectorId: string) => 'linked-account-client:' + connectorId;
 const PENDING_PURPOSE = 'linked-account-pending';
@@ -26,9 +27,10 @@ const PENDING_PURPOSE = 'linked-account-pending';
 /** The store's transaction on a transaction somebody else opened: how the SCIM transaction ends a leaver's links. */
 export const linkTx = (tx: Transaction, sealer: Sealer): LinkTx => parts(sealer).within(tx);
 export function postgresLinkStore(sealer: Sealer): LinkStore {
-  const { within, listed } = parts(sealer);
+  const { within, listed, putOffBy } = parts(sealer);
   return {
     linksOf: personId => listed(database(), eq(links.personId, personId)),
+    putOffBy: personId => putOffBy(database(), personId),
     transaction: fn => database().transaction(tx => fn(within(tx))),
   };
 }
@@ -48,11 +50,20 @@ function parts(sealer: Sealer) {
       refreshToken: tokens?.refresh ?? null,
       expiresAt: row.expiresAt?.toISOString() ?? null,
       lastError: row.lastError,
+      lostAt: row.lostAt?.toISOString() ?? null,
       linkedAt: row.linkedAt.toISOString(),
     };
   }
   const listed = async (db: Database | Transaction, where: ReturnType<typeof eq>) =>
     (await db.select().from(links).where(where).orderBy(asc(links.connectorId), asc(links.personId))).map(linkOf);
+  const putOffBy = async (db: Database | Transaction, personId: string) =>
+    (
+      await db
+        .select({ connectorId: later.connectorId })
+        .from(later)
+        .where(eq(later.personId, personId))
+        .orderBy(asc(later.connectorId))
+    ).map(row => row.connectorId);
   const clientOf = (connectorId: string, id: string, secret: string | null, source: OAuthClient['source']) => ({
     id,
     secret: secret ? sealer.open(secret, clientPurpose(connectorId)) : null,
@@ -84,6 +95,7 @@ function parts(sealer: Sealer) {
           : null,
         expiresAt: link.expiresAt ? new Date(link.expiresAt) : null,
         lastError: link.lastError,
+        lostAt: link.lostAt ? new Date(link.lostAt) : null,
         linkedAt: new Date(link.linkedAt),
       };
       await tx
@@ -182,8 +194,24 @@ function parts(sealer: Sealer) {
         .values({ connectorId, ...values })
         .onConflictDoUpdate({ target: servers.connectorId, set: values });
     },
+    async putOff(personId, connectorId, at) {
+      await tx
+        .insert(later)
+        .values({ personId, connectorId, at: new Date(at) })
+        .onConflictDoNothing();
+    },
+    putOffBy: personId => putOffBy(tx, personId),
+    async takeUp(personId, connectorId) {
+      await tx
+        .delete(later)
+        .where(
+          connectorId === undefined
+            ? eq(later.personId, personId)
+            : and(eq(later.personId, personId), eq(later.connectorId, connectorId)),
+        );
+    },
     audit: entry => writeAudit(tx, entry),
   });
 
-  return { within, listed };
+  return { within, listed, putOffBy };
 }

@@ -27,6 +27,7 @@ function stack(who = person('anna')) {
     connectors: {
       declared: async id => (id === 'hr' ? { resource: vendor.resource, scopes: [] } : null),
       reaches: async () => true,
+      linkable: async () => [{ connectorId: 'hr', source: 'Personalsystemet' }],
     },
     oauth: oauthAdapter({ clientName: 'Clew', fetch: vendor.fetch }),
     clock: () => new Date('2026-11-25T08:00:00.000Z'),
@@ -51,7 +52,16 @@ describe('linked-account routes', () => {
   test('a person starts linking, returns from the system to the page they left, and sees the link without a token', async () => {
     const s = stack();
     await s.usecases.approveAsOperator('hr');
-    expect(await (await s.call('GET', '/')).json()).toEqual({ links: [] });
+    const entry = {
+      connectorId: 'hr',
+      source: 'Personalsystemet',
+      state: 'not-linked',
+      linkedAt: null,
+      lostAt: null,
+      putOff: false,
+      revocable: true,
+    };
+    expect(await (await s.call('GET', '/')).json()).toEqual({ accounts: [entry] });
 
     const started = await s.call('POST', '/hr/link', { returnTo: '/todo?tab=mine' });
     expect(started.status).toBe(200);
@@ -67,7 +77,7 @@ describe('linked-account routes', () => {
     const listed = await s.call('GET', '/');
     const body = await listed.text();
     expect(JSON.parse(body)).toEqual({
-      links: [{ connectorId: 'hr', state: 'linked', issuer: s.vendor.issuer, linkedAt: '2026-11-25T08:00:00.000Z' }],
+      accounts: [{ ...entry, state: 'linked', linkedAt: '2026-11-25T08:00:00.000Z' }],
     });
     const token = await s.usecases.tokenFor('anna', 'hr');
     expect(body).not.toContain(token);
@@ -88,7 +98,27 @@ describe('linked-account routes', () => {
 
     const stray = await s.call('GET', '/callback?code=x&state=never-started');
     expect([stray.status, stray.headers.get('location')]).toEqual([303, '/?account=failed']);
-    expect(await (await s.call('GET', '/')).json()).toEqual({ links: [] });
+    expect(await (await s.call('GET', '/')).json()).toMatchObject({
+      accounts: [{ connectorId: 'hr', state: 'not-linked', putOff: false }],
+    });
+  });
+
+  test('a person puts a system off, and only with a list of connectors that are theirs', async () => {
+    const s = stack();
+    await s.usecases.approveAsOperator('hr');
+    const later = await s.call('POST', '/later', { connectors: ['hr'] });
+    expect([later.status, later.headers.get('cache-control')]).toEqual([200, 'no-store, private']);
+    expect(await later.json()).toEqual({ putOff: ['hr'] });
+    expect(await (await s.call('GET', '/')).json()).toMatchObject({
+      accounts: [{ connectorId: 'hr', state: 'not-linked', putOff: true }],
+    });
+    expect(s.store.audit.at(-1)).toMatchObject({ actor: 'person:anna', action: 'account.link-put-off' });
+    expect((await s.call('POST', '/later', { connectors: ['payroll'] })).status).toBe(404);
+    for (const body of [{}, { connectors: [] }, { connectors: 'hr' }, { connectors: ['Not-One'] }, '{not json'])
+      expect((await s.call('POST', '/later', body)).status).toBe(400);
+    expect((await s.call('POST', '/later', { connectors: Array.from({ length: 21 }, (_, i) => 'c' + i) })).status).toBe(
+      400,
+    );
   });
 
   test('a return is led to a page of Clew and never to another address', async () => {

@@ -47,6 +47,15 @@ export const linkedAccounts = linkedAccountUsecases({
       await registry.refreshGovernance();
       return registry.visible(audiencedActorOf(persona), connectorId);
     },
+    // The registered connectors this person may see whose manifest declares a linked account, by the system's own word.
+    async linkable(persona) {
+      await registry.refreshGovernance();
+      const actor = audiencedActorOf(persona);
+      return registry
+        .list()
+        .filter(connector => connector.linkedAccount && registry.visible(actor, connector.id))
+        .map(connector => ({ connectorId: connector.id, source: connector.source }));
+    },
   },
   oauth: oauthAdapter({
     clientName: 'Clew',

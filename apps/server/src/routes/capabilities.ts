@@ -1,5 +1,5 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
-import { audiencedActorOf, UNKNOWN, type Registry } from '@clew/connectors';
+import { audiencedActorOf, CapabilityError, UNKNOWN, type Registry } from '@clew/connectors';
 import type { AuthenticatedContext } from '@clew/contracts';
 import { failure, InputError, privateHeaders, type Env } from '../context';
 import type { PersonKeys } from '../threads/model';
@@ -75,8 +75,17 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
   });
   // "Okänd förmåga." raised while the capability runs gets the same answer as an unknown name: its connector switched
   // off between the check and the call, a nested call to a capability hidden from the person, or the source's own.
-  routes.onError((error, c) =>
-    error instanceof InputError && error.message === UNKNOWN ? unknown(c) : failure(c, error),
-  );
+  routes.onError((error, c) => {
+    if (error instanceof InputError && error.message === UNKNOWN) return unknown(c);
+    // The system needs the account the person links there (D147): the 400 it always was, with the code the page reads
+    // to offer the link where the read's content would be. No other refusal of a source carries a code here.
+    if (
+      error instanceof InputError &&
+      error.cause instanceof CapabilityError &&
+      error.cause.code === 'authorization-required'
+    )
+      return c.json({ error: error.message, code: 'authorization-required' }, 400, privateHeaders);
+    return failure(c, error);
+  });
   return routes;
 }

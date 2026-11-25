@@ -66,6 +66,11 @@ export interface ConnectorLinks {
   declared(connectorId: string): Promise<{ resource: string; scopes: string[] } | null>;
   /** Whether the connector is in this person's scope and audience today. A person outside it cannot tell it exists. */
   reaches(persona: AuthenticatedContext, connectorId: string): Promise<boolean>;
+  /**
+   * The connectors in this person's scope and audience that declare a linked account, each with its system's word as a
+   * person reads it ("Inköpssystemet"). One that no administrator has approved is among them; the use case leaves it out.
+   */
+  linkable(persona: AuthenticatedContext): Promise<Array<{ connectorId: string; source: string }>>;
 }
 
 export interface TokenSet {
@@ -144,11 +149,18 @@ export interface LinkTx {
   /** What an administrator approved for the connector; null when nothing is. */
   approval(connectorId: string): Promise<Approval | null>;
   approve(connectorId: string, approval: Approval): Promise<void>;
+  /** The person puts a system off ("Inte nu"), or took their link to it away; said again changes nothing. */
+  putOff(personId: string, connectorId: string, at: string): Promise<void>;
+  /** The connectors the person has put off. */
+  putOffBy(personId: string): Promise<string[]>;
+  /** Forgets that the person put this connector off, or every connector when none is named. */
+  takeUp(personId: string, connectorId?: string): Promise<void>;
   audit(entry: LinkAuditEntry): Promise<void>;
 }
 
 export interface LinkStore {
   linksOf(personId: string): Promise<LinkedAccount[]>;
+  putOffBy(personId: string): Promise<string[]>;
   /** One transaction: everything in it is written, with its audit rows, or nothing is. */
   transaction<T>(fn: (tx: LinkTx) => Promise<T>): Promise<T>;
 }
