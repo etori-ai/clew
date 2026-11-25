@@ -901,6 +901,11 @@ export class MockApi {
       return json(
         this.update(id, {
           execution: { ...t.execution, state: done ? 'partial' : 'failed', reason: 'released-by-person' },
+          items: t.items.map(i =>
+            t.receipt?.rows.some(row => row.ref === i.ref && row.outcome === 'done')
+              ? { ...i, selected: false, selectable: false }
+              : i,
+          ),
         }),
       );
     }

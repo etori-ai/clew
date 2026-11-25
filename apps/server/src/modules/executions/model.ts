@@ -178,14 +178,16 @@ export interface ExecutionTx {
   /** Idempotent by card id. The adapter decides how a card is stored and announced; the use case decides that one is due. */
   pushCard(card: WatchCard): Promise<void>;
 }
+export type CardExecutionResult = Pick<Execution, 'id' | 'state' | 'compensates' | 'result'> & { threadId: string };
+
 export interface ExecutionStore {
   readDecision(personId: string, decisionId: string): Promise<Execution | undefined>;
   read(id: string): Promise<Execution | undefined>;
   /**
-   * The person's decisions on one work item, its undos among them (`presentation.threadId`), oldest first: what the
+   * The results of the person's decisions on the requested items, their undos among them (`presentation.threadId`), oldest first: what the
    * ledger says was done on the item across every decision, not only the item's latest receipt (DE-M1).
    */
-  readCard(personId: string, threadId: string): Promise<Execution[]>;
+  readCardResults(personId: string, threadIds: readonly string[]): Promise<CardExecutionResult[]>;
   readJob(id: string): Promise<Job | undefined>;
   transaction<T>(fn: (tx: ExecutionTx) => Promise<T>): Promise<T>;
 }

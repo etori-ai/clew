@@ -169,6 +169,33 @@ for (const [layout, viewport] of [
       // A new decision, on the item as it was drawn after it was let go.
       await expect.poll(() => api.acted.map(a => [a.threadId, a.body.version])).toEqual([['fakturor', shown]]);
     });
+    test('a failed retry leaves an earlier confirmed invoice out of the next decision', async ({ page, api }) => {
+      const card = api.threads.find(t => t.id === 'fakturor')!;
+      const [confirmed, refused] = card.items;
+      card.items[0] = { ...confirmed!, selectable: false, selected: false };
+      card.execution = {
+        id: 'second-execution',
+        decisionId: 'second-decision',
+        operation: 'finance.approve',
+        state: 'failed',
+        reason: null,
+        compensates: null,
+      };
+      // The latest receipt knows only about the second invoice. The item remembers the first was confirmed earlier.
+      card.receipt = {
+        at: '2026-11-04T08:00:00.000Z',
+        headline: 'Den andra fakturan avvisades.',
+        undoUntil: null,
+        undoCapability: null,
+        rows: [{ ref: refused!.ref, label: refused!.label, outcome: 'failed', detail: 'Avvisad.' }],
+      };
+      api.threads = [card];
+      await open(page, '/todo?item=fakturor');
+      const item =
+        layout === 'desktop' ? page.getByRole('complementary', { name: 'Valt ärende' }) : page.getByRole('main');
+      await item.getByRole('button', { name: /^Attestera/ }).click();
+      await expect.poll(() => api.acted.map(a => a.body.refs)).toEqual([['finance:inv:2']]);
+    });
     test('a decision the source confirmed in part is let go for the rest, and the rows it got done are not chosen again (DE-M1, DE-M2)', async ({
       page,
       api,
