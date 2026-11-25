@@ -8,6 +8,7 @@ import {
   bigserial,
   boolean,
   date,
+  doublePrecision,
   timestamp,
   check,
   primaryKey,
@@ -22,7 +23,6 @@ import type {
   CompetenceSearchWindow,
   ConnectorAudience,
   DirectoryPhone,
-  Employment,
   InstallationTheme,
   LogoMediaType,
   ConnectorHealth,
@@ -52,7 +52,6 @@ export const people = pgTable(
     userName: text('user_name'),
     email: text('email'),
     phoneNumbers: jsonb('phone_numbers').$type<DirectoryPhone[]>().notNull().default([]),
-    employments: jsonb('employments').$type<Employment[]>().notNull().default([]),
     // D110: what the source calls the person's work, SCIM's `title`. Optional, shown and searched, never read for
     // authority.
     title: text('title'),
@@ -131,6 +130,36 @@ export const units = pgTable('auth_unit', {
   organisationId: text('organisation_id').notNull(),
   label: text('label').notNull(),
 });
+/**
+ * A person's current employments (D114, D147), one row each, in the order the directory sent them. `unitId` is the id
+ * the unit's `unit:` group carries. It is checked when the list is written and kept when the unit is removed
+ * afterwards, and a unit nobody is placed on has no row in `auth_unit`, so it is no foreign key. `managerId` is the
+ * person the employment reports to: a person of the same organisation and never the person themselves, checked when
+ * the list is written. A manager who is deactivated or erased afterwards is still named, as other records name them.
+ */
+export const employments = pgTable(
+  'auth_employment',
+  {
+    // A person's row is never removed by the product (an erasure clears it and keeps the id); where one is, its
+    // employments go with it and nobody keeps it as a manager.
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    unitId: text('unit_id').notNull(),
+    managerId: text('manager_id').references(() => people.id, { onDelete: 'set null' }),
+    title: text('title'),
+    employmentType: text('employment_type'),
+    startDate: date('start_date', { mode: 'string' }),
+    employmentPercentage: doublePrecision('employment_percentage'),
+  },
+  t => [
+    primaryKey({ columns: [t.personId, t.position] }),
+    // Who reports to a person is asked by the manager's id.
+    index('auth_employment_manager').on(t.managerId),
+    check('auth_employment_not_own_manager', sql`${t.managerId} IS DISTINCT FROM ${t.personId}`),
+  ],
+);
 export const assignments = pgTable(
   'auth_assignment',
   {
@@ -1046,6 +1075,7 @@ export const unsignalledTables: Readonly<Record<string, string>> = {
   thread_message: 'written with its thread, whose updated_at moves',
   handover_turn: 'reserves an external question before delivery; a completed answer is drawn through its thread',
   thread_subject: "an index of a thread's rows, written with the thread",
+  auth_employment: "a person's employments, written with the person's own row, whose updated_at moves",
   audit: 'written in the transaction of the change it records, which has its own signal',
   auth_audit: 'a log of sign-ins and provisioning; no page follows it as it grows',
   competence_read_log: 'a log of reads; signalling it would make every read notify its own reader',

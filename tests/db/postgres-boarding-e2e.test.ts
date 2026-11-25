@@ -115,7 +115,14 @@ async function world() {
       organisationId: org,
       name: `Synthetic ${p.key} ${tag}`,
       userName: `${p.key}.${tag}`,
-      employments: [{ unitId: id(p.unit), employmentType: 'Tillsvidare', startDate: '2026-12-04' }],
+    });
+  for (const p of people)
+    await db.insert(schema.employments).values({
+      personId: id(p.key),
+      position: 0,
+      unitId: id(p.unit),
+      employmentType: 'Tillsvidare',
+      startDate: '2026-12-04',
     });
   for (const p of people)
     await db.insert(schema.assignments).values({ personId: id(p.key), unitId: id(p.unit), role: p.role });

@@ -1713,6 +1713,15 @@
       "status": "accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question; item 3 amended 2026-11-24, finding `BL-15` of the baseline review: the connector protocol's viewer script is served with the notices of every package it bundles, not Scalar's alone, each at the version the script holds, and one package Clew's install does not hold, `unist-util-find-after`, credited from a kept text)",
       "date": "2026-11-23",
       "area": "platform"
+    },
+    {
+      "key": "D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to",
+      "number": 147,
+      "path": "docs/decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md",
+      "title": "D147 · An employment is a row of its own and names the person it reports to",
+      "status": "provisional (Max Eriksson, 2026-11-25: build the storage first; accepted once a provisioner has pushed managers from a real directory and the reporting line is read from them); items 1 to 5 are built, items 6 to 9 are the direction they were built for and are built by nothing yet",
+      "date": "2026-11-25",
+      "area": "identity"
     }
   ],
   "documents": [
@@ -2652,6 +2661,12 @@
     {
       "path": "docs/decisions/D146-clew-is-licensed-under-the-agpl-as-eneo-is.md",
       "title": "D146 · Clew is licensed under the AGPL, as Eneo is",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md",
+      "title": "D147 · An employment is a row of its own and names the person it reports to",
       "category": "decision-history",
       "headings": []
     },

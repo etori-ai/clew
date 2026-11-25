@@ -179,6 +179,26 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.updateUser(a, { name: 'Renamed once more', updatedAt: '2026-11-09T10:00:00.000Z' });
         expect((await tx.readUser(p + '-org', a))?.employments).toEqual(jobs);
         expect((await tx.findUser('externalId', 'ext:' + a))?.employments).toEqual(jobs);
+        // D147: every detail of an employment is read as it was written, the manager among them, and an employment
+        // that holds only its unit reads as only its unit. Who names a person as manager is theirs to keep: a write
+        // of the manager's own record leaves it.
+        const detailed = [
+          {
+            unitId: 'school',
+            title: 'Lärare',
+            employmentType: 'Tillsvidare',
+            startDate: '2024-08-12',
+            employmentPercentage: 62.5,
+            managerId: b,
+          },
+          { unitId: 'office', managerId: c },
+          { unitId: 'office' },
+        ];
+        await tx.updateUser(a, { employments: detailed, updatedAt: '2026-11-09T10:30:00.000Z' });
+        await tx.updateUser(b, { name: 'A manager renamed', updatedAt: '2026-11-09T10:30:00.000Z' });
+        expect((await tx.readUser(p + '-org', a))?.employments).toEqual(detailed);
+        expect((await tx.listUsers(p + '-org', { startIndex: 1, count: 1 })).rows[0]?.employments).toEqual(detailed);
+        expect((await tx.readUser(p + '-org', b))?.employments).toEqual([]);
         await tx.updateUser(a, { employments: [], updatedAt: '2026-11-09T11:00:00.000Z' });
         expect((await tx.readUser(p + '-org', a))?.employments).toEqual([]);
       });

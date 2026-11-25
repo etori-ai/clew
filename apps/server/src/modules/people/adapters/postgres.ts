@@ -2,6 +2,7 @@ import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL, 
 import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
+import type { Employment } from '@clew/contracts';
 import { ERASED, unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
 import type { ErasureTx, LeaverChange, LeaversTx, ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
@@ -75,6 +76,41 @@ export const postgresUserReads = (db: () => Database = database): Omit<UserReads
     return row?.enabled;
   },
 });
+/**
+ * A person's employments as the record carries them (D147): the rows of `auth_employment` in the directory's order,
+ * each with only what it holds, so the list reads as the one that was written. The tables are named in full because the
+ * list is read inside a select of the person, whose own `title` would otherwise be taken for the employment's.
+ */
+const employmentsOf = sql<Employment[]>`coalesce((
+  select jsonb_agg(
+    jsonb_strip_nulls(jsonb_build_object(
+      'unitId', job.unit_id,
+      'title', job.title,
+      'employmentType', job.employment_type,
+      'startDate', job.start_date,
+      'employmentPercentage', job.employment_percentage,
+      'managerId', job.manager_id
+    )) order by job.position)
+  from auth_employment job
+  where job.person_id = auth_person.id
+), '[]'::jsonb)`;
+/** Replaces the person's employments with the list as sent, in its order. */
+const writeEmployments = async (tx: Transaction, personId: string, list: readonly Employment[]) => {
+  await tx.delete(schema.employments).where(eq(schema.employments.personId, personId));
+  if (!list.length) return;
+  await tx.insert(schema.employments).values(
+    list.map((job, position) => ({
+      personId,
+      position,
+      unitId: job.unitId,
+      managerId: job.managerId ?? null,
+      title: job.title ?? null,
+      employmentType: job.employmentType ?? null,
+      startDate: job.startDate ?? null,
+      employmentPercentage: job.employmentPercentage ?? null,
+    })),
+  );
+};
 const userColumns = {
   id: schema.people.id,
   organisationId: schema.people.organisationId,
@@ -83,7 +119,7 @@ const userColumns = {
   name: schema.people.name,
   email: schema.people.email,
   phoneNumbers: schema.people.phoneNumbers,
-  employments: schema.people.employments,
+  employments: employmentsOf,
   title: schema.people.title,
   enabled: schema.people.enabled,
   createdAt: schema.people.createdAt,
@@ -169,7 +205,7 @@ function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
         folded(sql`${schema.people.email}`, pattern),
         folded(sql`${schema.people.title}`, pattern),
         // D114: the titles of the person's employments, which the list shows before the core title.
-        sql`exists (select 1 from jsonb_array_elements(${schema.people.employments}) as job where ${folded(sql`job->>'title'`, pattern)})`,
+        sql`exists (select 1 from auth_employment job where job.person_id = ${schema.people.id} and ${folded(sql`job.title`, pattern)})`,
       );
     }),
     search.unitIds || search.role
@@ -588,11 +624,13 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
       return found;
     },
     async readUser(organisationId, id, lock) {
-      const query = tx
-        .select(userColumns)
-        .from(schema.people)
-        .where(and(eq(schema.people.id, id), eq(schema.people.organisationId, organisationId)));
-      const [row] = await (lock ? query.for(ROW_LOCK) : query);
+      const where = and(eq(schema.people.organisationId, organisationId), eq(schema.people.id, id));
+      if (lock) {
+        // After waiting for a writer, the next statement sees the employments it committed with the person.
+        const [held] = await tx.select({ id: schema.people.id }).from(schema.people).where(where).for(ROW_LOCK);
+        if (!held) return undefined;
+      }
+      const [row] = await tx.select(userColumns).from(schema.people).where(where);
       return row && userRecord(row);
     },
     async findUser(by, value) {
@@ -618,14 +656,16 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
         : [];
       return { total: counted?.total ?? 0, rows: rows.map(userRecord) };
     },
-    async insertUser(record) {
+    async insertUser({ employments, ...record }) {
       await tx.insert(schema.people).values({
         ...record,
         createdAt: new Date(record.createdAt),
         updatedAt: new Date(record.updatedAt),
       });
+      await writeEmployments(tx, record.id, employments);
     },
-    async updateUser(id, { updatedAt, ...fields }) {
+    async updateUser(id, { updatedAt, employments, ...fields }) {
+      if (employments !== undefined) await writeEmployments(tx, id, employments);
       await tx
         .update(schema.people)
         .set({

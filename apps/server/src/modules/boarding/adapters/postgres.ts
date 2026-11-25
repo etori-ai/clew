@@ -23,6 +23,7 @@ const {
   boardingPlanHolders: holders,
   boardingItems: items,
   people,
+  employments,
   audit,
   assignments,
   personPositions,
@@ -422,19 +423,26 @@ export function postgresBoardingDirectory(given?: Db): BoardingDirectory {
       const found = new Map<string, Pick<Report, 'unitIds' | 'positionCodes' | 'employments'>>();
       for (const slice of slices([...new Set(personIds)])) {
         for (const r of await db()
-          .select({ id: people.id, employments: people.employments })
+          .select({ id: people.id })
           .from(people)
           .where(and(inArray(people.id, slice), eq(people.organisationId, organisationId))))
-          found.set(r.id, {
-            unitIds: [],
-            positionCodes: [],
-            employments: r.employments.map(e => ({
-              ...(e.employmentType !== undefined ? { employmentType: e.employmentType } : {}),
-              ...(e.startDate !== undefined ? { startDate: e.startDate } : {}),
-            })),
-          });
+          found.set(r.id, { unitIds: [], positionCodes: [], employments: [] });
         const known = slice.filter(id => found.has(id));
         if (!known.length) continue;
+        // D147: the employments are rows of their own, read in the order the directory sent them.
+        for (const r of await db()
+          .select({
+            personId: employments.personId,
+            employmentType: employments.employmentType,
+            startDate: employments.startDate,
+          })
+          .from(employments)
+          .where(inArray(employments.personId, known))
+          .orderBy(employments.personId, employments.position))
+          found.get(r.personId)!.employments.push({
+            ...(r.employmentType !== null ? { employmentType: r.employmentType } : {}),
+            ...(r.startDate !== null ? { startDate: r.startDate } : {}),
+          });
         for (const r of await db()
           .select({ personId: assignments.personId, unitId: assignments.unitId })
           .from(assignments)
