@@ -15,7 +15,7 @@ weakness seen from several areas, and how far to trust them.
 |---|---|---|---|---|---|
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 3 | 6 | 9 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 1 | 6 | 6 | 13 |
-| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 1 | 6 | 6 | 13 |
+| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 6 | 6 | 12 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 1 | 9 | 16 | 26 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 1 | 3 | 9 | 13 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 1 | 1 | 2 |
@@ -23,14 +23,13 @@ weakness seen from several areas, and how far to trust them.
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 5 | 13 | 18 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 2 | 8 | 10 |
-| | **Total** | **4** | **41** | **80** | **125** |
+| | **Total** | **3** | **41** | **80** | **124** |
 
 ## High
 
 | Id | Finding | Where |
 |---|---|---|
 | CB-1 | A connector's own manifest decides which reads it may call back as the person and which audience its token is exchanged for, and no administrator sees or decides either. Same as `DE-H1`. | `packages/connectors/src/protocol.ts:457-464` |
-| AM-1 | An answer is drawn with Astryx's `Markdown`, which loads images from any address, and nothing on the page stops the request. | `apps/web/src/components/conversation/conversation.tsx:513` |
 | DE-H1 | A connector's manifest is replaced and goes live at every boot, at "Testa anslutning" and when a draft is enabled, with no audit row and no administrator's act. Same as `CB-1`. | `apps/server/src/connectors/remote.ts:98-117` |
 | BL-1 | The accessibility suite is red on `main`: twelve tests fail, eight of them stale tests that hide two faults in the product. | `tests/a11y/action-dialog.spec.ts:61` |
 
@@ -79,7 +78,6 @@ and it carries a table of what reaches the model and a table of the tools.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| AM-1 | High | An answer's Markdown, Clew's or another system's assistant's, loads images from any address with no click, and no content security policy stops it. | `apps/web/src/components/conversation/conversation.tsx:513` |
 | AM-2 | Medium | Source text is written into the system prompt beside Clew's rules, with no rule that it is data and no line rule on its fields. | `apps/server/src/assistant/model.ts:136-213` |
 | AM-3 | Medium | The live server binds the assistant's `people` port with the person's Clew id and the prompt calls it their user name, which the registry refuses. | `apps/server/src/composition/index.ts:359-363` |
 | AM-4 | Medium | A decision on a card carries no version, so the server approves the card as it is on arrival, not as the person was shown it. Same as `DE-M9`. | `packages/contracts/src/index.ts:4716-4722` |

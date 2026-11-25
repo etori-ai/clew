@@ -31,7 +31,7 @@ import {
   Link,
   List,
   ListItem,
-  Markdown,
+  UntrustedMarkdown,
   MetadataList,
   MetadataListItem,
   Card,
@@ -881,9 +881,7 @@ export function DeclaredView({
         {!part && header}
         {/* The text's headings start one level under the surface's title (artboard 7): h3 in the panel, h2 on a page. */}
         {typeof body === 'string' && body.trim() ? (
-          <Markdown density="compact" headingLevelStart={headingLevel}>
-            {body}
-          </Markdown>
+          <UntrustedMarkdown headingLevelStart={headingLevel}>{body}</UntrustedMarkdown>
         ) : (
           <Text type="supporting">Inget att visa.</Text>
         )}

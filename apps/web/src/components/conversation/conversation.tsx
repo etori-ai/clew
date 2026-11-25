@@ -36,7 +36,7 @@ import {
   Link,
   List,
   ListItem,
-  Markdown,
+  UntrustedMarkdown,
   MetadataList,
   MetadataListItem,
   Skeleton,
@@ -509,9 +509,9 @@ export function StreamingAnswer({ text, headingLevelStart = 2 }: { text: string;
   // Astryx parses what has arrived so far and fades each piece in, so a list or bold text half written is drawn as
   // what it is becoming, not as stray asterisks.
   return (
-    <Markdown density="compact" headingLevelStart={headingLevelStart} isStreaming>
+    <UntrustedMarkdown headingLevelStart={headingLevelStart} isStreaming>
       {shown}
-    </Markdown>
+    </UntrustedMarkdown>
   );
 }
 /** A time as Kalender's pane writes it: "Torsdag 5 november · 13:00–13:30". */
@@ -980,15 +980,14 @@ export function AssistantTurn({
     : [];
   const body = (
     <VStack gap={3}>
-      <Markdown
-        density="compact"
+      <UntrustedMarkdown
         headingLevelStart={headingStart}
         {...(m.meta?.sources?.length
           ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const }
           : {})}
       >
         {m.body}
-      </Markdown>
+      </UntrustedMarkdown>
       {m.meta?.prepared && (prepared ? prepared(m.meta.prepared) : <PreparedRow prepared={m.meta.prepared} />)}
       {pane && actionDraft}
       {pane && recordDraft}
@@ -1371,9 +1370,7 @@ export function Transcript({
           }
         >
           <AssistantAnswer handover={aside ? { ...other, link: undefined } : other}>
-            <Markdown density="compact" headingLevelStart={headingStart}>
-              {keepLines(m.body)}
-            </Markdown>
+            <UntrustedMarkdown headingLevelStart={headingStart}>{keepLines(m.body)}</UntrustedMarkdown>
           </AssistantAnswer>
           {asideHref && (
             <HStack gap={3} vAlign="center" wrap="wrap">
