@@ -21,8 +21,14 @@ export interface AgendaItem {
   /** What the entry stands for, so a dialog can act on it: the calendar's event or the drawn proposal. */
   event?: CalendarEvent;
   proposal?: Proposal;
+  /**
+   * The ids of the talk meetings a proposal is drawn in the place of (`agendaItems`): an address that names one of those
+   * meetings (`entry=<event id>`, from Dagens möten or Hela veckan) opens this entry (`entryOf`).
+   */
+  covers?: string[];
 }
 
+/** The title a proposal is drawn with: what the invitation will be called, never how a talk is recognised. */
 const SAMTAL = 'Utvecklingssamtal';
 const live = new Set<Proposal['status']>(['proposed', 'confirmed', 'final', 'accepted']);
 /** The assistant's mark (D71, artboard 6): before a proposal's title on every calendar surface, never before a meeting's. */
@@ -51,8 +57,10 @@ const meta = (span: { start: string; end: string; allDay: boolean }, ...rest: (s
 
 /**
  * The one mapping from what the API returns to what every calendar surface draws (D32): a meeting is an `event`, a drawn
- * proposal a `proposal`, a sent samtal (its own event, or a confirmed proposal) a `booked` entry. A samtal event already
- * covered by a proposal is drawn once, as the proposal, so the week never shows the same hour twice. A proposal carries
+ * proposal a `proposal`, a sent samtal (the meeting of Clew's invitation, `CalendarEvent.talk`, or a confirmed proposal)
+ * a `booked` entry. A talk is known by the ids Clew holds, never by a title (D133): a renamed meeting is still the
+ * talk's, and a meeting that only carries a talk's title is a meeting. A talk's meeting already covered by a proposal is
+ * drawn once, as the proposal, so the week never shows the same hour twice. A proposal carries
  * the assistant's mark; every entry carries its meta line. The day's free gaps, when given (I dag on Hem), become `gap`
  * rows, the longest one saying that nothing is booked there without asking; the grid and the week agenda draw no gap.
  * The time a person is choosing in the action dialog (D112 item 10), when given, is a `proposal` of theirs: drawn as the
@@ -65,14 +73,15 @@ export function agendaItems(
   chosen?: { start: string; end: string; title: string },
 ): AgendaItem[] {
   const rows = proposals.filter(p => live.has(p.status));
-  const covered = (e: CalendarEvent) => rows.some(p => p.eventRef && e.id.startsWith(p.eventRef));
+  const covers = (p: Proposal, e: CalendarEvent) => !!e.talk && !!p.eventRef && e.id.startsWith(p.eventRef);
+  const covered = (e: CalendarEvent) => rows.some(p => covers(p, e));
   const longest = gaps.reduce<(typeof gaps)[number] | null>(
     (best, g) => (best && minutes(best) >= minutes(g) ? best : g),
     null,
   );
   return [
     ...events
-      .filter(e => !e.title.startsWith(SAMTAL))
+      .filter(e => !e.talk)
       .map(e => ({
         id: e.id,
         title: e.title,
@@ -87,7 +96,7 @@ export function agendaItems(
         event: e,
       })),
     ...events
-      .filter(e => e.title.startsWith(SAMTAL) && !covered(e))
+      .filter(e => e.talk && !covered(e))
       .map(e => ({
         id: e.id,
         title: e.title,
@@ -103,6 +112,7 @@ export function agendaItems(
     ...rows.map(p => {
       const drawn = p.status === 'proposed';
       const span = { start: p.start, end: p.end, allDay: false };
+      const meetings = events.filter(e => covers(p, e)).map(e => e.id);
       return {
         id: p.id,
         title: SAMTAL,
@@ -113,6 +123,7 @@ export function agendaItems(
         ...(drawn ? { marker: PROPOSAL_MARK } : {}),
         meta: meta(span, inviteeName(p.participant)),
         proposal: p,
+        ...(meetings.length ? { covers: meetings } : {}),
       };
     }),
     ...gaps.map(g => ({
@@ -139,3 +150,9 @@ export function agendaItems(
       : []),
   ];
 }
+/**
+ * The entry an address names among a day's or a week's items: the item by its own id, else the proposal drawn in the
+ * place of the talk meeting the id names (`AgendaItem.covers`), so a link to a manager's own talk opens its proposal.
+ */
+export const entryOf = (items: readonly AgendaItem[], id: string): AgendaItem | undefined =>
+  items.find(i => i.id === id) ?? items.find(i => i.covers?.includes(id));

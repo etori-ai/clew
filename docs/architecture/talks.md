@@ -59,7 +59,7 @@ Neither module imports the other. The calendar module has a port on its transact
 The meeting is a copy that anyone with the calendar can change. What happens depends on where the change was made.
 
 - **On Clew's calendar page.** That is a decision made in Clew. The projection finds the invitation by the event's ref and moves or ends it, and the talk with it, in the same transaction. No second question is asked.
-- **In the calendar itself.** Clew notices at the next reading back. The talk keeps its time, and the difference is shown in two sentences that keep the words apart: "Mötet i kalendern ligger nu på … Samtalet i Clew står kvar på …". The manager whose booking it is chooses: move the talk to the meeting's time, or, when the meeting is gone, take the time off or keep it without an invitation. A meeting moved by mistake is moved back in the calendar, and the next reading finds them agreeing.
+- **In the calendar itself.** Clew notices at the next reading back. The talk keeps its time, and the difference is shown in two sentences that keep the words apart: "Mötet i kalendern ligger nu på … Samtalet i Clew står kvar på …". The manager whose booking it is chooses: move the talk to the meeting's time, or, when the meeting is gone, take the time off or keep it without an invitation. A meeting moved by mistake is moved back in the calendar, and the next reading finds them agreeing. A meeting made all-day or recurring in the calendar has no one time to take: the talk is not moved to it until the meeting has one time again.
 
 ## The cards
 

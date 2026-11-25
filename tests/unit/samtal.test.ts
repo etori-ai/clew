@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
+import { FREE_BUSY_TARGETS } from '../../packages/calendar/src/model';
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
 import type {
   NotifyDraft,
@@ -23,6 +24,7 @@ import { calendarDecisions, type CalendarApproval } from '../../apps/server/src/
 import { INVITEE_ERASED, inviteeErasure } from '../../apps/server/src/modules/calendar/usecases/erasure';
 import { chunks, dueLabel, teamFromStaff } from '../../apps/server/src/modules/calendar/domain';
 import { talksRound } from '../../apps/server/src/modules/calendar/adapters/talks-round';
+import { InputError } from '../../apps/server/src/context';
 
 /**
  * The utvecklingssamtal path end to end without Nextcloud or Postgres (D25): the real planner over a calendar in
@@ -280,6 +282,8 @@ describe('another week', () => {
     });
     await expect(w.replan(hillevi, t.id, '2026-10-26')).rejects.toThrow('Välj en kommande vecka.');
     await expect(w.replan(hillevi, t.id, '2026-11-17')).rejects.toThrow('Välj en kommande vecka.');
+    // A week whose Monday has the shape of a date and does not exist is the person's mistake (DE-L16).
+    await expect(w.replan(hillevi, t.id, '2026-11-31')).rejects.toBeInstanceOf(InputError);
     await expect(w.replan(hassan, t.id, '2026-11-16')).rejects.toThrow('Ärendet är redan hanterat.');
   });
   test('redraws the planning card only: another card of the calendar’s, handed by its id, is left as it was (DE-L6)', async () => {
@@ -365,6 +369,8 @@ describe('avfärda and the week', () => {
     expect(today.events).toHaveLength(1);
     expect(today.gaps.length).toBeGreaterThan(0);
     expect((await w.weekView(hillevi, '2026-11-12')).from).toBe('2026-11-09');
+    await expect(w.weekView(hillevi, '2026-02-30')).rejects.toThrow('Ogiltigt datum.');
+    await expect(w.weekOverview(hillevi, '2026-02-30')).rejects.toBeInstanceOf(InputError);
   });
 });
 
@@ -587,8 +593,9 @@ describe('the round and the team (D96 item 3)', () => {
     expect(w.store.audit.filter(e => e.action === 'thread.pushed')).toHaveLength(2);
     expect((await w.ensureProposalThread(hillevi))!.id).toBe(next.id);
   });
-  test('a team larger than eight is asked for free-busy in requests of at most eight', async () => {
-    const team: UnitMember[] = Array.from({ length: 11 }, (_, i) => ({
+  test('a team larger than one free-busy request is asked for it in requests of at most twenty (DE-L16)', async () => {
+    expect(FREE_BUSY_TARGETS).toBe(20);
+    const team: UnitMember[] = Array.from({ length: 23 }, (_, i) => ({
       personId: 'p' + i,
       ref: 'mailto:p' + i + '@clew.test',
       email: 'p' + i + '@clew.test',
@@ -598,14 +605,14 @@ describe('the round and the team (D96 item 3)', () => {
     const asked: number[] = [];
     const freeBusy = w.calendar.freeBusy.bind(w.calendar);
     w.calendar.freeBusy = async (start, end, targets) => {
-      if (targets.length > 8) throw new Error('more than eight targets');
+      if (targets.length > FREE_BUSY_TARGETS) throw new Error('more targets than one request takes');
       asked.push(targets.length);
       return freeBusy(start, end, targets);
     };
     const t = (await w.ensureProposalThread(hillevi))!;
-    expect(asked.sort((a, b) => b - a)).toEqual([8, 3]);
-    expect(t.proposals.length + t.items.filter(i => i.ref.startsWith('unplaced:')).length).toBe(11);
-    expect(t.trigger.reason).toBe('11 samtal saknar tid före 28 november');
+    expect(asked.sort((a, b) => b - a)).toEqual([20, 3]);
+    expect(t.proposals.length + t.items.filter(i => i.ref.startsWith('unplaced:')).length).toBe(23);
+    expect(t.trigger.reason).toBe('23 samtal saknar tid före 28 november');
   });
 });
 

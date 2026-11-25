@@ -73,6 +73,7 @@ const invite = (
   eventUid: null,
   eventRef: null,
   eventRevision: null,
+  eventIcalUid: null,
   confirmedAt: null,
   undoUntil: null,
   reminders: 0,

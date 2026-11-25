@@ -7,7 +7,9 @@ import { calendarProviderContract } from '../calendar-provider-contract';
  * what it books; a run that fails leaves a booking behind, so every run draws its own days far ahead.
  */
 const url = process.env.CALENDAR_URL ?? 'http://calendar';
-const person = (user: string) => new NextcloudProvider(user, `calendar-${user}-local-only`, url);
+/** The development directory's address for each synthetic person (`scripts/provisioner/directory.ts`). */
+const person = (user: string) =>
+  new NextcloudProvider(user, `calendar-${user}-local-only`, { email: `${user}@clew.test`, name: user }, url);
 const running = await fetch(new URL('/status.php', url), { signal: AbortSignal.timeout(2000) }).then(
   response => response.ok,
   () => false,

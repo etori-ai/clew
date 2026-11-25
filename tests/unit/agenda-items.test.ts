@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { CalendarEvent, Proposal } from '../../packages/contracts/src/index';
-import { CHOSEN_ID, LONGEST_GAP, PROPOSAL_MARK, agendaItems, duration } from '../../packages/ui/src/agenda-items';
+import {
+  CHOSEN_ID,
+  LONGEST_GAP,
+  PROPOSAL_MARK,
+  agendaItems,
+  duration,
+  entryOf,
+} from '../../packages/ui/src/agenda-items';
 
 /**
  * The calendar family's one mapping (D32) as artboard 6 of D71 draws it: a meeting is neutral with its length and
@@ -55,6 +62,55 @@ describe('agendaItems', () => {
     expect(items[1]).toMatchObject({ kind: 'booked' });
     expect(items[1]!.marker).toBeUndefined();
     expect(PROPOSAL_MARK).toBe('✦');
+  });
+  test('a talk’s meeting is known by Clew’s mark on it, never by its title (D133, WA-L5)', () => {
+    const items = agendaItems(
+      [
+        // Clew's invitation, renamed in the calendar: still the talk's meeting.
+        { ...event('e1', 'Avstämning', '2026-11-10T09:00:00Z', '2026-11-10T10:00:00Z'), talk: true },
+        // A unit's own meeting that carries a talk's title is a meeting.
+        event('e2', 'Utvecklingssamtal – genomgång', '2026-11-10T13:00:00Z', '2026-11-10T14:00:00Z'),
+      ],
+      [],
+    );
+    expect(items.map(i => [i.id, i.kind])).toEqual([
+      ['e2', 'event'],
+      ['e1', 'booked'],
+    ]);
+  });
+  test('a talk’s meeting covered by its proposal is drawn once, as the proposal', () => {
+    const items = agendaItems(
+      [
+        {
+          ...event('e1', 'Utvecklingssamtal · Hassan Ali', '2026-11-12T10:00:00Z', '2026-11-12T11:00:00Z'),
+          talk: true,
+        },
+      ],
+      [{ ...proposal('p2', 'confirmed', '2026-11-12T10:00:00Z', '2026-11-12T11:00:00Z'), eventRef: 'e1' }],
+    );
+    expect(items.map(i => [i.id, i.kind])).toEqual([['p2', 'booked']]);
+  });
+  test('an address that names a talk’s meeting drawn as its proposal opens the proposal, and no other meeting does', () => {
+    const items = agendaItems(
+      [
+        {
+          ...event('memory:e1', 'Utvecklingssamtal · Hassan Ali', '2026-11-12T10:00:00Z', '2026-11-12T11:00:00Z'),
+          talk: true,
+        },
+        // A meeting that is no talk's, whose id happens to start as the proposal's event does: drawn as itself.
+        event('memory:e1-lunch', 'Lunch', '2026-11-12T11:00:00Z', '2026-11-12T12:00:00Z'),
+      ],
+      [{ ...proposal('p2', 'confirmed', '2026-11-12T10:00:00Z', '2026-11-12T11:00:00Z'), eventRef: 'memory:e1' }],
+    );
+    expect(items.map(i => [i.id, i.kind, i.covers])).toEqual([
+      ['memory:e1-lunch', 'event', undefined],
+      ['p2', 'booked', ['memory:e1']],
+    ]);
+    // Dagens möten and Hela veckan link a manager's own talk by its meeting's id (`entry=memory:e1`).
+    expect(entryOf(items, 'memory:e1')?.id).toBe('p2');
+    expect(entryOf(items, 'p2')?.id).toBe('p2');
+    expect(entryOf(items, 'memory:e1-lunch')?.id).toBe('memory:e1-lunch');
+    expect(entryOf(items, 'memory:gone')).toBeUndefined();
   });
   test('the day’s gaps are rows, and only the longest says that nothing is booked there without asking', () => {
     const items = agendaItems(
