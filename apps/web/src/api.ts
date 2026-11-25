@@ -682,7 +682,7 @@ export const api = {
   header: () => call<SiteHeaderView>('/api/header'),
   /** The systems the person can link an account at (D147), with what each link is. */
   linkedAccounts: () => call<LinkedAccountsView>('/api/linked-accounts'),
-  /** Starts linking: the address of the system's own sign-in, which the page then leaves for in the same tab. */
+  /** Starts linking: the address of the system's own sign-in, which the page opens in a window of its own. */
   linkAccount: (connector: string, returnTo: string) =>
     post<{ url: string }>(`/api/linked-accounts/${encodeURIComponent(connector)}/link`, { returnTo }),
   /** "Inte nu": Hem stops saying that these systems need the person's account. */

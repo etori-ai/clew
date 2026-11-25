@@ -6,6 +6,7 @@ import {
   LinkUnavailableError,
   type LinkedAccount,
   type LinkView,
+  type PendingLink,
   type Revocation,
 } from './contracts';
 import { PENDING_MS, byNeed, clientChoice, entryOf, isFresh, localPath, lost, viewOf, withTokens } from './domain';
@@ -328,6 +329,64 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
     return ended;
   }
 
+  /** The rest of finishing a link, once its state is known, in time and the person's own. */
+  async function finish(
+    persona: AuthenticatedContext,
+    pending: PendingLink,
+    params: URLSearchParams,
+    returned: string,
+    now: Date,
+  ): Promise<{ connectorId: string; returnTo: string; linked: boolean }> {
+    const setting = await settingFor(persona, pending.connectorId);
+    if (setting.server.issuer !== pending.issuer) throw new LinkRefusedError('issuer-changed');
+    const done = { connectorId: pending.connectorId, returnTo: pending.returnTo };
+    if (params.has('error')) return { ...done, linked: false };
+    const choice = await deps.store.transaction(tx => knownClient(tx, setting, setting.server));
+    if (!('use' in choice)) throw new LinkRefusedError('refused' in choice ? choice.refused : 'no-client');
+    let link: LinkedAccount;
+    try {
+      const tokens = await deps.oauth.redeem(setting.server, choice.use, {
+        returned,
+        state: pending.state,
+        verifier: pending.verifier,
+        redirectUri: deps.redirectUri,
+        resource: setting.resource,
+      });
+      link = withTokens(
+        {
+          personId: pending.personId,
+          connectorId: pending.connectorId,
+          issuer: pending.issuer,
+          resource: setting.resource,
+          scopes: setting.scopes,
+          state: 'linked',
+          accessToken: null,
+          refreshToken: null,
+          expiresAt: null,
+          lastError: null,
+          lostAt: null,
+          linkedAt: now.toISOString(),
+        },
+        tokens,
+        now,
+      );
+    } catch (error) {
+      throw failed(pending.connectorId, error, () => new LinkRefusedError('code-refused'));
+    }
+    await deps.store.transaction(async tx => {
+      await tx.save(link);
+      // Linked now, so no longer put off: taken away again later, it is put off anew by that press.
+      await tx.takeUp(link.personId, link.connectorId);
+      await tx.audit({
+        actor: actorOf(persona),
+        action: 'account.linked',
+        subject: linkSubject(link.connectorId),
+        details: { connector: link.connectorId, issuer: link.issuer, person: link.personId, scopes: link.scopes },
+      });
+    });
+    return { ...done, linked: true };
+  }
+
   return {
     /**
      * An administrator approves where a connector's people are sent (D147 item 4): the authorization server the
@@ -408,54 +467,14 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
       const now = deps.clock();
       if (Date.parse(pending.expiresAt) <= now.getTime()) throw new LinkRefusedError('state-expired');
       if (pending.personId !== person(persona)) throw new LinkRefusedError('another-person');
-      const setting = await settingFor(persona, pending.connectorId);
-      if (setting.server.issuer !== pending.issuer) throw new LinkRefusedError('issuer-changed');
-      const done = { connectorId: pending.connectorId, returnTo: pending.returnTo };
-      if (params.has('error')) return { ...done, linked: false };
-      const choice = await deps.store.transaction(tx => knownClient(tx, setting, setting.server));
-      if (!('use' in choice)) throw new LinkRefusedError('refused' in choice ? choice.refused : 'no-client');
-      let link: LinkedAccount;
       try {
-        const tokens = await deps.oauth.redeem(setting.server, choice.use, {
-          returned,
-          state: pending.state,
-          verifier: pending.verifier,
-          redirectUri: deps.redirectUri,
-          resource: setting.resource,
-        });
-        link = withTokens(
-          {
-            personId: pending.personId,
-            connectorId: pending.connectorId,
-            issuer: pending.issuer,
-            resource: setting.resource,
-            scopes: setting.scopes,
-            state: 'linked',
-            accessToken: null,
-            refreshToken: null,
-            expiresAt: null,
-            lastError: null,
-            lostAt: null,
-            linkedAt: now.toISOString(),
-          },
-          tokens,
-          now,
-        );
+        return await finish(persona, pending, params, returned, now);
       } catch (error) {
-        throw failed(pending.connectorId, error, () => new LinkRefusedError('code-refused'));
+        // The link is this person's own: a refusal says which system and where they came from.
+        if (error instanceof LinkRefusedError || error instanceof LinkUnavailableError)
+          error.finishing = { connectorId: pending.connectorId, returnTo: pending.returnTo };
+        throw error;
       }
-      await deps.store.transaction(async tx => {
-        await tx.save(link);
-        // Linked now, so no longer put off: taken away again later, it is put off anew by that press.
-        await tx.takeUp(link.personId, link.connectorId);
-        await tx.audit({
-          actor: actorOf(persona),
-          action: 'account.linked',
-          subject: linkSubject(link.connectorId),
-          details: { connector: link.connectorId, issuer: link.issuer, person: link.personId, scopes: link.scopes },
-        });
-      });
-      return { ...done, linked: true };
     },
 
     /**

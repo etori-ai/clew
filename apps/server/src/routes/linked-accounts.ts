@@ -11,11 +11,13 @@ import type { LinkedAccounts } from '../modules/linked-accounts/usecases';
  *
  * - `GET /` lists every system the person can link an account at, with what its link is; never a token.
  * - `POST /later` puts off the systems the body names ("Inte nu"), so that Hem stops saying they need the account.
- * - `POST /:connector/link` starts linking and answers the address of the system's authorization page; the page then
- *   leaves for it in the same tab. A post, so that it carries the session's CSRF token and no other site can start it.
- * - `GET /callback` is where the system returns the person. It finishes the link and redirects to the page they left,
- *   with `account=linked`, `account=declined` or `account=failed` and, when it is known, `system=<connector id>` for the
- *   page to say what happened.
+ * - `POST /:connector/link` starts linking and answers the address of the system's authorization page, which the page
+ *   opens in a window of its own (or leaves for in the same tab, where the browser opens no window). A post, so that
+ *   it carries the session's CSRF token and no other site can start it.
+ * - `GET /callback` is where the system returns the person. It finishes the link and redirects to the address the
+ *   link was started with (the window's return page, or the page they left), with `account=linked`,
+ *   `account=declined` or `account=failed` and, when it is known, `system=<connector id>` for the page to say what
+ *   happened. A link that cannot be placed (an unknown or outrun state, another person's) ends on the start page.
  * - `DELETE /:connector` takes the link away and says whether the system could be told.
  */
 const CONNECTOR_ID = /^[a-z][a-z0-9-]{0,39}$/;
@@ -89,7 +91,9 @@ export function linkedAccountRoutes(
       // The person is at a page of their own again whatever went wrong; the page says that it did.
       if (error instanceof LinkRefusedError || error instanceof LinkUnavailableError) {
         refused(error);
-        return c.redirect(landing('/', 'failed', 'connectorId' in error ? error.connectorId : undefined), 303);
+        // A link known to be the person's own fails where it was started; any other on the start page.
+        const connectorId = error.finishing?.connectorId ?? ('connectorId' in error ? error.connectorId : undefined);
+        return c.redirect(landing(error.finishing?.returnTo ?? '/', 'failed', connectorId), 303);
       }
       throw error;
     }

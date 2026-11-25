@@ -68,9 +68,19 @@ export class LinkRequiredError extends Error {
   }
 }
 
+/**
+ * The link a person was finishing when it failed, once it is known to be their own: the system and the page they are
+ * returned to, so that a failure is said where the link was started and not on the start page.
+ */
+export interface LinkBeingFinished {
+  connectorId: string;
+  returnTo: string;
+}
+
 /** The system's authorization server did not answer, or refused for a passing reason: the link is kept. */
 export class LinkUnavailableError extends Error {
   readonly code = 'source-unavailable';
+  finishing?: LinkBeingFinished;
   constructor(
     readonly connectorId: string,
     readonly reason: string,
@@ -105,6 +115,7 @@ export type LinkRefusal =
 /** Linking was refused. The message is what a person reads; the reason is for the log and the administrator. */
 export class LinkRefusedError extends Error {
   readonly code = 'link-refused';
+  finishing?: LinkBeingFinished;
   constructor(readonly reason: LinkRefusal) {
     super(
       reason === 'unknown-connector'

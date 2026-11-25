@@ -44,7 +44,8 @@ import { ToolPage } from './pages/tool';
 import { ToolsPage } from './pages/tools';
 import { NewsPage } from './pages/news';
 import { AccountsPage } from './pages/accounts';
-import { ACCOUNTS_PATH } from './linked-accounts';
+import { AccountReturnPage } from './pages/account-return';
+import { ACCOUNTS_PATH, LINK_RETURN_PATH, LINK_WINDOW, accountReturn } from './linked-accounts';
 import { LoginPage } from './pages/login';
 import { ManifestReferencePage } from './pages/protocol';
 import { ManifestPreviewPage } from './pages/protocol-preview';
@@ -353,9 +354,16 @@ function App() {
   const admin = (page: (shell: Shell) => React.ReactNode) => (
     <Protected>{shell => (shell.admin ? page(shell) : <NotAdmin />)}</Protected>
   );
+  // A return the server could not place (a link that ran out) lands on a page of Clew inside the window the person
+  // signed in in (D147 item 6): the window's return page takes it, so that Clew is not drawn in the small window.
+  const location = useLocation();
+  if (window.name === LINK_WINDOW && location.pathname !== LINK_RETURN_PATH && accountReturn(location.search))
+    return <Navigate to={LINK_RETURN_PATH + location.search} replace />;
   return (
     <Routes>
       <Route path="/login" element={<LoginPage returnTo="/" />} />
+      {/* Where a system returns the window a person signed in in (D147 item 6): it tells the page that opened it, and closes. */}
+      <Route path={LINK_RETURN_PATH} element={<AccountReturnPage />} />
       {/* Integrator documentation, public like the login (D60): the manifest field by field, drawn from the instance's own schema. */}
       <Route path="/protocol/manifest" element={<ManifestReferencePage />} />
       {/* What Clew would do with a manifest, before anything is registered (D60, D97): public, the document posted to the dry run. */}

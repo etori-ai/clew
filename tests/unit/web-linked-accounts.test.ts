@@ -4,9 +4,14 @@ import {
   accountLines,
   accountReturn,
   accountRowLine,
+  linkMessage,
+  linkReturnAddress,
+  linkWindowFeatures,
   needingAccount,
+  readLinkMessage,
   returnAddress,
   returnMessage,
+  returnPageWords,
 } from '../../apps/web/src/linked-accounts';
 
 /**
@@ -170,5 +175,66 @@ describe('the return from a system', () => {
     );
     expect(returnMessage('failed', null)).toBe('Det gick inte att koppla ditt konto. Försök igen.');
     expect(returnMessage('declined', 'Inköpssystemet')).toBeNull();
+  });
+});
+
+describe('linking in a window of its own', () => {
+  test('the system returns the window to the return page, which reads what to tell from its own address', () => {
+    expect(linkReturnAddress('0a1b2c3d4e5f')).toBe('/accounts/return?link=0a1b2c3d4e5f');
+    expect(linkMessage('?link=0a1b2c3d4e5f&account=linked&system=purchasing')).toEqual({
+      link: '0a1b2c3d4e5f',
+      outcome: 'linked',
+      system: 'purchasing',
+    });
+    // A return the server could not place carries no link, and one written by hand is not taken for one.
+    expect(linkMessage('?account=failed')).toEqual({ link: null, outcome: 'failed', system: null });
+    expect(linkMessage('?link=<script>&account=declined&system=lms')).toEqual({
+      link: null,
+      outcome: 'declined',
+      system: 'lms',
+    });
+    // The window was closed, or the address says nothing: nothing is told.
+    expect(linkMessage('?link=0a1b2c3d4e5f')).toBeNull();
+  });
+
+  test('what arrives on the channel is a message or nothing', () => {
+    const message = { link: '0a1b2c3d4e5f', outcome: 'linked' as const, system: 'purchasing' };
+    expect(readLinkMessage(message)).toEqual(message);
+    expect(readLinkMessage({ link: null, outcome: 'failed', system: null })).toEqual({
+      link: null,
+      outcome: 'failed',
+      system: null,
+    });
+    for (const other of [
+      null,
+      'linked',
+      { outcome: 'linked' },
+      { link: 'x', outcome: 'linked', system: null },
+      { link: null, outcome: 'other', system: null },
+      { link: null, outcome: 'linked', system: 7 },
+    ])
+      expect(readLinkMessage(other)).toBeNull();
+  });
+
+  test('the window stands over the middle of the page that opened it and is never larger than it', () => {
+    expect(linkWindowFeatures({ screenX: 100, screenY: 50, outerWidth: 1440, outerHeight: 900 })).toBe(
+      'popup,width=600,height=760,left=520,top=120',
+    );
+    expect(linkWindowFeatures({ screenX: 0, screenY: 0, outerWidth: 390, outerHeight: 700 })).toBe(
+      'popup,width=390,height=700,left=0,top=0',
+    );
+  });
+
+  test('a window the browser will not close says what happened and that it can be closed', () => {
+    expect(returnPageWords('linked')).toEqual({
+      title: 'Ditt konto är kopplat',
+      line: 'Du kan stänga det här fönstret.',
+    });
+    expect(returnPageWords('failed')).toEqual({
+      title: 'Det gick inte att koppla ditt konto',
+      line: 'Försök igen. Du kan stänga det här fönstret.',
+    });
+    expect(returnPageWords('declined').title).toBe('Kontot kopplades inte');
+    expect(returnPageWords(null).title).toBe('Kontot kopplades inte');
   });
 });

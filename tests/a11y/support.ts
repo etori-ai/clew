@@ -305,7 +305,7 @@ export class MockApi {
    * the address, the account linked when the person consented there.
    */
   accounts: LinkedAccountEntry[] = [];
-  linkOutcome: 'linked' | 'declined' | 'failed' = 'linked';
+  linkOutcome: 'linked' | 'declined' | 'failed' | 'closed' = 'linked';
   /** What the page asked about linked accounts, as it asked: the method, the path after `/linked-accounts`, the body. */
   accountCalls: Array<{ method: string; path: string; body: unknown }> = [];
 
@@ -1355,8 +1355,11 @@ export class MockApi {
         const returnTo = new URL((body as { returnTo?: string }).returnTo ?? '/', url.origin);
         if (this.linkOutcome === 'linked')
           set(target!, { state: 'linked', linkedAt: NOW, lostAt: null, putOff: false });
-        returnTo.searchParams.set('account', this.linkOutcome);
-        returnTo.searchParams.set('system', target!);
+        // `closed`: the person closes the window without signing in, so the return says nothing.
+        if (this.linkOutcome !== 'closed') {
+          returnTo.searchParams.set('account', this.linkOutcome);
+          returnTo.searchParams.set('system', target!);
+        }
         return json({ url: returnTo.pathname + returnTo.search });
       }
       if (request.method() === 'DELETE' && !verb) {

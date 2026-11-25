@@ -156,3 +156,66 @@ export function returnAddress(pathname: string, search: string): string {
 }
 /** The connector a capability belongs to: the name before its first dot (`purchasing.approvals`). */
 export const connectorOf = (capability: string) => capability.split('.')[0] ?? '';
+
+/**
+ * Linking in a window of its own (D147 item 6, amended 2026-11-25). The press opens a small window on the system's
+ * sign-in, so the page the person was on stays as it is. The system returns that window to Clew, to
+ * `LINK_RETURN_PATH`, a page that tells every page of Clew in this browser what happened and closes itself. A browser
+ * that will not open the window leaves the redirect in the same tab, which is the same link by another way.
+ *
+ * What the return page says goes over a broadcast channel of Clew's own origin, never over the window's opener: a
+ * system's sign-in may cut the two windows apart, and a channel reaches the page all the same. The message names the
+ * link by an id the pressing page made up, so the page that started it is the one that says so; every other page of
+ * Clew only reads its lists again.
+ */
+export const LINK_RETURN_PATH = '/accounts/return';
+export const LINK_WINDOW = 'clew-link-account';
+export const LINK_CHANNEL = 'clew-linked-accounts';
+const LINK_ID = /^[a-z0-9]{8,40}$/;
+/** Where the system returns the window to: the return page, with the id of the link that the press started. */
+export const linkReturnAddress = (linkId: string) => `${LINK_RETURN_PATH}?link=${linkId}`;
+/** The window's size and place: over the middle of the page it was opened from, and never larger than the screen. */
+export function linkWindowFeatures(opener: {
+  screenX: number;
+  screenY: number;
+  outerWidth: number;
+  outerHeight: number;
+}): string {
+  const width = Math.max(320, Math.min(600, opener.outerWidth));
+  const height = Math.max(480, Math.min(760, opener.outerHeight));
+  const left = Math.round(opener.screenX + Math.max(0, (opener.outerWidth - width) / 2));
+  const top = Math.round(opener.screenY + Math.max(0, (opener.outerHeight - height) / 2));
+  return `popup,width=${width},height=${height},left=${left},top=${top}`;
+}
+export interface LinkMessage {
+  /** The id the pressing page gave the link, or null when the return could not be placed (a link that ran out). */
+  link: string | null;
+  outcome: AccountOutcome;
+  system: string | null;
+}
+/** What the return page tells the other pages, read from its own address; null when the address says nothing. */
+export function linkMessage(search: string): LinkMessage | null {
+  const back = accountReturn(search);
+  if (!back) return null;
+  const link = new URLSearchParams(search).get('link');
+  return { link: link && LINK_ID.test(link) ? link : null, outcome: back.outcome, system: back.system };
+}
+/** A message as it arrives on the channel: anything that is not one is nothing. */
+export function readLinkMessage(data: unknown): LinkMessage | null {
+  if (typeof data !== 'object' || data === null) return null;
+  const { link, outcome, system } = data as Record<string, unknown>;
+  if (outcome !== 'linked' && outcome !== 'declined' && outcome !== 'failed') return null;
+  if (link !== null && !(typeof link === 'string' && LINK_ID.test(link))) return null;
+  if (system !== null && typeof system !== 'string') return null;
+  return { link, outcome, system };
+}
+/**
+ * What the return page says in the window when the browser will not let it close itself: what happened, and that the
+ * window can be closed. The page that started the link has been told already.
+ */
+export function returnPageWords(outcome: AccountOutcome | null): { title: string; line: string } {
+  const line = 'Du kan stänga det här fönstret.';
+  if (outcome === 'linked') return { title: 'Ditt konto är kopplat', line };
+  if (outcome === 'failed') return { title: 'Det gick inte att koppla ditt konto', line: `Försök igen. ${line}` };
+  return { title: 'Kontot kopplades inte', line };
+}

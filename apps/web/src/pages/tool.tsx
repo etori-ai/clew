@@ -214,7 +214,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   // A list whose system needs the account the person links there (D147): the one line and its button where the rows
   // would have been, in the read's failure's place.
   const banner = account ? (
-    <NeedsAccountNotice account={account} />
+    <NeedsAccountNotice account={account} focusAfter={TITLE_ID} />
   ) : (
     failed && (
       <StatusNotice kind="failed" title={failed.message} action={{ label: 'Försök igen', clickAction: failed.retry }} />

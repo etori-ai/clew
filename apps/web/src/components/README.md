@@ -13,7 +13,7 @@ sets no gap, inset or size of its own (`docs/reference/layout-measures.md`).
 | `conversation/` | The conversation: its state for the whole app (`conversation-context.tsx`), its turns (`turns.ts`), the transcript and the drafts in it, the box, the conversation beside a page and what a page is about (`page-conversation.tsx`), the pane for another system's assistant, and a new conversation about a thing (`thing-panel.tsx`) | 10 |
 | `people/` | A person's, a unit's and a plan's page and what stands on them: the sections, the follow-up dialogue, a talk, registering a holding, starting an introduction | 8 |
 | `views/` | A connector's declared view and what reads it: the view itself (`view.tsx`), a read for an address, the search's panel and its labels, the document reader | 5 |
-| `accounts/` | A system that needs the person's account (D147): the line under Hem's rows and in a system's own list, leaving for the system, "Inte nu", and what is said when the person comes back | 1 |
+| `accounts/` | A system that needs the person's account (D147): the line under Hem's rows and in a system's own list, the window the person signs in at the system in, "Inte nu", and what is said when the link has ended | 2 |
 | `calendar/` | The calendar page's forms and dialogs: an entry opened, a new booking (in the pane and, on a phone, its dialog) and a move | 4 |
 
 ## Where a new component goes

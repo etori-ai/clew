@@ -944,7 +944,7 @@ export function ActionRow({
       case 'release':
         return { label: m.label, clickAction: actions.release };
       case 'link':
-        // Leaves for the item's system in the same tab and comes back to this page (D147).
+        // Signs in at the item's system in a window of its own; this page stays (D147).
         return {
           label: m.label,
           isLoading: account.linking === thread.connector,

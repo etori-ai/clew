@@ -36,8 +36,8 @@ const actionId = (connectorId: string) => `account-${connectorId}`;
  * accepts (the badge, "Koppla igen", "Ta bort"), a system not linked ("Koppla"), then the linked ("Koppla från").
  * Nothing about tokens, scopes or expiry: which systems, since when, and how to stop.
  *
- * Linking leaves for the system in the same tab and comes back here, where the shell says what happened; with several
- * to link this page is where the person goes through them. Taking a link away is done at once where the system can be
+ * Linking opens the system's sign-in in a window of its own and this page stays, where the shell says what happened;
+ * with several to link this page is where the person goes through them. Taking a link away is done at once where the system can be
  * told. Where it cannot, the person is asked first, because the account then keeps working at the system until they
  * remove it there themselves. A system the person takes their link away from is not said on Hem again.
  */
@@ -85,7 +85,7 @@ export function AccountsPage({ user, admin = false }: { user: SessionUser; admin
   const row = (account: LinkedAccountEntry) => {
     const busy = ending === account.connectorId;
     const leaving = linking === account.connectorId;
-    const start = () => void link(account.connectorId);
+    const start = () => void link(account.connectorId, { focus: actionId(account.connectorId) });
     const end =
       account.state === 'linked' ? (
         <Button

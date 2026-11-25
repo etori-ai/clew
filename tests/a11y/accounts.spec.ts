@@ -11,13 +11,16 @@ import {
   reflowProblems,
   test,
 } from './support';
+import { rooms, roomsSpec } from './rooms';
 
 /**
  * Linked accounts (D147) as a person meets them: a system that needs their account is said where its content is
  * missing (under the rows of "Behöver dig" on Hem and in the system's own list), never as a banner; a link that was
  * lost and a first link are told apart; several become one line that leads to "Kopplade konton", the page from the
- * person's menu where each is linked and ended. Linking leaves for the system and comes back to the page it left from:
- * the mocked API answers the address the system would have returned the person to.
+ * person's menu where each is linked and ended. Linking opens the system's sign-in in a window of its own, and the
+ * page stays as it is (D147 item 6): the mocked API answers the address the system would have returned that window
+ * to, which is Clew's return page, and that page tells the page that opened it and closes. Where the browser opens no
+ * window the page leaves for the system and comes back to where it was.
  */
 const entry = (
   connectorId: string,
@@ -41,6 +44,20 @@ const lms = (state: LinkedAccountEntry['state'], more?: Partial<LinkedAccountEnt
 const cloud = (state: LinkedAccountEntry['state'], more?: Partial<LinkedAccountEntry>) =>
   entry('cloud', 'Nextcloud', state, more);
 
+// The window loads a page of Clew's: its requests are answered by the same mock as the page's own.
+test.beforeEach(async ({ page, api }) => {
+  await page.context().route('**/api/**', route => api.handle(route));
+});
+/** Presses a button that links an account, and answers the window it opened once that window has closed itself. */
+async function pressAndSignIn(page: Page, press: () => Promise<unknown>) {
+  const [signIn] = await Promise.all([page.waitForEvent('popup'), press()]);
+  await expect.poll(() => signIn.isClosed()).toBe(true);
+  return signIn;
+}
+/** A mark on the page that a navigation away from it would take along: the page stayed if it still stands. */
+const mark = (page: Page) => page.evaluate(() => void Object.assign(window, { clewStayed: true }));
+const stayed = (page: Page) => page.evaluate(() => 'clewStayed' in window);
+
 const needs = (page: Page) => page.getByRole('region', { name: 'Behöver dig' });
 const toasts = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
 const accounts = (page: Page) => page.getByRole('list', { name: 'Kopplade konton' });
@@ -53,7 +70,7 @@ for (const [layout, viewport] of [
   test.describe('a system that needs the person’s account, ' + layout, () => {
     test.use({ viewport });
 
-    test('is said under the rows of Behöver dig, not counted, and linking comes back to Hem and says so once', async ({
+    test('is said under the rows of Behöver dig, not counted, and linking in its window says so once on a page that stayed', async ({
       page,
       api,
     }) => {
@@ -73,13 +90,44 @@ for (const [layout, viewport] of [
       expect(await reflowProblems(page)).toEqual([]);
       await expectNoAxeViolations(page);
 
-      // The button is named with the system, since a page may hold two; it leaves and the person comes back linked.
+      // The button is named with the system, since a page may hold two. The sign-in is in a window of its own, which
+      // the system returns to Clew's return page; that page tells this one and closes.
       const link = card.getByRole('button', { name: 'Koppla ditt konto: Inköpssystemet', exact: true });
+      await mark(page);
       await link.focus();
-      await page.keyboard.press('Enter');
+      await pressAndSignIn(page, () => page.keyboard.press('Enter'));
+      await expect(toasts(page).getByText('Ditt konto i Inköpssystemet är kopplat', { exact: true })).toBeVisible();
+      expect(api.accountCalls).toEqual([
+        {
+          method: 'POST',
+          path: '/purchasing/link',
+          body: { returnTo: expect.stringMatching(/^\/accounts\/return\?link=[0-9a-f]{24}$/) },
+        },
+      ]);
+      // The page never left: its address is Hem's, and nothing more says the system needs the account.
+      expect(await stayed(page)).toBe(true);
+      await expect(page).toHaveURL('/');
+      await expect(needs(page).getByText('Inköpssystemet behöver ditt konto')).toHaveCount(0);
+      // The button went with its line: the focus is on the card's heading (2.4.3).
+      await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeFocused();
+      await expectNoAxeViolations(page);
+    });
+
+    test('a browser that opens no window leaves for the system in the same tab and comes back to Hem', async ({
+      page,
+      api,
+    }) => {
+      await page.addInitScript(() => {
+        window.open = () => null;
+      });
+      api.accounts = [buy('not-linked')];
+      await open(page, '/');
+      await mark(page);
+      await needs(page).getByRole('button', { name: 'Koppla ditt konto: Inköpssystemet', exact: true }).click();
       await expect(toasts(page).getByText('Ditt konto i Inköpssystemet är kopplat', { exact: true })).toBeVisible();
       expect(api.accountCalls).toEqual([{ method: 'POST', path: '/purchasing/link', body: { returnTo: '/' } }]);
-      // The address is Hem's own again, and nothing more says the system needs the account.
+      // The page left and came back: the address is Hem's own again, without what the return said.
+      expect(await stayed(page)).toBe(false);
       await expect(page).toHaveURL('/');
       await expect(needs(page).getByText('Inköpssystemet behöver ditt konto')).toHaveCount(0);
       await expectNoAxeViolations(page);
@@ -147,12 +195,20 @@ for (const [layout, viewport] of [
       expect(await reflowProblems(page)).toEqual([]);
       await expectNoAxeViolations(page);
 
-      // Linking from the page comes back to the page, says so, and the row is among the linked.
-      await lost.getByRole('button', { name: 'Koppla igen: Inköpssystemet', exact: true }).click();
+      // Linking from the page is said on the page, which stayed; the row is among the linked, and its new button has
+      // the focus that the pressed one took along.
+      await mark(page);
+      await pressAndSignIn(page, () =>
+        lost.getByRole('button', { name: 'Koppla igen: Inköpssystemet', exact: true }).click(),
+      );
       await expect(toasts(page).getByText('Ditt konto i Inköpssystemet är kopplat', { exact: true })).toBeVisible();
+      expect(await stayed(page)).toBe(true);
       await expect(page).toHaveURL('/accounts');
       await expect(rowOf(page, 'Inköpssystemet')).toContainText('Kopplat 4 november 2026');
       await expect(rowOf(page, 'Inköpssystemet').getByText('Behöver kopplas igen')).toHaveCount(0);
+      await expect(
+        rowOf(page, 'Inköpssystemet').getByRole('button', { name: 'Koppla från Inköpssystemet', exact: true }),
+      ).toBeFocused();
 
       // A system that can be told is ended at once: the row says so and its new button has the focus.
       const end = rowOf(page, 'Inköpssystemet').getByRole('button', {
@@ -234,13 +290,23 @@ test.describe('linked accounts beside the rest of the page', () => {
     api.accounts = [buy('not-linked')];
     api.linkOutcome = 'declined';
     await open(page, '/');
-    await needs(page).getByRole('button', { name: 'Koppla ditt konto: Inköpssystemet', exact: true }).click();
+    const link = needs(page).getByRole('button', { name: 'Koppla ditt konto: Inköpssystemet', exact: true });
+    await pressAndSignIn(page, () => link.click());
     await expect(page).toHaveURL('/');
     await expect(needs(page).getByText('Inköpssystemet behöver ditt konto', { exact: true })).toBeVisible();
     await expect(toasts(page).getByText(/Inköpssystemet/)).toHaveCount(0);
+    // The button is as it was, with the focus the press gave it.
+    await expect(link).toBeEnabled();
+    await expect(link).toBeFocused();
+
+    // A person who closes the window without signing in: the same, nothing said.
+    api.linkOutcome = 'closed';
+    await pressAndSignIn(page, () => link.click());
+    await expect(link).toBeEnabled();
+    await expect(toasts(page).getByText(/Inköpssystemet/)).toHaveCount(0);
 
     api.linkOutcome = 'failed';
-    await needs(page).getByRole('button', { name: 'Koppla ditt konto: Inköpssystemet', exact: true }).click();
+    await pressAndSignIn(page, () => link.click());
     await expect(
       toasts(page).getByText('Det gick inte att koppla ditt konto i Inköpssystemet. Försök igen.', { exact: true }),
     ).toBeVisible();
@@ -296,14 +362,28 @@ test.describe('linked accounts beside the rest of the page', () => {
     api.areas.push(area);
     api.views.push({ capability: 'purchasing.requests', title: 'Inköp att godkänna', kind: 'list' });
     api.accounts = [buy('not-linked', { putOff: true })];
+    // The system refuses the read until the account is linked, and answers its rows from then on.
     await page.route('**/api/cap/purchasing.requests**', route =>
-      route.fulfill({
-        status: 400,
-        json: {
-          error: 'Systemet behöver ditt konto. Koppla ditt konto och försök igen.',
-          code: 'authorization-required',
-        },
-      }),
+      api.accounts[0]!.state === 'linked'
+        ? route.fulfill({
+            json: {
+              output: { rows: rooms },
+              source: 'Inköpssystemet',
+              view: {
+                ...roomsSpec,
+                capability: 'purchasing.requests',
+                connector: 'purchasing',
+                source: 'Inköpssystemet',
+              },
+            },
+          })
+        : route.fulfill({
+            status: 400,
+            json: {
+              error: 'Systemet behöver ditt konto. Koppla ditt konto och försök igen.',
+              code: 'authorization-required',
+            },
+          }),
     );
     await open(page, '/tools/purchasing.requests');
     const main = page.getByRole('main');
@@ -313,6 +393,19 @@ test.describe('linked accounts beside the rest of the page', () => {
     await expect(main.getByRole('button', { name: 'Koppla ditt konto: Inköpssystemet', exact: true })).toBeVisible();
     await expect(main.getByRole('button', { name: 'Försök igen' })).toHaveCount(0);
     await expect(main.getByRole('button', { name: /^Inte nu/ })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+
+    // Linked in its window: the list is read again on the page that stayed, its rows stand where the line was, and
+    // the focus the line's button took along is on the page's heading.
+    await mark(page);
+    await pressAndSignIn(page, () =>
+      main.getByRole('button', { name: 'Koppla ditt konto: Inköpssystemet', exact: true }).click(),
+    );
+    await expect(toasts(page).getByText('Ditt konto i Inköpssystemet är kopplat', { exact: true })).toBeVisible();
+    await expect(main.getByText('Granen', { exact: true })).toBeVisible();
+    await expect(main.getByText('Inköpssystemet behöver ditt konto')).toHaveCount(0);
+    expect(await stayed(page)).toBe(true);
+    await expect(page.getByRole('heading', { level: 1, name: 'Inköp att godkänna' })).toBeFocused();
     await expectNoAxeViolations(page);
   });
 
@@ -341,13 +434,34 @@ test.describe('linked accounts beside the rest of the page', () => {
     await expect(page.getByRole('button', { name: 'Kontrollera status' })).toHaveCount(0);
     await expectNoAxeViolations(page);
 
-    await page.getByRole('button', { name: 'Koppla ditt konto igen', exact: true }).click();
+    await pressAndSignIn(page, () => page.getByRole('button', { name: 'Koppla ditt konto igen', exact: true }).click());
     await expect(toasts(page).getByText('Ditt konto i Ekonomisystemet är kopplat', { exact: true })).toBeVisible();
-    // Back on the item, nothing was sent by the linking: the notice now offers the check that sends it.
+    // On the item, which stayed, nothing was sent by the linking: the notice now offers the check that sends it.
     await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(page.getByText('Har inte skickats', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Kontrollera status', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Koppla ditt konto igen' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+});
+
+test.describe('the window a person signed in in', () => {
+  test.use({ viewport: narrow });
+
+  test('says what happened and that it can be closed, where the browser will not close it', async ({ page }) => {
+    // Opened as a page of its own, as a phone's tab that the browser keeps: no script may close it.
+    await page.addInitScript(() => {
+      window.close = () => undefined;
+    });
+    await page.goto('/accounts/return?link=0a1b2c3d4e5f&account=linked&system=purchasing');
+    await expect(page.getByRole('heading', { level: 1, name: 'Ditt konto är kopplat' })).toBeVisible();
+    await expect(page.getByText('Du kan stänga det här fönstret.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Till Kopplade konton', exact: true })).toHaveAttribute(
+      'href',
+      '/accounts',
+    );
+    await expect(page).toHaveTitle(/^Ditt konto är kopplat/);
+    expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);
   });
 });

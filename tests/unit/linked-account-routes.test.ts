@@ -98,6 +98,18 @@ describe('linked-account routes', () => {
 
     const stray = await s.call('GET', '/callback?code=x&state=never-started');
     expect([stray.status, stray.headers.get('location')]).toEqual([303, '/?account=failed']);
+
+    // A link that is the person's own and fails at the system is said where it was started, by the system: the
+    // window's return page when the link was started in a window (D147 item 6).
+    const again = (await (
+      await s.call('POST', '/hr/link', { returnTo: '/accounts/return?link=0a1b2c3d4e5f' })
+    ).json()) as { url: string };
+    const state = new URL(again.url).searchParams.get('state');
+    const refused = await s.call('GET', `/callback?code=not-the-code&state=${state}`);
+    expect([refused.status, refused.headers.get('location')]).toEqual([
+      303,
+      '/accounts/return?link=0a1b2c3d4e5f&account=failed&system=hr',
+    ]);
     expect(await (await s.call('GET', '/')).json()).toMatchObject({
       accounts: [{ connectorId: 'hr', state: 'not-linked', putOff: false }],
     });

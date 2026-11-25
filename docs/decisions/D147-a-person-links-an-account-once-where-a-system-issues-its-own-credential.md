@@ -62,13 +62,17 @@ files were read; it was not run.
    an audit row, a log line or a trace. The store is a port with a memory and a Postgres adapter and a contract test
    ([D25](D25-use-cases-over-ports-fast-tests.md)).
 
-6. **A person links where the work would have been, in the same tab, and leaves from one place.** Where a list, a
-   card or an answer needs a system the person has not linked, Clew does not call the connector. It shows that the
-   system needs their account and one button, "Koppla ditt konto". The button goes to a route of Clew's own, which
-   redirects to the system's authorization page in the same tab; the system returns to Clew, which returns the
-   person to the page they were on. No popup, and no page of another address inside Clew's, so the content security
-   policy of [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md)
-   is not widened. The person's linked systems are listed on one page, reached from the person's menu, with when
+6. **A person links where the work would have been, in a window of its own, and leaves from one place.** Where a
+   list, a card or an answer needs a system the person has not linked, Clew does not call the connector. It shows
+   that the system needs their account and one button, "Koppla ditt konto". The button opens the system's
+   authorization page in a small window of its own, and the page the person was on stays as it is. The system returns
+   that window to Clew, to a page that tells the page that opened it and closes itself; the page that stayed says
+   what happened and reads the system again. A browser that opens no window leaves the redirect: the page leaves for
+   the system in the same tab, and the system returns to Clew, which returns the person to the page they were on.
+   No page of another address stands inside Clew's, so the content security policy of
+   [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md)
+   is not widened. (Amended by the product owner on 2026-11-25, on meeting the redirect in the built pages: the
+   item first said the same tab and no popup. The redirect is kept as the way when no window opens.) The person's linked systems are listed on one page, reached from the person's menu, with when
    each was linked and "Koppla från", which revokes the tokens at the system when it offers revocation and deletes
    the row. That page is new surface: it is drawn before it is built.
 
@@ -157,10 +161,18 @@ files were read; it was not run.
   a token", no longer holds.
 - *The same header.* A connector cannot tell, and need not, whether the token came from an exchange or from a link.
   That is why the Approval connector can be tested both ways with one change to its manifest.
-- *A redirect in the same tab, not a popup.* Eneo opens a popup from the chat. Clew's rule is that nothing opens
-  over a page ([interface spaces](../reference/interface-spaces.md)), and focus returning from another window is
-  hard to make reliable for a screen reader. Eneo's pause of a running turn is not carried over for the same reason:
-  the list or card says what is missing and the person asks again after linking.
+- *A window of its own, with the redirect behind it.* The draft chose a redirect in the same tab, because nothing
+  opens over a page ([interface spaces](../reference/interface-spaces.md)) and because focus returning from another
+  window is hard to make reliable for a screen reader. The product owner met the redirect in the built pages and
+  chose the window, as Eneo opens one: the page keeps what was on it, a person with several systems to link stays on
+  one page, and the two products link an account the same way. The rule of the interface spaces is about showing a
+  thing of Clew's; the window shows another system's own sign-in, which Clew could not draw in any case. What the
+  draft feared is met in three ways. The outcome is said in the page's toast, which a screen reader hears; a button
+  that went away with its line hands the focus to a named place; and the redirect stays for a browser that opens no
+  window. The window can reach the page that opened it, as any window a page opens can, which is no more than the
+  redirect gave the same server: a page of an authorization server that an administrator approved. Eneo's pause of
+  a running turn is not carried over: the list or card says what is missing and the person asks again after
+  linking.
 - *The nightly scan as the person.* D103 kept scans to a person who is present, partly because
   [D100](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) promises that work reaches a person through an
   open page. D101 item 3 chose the second source to test "work in the background as the person", and a link that
@@ -297,8 +309,8 @@ Where it differs from the items above:
   `bun scripts/connector-link.ts <connector id>`. D144's review does not name the field yet, and no page enters
   addresses.
 - **Item 6.** The button does not go to a route that redirects. The page asks `POST /api/linked-accounts/:connector/link`
-  for the system's address, with the session's CSRF token, and then leaves for it in the same tab: a link that could
-  be started by a plain address could be started by any other site.
+  for the system's address, with the session's CSRF token, and then sends its window there (or leaves for it in the
+  same tab): a link that could be started by a plain address could be started by any other site.
 - **Item 10.** A deactivation removes the person's links in the SCIM transaction, through the people module's leavers
   port, with their audit rows. It does not revoke them at the system: that transaction waits for no network, and the
   tokens are gone when it commits. `forgetPerson` revokes, for an operator's own removal.
@@ -346,6 +358,28 @@ Where it differs from the items above:
     answer.
   - Read at linking: nothing new was needed. The cards' read asks for a scan of a blocked system again when a person's
     own session visits (`requestChange`), so the system's work comes with the first read after the return.
+
+Linking in a window of its own (item 6 as amended, 2026-11-25):
+
+- The press opens the window itself, before the server is asked, since a browser lets no later window through; the
+  window is sent on to the system once the server has answered. One link is under way at a time: a second press, on
+  any button, brings the window forward. The link is started with the return page's address and an id the page made
+  up (`/accounts/return?link=<id>`), and the return route sends the window there with the outcome.
+- The return page (`pages/account-return.tsx`, outside the session's shell and reading nothing) says the outcome on
+  a broadcast channel of Clew's own origin and closes. It does not use the window's opener: a system's sign-in may
+  cut the two windows apart (a cross-origin opener policy), and the channel reaches the page all the same. The page
+  that started the link says it in a toast and puts the focus right; every page of Clew in the browser reads again
+  what a newly linked system changes. A window the browser will not close says what happened and that it can be
+  closed.
+- A window closed with nothing said (the person closed it) puts the button back and reads the accounts again.
+- `window.open` answering nothing is the redirect, unchanged from the first build.
+- A link that fails once it is known to be the person's own is returned to where it was started, with the system's
+  id, in both ways of linking; before, every failure ended on the start page. A return that cannot be placed (an
+  unknown or outrun state, another person's) still ends on the start page, and inside the window the return page
+  takes it from there.
+- Tested in `tests/a11y/accounts.spec.ts` at 1280 and 320 px: the window, the page that stayed, the focus after a
+  line went, a browser that opens no window, a closed window, and the return page that cannot close. Not tested:
+  a system whose sign-in really cuts the windows apart, and a phone, where the window is a tab.
 
 Not built: the administrator's review and the entered addresses on Administration › Anslutna system; a client
 metadata document served by Clew; the callback for a person whose session ended while they were at the system; a
