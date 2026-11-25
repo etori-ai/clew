@@ -2617,7 +2617,8 @@ export const CompetenceTypeSchema = object(
     kind: CompetenceKind,
     validityMonths: Type.Optional({
       ...validityMonths,
-      description: "The employer's rule: a holding ends this many months after it was issued. Absent: no rule.",
+      description:
+        "The employer's rule: a holding ends this many months after it was issued, whole years (a multiple of 12). Absent: no rule.",
     }),
     archived: Type.Boolean({ description: 'An archived type takes no new holdings; the ones it has stay.' }),
     uri: Type.Optional(
@@ -2828,12 +2829,23 @@ export interface CompetenceMergePreview {
   /** Whether registrations of people's own wait for both types: while any do, the merge is refused. Never how many. */
   waiting: boolean;
 }
-/** What a change of a type's validity would do to the holdings counted from it (D108 item 3), before it is confirmed. */
+/**
+ * What a change of a type's validity would do to the holdings counted from it (D108 item 3), before it is confirmed.
+ * Counted as an administrator may see it (D118), as a merge's preview is: active people's holdings only, and a count
+ * below `COMPETENCE_GROUP_MIN` is `few`. A rule and its preview are whole years (`isCompetenceValidity`), and each
+ * preview is audited (`competence.validity_previewed`).
+ */
 export interface CompetenceValidityImpact {
   /** Holdings that end by the rule: the ones with no date of the issuer's. */
-  holdings: number;
-  expiredBefore: number;
-  expiredAfter: number;
+  holdings: CompetenceShownCount;
+  /**
+   * Of them, those the new validity turns expired today and those it turns valid again: `few` for one to four, else
+   * rounded down to a multiple of `COMPETENCE_GROUP_MIN` and read as "at least" (25 is 25 to 29), so stepping the rule a
+   * year at a time does not tell when one more holding changes. Absent when the holdings are of fewer than
+   * `COMPETENCE_GROUP_MIN` people, however many holdings they have: for so few, what changes would date their holdings.
+   */
+  turnExpired?: CompetenceShownCount;
+  turnValid?: CompetenceShownCount;
 }
 /**
  * A manager registers a certificate for a person who reports to them, or a person registers their own for their manager
@@ -5458,12 +5470,15 @@ export {
   COMPETENCE_IMPORT_ROWS_MAX,
   COMPETENCE_IMPORT_VALIDITY_MAX,
   COMPETENCE_URI_MAX,
+  COMPETENCE_VALIDITY_PROBLEM,
+  COMPETENCE_VALIDITY_STEP,
   ESCO_RELEASED,
   ESCO_SKILL_COLUMNS,
   catalogueMatcher,
   competenceImportRowProblem,
   importKind,
   importText,
+  isCompetenceValidity,
   nameKey,
   parseCompetenceImport,
   type CompetenceImportCandidate,

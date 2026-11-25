@@ -16,7 +16,8 @@ import {
 /**
  * Administration › Kompetens (D108 items 2, 3 and 8): the catalogue of competence types as its administrator keeps it.
  * The list with an archived type marked; a type added in a dialog, with what is missing said on its field; a change of
- * the validity that says what it does to the holdings before it is saved; archiving asked for twice and an archived type
+ * the validity, in whole years, that says what it does to the holdings before it is saved, as the server rounds it or
+ * with the people too few to say; archiving asked for twice and an archived type
  * restored; two types merged, with what moves said in numbers before the second press (D108 item 2), and a merged type
  * read only; the list searched and paged at scale (D120 item 7); the server's refusal as an alert that keeps what was
  * typed; and the page's own answer when the module is off or the capability is missing. Keyboard, focus, structure, axe
@@ -117,7 +118,7 @@ test.describe('Administration › Kompetens', () => {
       await expect(hlr.getByRole('link')).toHaveAttribute('href', '/admin/competence?type=t-hlr');
       await expect(hlr).toContainText('Akut omhändertagande');
       await expect(hlr).toContainText('Kurs');
-      await expect(hlr).toContainText('24 månader (2 år)');
+      await expect(hlr).toContainText('2 år');
       await expect(table.getByRole('row', { name: /Heta arbeten/ })).toContainText('Ingen regel');
       await expect(table.getByRole('row', { name: /Äldre brandskydd/ }).getByText('Arkiverad')).toBeVisible();
     });
@@ -176,13 +177,13 @@ test.describe('Administration › Kompetens', () => {
       const area = dialog.getByRole('textbox', { name: /Område/ });
       await area.focus();
       await page.keyboard.type('Säkerhet');
-      // The employer's rule is asked for only when it is switched on.
+      // The employer's rule is asked for only when it is switched on, in whole years.
       await expect(dialog.getByRole('spinbutton', { name: /Giltigt i/ })).toHaveCount(0);
       await dialog.getByRole('switch', { name: /Arbetsgivaren bestämmer giltighetstiden/ }).focus();
       await page.keyboard.press('Space');
-      const months = dialog.getByRole('spinbutton', { name: /Giltigt i/ });
-      await months.focus();
-      await page.keyboard.type('36');
+      const years = dialog.getByRole('spinbutton', { name: /Giltigt i/ });
+      await years.focus();
+      await page.keyboard.type('3');
       await page.keyboard.press('Tab');
       await dialog.getByRole('button', { name: 'Spara', exact: true }).focus();
       await page.keyboard.press('Enter');
@@ -197,9 +198,7 @@ test.describe('Administration › Kompetens', () => {
         },
       ]);
       await expect(notices(page).getByText('Arbete på väg finns nu i katalogen.')).toBeAttached();
-      await expect(page.getByRole('table').getByRole('row', { name: /Arbete på väg/ })).toContainText(
-        '36 månader (3 år)',
-      );
+      await expect(page.getByRole('table').getByRole('row', { name: /Arbete på väg/ })).toContainText('3 år');
     });
     test('a type of the kind Färdighet (D120) is added without a validity, which is not asked for, and is listed as never ending', async ({
       page,
@@ -282,15 +281,31 @@ test.describe('Administration › Kompetens', () => {
       await expect(page).toHaveURL('/admin/competence?type=t-hlr');
       const dialog = dialogOf(page, 'Ändra kompetens');
       await expect(dialog.getByRole('textbox', { name: /Namn/ })).toHaveValue('HLR');
-      const months = dialog.getByRole('spinbutton', { name: /Giltigt i/ });
-      await expect(months).toHaveValue('24');
-      await months.fill('12');
+      // The rule is whole years: two years, as 24 months.
+      const years = dialog.getByRole('spinbutton', { name: /Giltigt i/ });
+      await expect(years).toHaveValue('2');
+      // Six holdings of fewer than five people: the server says how many holdings, not how many change, and the page
+      // says it is the people who are too few (CO-L1).
+      api.validityImpact = { holdings: 6 };
+      await years.fill('1');
+      await page.keyboard.press('Tab');
+      await dialog.getByRole('button', { name: 'Spara', exact: true }).click();
+      await expect(
+        dialog.getByRole('status').filter({
+          hasText:
+            '6 intyg räknas efter regeln. De tillhör färre än 5 personer, för få för att visa hur många av dem som byter status.',
+        }),
+      ).toBeVisible();
+      await expectNoAxeViolations(page);
+      // A new number asks again; what changes is said as the server rounds it, down to a multiple of five.
+      api.validityImpact = { holdings: 12, turnExpired: 0, turnValid: 5 };
+      await years.fill('3');
       await page.keyboard.press('Tab');
       await dialog.getByRole('button', { name: 'Spara', exact: true }).click();
       await expect(
         dialog
           .getByRole('status')
-          .filter({ hasText: '3 intyg räknas efter regeln. Med ändringen blir 2 av dem utgångna i dag.' }),
+          .filter({ hasText: '12 intyg räknas efter regeln. Med ändringen blir minst 5 av dem giltiga igen.' }),
       ).toBeVisible();
       expect(api.catalogueWrites).toEqual([]);
       await expectNoAxeViolations(page);
@@ -300,11 +315,11 @@ test.describe('Administration › Kompetens', () => {
         {
           method: 'PATCH',
           path: '/competence/types/t-hlr',
-          body: { name: 'HLR', area: 'Akut omhändertagande', kind: 'course', validityMonths: 12 },
+          body: { name: 'HLR', area: 'Akut omhändertagande', kind: 'course', validityMonths: 36 },
         },
       ]);
       await expect(notices(page).getByText('HLR är ändrad.')).toBeAttached();
-      await expect(page.getByRole('table').getByRole('row', { name: /HLR/ })).toContainText('12 månader (1 år)');
+      await expect(page.getByRole('table').getByRole('row', { name: /HLR/ })).toContainText('3 år');
       // The focus is back on the name that opened it.
       await expect(hlr).toBeFocused();
     });
@@ -656,7 +671,7 @@ test.describe('Administration › Kompetens', () => {
       api.competenceTypes = competenceCatalogue();
       await open(page, '/admin/competence');
       const list = page.getByRole('list', { name: 'Katalogen' });
-      await expect(list.getByText('Akut omhändertagande · Kurs · 24 månader (2 år)')).toBeVisible();
+      await expect(list.getByText('Akut omhändertagande · Kurs · 2 år')).toBeVisible();
       await expect(list.getByRole('button')).toHaveCount(0);
       const hlr = list.getByRole('link', { name: 'HLR', exact: true });
       await hlr.focus();
@@ -677,6 +692,16 @@ test.describe('Administration › Kompetens', () => {
       expect(await reflowProblems(page)).toEqual([]);
       await open(page, '/admin/competence?type=t-hlr');
       await expect(dialogOf(page, 'Ändra kompetens').getByRole('button', { name: 'Spara', exact: true })).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+      // The validity's preview, with the numbers said.
+      await dialogOf(page, 'Ändra kompetens')
+        .getByRole('spinbutton', { name: /Giltigt i/ })
+        .fill('1');
+      await page.keyboard.press('Tab');
+      await dialogOf(page, 'Ändra kompetens').getByRole('button', { name: 'Spara', exact: true }).click();
+      await expect(
+        dialogOf(page, 'Ändra kompetens').getByRole('status').filter({ hasText: 'Med ändringen blir minst 5' }),
+      ).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
       // The merge in the same dialog, with the numbers said.
       await dialogOf(page, 'Ändra kompetens').getByRole('button', { name: 'Slå ihop med …' }).click();

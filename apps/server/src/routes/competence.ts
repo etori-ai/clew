@@ -180,7 +180,10 @@ function matrixInput(by: string | undefined, part: string | undefined, only?: st
   }
   return input;
 }
-/** `?months=`: a whole number of months from 1 to 600, or `none` for no rule. */
+/**
+ * `?months=`: a whole number of months from 1 to 600, or `none` for no rule. The use case takes whole years alone and
+ * says so in Swedish, as it does for a rule saved.
+ */
 function months(value: string | undefined): number | null {
   if (value === 'none') return null;
   const n = Number(value);
