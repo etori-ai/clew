@@ -16,6 +16,7 @@ import {
   type WatchSource,
 } from '../modules/executions/model';
 import { standingSession } from '../auth';
+import { logPort } from '../logging';
 import { clock } from './ambient';
 import { ledger } from './durable';
 import { reviewDocuments } from './documents';
@@ -146,6 +147,8 @@ export const executions = executionUsecases({
       .digest('hex'),
   // A started action is sent only while its user name still names its person (D122).
   people: personKeys,
+  // A source's answer that could not be recorded is said by the error's name; the workflow tries again (DE-M3).
+  log: logPort('executions', 'warn'),
 });
 calendarApproval.approve = executions.approve;
 calendarApproval.previous = async (p, id) => {

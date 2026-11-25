@@ -532,10 +532,12 @@ describe('an action about a person, started from the menu', () => {
     });
     // A new decision, not a replay of the refused one: the ledger keeps what the first was approved with.
     expect(again.decisionId).not.toBe(first.decisionId);
-    // Any other failure is the same decision asked again, which the ledger answers with the execution it already has.
+    // Any other failure is decided again the same way (DE-M1): asked under the first id, the ledger would answer with
+    // the execution it already has, and nothing would reach the source.
     await settled('approval-expired', '2026-11-12T08:10:00.000Z');
     await w.decisions.act(hillevi, threadId, 'decide');
-    expect((w.approvals[2] as { decisionId: string }).decisionId).toBe(first.decisionId);
+    const third = (w.approvals[2] as { decisionId: string }).decisionId;
+    expect([first.decisionId, again.decisionId]).not.toContain(third);
     expect(w.asked.flag).toEqual([]);
   });
 

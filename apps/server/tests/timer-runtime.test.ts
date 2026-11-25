@@ -193,9 +193,22 @@ test(
       assert.deepEqual([stranded?.status, stranded?.executorId], ['PENDING', 'timer-child']);
       await ensureHeartbeatTable();
       await beat(engine.name, 'timer-child', new Date(Date.now() - 120_000));
-      assert.deepEqual(await claimDead(engine.name, launched.executorID), ['timer-child']);
-      assert.deepEqual(await claimDead(engine.name, launched.executorID), [], 'claimed once');
-      assert.deepEqual(await adoptExecutors(['timer-child']), [reminderWorkflowId(adopted)]);
+      // An adoption that fails leaves the dead executor to the next sweep (DE-L2).
+      await assert.rejects(
+        claimDead(engine.name, launched.executorID, async () => {
+          throw new Error('connection dropped');
+        }),
+        /connection dropped/,
+      );
+      assert.deepEqual(await claimDead(engine.name, launched.executorID, adoptExecutors), {
+        dead: ['timer-child'],
+        adopted: [reminderWorkflowId(adopted)],
+      });
+      assert.deepEqual(
+        await claimDead(engine.name, launched.executorID, adoptExecutors),
+        { dead: [], adopted: [] },
+        'claimed once',
+      );
       await durableResult(reminderWorkflowId(adopted));
       assert.equal((await store.readTimer(adopted.id))?.state, 'fired');
       assert.equal((await deliveries(adopted.threadId)).length, 1);

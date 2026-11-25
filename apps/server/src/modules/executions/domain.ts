@@ -45,6 +45,36 @@ export function outcome(result: ExecuteResult): ExecutionState {
   if (result.rows.every(row => row.outcome === 'done')) return 'succeeded';
   return result.rows.some(row => row.outcome === 'done') ? 'partial' : 'failed';
 }
+/**
+ * The rows of a work item that its decisions carried out and no undo has taken back (DE-M1), from the ledger: each
+ * decision's rows the source confirmed done, less those of an undo of it that went through (a whole undo takes back
+ * every row of its original; one that went through in part, the rows it confirmed). A decision made again after a
+ * refusal, a part or a release never sends these again, whichever decision did them and whatever the item's latest
+ * receipt says.
+ */
+export function doneOnCard(executions: readonly Execution[]): string[] {
+  const undone = new Map<string, 'all' | Set<string>>();
+  for (const c of executions) {
+    if (!c.compensates || !['succeeded', 'partial'].includes(c.state)) continue;
+    if (c.state === 'succeeded') {
+      undone.set(c.compensates, 'all');
+      continue;
+    }
+    const before = undone.get(c.compensates);
+    if (before === 'all') continue;
+    const rows = new Set(before ?? []);
+    for (const row of c.result?.rows ?? []) if (row.outcome === 'done') rows.add(row.ref);
+    undone.set(c.compensates, rows);
+  }
+  const done = new Set<string>();
+  for (const e of executions) {
+    if (e.compensates) continue;
+    const back = undone.get(e.id);
+    if (back === 'all') continue;
+    for (const row of e.result?.rows ?? []) if (row.outcome === 'done' && !back?.has(row.ref)) done.add(row.ref);
+  }
+  return [...done].sort();
+}
 /** A local lease never makes an arbitrary remote write safe to replay. */
 export function mayReplay(execution: Execution, at: string) {
   return (

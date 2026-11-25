@@ -265,6 +265,31 @@ export function executionStoreContract(name: string, create: () => Promise<Execu
       });
       expect(await w.auditCount()).toBe(0);
     });
+    test("a work item's decisions are read back for that item and that person alone, oldest first (DE-M1)", async () => {
+      const w = await create();
+      const on = (id: string, threadId: string, createdAt: string, compensates: string | null = null): Execution => ({
+        ...executionRecord(w.personId, w.personId + id),
+        decisionId: 'decision:' + w.personId + id,
+        createdAt,
+        compensates,
+        presentation: { threadId, version: createdAt, actionId: compensates ? 'undo' : 'approve' },
+      });
+      const later = on('-later', 'card-a', '2099-11-05T10:02:00.000Z'),
+        first = on('-first', 'card-a', '2099-11-05T10:00:00.000Z'),
+        undo = on('-undo', 'card-a', '2099-11-05T10:01:00.000Z', w.personId + '-first'),
+        other = on('-other', 'card-b', '2099-11-05T10:00:00.000Z'),
+        none: Execution = {
+          ...executionRecord(w.personId, w.personId + '-none'),
+          decisionId: 'decision:none:' + w.personId,
+        };
+      await w.store.transaction(async tx => {
+        for (const e of [later, first, undo, other, none]) await tx.insert(e);
+      });
+      expect((await w.store.readCard(w.personId, 'card-a')).map(e => e.id)).toEqual([first.id, undo.id, later.id]);
+      expect(await w.store.readCard(w.personId, 'card-a')).toEqual([first, undo, later]);
+      expect(await w.store.readCard('someone-else', 'card-a')).toEqual([]);
+      expect(await w.store.readCard(w.personId, 'card-c')).toEqual([]);
+    });
     test('the person a started action is about (D122) survives a round trip, the lock and an update; none stays none', async () => {
       const w = await create(),
         e: Execution = {

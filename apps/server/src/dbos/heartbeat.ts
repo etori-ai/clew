@@ -8,8 +8,10 @@ import { logPort } from '../logging';
  * Executor liveness and takeover (D85). DBOS recovers a crashed executor's PENDING workflows only when an executor
  * with the same id starts again; a replaced instance with a new id would leave them waiting until an operator acted.
  * Each instance therefore records a heartbeat under its executor id, and any live instance that finds a heartbeat
- * older than `DEAD_AFTER_MS` claims that row (one claimant, by deleting it) and re-enqueues the dead executor's
- * workflows into its own application through the engine's recovery routine, which the package does not export.
+ * older than `DEAD_AFTER_MS` claims that row (one claimant, by locking it) and re-enqueues the dead executor's
+ * workflows into its own application through the engine's recovery routine, which the package does not export. The
+ * row is deleted only once its workflows are adopted, in the same transaction, so an adoption that fails leaves it for
+ * the next sweep (DE-L2): deleted first, a failed adoption left the workflows with no executor any sweep would find.
  * The table is engine bookkeeping, not business state: it lives beside DBOS's own schema and outside the Drizzle
  * migrations, created on launch the way DBOS creates its tables.
  */
@@ -32,14 +34,36 @@ export async function beat(application: string, executorID: string, at = new Dat
     insert into clew_durable.executor (application, executor_id, seen_at) values (${application}, ${executorID}, ${at.toISOString()}::timestamptz)
     on conflict (application, executor_id) do update set seen_at = excluded.seen_at`);
 }
-/** The executors of this application whose heartbeat lapsed, claimed by this one call: a second sweeper finds nothing. */
-export async function claimDead(application: string, me: string, now = new Date(), deadAfterMs = DEAD_AFTER_MS) {
+/**
+ * The executors of this application whose heartbeat lapsed, claimed by this one call and handed to `adopt`: their rows
+ * are locked, so a second sweeper skips them, and deleted only when `adopt` has returned. When it throws, nothing is
+ * deleted and the next sweep claims them again.
+ */
+export async function claimDead(
+  application: string,
+  me: string,
+  adopt: (executorIDs: string[]) => Promise<string[]>,
+  now = new Date(),
+  deadAfterMs = DEAD_AFTER_MS,
+): Promise<{ dead: string[]; adopted: string[] }> {
   const before = new Date(now.getTime() - deadAfterMs);
-  const rows = await database().execute<{ executor_id: string }>(sql`
-    delete from clew_durable.executor
-     where application = ${application} and executor_id <> ${me} and seen_at < ${before.toISOString()}::timestamptz
-     returning executor_id`);
-  return [...rows].map(r => r.executor_id);
+  return database().transaction(async tx => {
+    const rows = await tx.execute<{ executor_id: string }>(sql`
+      select executor_id from clew_durable.executor
+       where application = ${application} and executor_id <> ${me} and seen_at < ${before.toISOString()}::timestamptz
+       order by executor_id
+       for update skip locked`);
+    const dead = [...rows].map(r => r.executor_id);
+    if (!dead.length) return { dead, adopted: [] };
+    const adopted = await adopt(dead);
+    await tx.execute(sql`
+      delete from clew_durable.executor
+       where application = ${application} and executor_id in (${sql.join(
+         dead.map(id => sql`${id}`),
+         sql`, `,
+       )})`);
+    return { dead, adopted };
+  });
 }
 export async function forgetExecutor(application: string, executorID: string) {
   await database().execute(
@@ -75,10 +99,9 @@ export async function startHeartbeat(application: string, executorID: string, lo
   }, HEARTBEAT_MS);
   beating.unref();
   const sweeping = setInterval(() => {
-    claimDead(application, executorID)
-      .then(async dead => {
+    claimDead(application, executorID, adoptExecutors)
+      .then(({ dead, adopted }) => {
         if (!dead.length) return;
-        const adopted = await adoptExecutors(dead);
         log(`durable engine: adopted ${adopted.length} workflow(s) from dead executor(s) ${dead.join(', ')}`);
       })
       .catch(error => fail('durable sweep failed', error));

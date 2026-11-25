@@ -1,6 +1,14 @@
-import { SUBJECT_CHANGED, cardKind, isSnoozed, snoozeWhen, type ReceiptRow, type Thread } from '@clew/contracts';
+import {
+  RELEASED_BY_PERSON,
+  SUBJECT_CHANGED,
+  cardKind,
+  isSnoozed,
+  snoozeWhen,
+  type ReceiptRow,
+  type Thread,
+} from '@clew/contracts';
 import type { StatusKind } from '@clew/ui/status-words';
-import { executionKind } from './execution-status';
+import { executionKind, releasable, releaseQuestion } from './execution-status';
 import { canUndoReceipt } from './receipt-state';
 import { asksNoAnswer, dueOf, nothingToDecide, reasonMark } from './work-items';
 
@@ -30,7 +38,7 @@ export { nothingToDecide } from './work-items';
  * it, "Påminn mig" is its offer as on any item that waits, and "Det blev inte gjort" under ⋯ takes it back.
  */
 export type StatusMoveKind =
-  'check' | 'decide' | 'review' | 'undo' | 'remind' | 'take-up' | 'reopen' | 'hand-on' | 'hand-back';
+  'check' | 'decide' | 'review' | 'undo' | 'remind' | 'take-up' | 'reopen' | 'hand-on' | 'hand-back' | 'release';
 export interface StatusMoveWords {
   kind: StatusMoveKind;
   label: string;
@@ -95,7 +103,22 @@ const CHECK: StatusMoveWords = { kind: 'check', label: 'Kontrollera status', off
 const REVIEW: StatusMoveWords = { kind: 'review', label: 'Visa granskning', offer: false };
 const REMIND: StatusMoveWords = { kind: 'remind', label: 'Påminn mig', offer: true };
 const HAND_BACK: StatusMoveWords = { kind: 'hand-back', label: 'Det blev inte gjort', offer: true };
+/** Under ⋯, beside Kontrollera status: the person ends the doubt once they have seen the source (DE-M2). */
+const release = (thread: Thread): StatusMoveWords | undefined =>
+  releasable(thread.execution) ? { kind: 'release', label: releaseQuestion('').label, offer: true } : undefined;
 type Moved = Pick<ItemStatus, 'notice' | 'rest'>;
+/**
+ * The item's own decision again, on what it says now (DE-M1): after a decision the source refused, or carried out only
+ * in part, or that dispatch did not send (D122). Not after an undo that did not go through: the decision it would undo
+ * stands.
+ */
+const decideAgain = (thread: Thread): StatusMoveWords | undefined => {
+  const primary =
+    thread.state === 'open' && !thread.execution?.compensates
+      ? thread.actions.find(a => a.role === 'primary')
+      : undefined;
+  return primary ? { kind: 'decide', label: primary.label, offer: false } : undefined;
+};
 /** The notice with its first move, and the moves it leaves to the menu. */
 const withMoves = (notice: Omit<StatusNoticeWords, 'move'>, moves: (StatusMoveWords | undefined)[]): Moved => {
   const [move, ...rest] = moves.filter((m): m is StatusMoveWords => !!m);
@@ -175,28 +198,31 @@ function executionNotice(thread: Thread, kind: StatusKind, ctx: StatusContext): 
           description:
             'Personen har inte längre det användarnamn som beslutet gällde. Utfallet behöver kontrolleras i källsystemet.',
         },
-        [CHECK],
+        [CHECK, release(thread)],
       );
     // Nothing was sent: the way on is the item's own decision, on the user name the person has now. A decision still
     // on its way is checked, as before.
-    const primary =
-      thread.state === 'open' && execution.state === 'failed'
-        ? thread.actions.find(a => a.role === 'primary')
-        : undefined;
     return withMoves(
       {
         title: 'Inget skickades',
         description: 'Personen har inte längre det användarnamn som beslutet gällde. Fatta beslutet igen.',
       },
-      [
-        primary
-          ? { kind: 'decide', label: primary.label, offer: false }
-          : execution.state === 'failed'
-            ? undefined
-            : CHECK,
-      ],
+      [execution.state === 'failed' ? decideAgain(thread) : CHECK],
     );
   }
+  // Let go by the person, who saw in the source that it did not go through: decided again from here (DE-M1, DE-M2). The
+  // rows the source had confirmed went through (`partial`): they are left out of the new decision and can be undone.
+  if (execution.reason === RELEASED_BY_PERSON)
+    return withMoves(
+      {
+        title: 'Markerat som inte genomfört',
+        description:
+          execution.state === 'partial'
+            ? `Clew väntar inte längre på besked från ${source} om de rader som inte bekräftades. Fatta beslutet igen för dem om det behövs.`
+            : `Clew väntar inte längre på besked från ${source}. Fatta beslutet igen om det behövs.`,
+      },
+      [decideAgain(thread), execution.state === 'partial' ? undoMove(thread, ctx) : undefined],
+    );
   const reason = execution.reason;
   const sending = execution.state === 'pending' || execution.state === 'running';
   const offerCheck: StatusMoveWords = { ...CHECK, offer: true };
@@ -212,20 +238,18 @@ function executionNotice(thread: Thread, kind: StatusKind, ctx: StatusContext): 
   if (reason === 'needs-session')
     return withMoves(
       { title: 'Kan inte skickas än', description: `${source} kräver en aktiv inloggning. Åtgärden väntar.` },
-      [CHECK],
+      [CHECK, release(thread)],
     );
   if (reason === 'authority-revoked')
     return withMoves(
       { title: 'Kan inte skickas än', description: 'Behörigheten har ändrats. Åtgärden väntar på kontroll.' },
-      [CHECK],
+      [CHECK, release(thread)],
     );
   if (reason === 'source-contract-changed')
     return withMoves(
       { title: 'Kan inte skickas än', description: 'Källans villkor har ändrats. Åtgärden väntar på kontroll.' },
-      [CHECK],
+      [CHECK, release(thread)],
     );
-  // Any other reason a decision waits on is checked the same way, whatever state it is in.
-  const check = reason ? CHECK : undefined;
   if (execution.state === 'unknown') {
     if (execution.compensates)
       return withMoves(
@@ -241,7 +265,7 @@ function executionNotice(thread: Thread, kind: StatusKind, ctx: StatusContext): 
         title: unconfirmedTitle(thread),
         description: `${source} gav inget säkert besked${answered}. Kontrollera om det gick igenom innan du gör något mer.`,
       },
-      [CHECK],
+      [CHECK, release(thread)],
     );
   }
   if (sending) {
@@ -259,7 +283,8 @@ function executionNotice(thread: Thread, kind: StatusKind, ctx: StatusContext): 
       [offerCheck],
     );
   }
-  // What was refused is seen again on the review's page, where it can be reviewed anew (D80).
+  // What was refused is seen again on the review's page, where it can be reviewed anew (D80); an item decided without a
+  // review is decided again on the rows that remain (DE-M1). A settled answer has nothing left to check.
   const review = ctx.reviewed ? REVIEW : undefined;
   if (kind === 'partial') {
     const left = [...c.unknown, ...c.failed];
@@ -273,16 +298,16 @@ function executionNotice(thread: Thread, kind: StatusKind, ctx: StatusContext): 
               ? `${left.length} rader behöver din bedömning.`
               : 'De återstående raderna behöver din bedömning.',
       },
-      [review, undoMove(thread, ctx), check],
+      [review ?? decideAgain(thread), undoMove(thread, ctx)],
     );
   }
-  // Refused, or not reachable: nothing more is sent until the person has read why.
+  // Refused, or not reachable: nothing was done, and the person decides again once they have read why.
   return withMoves(
     {
       title: 'Beslutet gick inte igenom',
       description: `${thread.receipt ? `${bare(thread.receipt.headline)}. ` : ''}Kontrollera beskedet innan du fattar ett nytt beslut.`,
     },
-    [review, check],
+    [review ?? decideAgain(thread)],
   );
 }
 

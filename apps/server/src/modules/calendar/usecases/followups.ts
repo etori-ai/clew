@@ -58,6 +58,11 @@ export function followupUsecases(deps: {
     )
       return;
     const persona = await deps.current(policy.personId);
+    // What could not be read at this check (DE-L1): the replies or the team. The check goes on without it and the next
+    // is scheduled as always, so a calendar or a directory that does not answer now never ends the follow-up: the thread
+    // still comes back to the manager at the deadline or the policy's end, and a reminder not sent waits for the next.
+    // Without the replies nobody is reminded: an invitee may have answered since they were last read.
+    const unread: string[] = [];
     let allowed =
       !!persona && persona.unitId === policy.unitId && persona.authorizationVersion === policy.authorizationVersion;
     if (allowed) {
@@ -67,7 +72,7 @@ export function followupUsecases(deps: {
         allowed = false;
       }
       if (allowed) {
-        await deps.readReplies(threadId);
+        await deps.readReplies(threadId).catch(() => unread.push('replies'));
         try {
           await persona!.authorize();
         } catch {
@@ -75,7 +80,12 @@ export function followupUsecases(deps: {
         }
       }
     }
-    const members = allowed ? await deps.team(persona!) : [];
+    const members = allowed
+      ? await deps.team(persona!).catch(() => {
+          unread.push('team');
+          return [];
+        })
+      : [];
     await store.transaction(async tx => {
       const current = await tx.load(threadId);
       if (
@@ -138,7 +148,8 @@ export function followupUsecases(deps: {
         return;
       }
       const delivered: string[] = [];
-      for (const p of waiting) {
+      // Without the replies, who has answered since the last read is not known: nobody is reminded until they are read.
+      for (const p of unread.includes('replies') ? [] : waiting) {
         // The invitee by id (N3), so a changed address does not stop the reminders.
         const due = nextReminderAt(p, at),
           member = members.find(m => m.personId === p.participant.personId);
@@ -153,7 +164,7 @@ export function followupUsecases(deps: {
         action: 'obligation.checked',
         subject: `thread:${threadId}`,
         at,
-        details: { generation, delivered, maxReminders: policy.maxReminders },
+        details: { generation, delivered, maxReminders: policy.maxReminders, ...(unread.length ? { unread } : {}) },
       });
     });
   }
