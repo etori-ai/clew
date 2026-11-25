@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { OPEN_THING_INPUT_MAX, type Chip, type EntitySource, type Thread } from '@clew/contracts';
+import { OPEN_THING_INPUT_MAX, stableJson, type Chip, type EntitySource, type Thread } from '@clew/contracts';
 import {
   SUBJECT_MAX,
   UNNAMED_PERSON,
@@ -16,7 +16,6 @@ import {
   recordSubject,
   recordThing,
   sourceReads,
-  stableJson,
 } from '../src/components/conversation/page-conversation';
 import { turnInput } from '../src/components/conversation/turns';
 

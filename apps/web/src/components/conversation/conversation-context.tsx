@@ -14,6 +14,7 @@ import type {
   Chip,
   ClewObject,
   ConversationResponse,
+  ConversationInput,
   HandoverAssistant,
   OpenThing,
   Verb,
@@ -29,7 +30,6 @@ import { panelSearch } from '../../panel-address';
 import { ASSISTANT_PARAM } from '../../conversation-about';
 import { applyThread } from '../../thread-cache';
 import {
-  askedOf,
   keyFor,
   writtenUnder,
   type Unanswered,
@@ -688,8 +688,15 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       const text = raw.replace(/\s+/g, ' ').trim();
       if (!text || asideBusy.current || busy) return false;
       const at = openRef.current ? openId : null;
-      const question = askedOf(text, at, assistant.id, []);
-      const turn = keyFor(asideUnanswered.current, question);
+      const question: ConversationInput = {
+        text,
+        ...(at ? { conversationId: at } : {}),
+        assistant: assistant.id,
+        side: true as const,
+        ...(confirmed ? { confirmed: true as const } : {}),
+      };
+      const kept = keyFor(asideUnanswered.current, question);
+      const { turn } = kept;
       asideUnanswered.current = null;
       const controller = new AbortController();
       asideFlight.current = controller;
@@ -720,14 +727,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       };
       try {
         const response = await api.converseStream(
-          {
-            text,
-            turn,
-            ...(at ? { conversationId: at } : {}),
-            assistant: assistant.id,
-            side: true as const,
-            ...(confirmed ? { confirmed: true as const } : {}),
-          },
+          { ...question, turn },
           event => {
             if (event.type === 'text')
               setAside(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
@@ -744,14 +744,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         return true;
       } catch (e) {
         const stopped = controller.signal.aborted;
-        const written = left() ? null : await writtenUnder(turn);
-        if (written) {
+        const written = left() ? null : await writtenUnder(turn, question);
+        if (written && written !== 'different') {
           await land(written);
           return true;
         }
         setAside(null);
         if (left()) return false;
-        asideUnanswered.current = { ...question, turn };
+        asideUnanswered.current = written === 'different' ? null : kept;
         if (stopped) announce('Frågan avbröts. Den ligger kvar i rutan.');
         else setAsideError(errorMessage(e, 'Frågan kunde inte ställas.'));
         return false;
