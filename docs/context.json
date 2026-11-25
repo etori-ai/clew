@@ -1937,6 +1937,14 @@
       ]
     },
     {
+      "path": "connectors/purchasing/README.md",
+      "title": "purchasing: a generic purchasing system that issues its own credential, as a fixture connector",
+      "category": "integrator-guide",
+      "headings": [
+        "Run it"
+      ]
+    },
+    {
       "path": "connectors/qlik/README.md",
       "title": "qlik: what Qlik knows, as a Clew connector",
       "category": "integrator-guide",

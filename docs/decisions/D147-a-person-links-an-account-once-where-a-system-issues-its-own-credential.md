@@ -207,8 +207,9 @@ connected?" without settling the rest of that question. D45, D47, D75, D86, D121
 
 ## As built
 
-Two slices on the branch `linked-accounts`, 2026-11-25 and 2026-11-26: everything but the pages, the administrator's
-review and the live tests. A person cannot link from the web app yet, so the branch is not ready for `main`.
+Three slices on the branch `linked-accounts`, 2026-11-25 and 2026-11-26: everything but the pages and the
+administrator's review, with the development stack's test written and not yet run. A person cannot link from the web
+app yet, so the branch is not ready for `main`.
 
 - **The protocol.** `LinkedAccountSchema` and the manifest's `linkedAccount` in
   [protocol.ts](../../packages/connectors/src/protocol.ts); the rule that a manifest declares one way and an address
@@ -244,6 +245,15 @@ review and the live tests. A person cannot link from the web app yet, so the bra
   [calls](../../tests/unit/linked-account-calls.test.ts), [the ledger](../../tests/unit/linked-executions.test.ts),
   [routes](../../tests/unit/linked-account-routes.test.ts)).
 
+- **The development stack's test** (item 14, the second of the three): the realm is made by
+  [vendor-realm.ts](../../scripts/vendor-realm.ts), the system is the fixture connector
+  [purchasing](../../connectors/purchasing/README.md) in the compose profile `linked`, and
+  [linked-account-check.ts](../../scripts/linked-account-check.ts) runs the whole of it against the real Keycloak
+  without a browser: discovery, registration, two people who sign in and consent at the realm's own pages, calls with
+  no session, a scan, a decision and its read-back, the rotated refresh token, a link the system takes away and one
+  the person takes away. **It has not been run**: the realm needs Keycloak's administrator, which this session was
+  not given. The fixture's own tests sign tokens with a key of the test's.
+
 Where it differs from the items above:
 
 - **Item 4.** The approval is kept in the module's own table and made by an operator with
@@ -256,9 +266,19 @@ Where it differs from the items above:
   port, with their audit rows. It does not revoke them at the system: that transaction waits for no network, and the
   tokens are gone when it commits. `forgetPerson` revokes, for an operator's own removal.
 
+- **Item 14.** The realm `vendor` has accounts of its own for the stack's personas, with the test passwords they
+  already have, and the `clew` realm is not its identity provider: the check signs in at the realm's own form, which
+  brokering through a second realm would make two forms and a first-login page. The fixture checks a token's
+  signature, issuer and expiry and not its audience, since Keycloak 26.2 does not bind a token to the `resource`
+  Clew names. Where Clew's actor carries a user name, the fixture refuses an account with another name, which is the
+  mismatch the open item on "the same person" asks a connector to refuse.
+- **The conformance check.** `connector-check` takes `authorization-required` from a connector that declares
+  `linkedAccount` as the expected answer, on a capability and on the scan, and says the scan is not verified.
+
 Not built: both pages and anything in the web app that starts linking; the administrator's review and the entered
 addresses on Administration › Anslutna system; a client metadata document served by Clew; the callback for a person
-whose session ended while they were at the system; and the live tests of item 14 beyond the first.
+whose session ended while they were at the system; and, of item 14, the run of the stack's test and the outside test
+against Nextcloud's own server.
 
 ## Sources
 
