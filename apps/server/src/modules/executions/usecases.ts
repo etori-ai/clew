@@ -1,4 +1,4 @@
-import { foldSourceKey, SUBJECT_CHANGED, type AuthenticatedContext } from '@clew/contracts';
+import { foldSourceKey, RELEASED_BY_PERSON, SUBJECT_CHANGED, type AuthenticatedContext } from '@clew/contracts';
 import { RelationsUnavailableError, type ExecuteResult } from '@clew/connectors';
 import {
   ExecutionError,
@@ -20,6 +20,7 @@ import {
   jobView,
   retainsAuthority,
   mayReplay,
+  doneOnCard,
   outcome,
   sameSafety,
   seen,
@@ -66,6 +67,8 @@ type ApproveInput = {
 };
 /** Which of the person's kept sessions stood behind a call to a connector that acts as them (D26); what the audit records instead of a binding. */
 type Backing = 'approving' | 'checking';
+/** How many claims of one execution may fail to record the source's answer before its workflow stops trying (DE-M3). */
+export const RECORDING_ATTEMPTS = 5;
 export function executionUsecases({
   store,
   source,
@@ -76,6 +79,7 @@ export function executionUsecases({
   digest,
   review,
   people,
+  log,
 }: ExecutionDeps) {
   /** Everything an approval needs before its transaction: authority, the source's write safety and, for an undo, the compensation rule. No I/O on the store beyond reading the original. */
   async function prepare(persona: AuthenticatedContext, input: ApproveInput, at: string): Promise<Execution> {
@@ -650,14 +654,15 @@ export function executionUsecases({
         await settle(e, 'unknown', 'manual-reconciliation', undefined, backing);
         return 'done';
       }
+      let found: ExecuteResult | undefined;
       try {
-        const found = await source.lookup(persona, e);
-        if (found) {
-          await settle(e, outcome(found), null, found, backing);
-          return 'done';
-        }
+        found = await source.lookup(persona, e);
       } catch {
         await settle(e, 'unknown', 'source-unavailable', undefined, backing);
+        return 'done';
+      }
+      if (found) {
+        await recorded(e, () => settle(e, outcome(found), null, found, backing));
         return 'done';
       }
       if (!mayReplay(e, at)) {
@@ -692,19 +697,53 @@ export function executionUsecases({
       return true;
     });
     if (!dispatched) return 'done';
+    let result: ExecuteResult;
     try {
-      const result = await source.execute(persona, e, resolution);
-      await settle(e, outcome(result), null, result, backing);
-      return 'done';
+      result = await source.execute(persona, e, resolution);
     } catch {
       await settle(e, 'unknown', 'source-outcome-unknown', undefined, backing);
       return e.dispatchedAt ? 'done' : 'reconcile';
+    }
+    // The source answered. Recording its answer is Clew's own work (DE-M3): when that fails, it is not the source that
+    // did not answer, so it is never stored as such. It is logged and thrown, and the workflow tries the step again,
+    // which reads the source back after the lease; the execution stays where it was until a record succeeds.
+    await recorded(e, () => settle(e, outcome(result), null, result, backing));
+    return 'done';
+  }
+  /**
+   * A write of the ledger's own, logged by the error's name when it fails, and thrown on so the workflow tries again.
+   * Bounded (DE-M3): a failure that recurs at every claim would otherwise claim, read the source and fail for good. From
+   * the `RECORDING_ATTEMPTS`th claim the step ends instead; the execution stays running until its lease has passed, and
+   * then a check starts it again, or its person lets it go.
+   */
+  async function recorded(e: Execution, write: () => Promise<unknown>) {
+    try {
+      await write();
+    } catch (error) {
+      const last = e.attempt >= RECORDING_ATTEMPTS;
+      log?.(
+        last
+          ? 'execution: the answer could not be recorded, and is not tried again until it is checked'
+          : 'execution: the answer could not be recorded',
+        {
+          execution: e.id,
+          operation: e.operation,
+          attempt: e.attempt,
+          error: error instanceof Error ? error.name : typeof error,
+        },
+      );
+      if (!last) throw error;
     }
   }
   /**
    * A human asks to check the original operation again; this never allocates another source key. On a connector that
    * acts as the person, the session that asks is kept for the read-back of a write already dispatched (D26): it may
-   * stand behind the lookup when the approving session has ended, never behind a dispatch or a replay.
+   * stand behind the lookup when the approving session has ended, never behind a dispatch or a replay. A decision whose
+   * workflow ended in error is started again here (DE-L1): one still waiting to be sent, and one left running past its
+   * lease, which no worker holds any more. One whose lease still runs is being worked on and is left to it. Each request
+   * is a workflow of its own (`reconcile:<id>:<attempt>:<instant>`): the engine runs an id once, so a request that
+   * reused the id of an earlier one which ended in error before it claimed anything would start nothing. The claim and
+   * the lease keep two of them from sending twice.
    */
   async function reconcile(persona: AuthenticatedContext, id: string) {
     const found = await readable(persona, id);
@@ -713,10 +752,11 @@ export function executionUsecases({
     const at = clock().toISOString();
     await store.transaction(async tx => {
       const e = await tx.lock(id);
-      if (!e || e.reason === 'source-reset' || !['pending', 'unknown'].includes(e.state)) return;
+      const abandoned = e?.state === 'running' && (!e.leaseUntil || e.leaseUntil <= at);
+      if (!e || e.reason === 'source-reset' || !(['pending', 'unknown'].includes(e.state) || abandoned)) return;
       const checking = asking && e.dispatchedAt && asking !== e.approvingSession ? asking : null;
       if (checking && checking !== e.checkingSession) await tx.keepCheckingSession(id, checking);
-      await tx.enqueue(executionStart('reconcile:' + id + ':' + e.attempt, id));
+      await tx.enqueue(executionStart(`reconcile:${id}:${e.attempt}:${Date.parse(at)}`, id));
       await tx.audit({
         actor: persona.principal.id,
         action: 'execution.reconciliation_requested',
@@ -727,5 +767,53 @@ export function executionUsecases({
     });
     return read(persona, id);
   }
-  return { approve, approveJob, undoJob, observe, readJob, read, progress, reconcile };
+  /**
+   * The person lets go of a decision whose outcome the source never confirmed (DE-M2), once they have seen in the source
+   * that it did not go through: it ends as failed, by their word and in their name, and the item can be decided again
+   * (DE-M1). Nothing is sent to the source, and nothing Clew holds says whether it went through, so this is never the
+   * system's to do: D45 keeps the doubt until a person ends it. Only a decision in doubt, not one being checked right
+   * now (a worker holds its lease; one left running past it is in doubt too), and not an undo, whose original receipt
+   * stands whatever became of it. One whose
+   * source confirmed some rows ends `partial`, not `failed`: those rows went through, so deciding again leaves them out
+   * (`threads/usecases/decisions.ts` refuses them after a part) and Ångra can still take them back.
+   */
+  async function release(persona: AuthenticatedContext, id: string) {
+    const found = await readable(persona, id);
+    if (!found) throw new ExecutionError('Åtgärden finns inte.');
+    const at = clock().toISOString();
+    await store.transaction(async tx => {
+      const e = await tx.lock(id);
+      if (!e) throw new ExecutionError('Åtgärden finns inte.');
+      // Left running past its lease, no worker holds it (as for `reconcile`): it is in doubt like an unknown one.
+      const abandoned = e.state === 'running' && (!e.leaseUntil || e.leaseUntil <= at);
+      if (e.state === 'running' && !abandoned)
+        throw new ExecutionError('Beslutet kontrolleras just nu. Försök igen om en stund.');
+      if (!(e.state === 'unknown' || abandoned) || e.compensates)
+        throw new ExecutionError('Beslutet väntar inte längre på besked.');
+      const done = e.result?.rows.some(row => row.outcome === 'done') ?? false;
+      await tx.update({
+        ...e,
+        state: done ? 'partial' : 'failed',
+        reason: RELEASED_BY_PERSON,
+        leaseUntil: null,
+        updatedAt: at,
+      });
+      await tx.audit({
+        actor: persona.principal.id,
+        action: 'execution.released',
+        subject: 'execution:' + id,
+        at,
+        details: { attempt: e.attempt, reason: e.reason, outcomes: e.result?.rows.map(row => row.outcome) ?? [] },
+      });
+    });
+    return read(persona, id);
+  }
+  /**
+   * The rows of the person's work item that its decisions carried out and no undo took back (DE-M1): a decision made
+   * again on the item leaves them out, whichever earlier decision did them.
+   */
+  async function doneOn(persona: AuthenticatedContext, threadId: string) {
+    return doneOnCard(await store.readCard(persona.id, threadId));
+  }
+  return { approve, approveJob, undoJob, observe, readJob, read, progress, reconcile, release, doneOn };
 }

@@ -3,6 +3,7 @@ import { useLocation } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { obligationStep, obligationSteps, replySummary, type CalendarEvent, type Thread } from '@clew/contracts';
 import {
+  AlertDialog,
   AreaChip,
   Avatar,
   AvatarGroup,
@@ -40,7 +41,8 @@ import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/da
 import { api } from '../../api';
 import { calendarWeekQuery } from '../../queries';
 import { useThreadAction } from '../../mutations';
-import { executionStatus } from '../../execution-status';
+import { executionKind, executionStatus, releasable, releaseQuestion } from '../../execution-status';
+import { confirmParts } from '../../confirm-parts';
 import { useMarks } from '../../marks';
 import { itemPageHref } from '../../work-items';
 import { DOT } from '../../dot';
@@ -176,14 +178,28 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
     .sort()
     .at(-1);
   const pending = executionStatus(thread.execution);
+  // A decision on its way, in doubt or held back stops the card; one that ended, refused, in part or let go by the person
+  // (DE-M2), is said and leaves the times that remain to be sent again (DE-M1).
+  const kind = executionKind(thread.execution);
+  const deciding = kind === 'sending' || kind === 'unconfirmed' || kind === 'blocked';
+  const [releasing, setReleasing] = useState(false);
+  const question = releaseQuestion(thread.trigger.source),
+    asked = confirmParts(question);
+  // An undo the calendar refused leaves the invitations it would take back standing, and pressing Ångra again would be
+  // that refusal replayed (the undo is the decision `undo:<original>`, DE-L5): it is not offered again.
+  const undoRefused = !!thread.execution?.compensates && thread.execution.state === 'failed';
   const undoOpen =
-    !pending && !!undoUntil && Date.parse(undoUntil) > now && thread.proposals.some(p => p.status === 'confirmed');
+    !deciding &&
+    !undoRefused &&
+    !!undoUntil &&
+    Date.parse(undoUntil) > now &&
+    thread.proposals.some(p => p.status === 'confirmed');
   useEffect(() => {
     if (!undoOpen) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [undoOpen]);
-  const open = !pending && thread.state === 'open' && thread.proposals.some(p => p.status === 'proposed');
+  const open = !deciding && thread.state === 'open' && thread.proposals.some(p => p.status === 'proposed');
   // The obligation (D30): where it stands, who could not be placed, and who has answered.
   const step = obligationStep(thread.proposals),
     sum = replySummary(thread.proposals);
@@ -383,10 +399,32 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
       {pending && (
         <HStack gap={2} wrap="wrap">
           <Text role="status">{pending}</Text>
-          <Button label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
+          {deciding && (
+            <Button label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
+          )}
+          {releasable(thread.execution) && (
+            <Button variant="secondary" label={question.label} clickAction={() => setReleasing(true)} />
+          )}
         </HStack>
       )}
-      {roster && !pending && !open && thread.state === 'open' && !undoOpen && (
+      <AlertDialog
+        isOpen={releasing}
+        onOpenChange={isOpen => {
+          if (!isOpen) setReleasing(false);
+        }}
+        title={asked.title}
+        description={asked.description}
+        actionLabel={question.label}
+        cancelLabel="Avbryt"
+        onAction={() => {
+          setReleasing(false);
+          // The button is gone with the doubt: the card takes the focus, and its status says what holds now.
+          void run(() => api.releaseExecution(thread.id)).then(() =>
+            requestAnimationFrame(() => document.getElementById(`${beside ? 'card' : 'thread'}-${thread.id}`)?.focus()),
+          );
+        }}
+      />
+      {roster && !deciding && !open && thread.state === 'open' && !undoOpen && (
         <HStack gap={2} wrap="wrap">
           {waiting.length > 0 && (
             <Button

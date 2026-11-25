@@ -3843,6 +3843,11 @@ export const ThreadState = Type.Union([Type.Literal('open'), Type.Literal('handl
  * about, renamed or given to someone else since, so the person decides again.
  */
 export const SUBJECT_CHANGED = 'subject-changed';
+/**
+ * Why a decision whose outcome the source never confirmed ended (DE-M2): the person who made it saw in the source that it
+ * did not go through and let it go, so the item can be decided again (DE-M1). Clew sent nothing more.
+ */
+export const RELEASED_BY_PERSON = 'released-by-person';
 export const ExecutionSummarySchema = object({
   id,
   decisionId: Type.String(),

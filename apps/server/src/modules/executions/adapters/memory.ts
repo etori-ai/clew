@@ -29,6 +29,13 @@ export function memoryExecutionStore() {
     async read(id) {
       return structuredClone(records.get(id));
     },
+    async readCard(personId, threadId) {
+      return structuredClone(
+        [...records.values()]
+          .filter(e => e.personId === personId && e.presentation?.threadId === threadId)
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)),
+      );
+    },
     async readJob(id) {
       return structuredClone(jobs.get(id));
     },
