@@ -4751,8 +4751,8 @@ export const RotateSecretInput = object({ secret: connectorSecret });
 export type RotateSecretInput = Static<typeof RotateSecretInput>;
 export const RefreshManifestInput = object({
   apply: Type.Optional(Type.Boolean()),
-  /** With `apply`: when the offer the administrator reviewed was first seen, so another offer is never applied in its place (D144). */
-  offered: Type.Optional(Type.String({ maxLength: 40 })),
+  /** With `apply`: the revision of the offer the administrator reviewed, so another offer is never applied in its place (D144). */
+  offered: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$', maxLength: 64 })),
 });
 export type RefreshManifestInput = Static<typeof RefreshManifestInput>;
 export const PreviewQuery = object({
@@ -4859,7 +4859,7 @@ export interface ConnectorDetail extends ConnectorSummary {
   /** The audience whose token the connector is handed (`delegation`), or null when it is handed none. */
   delegation: string | null;
   /** The manifest the service offers when it differs from the approved one: since when, and what it would change. Never live until approved. */
-  offered: { at: string; diff: ManifestDiff } | null;
+  offered: { at: string; revision: string; diff: ManifestDiff } | null;
   /** The read the manifest names as the header's source (D88), or null when the connector cannot give one. */
   headerCapability: string | null;
   createdBy: string;

@@ -88,7 +88,8 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
       if (!result) return;
       const report = await api.admin.test(result.connector.id);
       let connector = await api.admin.connector(result.connector.id);
-      if (connector.offered) connector = (await api.admin.refresh(connector.id, true, connector.offered.at)).connector;
+      if (connector.offered)
+        connector = (await api.admin.refresh(connector.id, true, connector.offered.revision)).connector;
       setResult({ connector, report });
     });
   const finish = (state: 'draft' | 'enabled') =>
