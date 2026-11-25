@@ -1575,7 +1575,7 @@
       "number": 131,
       "path": "docs/decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
       "title": "D131 · Clew builds a server image and a web image from the repository root",
-      "status": "provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them)",
+      "status": "provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them; the note that the repository has no licence file replaced by [D143](D143-clew-is-licensed-under-the-agpl-as-eneo-is.md) on 2026-11-23, which licenses Clew under the AGPL v3)",
       "date": "2026-11-17",
       "area": "platform"
     },
@@ -1677,6 +1677,15 @@
       "status": "provisional (the product owner chose it on 2026-11-21 from the canvas \"Clew",
       "date": "2026-11-21",
       "area": "ui, product"
+    },
+    {
+      "key": "D143-clew-is-licensed-under-the-agpl-as-eneo-is",
+      "number": 143,
+      "path": "docs/decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md",
+      "title": "D143 · Clew is licensed under the AGPL, as Eneo is",
+      "status": "accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question)",
+      "date": "2026-11-23",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -1698,7 +1707,8 @@
         "How it fits together",
         "Understand the platform",
         "Build a custom connector",
-        "Run and contribute"
+        "Run and contribute",
+        "Licence"
       ]
     },
     {
@@ -2579,6 +2589,12 @@
       "headings": [
         "As built"
       ]
+    },
+    {
+      "path": "docs/decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md",
+      "title": "D143 · Clew is licensed under the AGPL, as Eneo is",
+      "category": "decision-history",
+      "headings": []
     },
     {
       "path": "docs/decisions/D15-postgres-scheduler-now-temporal-later.md",
