@@ -6,6 +6,7 @@ import type {
   Thread,
 } from '@clew/contracts';
 import type { ExecuteResult } from '@clew/connectors';
+import { instantBefore, sameInstant } from '@clew/calendar/dates';
 import { CalendarError, type EventOccurrence, type MeetingInput } from '@clew/calendar/model';
 import { InputError } from '../../../context';
 import type { CalendarBinder, People, ProposalStore, RoundReader, Team, UnitMember } from '../model';
@@ -340,7 +341,7 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewh
         .map(m => ({ ref: m.ref, email: m.email }));
       const [own, busy] = await Promise.all([b.provider.list(start, end), b.provider.freeBusy(start, end, targets)]);
       if (
-        own.some(x => x.uid !== uid && !x.allDay && x.start < end && x.end > start) ||
+        own.some(x => x.uid !== uid && !x.allDay && instantBefore(x.start, end) && instantBefore(start, x.end)) ||
         targets.some(target => !busy.some(x => x.ref === target.ref && x.state === 'known' && !x.busy.length))
       )
         return 'Inget skickades: tiden kunde inte bekräftas som ledig.';
@@ -479,12 +480,14 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewh
               (item.action === 'create'
                 ? found.uid === uid &&
                   found.title === item.input.title &&
-                  found.start === item.input.start &&
-                  found.end === item.input.end &&
+                  sameInstant(found.start, item.input.start) &&
+                  sameInstant(found.end, item.input.end) &&
                   item.input.participants.every(email =>
                     found!.participants.some(x => x.email.toLowerCase() === email.toLowerCase()),
                   )
-                : found.start === item.start && found.end === item.end && found.revision !== item.revision);
+                : sameInstant(found.start, item.start) &&
+                  sameInstant(found.end, item.end) &&
+                  found.revision !== item.revision);
         if (matches) outcome = 'done';
       } catch {
         /* Evidence stays unknown when the source cannot be read. */
