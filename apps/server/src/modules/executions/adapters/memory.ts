@@ -49,11 +49,19 @@ export function memoryExecutionStore(options: { projection?: MemoryLedgerProject
     async read(id) {
       return structuredClone(records.get(id));
     },
-    async readCard(personId, threadId) {
+    async readCardResults(personId, threadIds) {
+      const wanted = new Set(threadIds);
       return structuredClone(
         [...records.values()]
-          .filter(e => e.personId === personId && e.presentation?.threadId === threadId)
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)),
+          .filter(e => e.personId === personId && e.presentation && wanted.has(e.presentation.threadId))
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+          .map(({ id, state, compensates, result, presentation }) => ({
+            id,
+            state,
+            compensates,
+            result,
+            threadId: presentation!.threadId,
+          })),
       );
     },
     async readJob(id) {

@@ -48,6 +48,7 @@ function world() {
   const store = memoryThreadStore();
   let n = 0;
   const threads = threadUsecases({
+    doneOnCards: async () => new Map(),
     store,
     registry,
     run: (p, name, input) => registry.run(audiencedActorOf(p), name, input),

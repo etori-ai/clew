@@ -314,6 +314,7 @@ function world() {
   const store = memoryThreadStore();
   let n = 0;
   const threads = threadUsecases({
+    doneOnCards: async () => new Map(),
     store,
     registry,
     run,
@@ -558,6 +559,7 @@ describe('an execute about a person that asks (D112)', () => {
     );
     const approvals: unknown[] = [];
     const threads = threadUsecases({
+      doneOnCards: async () => new Map(),
       store,
       registry,
       run: async <O>() => undefined as O,
