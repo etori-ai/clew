@@ -10,7 +10,7 @@ The [phone book connector](../../connectors/phonebook/connector.mjs) is a comple
 | [manifest.mjs](../../connectors/phonebook/manifest.mjs) | Shared schemas and one named block per capability: input, output, view and menu hint. `directoryCapability.view.kind` chooses the table and `view.fields` its columns. |
 | [directory.mjs](../../connectors/phonebook/directory.mjs) | `createFixtureDirectory`, `createHttpDirectory` and `toPerson`: source access and mapping. |
 | [connector.mjs](../../connectors/phonebook/connector.mjs) | Read operations, verified actor, unit mapping, input checks and response mapping; exports the manifest from `manifest.mjs`. |
-| [verification.mjs](../../connectors/phonebook/verification.mjs) | Protocol 2 identity and transport checks. |
+| [verification.mjs](../../connectors/phonebook/verification.mjs) | The protocol's identity and transport checks. |
 | [http.mjs](../../connectors/phonebook/http.mjs) | The HTTP listener: a request is read within a size limit, and nothing sent to the port ends the process. |
 | [server.mjs](../../connectors/phonebook/server.mjs) | HTTP service and environment configuration. |
 | [Connector tests](../../tests/unit/phonebook-connector.test.ts) | Search, protected records, unit scoping and recorded HTTP responses. |

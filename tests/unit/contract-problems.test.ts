@@ -302,7 +302,7 @@ describe('what the schemas say after they are built', () => {
     });
     const audience = (k: string) => ({ mode: 'selected', units: [k], groups: [k] });
     const named: Array<[string, Parameters<typeof ajv.compile>[0], (k: string) => unknown]> = [
-      ['a connector audience', ConnectorPatchInput, k => ({ audience: audience(k) })],
+      ['a connector audience', ConnectorPatchInput, k => ({ version: 1, audience: audience(k) })],
       ['a model audience', ModelPatchInput, k => ({ audience: audience(k) })],
       ['a group-capability row', GroupCapabilityInput, k => ({ groupExternalId: k, capability: 'admin.users' })],
       ["the people list's unit", UsersAdminQuery, k => ({ unitId: k })],

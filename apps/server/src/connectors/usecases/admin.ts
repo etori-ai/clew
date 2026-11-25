@@ -1,7 +1,6 @@
 import type {
   AddConnectorInput,
   AuthenticatedContext,
-  CheckFinding,
   CheckReport,
   ConnectorDetail,
   ConnectorHealth,
@@ -50,6 +49,19 @@ import type {
  * `Transport`. Built over ports (D25): the tests run it on the memory store with a fake transport.
  */
 export const ADMIN_CAPABILITY = 'admin.connectors';
+/** A change made on a connector that has been saved since (DE-M5): the page reads it again and the administrator looks. */
+export const CHANGED_SINCE = 'Anslutningen har ändrats sedan du öppnade den. Se över den och gör ändringen igen.';
+/** A check whose connector got another address or secret while the service answered: its result is about neither. */
+export const CHANGED_WHILE_CHECKED =
+  'Anslutningens adress eller nyckel ändrades medan den testades. Resultatet sparades inte; testa den igen.';
+/** "Läs in igen" on a connector that moved while the service answered: what the old address served is not offered. */
+export const MOVED_WHILE_READ =
+  'Anslutningens adress ändrades medan systemet lästes in. Inget sparades; läs in det igen från den nya adressen.';
+/**
+ * What `update` takes: the page's patch, whose `version` the route requires. A script of Clew's own acting on the row as
+ * it stands leaves it out; the write still compares the version the change was made on.
+ */
+export type ConnectorChange = Omit<ConnectorPatchInput, 'version'> & { version?: number };
 export interface AdminDeps {
   /** Core capability providers are not connected systems (D62). */
   internal?: readonly string[];
@@ -113,14 +125,10 @@ export function connectorUsecases(deps: AdminDeps) {
     const live = registry.connector(row.id);
     return live && row.bundled ? describeBundled(live) : undefined;
   };
-  const healthFrom = (
-    report: { findings: CheckFinding[]; manifest?: ConnectorManifest },
-    at: string,
-  ): ConnectorHealth => {
-    if (!report.manifest) {
-      const text = report.findings[0]?.text ?? '';
-      return { status: /Invalid connector manifest/.test(text) ? 'manifest-invalid' : 'unreachable', at, detail: text };
-    }
+  const healthFrom = (report: Awaited<ReturnType<Transport['check']>>, at: string): ConnectorHealth => {
+    // No manifest to check: the transport says whether the service did not answer or served one Clew does not load.
+    if (!report.manifest)
+      return { status: report.failure ?? 'unreachable', at, detail: report.findings[0]?.text ?? '' };
     const failed = report.findings.filter(f => f.level === 'fail');
     if (!failed.length) return { status: 'ok', at };
     // A service that refuses our assertion says so in the protocol's words ('Ogiltigt behörighetsbevis.'), or by not refusing a foreign one.
@@ -181,10 +189,10 @@ export function connectorUsecases(deps: AdminDeps) {
     const field = about?.fields.find(f => f.key === key);
     return about && field ? { entity: about.entity, field } : undefined;
   };
-  /** How many columns each entity kind has on "Alla" across the installation, with this row's capabilities as given. */
-  const columnCounts = async (id: string, capabilities: ConnectorRecord['capabilities']) => {
+  /** How many columns each entity kind has on "Alla" across `rows`, with this row's capabilities as given. */
+  const columnCounts = (rows: ConnectorRecord[], id: string, capabilities: ConnectorRecord['capabilities']) => {
     const counts = new Map<EntityKind, number>();
-    for (const r of await store.list()) {
+    for (const r of rows) {
       const own = r.id === id ? capabilities : r.capabilities,
         m = manifestOf(r);
       for (const name of Object.keys(own)) {
@@ -224,6 +232,7 @@ export function connectorUsecases(deps: AdminDeps) {
       secretChangedAt: row.bundled ? null : row.secretChangedAt,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      version: row.version,
     };
   }
   async function detail(row: ConnectorRecord): Promise<ConnectorDetail> {
@@ -334,14 +343,17 @@ export function connectorUsecases(deps: AdminDeps) {
     });
     return { connector: await detail((await store.read(input.id))!), report: { ok: report.ok, items: report.items } };
   }
-  /** Switches, audience, state and address. Narrowing only; a changed field is one audit row. */
-  async function update(
-    persona: AuthenticatedContext,
-    id: string,
-    patch: ConnectorPatchInput,
-  ): Promise<ConnectorDetail> {
+  /**
+   * Switches, audience, state and address. Narrowing only; a changed field is one audit row. The change is made on the
+   * row as it was read, and written only while it is still that row (DE-M5): its version is compared in the write, and
+   * with the version the page showed when one is sent, so a change saved since by another administrator is refused,
+   * never merged unseen. What spans rows, the shared header and the column count, is decided on rows read in the same
+   * transaction under the store's lock.
+   */
+  async function update(persona: AuthenticatedContext, id: string, patch: ConnectorChange): Promise<ConnectorDetail> {
     const { by, at } = await mutating(persona);
     const row = await must(id);
+    if (patch.version !== undefined && patch.version !== row.version) throw new InputError(CHANGED_SINCE);
     const m = manifestOf(row);
     if (patch.url !== undefined && row.bundled) throw new InputError('En inbyggd anslutning har ingen adress.');
     if (patch.menu)
@@ -402,19 +414,17 @@ export function connectorUsecases(deps: AdminDeps) {
       next.toolsEnabled = patch.toolsEnabled;
       changes.push({ action: 'connector.tools', details: { to: patch.toolsEnabled } });
     }
-    // The shared header (D88) is exclusive: turning it on here takes it from the connector that held it, in the same transaction.
-    let previousHolder: ConnectorRecord | undefined;
+    // The shared header (D88) is exclusive: turning it on here takes it from the connector that held it, found and
+    // released in the same transaction (below).
+    const headerChange = { action: 'connector.header', details: {} as Record<string, unknown> };
     if (patch.header !== undefined && patch.header !== row.header) {
       if (patch.header && !(m?.header?.capability ?? registry.connector(row.id)?.header))
         throw new InputError(
           'Anslutningen kan inte ge sidhuvudet: dess beskrivning pekar inte ut någon förmåga för det.',
         );
       next.header = patch.header;
-      if (patch.header) previousHolder = (await store.list()).find(r => r.header && r.id !== id);
-      changes.push({
-        action: 'connector.header',
-        details: { to: patch.header, ...(previousHolder ? { from: previousHolder.id } : {}) },
-      });
+      headerChange.details.to = patch.header;
+      changes.push(headerChange);
     }
     if (patch.capabilities !== undefined) {
       const merged = { ...row.capabilities };
@@ -473,12 +483,12 @@ export function connectorUsecases(deps: AdminDeps) {
       }
       if (JSON.stringify(merged) !== JSON.stringify(next.capabilities ?? row.capabilities)) next.capabilities = merged;
     }
+    // A field of a read as a column on "Alla" or none (D97 item 4): one audit row per read that changed. At most
+    // ENTITY_COLUMNS_MAX columns for one entity kind across every connector, counted as the header holder is found
+    // (D88): in the transaction, over the rows read under the store's lock, with this one as it will be.
+    const gained = new Set<EntityKind>();
     if (patch.column !== undefined) {
-      // A field of a read as a column on "Alla" or none (D97 item 4): one audit row per read that changed. At most
-      // ENTITY_COLUMNS_MAX columns for one entity kind across every connector, counted as the header holder is found
-      // (D88): over the stored rows, with this one as it will be.
       const merged = { ...(next.capabilities ?? row.capabilities) };
-      const gained = new Set<EntityKind>();
       for (const [name, key] of Object.entries(patch.column)) {
         const from = merged[name]?.column ?? null;
         if (from === key) continue;
@@ -493,14 +503,6 @@ export function connectorUsecases(deps: AdminDeps) {
           action: 'connector.column',
           details: { capability: name, to: key, from, ...(label ? { label } : {}) },
         });
-      }
-      if (gained.size) {
-        const counts = await columnCounts(id, merged);
-        for (const kind of gained)
-          if ((counts.get(kind) ?? 0) > ENTITY_COLUMNS_MAX)
-            throw new InputError(
-              `Högst ${ENTITY_COLUMNS_MAX} kolumner kan visas under Alla för ${kind === 'person' ? 'personer' : 'enheter'}. Ta bort en annan kolumn först.`,
-            );
       }
       if (JSON.stringify(merged) !== JSON.stringify(next.capabilities ?? row.capabilities)) next.capabilities = merged;
     }
@@ -523,30 +525,49 @@ export function connectorUsecases(deps: AdminDeps) {
       if (url !== row.url) {
         next.url = url;
         // An offer is what the old address served (D144): what is approved after the move is what the new one serves.
-        if (row.offered !== null || row.offeredAt !== null) {
-          next.offered = null;
-          next.offeredAt = null;
-        }
+        // Dropped whatever the row read held, since a check records an offer without raising the version: one recorded
+        // between this read and the write is from the old address too.
+        next.offered = null;
+        next.offeredAt = null;
         changes.push({ action: 'connector.url', details: { from: row.url, to: url } });
       }
     }
     if (!changes.length) return detail(row);
-    await store.transaction(async tx => {
-      await tx.update(id, next, by, at);
+    const takesHeader = next.header === true;
+    const released = await store.transaction(async tx => {
+      let holders: string[] = [];
+      if (takesHeader || gained.size) {
+        const rows = await tx.lockedRows();
+        if (gained.size) {
+          const counts = columnCounts(rows, id, next.capabilities ?? row.capabilities);
+          for (const kind of gained)
+            if ((counts.get(kind) ?? 0) > ENTITY_COLUMNS_MAX)
+              throw new InputError(
+                `Högst ${ENTITY_COLUMNS_MAX} kolumner kan visas under Alla för ${kind === 'person' ? 'personer' : 'enheter'}. Ta bort en annan kolumn först.`,
+              );
+        }
+        if (takesHeader) holders = rows.filter(r => r.header && r.id !== id).map(r => r.id);
+      }
+      // The holder gives the header up first: the store holds at most one row to it.
+      for (const holder of holders) await tx.update(holder, { header: false }, by, at);
+      if (holders.length) headerChange.details.from = holders[0];
+      if (!(await tx.update(id, next, by, at, row.version))) throw new InputError(CHANGED_SINCE);
       for (const c of changes)
         await tx.writeAudit({ actor: by, action: c.action, subject: 'connector:' + id, at, details: c.details });
-      if (previousHolder) {
-        await tx.update(previousHolder.id, { header: false }, by, at);
+      for (const holder of holders)
         await tx.writeAudit({
           actor: by,
           action: 'connector.header',
-          subject: 'connector:' + previousHolder.id,
+          subject: 'connector:' + holder,
           at,
           details: { to: false, takenBy: id },
         });
-      }
+      return holders;
     });
-    if (previousHolder) applyLive((await store.read(previousHolder.id))!);
+    for (const holder of released) {
+      const was = await store.read(holder);
+      if (was) applyLive(was);
+    }
     const updated = (await store.read(id))!;
     applyLive(updated);
     return detail(updated);
@@ -571,7 +592,9 @@ export function connectorUsecases(deps: AdminDeps) {
   /**
    * "Testa anslutning": the conformance check against the service. The health is recorded, and a manifest that differs
    * from the approved one is recorded as offered; nothing live changes (D144). `offered` says whether a change waits
-   * for the administrator now, so the page can say so.
+   * for the administrator now, so the page can say so. The result is recorded only on the connector as it was checked:
+   * one that another administrator moved or rekeyed while the service answered keeps nothing of it, and the
+   * administrator is asked to test it again, since the report is about an address or a secret it no longer has.
    */
   async function test(
     persona: AuthenticatedContext,
@@ -591,7 +614,14 @@ export function connectorUsecases(deps: AdminDeps) {
       };
     const report = await transport.check({ ...remote(row), id });
     const health = healthFrom(report, at);
-    await store.recordCheck(id, { health, ...(report.manifest ? { served: report.manifest } : {}), at });
+    const recorded = await store.recordCheck(id, {
+      url: row.url!,
+      secret: row.secret!,
+      health,
+      ...(report.manifest ? { served: report.manifest } : {}),
+      at,
+    });
+    if (!recorded) throw new InputError(CHANGED_WHILE_CHECKED);
     const after = await store.read(id);
     return { ok: report.ok, items: report.items, health, offered: !!after && !!pendingOffer(after) };
   }
@@ -613,7 +643,9 @@ export function connectorUsecases(deps: AdminDeps) {
       const row = await must(id);
       const { url } = remote(row);
       const fetched = await transport.fetchManifest(url, id);
-      await store.recordCheck(id, { served: fetched, at: clock().toISOString() });
+      // An offer only on the row still at the address it was read from: one moved meanwhile is read in again there.
+      if (!(await store.recordCheck(id, { url, served: fetched, at: clock().toISOString() })))
+        throw new InputError(MOVED_WHILE_READ);
       const seen = (await store.read(id))!;
       return { diff: manifestDiff(manifestOf(seen), fetched), connector: await detail(seen) };
     }

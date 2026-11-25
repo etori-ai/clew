@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { approveOffer, nextConnectorOrdinal, recordCheck, recordDescription } from '@clew/db/connectors';
 import type {
@@ -63,11 +63,11 @@ const txOf = (tx: Transaction): ConnectorTx => ({
       .returning({ id: connectors.id });
     return inserted.length > 0;
   },
-  async update(id, patch: ConnectorPatch, by, at) {
-    const [row] = await tx.select({ version: connectors.version }).from(connectors).where(eq(connectors.id, id));
-    if (!row) return false;
+  async update(id, patch: ConnectorPatch, by, at, version) {
     const { secretChangedAt, offeredAt, header, ...rest } = patch;
-    await tx
+    // One statement: the version the change was made on is compared where it is raised (DE-M5). A second holder of the
+    // header is refused by `connector_header_holder_one`.
+    const updated = await tx
       .update(connectors)
       .set({
         ...rest,
@@ -76,10 +76,18 @@ const txOf = (tx: Transaction): ConnectorTx => ({
         ...(offeredAt !== undefined ? { offeredAt: null } : {}),
         updatedBy: by,
         updatedAt: new Date(at),
-        version: row.version + 1,
+        version: sql`${connectors.version} + 1`,
       })
-      .where(eq(connectors.id, id));
-    return true;
+      .where(
+        version === undefined ? eq(connectors.id, id) : and(eq(connectors.id, id), eq(connectors.version, version)),
+      )
+      .returning({ id: connectors.id });
+    return updated.length > 0;
+  },
+  async lockedRows() {
+    // Held to the end of the transaction; a second writer that spans rows waits for it and then reads what this committed.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'clew.connector-administration'}, 0))`);
+    return (await tx.select().from(connectors).orderBy(connectors.id)).map(toRecord);
   },
   approveOffer: (id, offer, manifest, by, at) =>
     approveOffer(tx, id, { at: new Date(offer.at), manifest: offer.manifest }, manifest, by, new Date(at)),
@@ -113,13 +121,14 @@ export function postgresConnectorStore(): ConnectorStore {
       const [row] = await database().select().from(connectors).where(eq(connectors.id, id));
       return row ? toRecord(row) : undefined;
     },
-    async recordCheck(id, { health, served, at }) {
-      await recordCheck(id, {
+    recordCheck: (id, { url, secret, health, served, at }) =>
+      recordCheck(id, {
+        url,
+        ...(secret !== undefined ? { secret } : {}),
         ...(health ? { health } : {}),
         ...(served !== undefined ? { served } : {}),
         at: new Date(at),
-      });
-    },
+      }),
     async recordDescription(id, manifest, at) {
       await recordDescription(id, manifest, new Date(at));
     },

@@ -610,6 +610,13 @@
       "when": 1795449635760,
       "tag": "0086_manifest_offered",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1795484490065,
+      "tag": "0087_connector_header_holder_one",
+      "breakpoints": true
     }
   ]
 }
