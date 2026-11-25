@@ -6,6 +6,33 @@ import { manifest, personRefPattern } from './manifest.mjs';
 
 export { manifest };
 
+/**
+ * The adapter `PHONEBOOK_ADAPTER` names, read before anything is served: `http`, the phone book's API, or `fixture`, the
+ * made-up organisation of directory.mjs, for development and tests only. There is no default: the stand-in answers with
+ * an invented directory under the phone book's name, so a deployment that names no adapter does not start, and neither
+ * does one that names `fixture` beside `PHONEBOOK_URL` or `PHONEBOOK_API_KEY`. Each error names the variable to change;
+ * what `http` needs besides, its adapter checks.
+ */
+export function adapterOf(env) {
+  const set = value => typeof value === 'string' && value.trim() !== '';
+  const adapter = set(env.PHONEBOOK_ADAPTER) ? env.PHONEBOOK_ADAPTER.trim() : '';
+  if (!adapter)
+    throw new Error(
+      'PHONEBOOK_ADAPTER is not set. Set it to "http" to read the phone book (with PHONEBOOK_URL and ' +
+        'PHONEBOOK_API_KEY), or to "fixture" for the made-up organisation in directory.mjs: development and tests only.',
+    );
+  if (adapter !== 'http' && adapter !== 'fixture')
+    throw new Error(`Unknown PHONEBOOK_ADAPTER "${adapter}". Known: http, fixture.`);
+  const given = ['PHONEBOOK_URL', 'PHONEBOOK_API_KEY'].filter(name => set(env[name]));
+  if (adapter === 'fixture' && given.length)
+    throw new Error(
+      `PHONEBOOK_ADAPTER is "fixture" but ${given.join(' and ')} ${given.length > 1 ? 'are' : 'is'} set. The ` +
+        'stand-in reads no phone book and answers with a made-up organisation: set PHONEBOOK_ADAPTER=http to read it, ' +
+        `or remove ${given.join(' and ')} to run the stand-in.`,
+    );
+  return adapter;
+}
+
 const DIRECTORY_LIMIT = 50;
 const SEARCH_LIMIT = 10;
 const personRef = new RegExp(personRefPattern);

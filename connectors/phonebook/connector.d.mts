@@ -16,6 +16,11 @@ export interface Directory {
   person(id: string): Promise<Person | null>;
 }
 export declare const manifest: unknown;
+/**
+ * The adapter `PHONEBOOK_ADAPTER` names. Throws when none is named, the name is unknown, or `fixture` is named beside
+ * `PHONEBOOK_URL` or `PHONEBOOK_API_KEY`.
+ */
+export declare function adapterOf(env: Record<string, string | undefined>): 'http' | 'fixture';
 export declare function createConnector(options?: {
   jwks?: object | (() => Promise<object>);
   secret?: string;

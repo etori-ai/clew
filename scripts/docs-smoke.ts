@@ -64,13 +64,14 @@ const first = result.rows[0]!;
 const person = await registry.run<{ ref: string }>(actor, 'phonebook.person', { ref: first.ref });
 assert.equal(person.ref, first.ref);
 
-// The assertion is bound to the exact body it is sent with and to the capability of the route (D117).
+// The assertion is bound to the exact body it is sent with and to the route, so the capability, it is sent to (D117).
+const team = '/clew/capabilities/phonebook.team';
 const bodyOf = (bodyActor: Actor) => JSON.stringify({ actor: bodyActor, input: {} });
-const bound = (body: string, audience = manifest.id) =>
-  authority.assert(audience, actor, [], [], { body, capability: 'phonebook.team' });
+const bound = (body: string, audience = manifest.id, path = team) =>
+  authority.assert(audience, actor, [], [], { path, body });
 async function callTeam(bearer: string, key: string, body: string) {
   return connector.handle(
-    new Request('http://fixture/clew/capabilities/phonebook.team', {
+    new Request('http://fixture' + team, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${bearer}`, 'x-clew-connector-key': key },
       body,
@@ -96,8 +97,14 @@ assert.deepEqual(await signedForged.json(), honestBody, 'Body identity must not 
 assert.equal((await callTeam(await bound(honestText), 'incorrect-transport-key', honestText)).status, 401);
 assert.equal((await callTeam('forged-token', secret, honestText)).status, 401);
 assert.equal((await callTeam(await bound(honestText, 'another-connector'), secret, honestText)).status, 401);
+// Signed for another route of the same connector, the same body is refused on this one; so is one bound to none.
+assert.equal(
+  (await callTeam(await bound(honestText, manifest.id, '/clew/capabilities/phonebook.directory'), secret, honestText))
+    .status,
+  401,
+);
 assert.equal((await callTeam(await authority.assert(manifest.id, actor), secret, honestText)).status, 401);
 console.log(
-  `Validated ${manifest.id}: ${manifest.capabilities.length} capabilities, signed reads, required-input detail, actor and body binding and credential rejection.`,
+  `Validated ${manifest.id}: ${manifest.capabilities.length} capabilities, signed reads, required-input detail, actor, body and route binding and credential rejection.`,
 );
 console.log('Documentation smoke passed.');

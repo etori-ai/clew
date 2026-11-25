@@ -8,6 +8,35 @@ import { KEYS_MAX, manifest, unitRefPattern } from './manifest.mjs';
 
 export { manifest };
 
+/**
+ * The adapter `QLIK_ADAPTER` names, read before anything is served: `engine`, Qlik's Engine API, or `fixture`, the
+ * made-up statistics of statistics.mjs, for development and tests only. There is no default: without a unit map the
+ * stand-in gives every manager invented sick-leave and economy figures for the units they follow up, under Qlik's name,
+ * so a deployment that names no adapter does not start, and neither does one that names `fixture` beside the engine's
+ * `QLIK_URL`, `QLIK_APP_ID` or `QLIK_TOKEN`. Each error names the variable to change; what `engine` needs besides, its
+ * adapter checks.
+ */
+export function adapterOf(env) {
+  const set = value => typeof value === 'string' && value.trim() !== '';
+  const adapter = set(env.QLIK_ADAPTER) ? env.QLIK_ADAPTER.trim() : '';
+  if (!adapter)
+    throw new Error(
+      'QLIK_ADAPTER is not set. Set it to "engine" to read Qlik (with QLIK_URL, QLIK_APP_ID, QLIK_TOKEN, ' +
+        'QLIK_SICK_LEAVE_CUBE and QLIK_UNIT_MAP), or to "fixture" for the made-up statistics in statistics.mjs: ' +
+        'development and tests only.',
+    );
+  if (adapter !== 'engine' && adapter !== 'fixture')
+    throw new Error(`Unknown QLIK_ADAPTER "${adapter}". Known: engine, fixture.`);
+  const given = ['QLIK_URL', 'QLIK_APP_ID', 'QLIK_TOKEN'].filter(name => set(env[name]));
+  if (adapter === 'fixture' && given.length)
+    throw new Error(
+      `QLIK_ADAPTER is "fixture" but ${given.join(' and ')} ${given.length > 1 ? 'are' : 'is'} set. The stand-in ` +
+        `reads no Qlik and answers with made-up figures: set QLIK_ADAPTER=engine to read it, or remove ` +
+        `${given.join(' and ')} to run the stand-in.`,
+    );
+  return adapter;
+}
+
 const unitRef = new RegExp(unitRefPattern);
 const monthName = new Intl.DateTimeFormat('sv-SE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 const shortMonth = new Intl.DateTimeFormat('sv-SE', { month: 'short', timeZone: 'UTC' });

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { fieldTone, placesOf, type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
-import { createConnector, manifest as qlikManifest } from '../../connectors/qlik/connector.mjs';
+import { adapterOf, createConnector, manifest as qlikManifest } from '../../connectors/qlik/connector.mjs';
 import type { Statistics } from '../../connectors/qlik/connector.mjs';
 import { StatisticsUnavailable, createFixtureStatistics } from '../../connectors/qlik/statistics.mjs';
 import { createQlikStatistics, toRowFromCells, type SocketLike } from '../../connectors/qlik/engine.mjs';
@@ -228,7 +228,8 @@ describe('the qlik connector', () => {
       method: 'POST',
       headers: {
         authorization:
-          'Bearer ' + (await assertionFor('qlik', secret)(hassan, [], { body, capability: 'qlik.sickLeaveByUnit' })),
+          'Bearer ' +
+          (await assertionFor('qlik', secret)(hassan, [], { path: '/clew/capabilities/qlik.sickLeaveByUnit', body })),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },
@@ -290,7 +291,7 @@ describe('the qlik connector', () => {
     const response = await connectorFetch('http://qlik/clew/figure', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(hillevi, [], { body })),
+        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(hillevi, [], { path: '/clew/figure', body })),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },
@@ -623,6 +624,21 @@ const cells = (unit: string, month: Cell, total: number, short: number, long: nu
   { qNum: long },
   { qNum: headcount },
 ];
+
+describe('the adapter (CS-L7)', () => {
+  test('is always named: no default, and the made-up figures never start beside the engine', () => {
+    const engine = { QLIK_URL: 'wss://qlik.example/clew', QLIK_APP_ID: 'app', QLIK_TOKEN: 'token' };
+    expect(adapterOf({ QLIK_ADAPTER: 'engine', ...engine })).toBe('engine');
+    expect(adapterOf({ QLIK_ADAPTER: 'fixture', QLIK_URL: '', QLIK_APP_ID: '', QLIK_TOKEN: '' })).toBe('fixture');
+    expect(() => adapterOf(engine)).toThrow('QLIK_ADAPTER is not set');
+    expect(() => adapterOf({})).toThrow('QLIK_ADAPTER is not set');
+    expect(() => adapterOf({ QLIK_ADAPTER: 'sense' })).toThrow('Unknown QLIK_ADAPTER "sense"');
+    expect(() => adapterOf({ QLIK_ADAPTER: 'fixture', ...engine })).toThrow(
+      'QLIK_ADAPTER is "fixture" but QLIK_URL and QLIK_APP_ID and QLIK_TOKEN are set',
+    );
+    expect(() => adapterOf({ QLIK_ADAPTER: 'fixture', QLIK_TOKEN: 'token' })).toThrow('but QLIK_TOKEN is set');
+  });
+});
 
 describe('the Qlik Engine adapter', () => {
   test('opens the app with the token, asks for one hypercube, pages it and maps fractions to percentages', async () => {

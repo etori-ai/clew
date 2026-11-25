@@ -435,7 +435,9 @@ describe('the Eneo connector', () => {
             'content-type': 'application/json',
             authorization:
               'Bearer ' +
-              (await (await testAuthority()).assert('eneo', actor, [], [], { body, capability: 'eneo.fetch' })),
+              (await (
+                await testAuthority()
+              ).assert('eneo', actor, [], [], { path: '/clew/capabilities/eneo.fetch', body })),
             'x-clew-connector-key': secret,
             'x-clew-delegated-token': token,
           },
@@ -470,7 +472,9 @@ describe('the Eneo connector', () => {
             'content-type': 'application/json',
             authorization:
               'Bearer ' +
-              (await (await testAuthority()).assert('eneo', hassan, [], [], { body, capability: 'eneo.search' })),
+              (await (
+                await testAuthority()
+              ).assert('eneo', hassan, [], [], { path: '/clew/capabilities/eneo.search', body })),
             'x-clew-connector-key': secret,
             'x-clew-delegated-token': 'allowed',
           },
