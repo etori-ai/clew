@@ -75,14 +75,13 @@ export function toThread(
     proposals: proposalRows.filter(p => p.status !== 'superseded').map(toProposal),
   };
 }
-/** Unresolved work: a pushed card that is open, or whose execution has not settled. */
-const unresolved = and(
-  eq(threads.kind, 'pushed'),
-  or(
-    eq(threads.state, 'open'),
-    sql`coalesce(${threads.execution}->>'state' IN ('pending','running','unknown','partial','failed'), false)`,
-  ),
-)!;
+/**
+ * Unresolved work: a pushed card that is open, or whose execution has not settled. Written with its values in the text,
+ * never as parameters, and as the condition of the index `thread_unresolved` is (schema.ts): the planner uses a
+ * partial index only where it sees that the query's condition is the index's, which a parameter hides (DE-L12). In
+ * parentheses of its own, so `not(unresolved)` negates the whole of it.
+ */
+const unresolved = sql`(${threads.kind} = 'pushed' AND (${threads.state} = 'open' OR coalesce(${threads.execution}->>'state' IN ('pending','running','unknown','partial','failed'), false)))`;
 /** Threads with their messages, proposals and timers, in the order of the rows given. */
 async function hydrate(rows: ThreadRow[]): Promise<Thread[]> {
   if (!rows.length) return [];

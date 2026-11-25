@@ -112,6 +112,7 @@ import {
   requirementsOn,
   SOURCE_ID_MAX,
   SOURCE_KEY_MAX,
+  foldedUserName,
   safeText,
   sourceReadError,
   summarise,
@@ -1287,9 +1288,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
       seen: new Set<string>(),
       /** The usable holdings of the people the source's rows may be kept for. */
       matched: [] as ReadHolding[],
-      /** Each key seen, lower case, and the active person it matched, null for nobody. */
+      /** Each key seen, folded (`foldedUserName`), and the active person it matched, null for nobody. */
       keys: new Map<string, PersonRef | null>(),
-      /** The keys, lower case, a row has answered for, and those a second row answered for: one person, two accounts. */
+      /** The keys, folded, a row has answered for, and those a second row answered for: one person, two accounts. */
       answered: new Set<string>(),
       twice: new Set<string>(),
       /** The people matched, and whether the source's rows may be kept for them. */
@@ -1314,12 +1315,12 @@ export function competenceUsecases(deps: CompetenceDeps) {
       // A key Postgres cannot hold or compare (a control character, a lone surrogate) is no key: its holdings are unusable.
       const keyOf = (row: SourceHoldingsRow) =>
         typeof row?.key === 'string' && row.key.length >= 1 && row.key.length <= SOURCE_KEY_MAX && safeText(row.key)
-          ? row.key.toLowerCase()
+          ? foldedUserName(row.key)
           : '';
       const fresh = [...new Set(rows.map(keyOf).filter(k => k && !got.keys.has(k)))];
       if (fresh.length) {
         const people = await deps.store.transaction(tx => tx.activeByUserName(fresh));
-        const byName = new Map(people.flatMap(p => (p.userName ? [[p.userName.toLowerCase(), p] as const] : [])));
+        const byName = new Map(people.flatMap(p => (p.userName ? [[foldedUserName(p.userName), p] as const] : [])));
         for (const k of fresh) got.keys.set(k, byName.get(k) ?? null);
         const newcomers = people.filter(p => !got.admitted.has(p.id));
         const inside = await admitted(newcomers.map(p => p.id));

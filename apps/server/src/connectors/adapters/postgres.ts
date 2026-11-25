@@ -1,6 +1,7 @@
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { approveOffer, nextConnectorOrdinal, recordCheck, recordDescription } from '@clew/db/connectors';
+import { forgetCompetenceSource } from '@clew/db/competence';
 import type {
   ConnectorPatch,
   ConnectorRecord,
@@ -92,7 +93,12 @@ const txOf = (tx: Transaction): ConnectorTx => ({
   approveOffer: (id, offer, manifest, by, at) =>
     approveOffer(tx, id, { at: new Date(offer.at), manifest: offer.manifest }, manifest, by, new Date(at)),
   async remove(id) {
+    // What the competence register copied from the connector goes with its row (D108 item 9), counted as it goes (DE-L4),
+    // in the lock order an operator's forgetting of the source shares (`@clew/db/competence`); then the row, whose
+    // cascade finds nothing of them left.
+    const copied = await forgetCompetenceSource(tx, id);
     await tx.delete(connectors).where(eq(connectors.id, id));
+    return copied;
   },
   async dismissOpenThreadsOf(connectorId, at) {
     const rows = await tx

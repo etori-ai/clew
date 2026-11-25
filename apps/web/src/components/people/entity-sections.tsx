@@ -511,8 +511,7 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
  * of its own beside it: the reader's settings open from the person on the band alone (D39, amended 2026-11-23). None
  * of them asks the assistant: the frame's "Fråga AI" does, after the menu on the title's line (D138 item 1). Every one
  * opens the action dialog, and nothing is created before its last button, after which its work item opens
- * (`entity-actions.ts`); a dialog that closes gives the focus back to the menu's button. A source's refusal is said
- * aloud and stands under the menu until the next action. They hold what can be done about the thing, never a choice of
+ * (`entity-actions.ts`); a dialog that closes gives the focus back to the menu's button. The dialog says a source's refusal once, on the field it concerns. They hold what can be done about the thing, never a choice of
  * where Clew shows it, and never a way into a source's page, which is a link in its section.
  */
 export function EntityActions({
@@ -524,11 +523,10 @@ export function EntityActions({
   actions: readonly SubjectAction[];
   mobile: boolean;
 }) {
-  const { start, error, dialog } = useEntityAction();
+  const { start, dialog } = useEntityAction();
   const { name } = subject;
-  const refusal = error ? <Text as="p">{error}</Text> : null;
   // Nothing to act on: no empty group under the name.
-  if (!actions.length && !refusal) return dialog;
+  if (!actions.length) return dialog;
   const menu = actions.length > 0 && (
     <DropdownMenu
       renderTrigger={trigger => (
@@ -545,7 +543,6 @@ export function EntityActions({
       items={actionMenuItems(actions, a => start(a, subject))}
     />
   );
-  // One shape with or without a refusal, so the menu's button keeps the focus when the refusal appears.
   return (
     <VStack gap={2} {...(mobile ? {} : { hAlign: 'end' as const })}>
       {mobile ? (
@@ -555,7 +552,6 @@ export function EntityActions({
           {menu}
         </HStack>
       )}
-      {refusal}
       {dialog}
     </VStack>
   );

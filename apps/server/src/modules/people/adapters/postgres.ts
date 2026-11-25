@@ -101,8 +101,10 @@ const groupColumns = {
 /**
  * D99: a node of the tree is a `unit:` group; the unit id is what follows the key (`unitGroupOf`). The rows this
  * selects are read with `nodesOf`: a unit key written wrong, which a group stored before D96 may carry, names no unit.
+ * The prefix is in the text, never a parameter, so the planner reads it as a range of `auth_group_organisation_key`
+ * (DE-L12).
  */
-const isUnitGroup = like(schema.groups.externalId, UNIT_KEY + '%');
+const isUnitGroup = sql`${schema.groups.externalId} like ${sql.raw(`'${UNIT_KEY}%'`)}`;
 const nodesOf = <R extends { externalId: string | null }>(rows: readonly R[]) =>
   rows.flatMap(row => {
     const id = unitGroupOf(row.externalId);

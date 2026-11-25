@@ -62,6 +62,17 @@ migrations in `dbos.dbos_migrations` as it completes it. So if `DBOS.migrate` fa
 the `dbos` schema stops after the last DBOS migration that completed. Rerunning `bun run db:init` is safe in either
 case: Drizzle runs only what it has not recorded, and `DBOS.migrate` resumes after the last version it recorded.
 
+Drizzle runs only the migrations newer than the newest it has recorded, so a migration whose journal time is earlier
+than one already applied is never run: two branches taking turns on one database leave it so. Before it migrates
+anything, `bun run db:init` looks for every migration of the journal at or below the newest one recorded among those
+`drizzle.__drizzle_migrations` records (by the journal's `when`, which Drizzle stores as `created_at`; `migrationGaps`
+in `packages/db/src/migrations.ts`). A database that lacks one is refused: the script names each missing migration,
+exits with status 1 and migrates nothing, neither Clew's later migrations, which might depend on the missing one, nor
+the durable engine. Recreate the database, or apply the missing migration's SQL by hand and record it in
+`drizzle.__drizzle_migrations` with its `when` as `created_at`; then run `bun run db:init` again. A recorded migration
+that the journal does not have, another branch's on a database branches share, is not refused: the script names each
+by its `created_at` in a warning and goes on.
+
 Migration 0053 ([D114](../decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md)) moves each
 person's `work_phone` and `mobile_phone` into `phone_numbers`, the work number first, and drops the two columns. Before
 its fix it could not upgrade a database at 0052 in which anyone held a number: `bun run db:init` failed with
@@ -73,28 +84,27 @@ the hash it recorded for 0053 (the row with `created_at` 1794478229566 holds `c1
 `4df0588b8e09…`) and nothing runs again. `tests/db/person-directory-upgrade.test.ts` checks both: the upgrade from 0052
 with numbers, and that a database which applied the old file runs nothing again.
 
-For maintainers writing a migration: these 14 tables carry change-signal constraint triggers that are `DEFERRABLE
-INITIALLY DEFERRED`:
+For maintainers writing a migration: the change signals (D46) are constraint triggers that are `DEFERRABLE INITIALLY
+DEFERRED`, one on every table the browser draws: `changeSignals` in `packages/db/src/schema.ts` lists the 47 of them,
+on 44 tables, with each one's function and arguments, and `unsignalledTables` beside it lists every other table and
+why it has none (0089 brought the list to this, DE-L10, and 0090 added the model menu's). An installation counter
+that a signal moves is a sequence, `content_change_` and the counter's id with underscores (0090), so a migration that
+adds a counter creates its sequence and names it in `SHARED_CONTENT` of `apps/server/src/shared-content.ts`. `tests/db/postgres-changes.test.ts` holds the database to both
+lists, so a migration that adds a table classifies it, and one that recreates a table makes its trigger again.
 
-- `thread`, `execution`, `auth_person`, `auth_access_grant` and `connector` (0019);
-- `timer_intent` (0021);
-- `refresh_request`, `attention_delivery` and `followup_policy` (0025);
-- `talk` and `talk_commitment` (0043);
-- `dialogue_activity` and `dialogue_assessment` (0054), and `dialogue_note` (0055).
-
-A migration that writes any of them, directly or through `ON DELETE CASCADE` or `SET NULL`, runs
+A migration that writes any of those tables, directly or through `ON DELETE CASCADE` or `SET NULL`, runs
 `SET CONSTRAINTS ALL IMMEDIATE` as its first statement, which also fires anything an earlier migration of the same run
 left pending, and `SET CONSTRAINTS ALL DEFERRED` after its last write. Without that, an `ALTER TABLE`, `CREATE INDEX`,
 `DROP TABLE` or `TRUNCATE` of that table, or dropping a foreign key that references it, fails with 55006 later in the
 same run, in that migration or a later one. `CREATE TRIGGER`, `DROP INDEX` and adding a foreign key that references
 such a table are not affected. A write that matches no row queues nothing, so only an upgrade with rows shows the
-failure: give the migration an upgrade test in `tests/db` ([testing](../architecture/testing.md)). 0032, 0053, 0056 and
-0085 follow this rule. 0030 guards only its `ALTER` of `thread`: its writes come after its own `SET CONSTRAINTS ALL
-DEFERRED`, and 0031's `DELETE` from `connector` has no guard; the events of both stay pending until 0032's
+failure: give the migration an upgrade test in `tests/db` ([testing](../architecture/testing.md)). 0032, 0053, 0056,
+0085, 0089 and 0090 follow this rule. 0030 guards only its `ALTER` of `thread`: its writes come after its own
+`SET CONSTRAINTS ALL DEFERRED`, and 0031's `DELETE` from `connector` has no guard; the events of both stay pending until 0032's
 `SET CONSTRAINTS ALL IMMEDIATE` fires them, before its `ALTER` of `connector`. 0040's guard wraps only `ALTER`s of
 `auth_person` and is a precaution, since no migration before it leaves events pending there. The closing
 `SET CONSTRAINTS ALL DEFERRED` returns the rest of the run to each constraint's own mode only because every deferrable
-constraint is `INITIALLY DEFERRED`: `pg_constraint` lists exactly these 14 triggers as deferrable, in every schema
+constraint is `INITIALLY DEFERRED`: `pg_constraint` lists exactly these 47 triggers as deferrable, in every schema
 including `dbos`. A migration that adds a `DEFERRABLE INITIALLY IMMEDIATE` constraint names the constraints it sets
 instead of using `ALL`.
 
@@ -119,6 +129,32 @@ For each result, ask the directory owner which distinct account name belongs to 
 Correct the source and apply the approved name to the existing SCIM resource by its Clew id. Repeat the preflight,
 then run `bun run db:init`. Migration 0060 checks again under its lock. A collision raises SQLSTATE 23505 and rolls
 back the pending migrations. The same repair and retry apply after that refusal.
+
+### Upgrading the names of boarding layers and competence types
+
+Migration 0089 folds the names of boarding layers and of active competence types by ICU (DE-L8). The indexes before it
+folded with the database's own `lower`, which on a database created with the locale C folds only A to Z, so such a
+database may hold two names that differ only in Å, Ä or Ö case. Run this preflight before upgrading such a database
+past 0088:
+
+```sql
+SELECT 'boarding_layer' AS "table", organisation_id, event, array_agg(name ORDER BY name) AS names
+FROM boarding_layer
+GROUP BY organisation_id, event, lower(name COLLATE "und-x-icu")
+HAVING count(*) > 1
+UNION ALL
+SELECT 'competence_type', organisation_id, NULL, array_agg(name ORDER BY name)
+FROM competence_type
+WHERE archived_at IS NULL
+GROUP BY organisation_id, lower(name COLLATE "und-x-icu")
+HAVING count(*) > 1;
+```
+
+For each result, rename one layer of the pair on Administration › Introduktion, or rename or merge one type on
+Administration › Kompetens, then run `bun run db:init`. Migration 0089 looks for the same pairs before each index and
+renames nothing: a pair it finds raises SQLSTATE 23505 with a message that names the table, the organisation and the
+names, and rolls back the pending migrations. The same repair and retry apply after that refusal
+(`tests/db/name-index-upgrade.test.ts`).
 
 ## The ledger queue
 
