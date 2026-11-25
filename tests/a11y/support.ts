@@ -1146,17 +1146,22 @@ export class MockApi {
           fields: [],
           same: false,
         };
-        // As the server answers (D144): reading in stores the offer the page reviews; approving it clears it.
+        // As the server answers (D144): reading in stores the offer the page reviews, without a new version; approving
+        // it clears it and makes the approved manifest a new version of the connector.
         const apply = !!(request.postDataJSON() as { apply?: boolean } | null)?.apply;
-        return json({ diff, connector: { ...connectorDetail(c), offered: apply ? null : { at: NOW, diff } } });
+        const now = apply ? { ...c, updatedAt: NOW, version: c.version + 1 } : c;
+        if (apply) this.connectors = this.connectors.map(x => (x.id === cid ? now : x));
+        return json({ diff, connector: { ...connectorDetail(now), offered: apply ? null : { at: NOW, diff } } });
       }
       if (path === `/admin/connectors/${cid}/preview`)
         return json(connectorPreview(url.searchParams.get('role') === 'employee' ? 'employee' : 'manager'));
       if (path === `/admin/connectors/${cid}/secret`) {
         const c = found();
-        return c
-          ? json(connectorDetail({ ...c, secretChangedAt: NOW }))
-          : route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } });
+        if (!c) return route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } });
+        // A new key is a change of the connector, so a page that showed it before is refused after it (DE-M5).
+        const next = { ...c, secretChangedAt: NOW, updatedAt: NOW, version: c.version + 1 };
+        this.connectors = this.connectors.map(x => (x.id === cid ? next : x));
+        return json(connectorDetail(next));
       }
       if (path === `/admin/connectors/${cid}`) {
         const c = found();
@@ -1166,7 +1171,40 @@ export class MockApi {
           return json({ closedCards: 1 });
         }
         if (method === 'PATCH') {
-          const patch = request.postDataJSON() as Partial<ConnectorSummary>;
+          const patch = request.postDataJSON() as Partial<ConnectorSummary> & {
+            capabilities?: unknown;
+            lens?: unknown;
+            column?: unknown;
+            menu?: Record<string, boolean>;
+            figures?: Record<string, boolean>;
+          };
+          // The server takes no change without the version the page showed (`ConnectorPatchInput`), and refuses one
+          // made on a version saved since (DE-M5), before it looks at what the change is.
+          if (typeof patch.version !== 'number')
+            return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
+          if (patch.version !== c.version)
+            return route.fulfill({
+              status: 400,
+              json: { error: 'Anslutningen har ändrats sedan du öppnade den. Se över den och gör ändringen igen.' },
+            });
+          let menuOn = this.menuOn,
+            figuresOff = this.figuresOff;
+          for (const [name, on] of Object.entries(patch.menu ?? {}))
+            menuOn = on ? [...new Set([...menuOn, name])] : menuOn.filter(n => n !== name);
+          for (const [area, on] of Object.entries(patch.figures ?? {}))
+            figuresOff = on ? figuresOff.filter(a => a !== area) : [...new Set([...figuresOff, area])];
+          const differs = (key: 'state' | 'scanEnabled' | 'toolsEnabled' | 'header' | 'url') =>
+            key in patch && patch[key] !== c[key];
+          // A change that changes nothing writes nothing, so the version stays, as the server answers it.
+          const changed =
+            (['state', 'scanEnabled', 'toolsEnabled', 'header', 'url'] as const).some(differs) ||
+            ('audience' in patch && JSON.stringify(patch.audience) !== JSON.stringify(c.audience)) ||
+            'capabilities' in patch ||
+            'lens' in patch ||
+            'column' in patch ||
+            JSON.stringify([...menuOn].sort()) !== JSON.stringify([...this.menuOn].sort()) ||
+            JSON.stringify([...figuresOff].sort()) !== JSON.stringify([...this.figuresOff].sort());
+          if (!changed) return json(connectorDetail(c, this.menuOn, this.figuresOff));
           const next = {
             ...c,
             ...('state' in patch ? { state: patch.state! } : {}),
@@ -1174,17 +1212,17 @@ export class MockApi {
             ...('scanEnabled' in patch ? { scanEnabled: patch.scanEnabled! } : {}),
             ...('toolsEnabled' in patch ? { toolsEnabled: patch.toolsEnabled! } : {}),
             ...('header' in patch ? { header: patch.header! } : {}),
+            ...('url' in patch ? { url: patch.url! } : {}),
             updatedAt: NOW,
+            version: c.version + 1,
           };
           // The header is exclusive (D88): the new holder takes it from the previous one.
           if ('header' in patch && patch.header)
-            this.connectors = this.connectors.map(x => (x.id === cid ? x : { ...x, header: false }));
-          if ('menu' in patch)
-            for (const [name, on] of Object.entries((patch as { menu: Record<string, boolean> }).menu))
-              this.menuOn = on ? [...new Set([...this.menuOn, name])] : this.menuOn.filter(n => n !== name);
-          if ('figures' in patch)
-            for (const [area, on] of Object.entries((patch as { figures: Record<string, boolean> }).figures))
-              this.figuresOff = on ? this.figuresOff.filter(a => a !== area) : [...new Set([...this.figuresOff, area])];
+            this.connectors = this.connectors.map(x =>
+              x.id === cid || !x.header ? x : { ...x, header: false, version: x.version + 1 },
+            );
+          this.menuOn = menuOn;
+          this.figuresOff = figuresOff;
           this.connectors = this.connectors.map(x => (x.id === cid ? next : x));
           return json(connectorDetail(next, this.menuOn, this.figuresOff));
         }

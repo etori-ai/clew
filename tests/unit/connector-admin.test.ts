@@ -4,12 +4,18 @@ import { SignJWT } from 'jose';
 import { assertionFor, testJwks } from '../connector-authority';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { audiencedActorOf, type Actor, type Connector } from '../../packages/connectors/src/index';
-import { checkConnector } from '../../packages/connectors/src/check';
-import { fetchManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
+import { remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import type { ConnectorManifest } from '../../packages/connectors/src/protocol';
 import { createConnector } from '../../connectors/hello/connector.mjs';
 import { memoryConnectorStore } from '../../apps/server/src/connectors/adapters/memory';
-import { connectorUsecases, type AdminDeps } from '../../apps/server/src/connectors/usecases/admin';
+import { serviceTransport } from '../../apps/server/src/connectors/adapters/transport';
+import {
+  CHANGED_SINCE,
+  CHANGED_WHILE_CHECKED,
+  MOVED_WHILE_READ,
+  connectorUsecases,
+  type AdminDeps,
+} from '../../apps/server/src/connectors/usecases/admin';
 import { describeBundled } from '../../apps/server/src/connectors/describe';
 import {
   applyAllRows,
@@ -40,6 +46,8 @@ const persona = (id: string, role: 'manager' | 'employee', capabilities: string[
   },
 });
 const mikael = persona('mikael', 'employee', ['admin.connectors']),
+  /** A second administrator, whose change lands while Mikael's is under way. */
+  anna = persona('anna', 'employee', ['admin.connectors']),
   hassan = persona('hassan', 'employee'),
   hillevi = persona('hillevi', 'manager');
 const SECRET = 'test-secret-test-secret';
@@ -60,7 +68,7 @@ const serving = (transport: AdminDeps['transport'], change: (m: ConnectorManifes
  * offer, the only way an approved manifest changes.
  */
 const approvedElsewhere = async (store: ReturnType<typeof memoryConnectorStore>, id: string, manifest: unknown) => {
-  await store.recordCheck(id, { served: manifest, at: T0 });
+  await store.recordCheck(id, { url: (await store.read(id))!.url!, served: manifest, at: T0 });
   const row = (await store.read(id))!;
   expect(
     await store.transaction(tx =>
@@ -129,10 +137,32 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     clewUrl: 'http://clew',
     fetch: async () => Response.json({ output: { events: [] } }),
   });
+  /**
+   * Whether the hello service answers, and how: `failure` is what fetch throws when it does not (under Node, "fetch
+   * failed" with the network's or the TLS library's code on its cause), `status` an error status its manifest answers
+   * with, and `serve` what it serves in place of its own manifest at each read, else `manifest` at every read.
+   */
+  const service = {
+    up: options.helloUp !== false,
+    failure: () =>
+      new TypeError('fetch failed', {
+        cause: Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:4010'), { code: 'ECONNREFUSED' }),
+      }),
+    status: undefined as number | undefined,
+    manifest: undefined as unknown,
+    serve: undefined as (() => unknown) | undefined,
+  };
   const helloFetch: FetchLike = async (input, init) => {
-    if (options.helloUp === false) throw new Error('ECONNREFUSED');
+    if (!service.up) throw service.failure();
+    if (input.endsWith('/clew/manifest')) {
+      if (service.status) return new Response('Service Unavailable', { status: service.status });
+      const served = service.serve ? service.serve() : service.manifest;
+      if (served !== undefined) return Response.json(served);
+    }
     return hello.handle(new Request(input, init));
   };
+  /** What the transport said through the connectors' log port (D91). */
+  const logged: Array<{ message: string; details: unknown[] }> = [];
   const live = {
     registered: [] as string[],
     register(source: { id: string; url: string; secret: string }, manifest: ConnectorManifest) {
@@ -159,18 +189,13 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     units: { list: async () => [{ id: 'unit-skola', label: 'Bergsåkers skola' }] },
     groups: { list: async () => [{ id: 'S-1-5-21-it-staff', label: 'IT staff' }] },
     secrets: { seal: (v, id) => `sealed(${id}):${v}`, open: (s, id) => s.replace(`sealed(${id}):`, '') },
-    transport: {
-      fetchManifest: (url, id) => fetchManifest(url, id, helloFetch),
-      check: ({ url, id, secret }) =>
-        checkConnector({
-          url,
-          id,
-          key: secret,
-          assert: sign(SECRET, id),
-          assertForeign: sign('another-secret-another', id),
-          fetch: helloFetch,
-        }),
-    },
+    // The server's own transport (CB-9), with test keys and the in-process service.
+    transport: serviceTransport({
+      assert: id => sign(SECRET, id),
+      assertForeign: id => sign('another-secret-another', id),
+      fetch: helloFetch,
+      log: (message, ...details) => logged.push({ message, details }),
+    }),
   };
   const admin = connectorUsecases(deps);
   const reconcile: ReconcileDeps = {
@@ -189,6 +214,8 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     admin,
     clock,
     live,
+    service,
+    logged,
     transport: deps.transport,
     reconcile,
     advance: (ms: number) => {
@@ -305,6 +332,138 @@ describe('adding and governing a remote connector', () => {
     // Enabling approves no manifest (D144): a draft with none is read in and approved first.
     await expect(admin.update(mikael, 'hello', { state: 'enabled' })).rejects.toThrow('ingen godkänd beskrivning');
   });
+  test('testing a service that stopped answering records unreachable, and one serving a manifest Clew does not load records manifest-invalid (CB-9)', async () => {
+    const { admin, store, service } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    service.up = false;
+    const down = await admin.test(mikael, 'hello');
+    expect(down.ok).toBe(false);
+    expect(down.health).toEqual({ status: 'unreachable', at: T0, detail: 'manifest: fetch failed (ECONNREFUSED)' });
+    expect((await store.read('hello'))!.health.status).toBe('unreachable');
+    service.up = true;
+    service.manifest = { protocol: 1, id: 'hello' };
+    const invalid = await admin.test(mikael, 'hello');
+    expect(invalid.ok).toBe(false);
+    expect(invalid.health).toMatchObject({
+      status: 'manifest-invalid',
+      detail: expect.stringContaining('Invalid connector manifest'),
+    });
+    expect((await store.read('hello'))!.health.status).toBe('manifest-invalid');
+    // The approved manifest stays as it was, and so does the connector's state.
+    expect((await store.read('hello'))!.manifest).toMatchObject({ id: 'hello', source: 'Hello' });
+    service.manifest = undefined;
+    expect((await admin.test(mikael, 'hello')).health.status).toBe('ok');
+  });
+  test("a failure to connect tells the administrator its cause's code and never what the other end said; the log says the rest (CB-9)", async () => {
+    const { admin, store, service, logged } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    expect(logged).toEqual([]);
+    service.up = false;
+    // Under Node a certificate that does not hold, a name that does not resolve and a refused connection are all
+    // "fetch failed"; the cause's code tells them apart, and its message is the other end's business.
+    for (const [code, said] of [
+      ['CERT_HAS_EXPIRED', 'certificate has expired; hello.kommunen.se says: call the help desk'],
+      ['ENOTFOUND', 'getaddrinfo ENOTFOUND hello.kommunen.se'],
+    ] as const) {
+      service.failure = () => new TypeError('fetch failed', { cause: Object.assign(new Error(said), { code }) });
+      const report = await admin.test(mikael, 'hello');
+      const detail = `fetch failed (${code})`;
+      expect(report.health).toEqual({ status: 'unreachable', at: T0, detail: 'manifest: ' + detail });
+      expect(report.items).toEqual([
+        { level: 'fail', group: 'connection', label: 'Systemets beskrivning kunde inte hämtas', description: detail },
+      ]);
+      expect(JSON.stringify([report, await store.read('hello')])).not.toContain('kommunen.se');
+      // The people who run Clew read what the error and its cause say, through the connectors' log port (D91).
+      expect(logged.at(-1)).toEqual({
+        message: 'A connector check could not read the manifest',
+        details: [
+          {
+            connector: 'hello',
+            url: 'http://hello',
+            health: 'unreachable',
+            failure: { name: 'TypeError', code, message: 'fetch failed', cause: said },
+          },
+        ],
+      });
+    }
+  });
+  test('a manifest that answers an error status is unreachable, and says the status (CB-9)', async () => {
+    const { admin, store, service } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    service.status = 503;
+    const report = await admin.test(mikael, 'hello');
+    expect(report.health).toEqual({
+      status: 'unreachable',
+      at: T0,
+      detail: 'manifest: GET http://hello/clew/manifest answered 503.',
+    });
+    expect((await store.read('hello'))!.health.status).toBe('unreachable');
+  });
+  test("a manifest Clew does not load at the check's own read, after the first read found one it loads, is manifest-invalid (CB-9)", async () => {
+    const { admin, store, service, logged } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    // The service is redeployed between the transport's read and the check's.
+    let reads = 0;
+    service.serve = () => (++reads === 2 ? { protocol: 1, id: 'hello' } : undefined);
+    const report = await admin.test(mikael, 'hello');
+    expect(reads).toBe(2);
+    expect(report.health).toMatchObject({
+      status: 'manifest-invalid',
+      detail: expect.stringContaining('Invalid connector manifest'),
+    });
+    expect((await store.read('hello'))!.health.status).toBe('manifest-invalid');
+    expect(logged.at(-1)).toMatchObject({
+      details: [
+        {
+          connector: 'hello',
+          health: 'manifest-invalid',
+          finding: expect.stringContaining('Invalid connector manifest'),
+        },
+      ],
+    });
+  });
+  test('adding a service that serves a manifest Clew does not load stores its draft, recorded as manifest-invalid (CB-9)', async () => {
+    const { admin, store, service } = world();
+    service.manifest = { protocol: 1, id: 'hello' };
+    const { connector, report } = await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    expect(report.ok).toBe(false);
+    expect(connector).toMatchObject({ state: 'draft', health: { status: 'manifest-invalid' } });
+    expect(store.audit).toEqual([
+      expect.objectContaining({
+        action: 'connector.added',
+        details: expect.objectContaining({ capabilities: 0, health: 'manifest-invalid' }),
+      }),
+    ]);
+  });
+  test('each switch, the address and a step back to draft is its own audit row with what changed (CB-10)', async () => {
+    const { admin, store, registry } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    await admin.update(mikael, 'hello', { state: 'enabled' });
+    const n = store.audit.length;
+    await admin.update(mikael, 'hello', {
+      scanEnabled: false,
+      toolsEnabled: false,
+      capabilities: { 'hello.greeting': { model: false } },
+    });
+    await admin.update(mikael, 'hello', { url: 'http://hello-2/' });
+    const back = await admin.update(mikael, 'hello', { state: 'draft' });
+    expect(back).toMatchObject({ state: 'draft', registered: false, url: 'http://hello-2' });
+    expect(registry.connector('hello')).toBeUndefined();
+    const row = (action: string, details: Record<string, unknown>) => ({
+      actor: 'person:mikael',
+      action,
+      subject: 'connector:hello',
+      at: T0,
+      details,
+    });
+    expect(store.audit.slice(n)).toEqual([
+      row('connector.scan', { to: false }),
+      row('connector.tools', { to: false }),
+      row('connector.capability', { to: { 'hello.greeting': { model: false } } }),
+      row('connector.url', { from: 'http://hello', to: 'http://hello-2' }),
+      row('connector.draft', { from: 'enabled' }),
+    ]);
+  });
   test('enabling registers the connector live; the audience hides it from Hassan while Hillevi sees it; disabling hides it from both', async () => {
     const { admin, store, registry, live } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
@@ -413,6 +572,114 @@ describe('adding and governing a remote connector', () => {
     await approveServed(admin, 'hello');
     expect(live.registered.length).toBe(before + 1);
     expect(registry.governance('hello').state).toBe('enabled');
+  });
+});
+
+describe('a change is made on the connector as the administrator saw it (DE-M5)', () => {
+  test('a change sent with a version saved over since is refused and writes nothing; sent with the current one it goes through', async () => {
+    const { admin, store } = world();
+    const { connector } = await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    expect(connector.version).toBe(1);
+    // Another administrator enables it after this page was read.
+    expect((await admin.update(mikael, 'hello', { state: 'enabled', version: 1 })).version).toBe(2);
+    const before = await store.read('hello'),
+      audited = store.audit.length;
+    await expect(admin.update(mikael, 'hello', { scanEnabled: false, version: 1 })).rejects.toThrow(CHANGED_SINCE);
+    expect(await store.read('hello')).toEqual(before);
+    expect(store.audit).toHaveLength(audited);
+    expect(await admin.update(mikael, 'hello', { scanEnabled: false, version: 2 })).toMatchObject({
+      state: 'enabled',
+      scanEnabled: false,
+      version: 3,
+    });
+  });
+  test('a change saved between the read and the write is refused, not merged with it', async () => {
+    const { admin, store } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    // Another administrator's change lands after this one has read the row and before its transaction begins.
+    const transaction = store.transaction;
+    let raced = false;
+    store.transaction = (async fn => {
+      if (!raced) {
+        raced = true;
+        await transaction(tx => tx.update('hello', { toolsEnabled: false }, 'person:other', T0));
+      }
+      return transaction(fn);
+    }) as typeof store.transaction;
+    await expect(admin.update(mikael, 'hello', { scanEnabled: false })).rejects.toThrow(CHANGED_SINCE);
+    expect(await store.read('hello')).toMatchObject({ toolsEnabled: false, scanEnabled: true, version: 2 });
+    expect(actions(store, 'hello')).toEqual(['connector.added']);
+  });
+  test('a check of a connector another administrator moves while the service answers records nothing, and is asked for again', async () => {
+    const { admin, store, transport, advance } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const before = (await store.read('hello'))!;
+    advance(60_000);
+    // The old address serves another manifest; Anna moves the connector while it answers Mikael's check.
+    serving(transport, m => ({ ...m, source: 'Hello på den gamla adressen' }));
+    const check = transport.check;
+    transport.check = async input => {
+      const report = await check(input);
+      await admin.update(anna, 'hello', { url: 'http://hello-2' });
+      return report;
+    };
+    await expect(admin.test(mikael, 'hello')).rejects.toThrow(CHANGED_WHILE_CHECKED);
+    // Neither the old address's health nor its manifest is on the row: nothing of it can be approved at the new one.
+    expect(await store.read('hello')).toMatchObject({
+      url: 'http://hello-2',
+      health: before.health,
+      offered: null,
+      offeredAt: null,
+      manifest: before.manifest,
+    });
+    expect((await admin.read(mikael, 'hello')).offered).toBeNull();
+    expect(actions(store, 'hello')).toEqual(['connector.added', 'connector.url']);
+  });
+  test('a check of a connector another administrator rekeys while the service answers records nothing either', async () => {
+    const { admin, store, transport, advance } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const before = (await store.read('hello'))!;
+    advance(60_000);
+    const check = transport.check;
+    transport.check = async input => {
+      const report = await check(input);
+      await admin.rotateSecret(anna, 'hello', { secret: 'a-brand-new-secret-value' });
+      return report;
+    };
+    await expect(admin.test(mikael, 'hello')).rejects.toThrow(CHANGED_WHILE_CHECKED);
+    expect((await store.read('hello'))!.health).toEqual(before.health);
+  });
+  test('"Läs in igen" of a connector moved while the service answers offers nothing of what the old address served', async () => {
+    const { admin, store, transport } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const fetchManifest = transport.fetchManifest;
+    transport.fetchManifest = async (url, id) => {
+      const served = await fetchManifest(url, id);
+      await admin.update(anna, 'hello', { url: 'http://hello-2' });
+      return { ...served, source: 'Hello på den gamla adressen' };
+    };
+    await expect(admin.refreshManifest(mikael, 'hello', {})).rejects.toThrow(MOVED_WHILE_READ);
+    expect(await store.read('hello')).toMatchObject({ url: 'http://hello-2', offered: null, offeredAt: null });
+  });
+  test('a new address drops an offer a check recorded after the move was read, which the row read did not hold', async () => {
+    const { admin, store } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const approved = (await store.read('hello'))!.manifest as ConnectorManifest;
+    // A check of the old address records an offer between the move's read and its write; it raises no version.
+    const transaction = store.transaction;
+    store.transaction = (async (fn: Parameters<typeof transaction>[0]) => {
+      store.transaction = transaction;
+      expect(
+        await store.recordCheck('hello', {
+          url: 'http://hello',
+          served: { ...approved, source: 'Hello på den gamla adressen' },
+          at: T0,
+        }),
+      ).toBe(true);
+      return transaction(fn);
+    }) as typeof transaction;
+    await admin.update(mikael, 'hello', { url: 'http://hello-2' });
+    expect(await store.read('hello')).toMatchObject({ url: 'http://hello-2', offered: null, offeredAt: null });
   });
 });
 
@@ -602,7 +869,11 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
     const transaction = store.transaction;
     store.transaction = (async (fn: Parameters<typeof transaction>[0]) => {
       store.transaction = transaction;
-      await store.recordCheck('hello', { served: { ...approved, source: 'Hello 3' }, at: '2026-11-04T07:02:00.000Z' });
+      await store.recordCheck('hello', {
+        url: 'http://hello',
+        served: { ...approved, source: 'Hello 3' },
+        at: '2026-11-04T07:02:00.000Z',
+      });
       return transaction(fn);
     }) as typeof transaction;
     await expect(admin.refreshManifest(mikael, 'hello', { apply: true, offered: shown })).rejects.toThrow(
@@ -896,30 +1167,54 @@ const headerConnector = (id: string, name: string): Connector => ({
   ],
   uses: [],
 });
+/** A world with two connectors that can give the shared header, neither chosen yet. */
+async function headerWorld() {
+  const w = world();
+  await syncBundledRows(w.reconcile);
+  for (const [id, name] of [
+    ['intranet', 'Intranätet'],
+    ['sharepoint', 'SharePoint'],
+  ] as const) {
+    w.registry.register(headerConnector(id, name));
+    w.registry.govern(id, { ...w.registry.governance('finance'), state: 'enabled', audience: { mode: 'all' } });
+    await w.store.transaction(tx =>
+      tx.insert({
+        id,
+        bundled: true,
+        url: null,
+        secret: null,
+        state: 'enabled',
+        manifest: null,
+        health: { status: 'ok', at: T0 },
+        createdBy: 'system:boot',
+        at: T0,
+      }),
+    );
+  }
+  return w;
+}
 describe('the shared header is given by one chosen connector (D88)', () => {
+  test('two administrators choosing different holders at once leave one holder, and the audit says who took it from whom (DE-M5)', async () => {
+    const { admin, registry, store } = await headerWorld();
+    // Both are saved: the one decided second takes the header from the one decided first.
+    await Promise.all([
+      admin.update(mikael, 'intranet', { header: true }),
+      admin.update(mikael, 'sharepoint', { header: true }),
+    ]);
+    const holders = (await admin.list(mikael)).filter(c => c.header).map(c => c.id);
+    expect(holders).toHaveLength(1);
+    const won = holders[0]!,
+      lost = won === 'intranet' ? 'sharepoint' : 'intranet';
+    expect(store.audit.filter(a => a.action === 'connector.header').map(a => [a.subject, a.details])).toEqual([
+      ['connector:' + lost, { to: true }],
+      ['connector:' + won, { to: true, from: lost }],
+      ['connector:' + lost, { to: false, takenBy: won }],
+    ]);
+    expect(registry.governance(won).header).toBe(true);
+    expect(registry.governance(lost).header).toBeUndefined();
+  });
   test('an administrator chooses the holder on its page; choosing another takes it over with an audit row on both, and a connector without the capability is refused', async () => {
-    const { admin, registry, store, reconcile } = world();
-    await syncBundledRows(reconcile);
-    for (const [id, name] of [
-      ['intranet', 'Intranätet'],
-      ['sharepoint', 'SharePoint'],
-    ] as const) {
-      registry.register(headerConnector(id, name));
-      registry.govern(id, { ...registry.governance('finance'), state: 'enabled', audience: { mode: 'all' } });
-      await store.transaction(tx =>
-        tx.insert({
-          id,
-          bundled: true,
-          url: null,
-          secret: null,
-          state: 'enabled',
-          manifest: null,
-          health: { status: 'ok', at: T0 },
-          createdBy: 'system:boot',
-          at: T0,
-        }),
-      );
-    }
+    const { admin, registry, store } = await headerWorld();
     // A candidate gives nothing until it is chosen.
     expect((await admin.read(mikael, 'intranet')).headerCapability).toBe('intranet.header');
     expect((await admin.read(mikael, 'intranet')).header).toBe(false);

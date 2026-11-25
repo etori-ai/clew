@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { schema } from '../../packages/db/src/index';
 import { upgradeDatabase, type UpgradeDatabase } from './upgrade';
 
@@ -8,7 +8,8 @@ import { upgradeDatabase, type UpgradeDatabase } from './upgrade';
  * `bun scripts/connector-check.ts --as` against services of this test's own (review 2026-11-12, R2; Q13): it refuses a
  * connector this installation has not registered, one of Clew's own, a registered id at another address and a user
  * name with no person, writing nothing and signing nothing, and otherwise writes its one audit row before the first
- * request it signs as the person. Run with `bun run test:db` inside the devcontainer.
+ * request it signs as the person. Without `--as` it still signs nothing for a registered id at another address or for
+ * one of Clew's own. Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -198,4 +199,60 @@ test("--as refuses one of Clew's own connectors and a registered id at another a
   );
   expect([...own.seen, ...twin.seen]).toEqual([]);
   expect(await checkedAs()).toHaveLength(before);
+}, 60_000);
+
+test("without --as, the check signs nothing for a registered id at another address or for one of Clew's own (CB-13)", async () => {
+  await register();
+  await installation.db
+    .insert(schema.connectors)
+    .values({ id: ownId, bundled: true, state: 'enabled', createdBy: 'system:boot', updatedBy: 'system:boot' })
+    .onConflictDoNothing();
+  // Services that name an id of this installation as their own, with no --id: the audience is learnt from them.
+  const own = serve(ownId);
+  const twin = serve(id);
+  others.push(own, twin);
+  const ownRun = await check(own.base, '--keys', 'anna');
+  expect(ownRun.exitCode).toBe(2);
+  expect(ownRun.stderr.trim()).toBe(
+    `The service at ${own.base} names the id ${ownId}, one of Clew's own connectors; the check signs nothing for it.`,
+  );
+  const twinRun = await check(twin.base, '--keys', 'anna');
+  expect(twinRun.exitCode).toBe(2);
+  expect(twinRun.stderr.trim()).toBe(
+    `The service at ${twin.base} names the id ${id}, which is registered at ${base}; the check signs for a registered connector only at the address it is registered at.`,
+  );
+  expect([...own.seen, ...twin.seen]).toEqual([]);
+  // The registered connector at its own address, and a service no connector here is registered as, are checked.
+  const signed = seen.length;
+  const ran = await check(base, '--keys', 'anna');
+  expect(ran.stdout).toContain(`Connector "${id}"`);
+  expect(seen.length).toBeGreaterThan(signed);
+  const fresh = serve('check-fresh-' + tag);
+  others.push(fresh);
+  expect((await check(fresh.base)).stdout).toContain(`Connector "check-fresh-${tag}"`);
+  expect(fresh.seen.length).toBeGreaterThan(0);
+}, 60_000);
+
+test("one of Clew's own connectors is refused though it has no row: `people` never has one, `calendar` none before the first boot", async () => {
+  // This installation's database has never been booted, so neither id has a row here.
+  const rows = await installation.db
+    .select({ id: schema.connectors.id })
+    .from(schema.connectors)
+    .where(inArray(schema.connectors.id, ['people', 'calendar']));
+  expect(rows).toEqual([]);
+  for (const own of ['people', 'calendar']) {
+    const impostor = serve(own);
+    others.push(impostor);
+    const run = await check(impostor.base, '--keys', 'anna');
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr.trim()).toBe(
+      `The service at ${impostor.base} names the id ${own}, one of Clew's own connectors; the check signs nothing for it.`,
+    );
+    const asRun = await check(impostor.base, '--id', own, '--keys', 'anna', '--as', userName);
+    expect(asRun.exitCode).toBe(2);
+    expect(asRun.stderr.trim()).toBe(
+      `--id ${own} is one of Clew's own connectors, not a registered service; pass the id the service was registered under (bun scripts/connector-add.ts).`,
+    );
+    expect(impostor.seen).toEqual([]);
+  }
 }, 60_000);
