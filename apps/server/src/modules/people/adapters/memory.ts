@@ -16,8 +16,8 @@ import type { ErasureTx, LeaverChange, LeaversTx, Provisioner, ProvisionStore, P
 /**
  * The provisioning store in memory: the unit tests' adapter (D25), held to Postgres by
  * `tests/provisioning-store-contract.ts` and `tests/scim-store-contract.ts`. State is plain and seedable; a transaction
- * is a snapshot that a throw rolls back, the audit rows included. Nothing locks: a unit test runs one request at a time,
- * so every transaction, a read's `snapshot` included, reads the state as one moment left it.
+ * is a snapshot that a throw rolls back, the audit rows included. Nothing locks: a unit test runs one request at a time.
+ * A read's `snapshot` reads a copy of the state taken when it begins, so a change that commits meanwhile is not in it.
  */
 export interface MemoryProvisionState {
   users: Map<string, UserRecord>;
@@ -55,8 +55,9 @@ export interface MemoryProvisionState {
 }
 /**
  * What the memory store tells beyond its own state, as `postgresProvisionStore`'s options do: `leavers` is the port a
- * test binds (the competence module's, on its own memory store, which commits on its own), and `leaverFailed` hears of
- * a call that failed, which, as on Postgres, never fails the change. Every call is also recorded in `state.leavers`.
+ * test binds (the competence module's, on its own memory store, which commits on its own, so it is told when the
+ * change commits and never of one that rolls back), and `leaverFailed` hears of a call that failed, which, as on
+ * Postgres, never fails the change. Every call is also recorded in `state.leavers`.
  */
 export interface MemoryProvisionOptions {
   leavers?: () => LeaversTx;
@@ -93,6 +94,30 @@ export function memoryProvisionStore(
   };
   const snapshot = () => structuredClone(state),
     restore = (s: MemoryProvisionState) => Object.assign(state, s);
+  const live = transactionOver(state, options);
+  return {
+    state,
+    async transaction(fn, mode) {
+      // A snapshot reads a copy taken when it begins, as Postgres's REPEATABLE READ reads what had committed when its
+      // first statement began, so a change that commits while it is open is not in it. It only reads: nothing it does
+      // is kept (`tests/provisioning-store-contract.ts`).
+      if (mode?.snapshot) {
+        const frozen = transactionOver(snapshot(), options);
+        return fn({ ...frozen.tx, leavers: frozen.leaversOf([]) });
+      }
+      const before = snapshot(),
+        pending: Array<() => Promise<void>> = [];
+      const result = await fn({ ...live.tx, leavers: live.leaversOf(pending) }).catch(error => {
+        restore(before);
+        throw error;
+      });
+      for (const told of pending) await told();
+      return result;
+    },
+  };
+}
+/** The port of a transaction over one state: the store's own, or the copy a snapshot reads. */
+function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOptions) {
   const byId = <T extends { id: string }>(rows: T[]) => rows.sort((a, b) => a.id.localeCompare(b.id));
   const page = <T extends { id: string }>(rows: T[], p: { startIndex: number; count: number }) => ({
     total: rows.length,
@@ -141,16 +166,26 @@ export function memoryProvisionStore(
     label: p.label,
     lastSeenAt: p.lastSeenAt ?? null,
   });
-  const tell = (change: keyof LeaversTx) => async (told: LeaverChange) => {
-    state.leavers.push({ ...told, change });
-    try {
-      await options.leavers?.()[change](told);
-    } catch (error) {
-      options.leaverFailed?.(error, told, change);
-    }
+  /**
+   * The leavers port of one transaction. A memory store cannot share a transaction with the domain bound to it, so each
+   * call is recorded at once and told to the binding when the change commits, in order: what the domain writes is gone
+   * with a change that rolls back, as on Postgres, where it writes in the change's own transaction. A call that fails is
+   * reported and never fails the change, as a savepoint rolled back there (`tests/scim-store-contract.ts`).
+   */
+  const leaversOf = (pending: Array<() => Promise<void>>): LeaversTx => {
+    const tell = (change: keyof LeaversTx) => async (told: LeaverChange) => {
+      state.leavers.push({ ...told, change });
+      pending.push(async () => {
+        try {
+          await options.leavers?.()[change](told);
+        } catch (error) {
+          options.leaverFailed?.(error, told, change);
+        }
+      });
+    };
+    return { deactivated: tell('deactivated'), reactivated: tell('reactivated') };
   };
-  const tx: ProvisionTx = {
-    leavers: { deactivated: tell('deactivated'), reactivated: tell('reactivated') },
+  const tx: Omit<ProvisionTx, 'leavers'> = {
     erasure: {
       invitee: input =>
         options.erasure?.().invitee(input) ?? Promise.resolve({ invitations: 0, planningRows: 0, drafts: 0 }),
@@ -596,16 +631,5 @@ export function memoryProvisionStore(
         .map(g => ({ externalId: g.externalId, label: g.label }));
     },
   };
-  return {
-    state,
-    async transaction(fn) {
-      const before = snapshot();
-      try {
-        return await fn(tx);
-      } catch (error) {
-        restore(before);
-        throw error;
-      }
-    },
-  };
+  return { tx, leaversOf };
 }

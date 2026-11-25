@@ -74,3 +74,29 @@ export const stepOf = (
   proposals: ProposalRecord[],
   step: (rows: Array<{ status: ProposalRecord['status'] }>) => ObligationStep,
 ) => step(proposals.filter(p => p.status !== 'superseded'));
+/**
+ * What the end of a follow-up writes on the manager's card (D30): every invitation answered, the card is handled;
+ * otherwise (the deadline, the policy's end, authority taken away) it comes back open with why. Both follow-up stores
+ * write exactly this.
+ */
+export const returnedCard = (reason: string, at: string) => ({
+  state: reason === 'answered' ? ('handled' as const) : ('open' as const),
+  handledAt: reason === 'answered' ? at : null,
+  waitingOn: null,
+  updatedAt: at,
+  summary:
+    reason === 'answered'
+      ? 'Alla inbjudningar har besvarats.'
+      : 'Uppföljningen behöver din bedömning. Den godkända planen är avslutad.',
+});
+/** The card a reminder puts in the invitee's stream (D30): one per proposal and ordinal, so a repeat is the same card. */
+export const reminderCard = (proposalId: string, ordinal: number, sender: string, at: string) => ({
+  id: `followup:${proposalId}:${ordinal}`,
+  title: 'Svara på inbjudan till utvecklingssamtal',
+  summary: `${sender} väntar på ditt svar om utvecklingssamtalet. Svara i din kalender.`,
+  trigger: {
+    reason: `Inbjudan väntar på svar · påminnelse ${ordinal} av ${FOLLOW_UP.maxReminders}`,
+    source: 'Kalendern',
+    at,
+  },
+});

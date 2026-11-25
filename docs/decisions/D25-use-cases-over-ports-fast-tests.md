@@ -1,6 +1,6 @@
 # D25 · Use cases take their ports from a composition root; the unit suite runs on memory adapters held to a store contract
 
-**Status:** accepted · **Date:** 2026-11-04 · **Area:** platform
+**Status:** accepted; the Replaces paragraph amended 2026-11-24 in the review of the fixes of batch 17 of the review of 2026-11-23: the D20 debt item is no longer one coupling in one place. Since the ledger's card projection moved into the stream (DE-M4), the stream reaches modules in two ways: the `deps.calendar` port of `threads/usecases/cards.ts`, and the imports of the projection (`threads/usecases/projection.ts`, its port `threads/projection-model.ts` and its two adapters), which take the executions module's model and error, the calendar's decision command, booking rules (`booked.ts`), follow-up policy and obligation schedule (`nextCheck`). They are types and pure rules, no module's use case; the comment on `deps.calendar` names them · **Date:** 2026-11-04 · **Area:** platform
 
 **Decision.** A use case never reaches a database, a timer service, a calendar, the clock, an id source or
 configuration on its own. It is built by a factory that receives those as ports: `threadUsecases(deps)` and

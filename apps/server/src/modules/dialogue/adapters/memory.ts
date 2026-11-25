@@ -1,3 +1,4 @@
+import { dueTimerFires, morningAfterDue } from '@clew/contracts';
 import type {
   ActivityRecord,
   AreaRecord,
@@ -16,7 +17,10 @@ import type {
  * Transactions run one at a time, as row locks would make them.
  *
  * The owner's cards are recorded here instead of written to a stream: every call in `state.calls`, each card's state in
- * `state.cards`. A test makes the card sink throw with `sink.throwOn` and decides what `fire` answers with `sink.fires`.
+ * `state.cards` and a dated card's timer in `state.timers`, scheduled, cancelled and fenced as composition does it over
+ * the thread store (`morningAfterDue`, `dueTimerFires`): a generation counted up across reopen and retime, none for an
+ * undated activity, and `fire` true only for the active generation, due by its time. A test makes the card sink throw
+ * with `sink.throwOn`.
  */
 export type DialogueCardCall =
   | ({ op: 'open' } & Parameters<DialogueWorkItems['open']>[0])
@@ -31,21 +35,31 @@ export interface MemoryDialogueCard {
   dueOn: string | null;
   state: 'open' | 'handled';
 }
+/** A dated card's timer, as the thread store's row has it (D47): one per card, its generation counted across replacements. */
+export interface MemoryDialogueTimer {
+  kind: 'dialogue-due';
+  generation: number;
+  dueAt: string;
+  state: 'active' | 'cancelled' | 'fired';
+}
 export interface MemoryDialogueState {
   areas: AreaRecord[];
   questions: QuestionRecord[];
   assessments: Map<string, AssessmentRecord>;
   activities: Map<string, ActivityRecord>;
   notes: Map<string, NoteRecord>;
-  persons: Map<string, { name: string; enabled: boolean }>;
+  /** The directory's people by Clew's id, with the user name the directory gives them, which is never their key. */
+  persons: Map<string, { name: string; enabled: boolean; userName: string | null }>;
   units: Map<string, string>;
   audit: DialogueAudit[];
   cards: Map<string, MemoryDialogueCard>;
+  /** Each dated card's timer by the card's id; it goes with the card. */
+  timers: Map<string, MemoryDialogueTimer>;
   calls: DialogueCardCall[];
 }
 export interface MemoryDialogueSink {
+  /** The card call that throws, as a failing thread store would. */
   throwOn?: DialogueCardCall['op'];
-  fires?: boolean | ((threadId: string, generation: number) => boolean);
 }
 const byCreated = <T extends { createdAt: string; id: string }>(rows: T[]) =>
   rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
@@ -59,10 +73,13 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
     assessments: new Map(),
     activities: new Map(),
     notes: new Map(),
-    persons: new Map(Object.entries(seed.persons ?? {}).map(([id, name]) => [id, { name, enabled: true }])),
+    persons: new Map(
+      Object.entries(seed.persons ?? {}).map(([id, name]) => [id, { name, enabled: true, userName: null }]),
+    ),
     units: new Map(Object.entries(seed.units ?? {})),
     audit: [],
     cards: new Map(),
+    timers: new Map(),
     calls: [],
   };
   const sink: MemoryDialogueSink = {};
@@ -83,41 +100,67 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
   const fail = (op: DialogueCardCall['op']) => {
     if (sink.throwOn === op) throw new Error(`card sink failed on ${op}`);
   };
+  /** The card's next timer generation, due the morning after `dueOn` (never before `at`), as composition schedules it. */
+  const schedule = (threadId: string, dueOn: string, at: string) =>
+    state.timers.set(threadId, {
+      kind: 'dialogue-due',
+      generation: (state.timers.get(threadId)?.generation ?? 0) + 1,
+      dueAt: morningAfterDue(dueOn, at),
+      state: 'active',
+    });
+  const cancel = (threadId: string) => {
+    const timer = state.timers.get(threadId);
+    if (timer?.state === 'active') timer.state = 'cancelled';
+  };
   const workItems: DialogueWorkItems = {
     async open(input) {
       fail('open');
       state.calls.push({ op: 'open', ...structuredClone(input) });
+      // The card's id is its key, as the thread's primary key is in Postgres.
+      if (state.cards.has(input.threadId)) throw new Error(`The activity card ${input.threadId} already exists.`);
       state.cards.set(input.threadId, {
         personId: input.personId,
         activityId: input.activityId,
         dueOn: input.dueOn,
         state: 'open',
       });
+      if (input.dueOn) schedule(input.threadId, input.dueOn, input.at);
     },
     async close(threadId, at) {
       fail('close');
       state.calls.push({ op: 'close', threadId, at });
       const card = state.cards.get(threadId);
-      if (card) card.state = 'handled';
+      if (!card) return;
+      card.state = 'handled';
+      cancel(threadId);
     },
     async reopen(threadId, dueOn, at) {
       fail('reopen');
       state.calls.push({ op: 'reopen', threadId, dueOn, at });
       const card = state.cards.get(threadId);
-      if (card) Object.assign(card, { state: 'open', dueOn });
+      if (!card) return;
+      Object.assign(card, { state: 'open', dueOn });
+      if (dueOn) schedule(threadId, dueOn, at);
     },
     async retime(threadId, dueOn, at) {
       fail('retime');
       state.calls.push({ op: 'retime', threadId, dueOn, at });
       const card = state.cards.get(threadId);
-      if (card) card.dueOn = dueOn;
+      // A card already handled keeps its date and its timer, as composition leaves it.
+      if (!card || card.state === 'handled') return;
+      card.dueOn = dueOn;
+      if (dueOn) schedule(threadId, dueOn, at);
+      else cancel(threadId);
     },
     async fire(threadId, generation, at) {
       fail('fire');
       const card = state.cards.get(threadId);
-      const answer = typeof sink.fires === 'function' ? sink.fires(threadId, generation) : (sink.fires ?? true);
-      const fired = !!card && card.dueOn !== null && answer;
-      if (fired) card!.state = 'open';
+      const timer = state.timers.get(threadId);
+      const fired = !!card && dueTimerFires(timer, 'dialogue-due', generation, at);
+      if (fired) {
+        card!.state = 'open';
+        timer!.state = 'fired';
+      }
       state.calls.push({ op: 'fire', threadId, generation, at, fired });
       return fired;
     },
@@ -125,7 +168,10 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
       fail('remove');
       if (!threadIds.length) return;
       state.calls.push({ op: 'remove', threadIds: [...threadIds], why });
-      for (const id of threadIds) state.cards.delete(id);
+      for (const id of threadIds) {
+        state.cards.delete(id);
+        state.timers.delete(id);
+      }
       // The thread's foreign key nulls the pointer, as `ON DELETE SET NULL` does in Postgres.
       for (const a of state.activities.values()) if (a.threadId && threadIds.includes(a.threadId)) a.threadId = null;
     },
@@ -299,8 +345,8 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
     get state() {
       return state;
     },
-    addPerson(id: string, name: string, enabled = true) {
-      state.persons.set(id, { name, enabled });
+    addPerson(id: string, name: string, enabled = true, userName: string | null = null) {
+      state.persons.set(id, { name, enabled, userName });
     },
     addUnit(id: string, label: string) {
       state.units.set(id, label);

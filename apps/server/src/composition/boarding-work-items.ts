@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import type { BoardingEvent, ThreadAction } from '@clew/contracts';
+import { dueTimerFires, type BoardingEvent, type ThreadAction } from '@clew/contracts';
 import { BOARDING_CONNECTOR } from '@clew/connectors';
 import { schema, type Transaction } from '@clew/db';
 import type { ThreadTx } from '../threads/model';
@@ -206,14 +206,7 @@ export function boardingWorkItems(tx: Transaction, thread: ThreadTx, options: Bo
       const card = await lock(threadId);
       if (!card) return false;
       const timer = await thread.readTimer(boardingTimerId(threadId));
-      if (
-        !timer ||
-        timer.kind !== 'boarding' ||
-        timer.generation !== generation ||
-        timer.state !== 'active' ||
-        Date.parse(timer.dueAt) > Date.parse(at)
-      )
-        return false;
+      if (!dueTimerFires(timer, 'boarding', generation, at)) return false;
       await thread.updateTimer({ ...timer, state: 'fired', reason: null, leaseUntil: null });
       if (card.snoozedUntil) await thread.cancelTimer(`snooze:${threadId}`, at);
       const day = card.deadline ? swedishDay(card.deadline) : undefined;

@@ -1,7 +1,27 @@
-import type { Execution, ExecutionAudit, ExecutionStore, Job, WatchCard, WatchIntent, WorkflowStart } from '../model';
+import type {
+  Execution,
+  ExecutionAudit,
+  ExecutionStore,
+  ExecutionTx,
+  Job,
+  WatchCard,
+  WatchIntent,
+  WorkflowStart,
+} from '../model';
 
+/**
+ * The ledger's projection onto the stream (D45), as the Postgres adapter's `project` hook runs it: each ledger
+ * transaction runs inside the projection's own, and `project` is called on an insert that inserted (`approval`) and on
+ * every update, so the execution, the card and their rows commit or roll back together. Composition pairs the Postgres
+ * ledger with the Postgres projection; a unit test pairs this one with `memoryProjection` (`threads/adapters`).
+ */
+export interface MemoryLedgerProjection {
+  transaction<T>(
+    fn: (project: (execution: Execution, stage: 'approval' | 'update') => Promise<void>) => Promise<T>,
+  ): Promise<T>;
+}
 /** The ledger in memory for the unit tests (D25): the same contract as Postgres, with the workflow starts a commit made recorded in `enqueued` (D86). */
-export function memoryExecutionStore() {
+export function memoryExecutionStore(options: { projection?: MemoryLedgerProjection } = {}) {
   let records = new Map<string, Execution>(),
     jobs = new Map<string, Job>(),
     enqueued = new Map<string, WorkflowStart>(),
@@ -40,71 +60,77 @@ export function memoryExecutionStore() {
       return structuredClone(jobs.get(id));
     },
     transaction: fn =>
-      serialized(async () => {
-        const r = structuredClone(records),
-          j = structuredClone(jobs),
-          o = structuredClone(enqueued),
-          w = structuredClone(watches),
-          c = structuredClone(cards),
-          a = structuredClone(audit);
-        const result = await fn({
-          async insert(e) {
-            const existing = [...r.values()].find(
-              row => row.personId === e.personId && row.decisionId === e.decisionId,
-            );
-            if (existing) return { inserted: false, execution: structuredClone(existing) };
-            if (r.has(e.id)) throw new Error('Duplicate execution ID');
-            r.set(e.id, structuredClone(e));
-            return { inserted: true, execution: structuredClone(e) };
-          },
-          async lock(id) {
-            return structuredClone(r.get(id));
-          },
-          async update(e) {
-            r.set(e.id, structuredClone(e));
-          },
-          async keepCheckingSession(id, binding) {
-            const e = r.get(id);
-            if (e) r.set(id, { ...e, checkingSession: binding });
-          },
-          async enqueue(start) {
-            if (!o.has(start.id)) o.set(start.id, structuredClone(start));
-          },
-          async audit(entry) {
-            a.push(structuredClone(entry));
-          },
-          async insertJob(job) {
-            const existing = [...j.values()].find(
-              row => row.personId === job.personId && row.decisionId === job.decisionId,
-            );
-            if (existing) return { inserted: false, job: structuredClone(existing) };
-            if (j.has(job.id)) throw new Error('Duplicate job ID');
-            j.set(job.id, structuredClone(job));
-            return { inserted: true, job: structuredClone(job) };
-          },
-          async lockJob(id) {
-            return structuredClone(j.get(id));
-          },
-          async updateJob(job) {
-            j.set(job.id, structuredClone(job));
-          },
-          async enqueueWatch(intent) {
-            if (!j.has(intent.jobId)) throw new Error('Watch intent without its job');
-            if (!w.has(intent.id)) w.set(intent.id, structuredClone(intent));
-          },
-          async pushCard(card) {
-            if (!c.has(card.id)) c.set(card.id, structuredClone(card));
-          },
-        });
-        records = r;
-        jobs = j;
-        enqueued = o;
-        watches = w;
-        cards = c;
-        audit = a;
-        return result;
-      }),
+      serialized(() =>
+        options.projection ? options.projection.transaction(project => run(fn, project)) : run(fn, undefined),
+      ),
   };
+  async function run<T>(
+    fn: (tx: ExecutionTx) => Promise<T>,
+    project: ((execution: Execution, stage: 'approval' | 'update') => Promise<void>) | undefined,
+  ): Promise<T> {
+    const r = structuredClone(records),
+      j = structuredClone(jobs),
+      o = structuredClone(enqueued),
+      w = structuredClone(watches),
+      c = structuredClone(cards),
+      a = structuredClone(audit);
+    const result = await fn({
+      async insert(e) {
+        const existing = [...r.values()].find(row => row.personId === e.personId && row.decisionId === e.decisionId);
+        if (existing) return { inserted: false, execution: structuredClone(existing) };
+        if (r.has(e.id)) throw new Error('Duplicate execution ID');
+        r.set(e.id, structuredClone(e));
+        await project?.(e, 'approval');
+        return { inserted: true, execution: structuredClone(e) };
+      },
+      async lock(id) {
+        return structuredClone(r.get(id));
+      },
+      async update(e) {
+        r.set(e.id, structuredClone(e));
+        await project?.(e, 'update');
+      },
+      async keepCheckingSession(id, binding) {
+        const e = r.get(id);
+        if (e) r.set(id, { ...e, checkingSession: binding });
+      },
+      async enqueue(start) {
+        if (!o.has(start.id)) o.set(start.id, structuredClone(start));
+      },
+      async audit(entry) {
+        a.push(structuredClone(entry));
+      },
+      async insertJob(job) {
+        const existing = [...j.values()].find(
+          row => row.personId === job.personId && row.decisionId === job.decisionId,
+        );
+        if (existing) return { inserted: false, job: structuredClone(existing) };
+        if (j.has(job.id)) throw new Error('Duplicate job ID');
+        j.set(job.id, structuredClone(job));
+        return { inserted: true, job: structuredClone(job) };
+      },
+      async lockJob(id) {
+        return structuredClone(j.get(id));
+      },
+      async updateJob(job) {
+        j.set(job.id, structuredClone(job));
+      },
+      async enqueueWatch(intent) {
+        if (!j.has(intent.jobId)) throw new Error('Watch intent without its job');
+        if (!w.has(intent.id)) w.set(intent.id, structuredClone(intent));
+      },
+      async pushCard(card) {
+        if (!c.has(card.id)) c.set(card.id, structuredClone(card));
+      },
+    });
+    records = r;
+    jobs = j;
+    enqueued = o;
+    watches = w;
+    cards = c;
+    audit = a;
+    return result;
+  }
   return Object.assign(store, {
     dump: () => structuredClone([...records.values()]),
     jobs: () => structuredClone([...jobs.values()]),
