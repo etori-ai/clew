@@ -166,6 +166,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
   const ledger: ExecutionStore = {
     readDecision: memoryLedger.readDecision,
     read: memoryLedger.read,
+    readCard: memoryLedger.readCard,
     readJob: memoryLedger.readJob,
     transaction: fn =>
       memoryLedger.transaction(tx =>
@@ -226,6 +227,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
     run,
     approve: executions.approve,
     clock,
+    done: executions.doneOn,
   });
   const cards = threadUsecases({
     store: threads,
@@ -514,12 +516,15 @@ describe('the Approval loop, signed in (D101, D103)', () => {
     await w.visit('hillevi', 'session-1');
     expect(w.cardsOf('hillevi').filter(t => t.topic.startsWith(`${ID}:file:626:`))).toHaveLength(1);
     expect(w.card('hillevi', 626).items[0]!.revision).toBe(listed.items[0]!.revision);
-    // FINDING: the same button gives back the failed execution and sends nothing; the other gives a wrong reason.
-    await w.decide('hillevi', 'session-1', w.card('hillevi', 626), 'approve');
-    expect(w.writes()).toHaveLength(1);
-    await expect(w.decide('hillevi', 'session-1', w.card('hillevi', 626), 'reject')).rejects.toThrow(
-      'Ett tidigare beslut väntar redan på besked.',
+    // Decided again, either button is a new decision that reaches Nextcloud (DE-M1), which refuses the old version
+    // again and says why: the card's next step is still to put it away.
+    const again = await w.decide('hillevi', 'session-1', w.card('hillevi', 626), 'approve');
+    expect(again).toMatchObject({ execution: { state: 'failed' }, receipt: { rows: [{ outcome: 'failed' }] } });
+    expect(w.writes()).toHaveLength(2);
+    expect(await w.decide('hillevi', 'session-1', w.card('hillevi', 626), 'reject').then(t => t.execution?.state)).toBe(
+      'failed',
     );
+    expect(w.writes().map(c => c.path.split('.').at(-1))).toEqual(['approve', 'approve', 'reject']);
 
     // The way forward today: Avfärda. The next scan brings the new version as a new card, which approves.
     await w.cards.dismissThread(w.asking('hillevi', 'session-1'), listed.id);

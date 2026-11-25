@@ -114,9 +114,35 @@ test('revoked authority blocks delivery visibly and auditably', async () => {
   expect(await w.store.readTimer(id)).toMatchObject({ state: 'blocked', reason: 'authority-revoked' });
   expect(w.store.audit.at(-1)).toMatchObject({
     action: 'timer.blocked',
-    details: { generation: 1, reason: 'authority-revoked' },
+    details: { generation: 1, reason: 'authority-revoked', released: 'reminder' },
   });
-  expect((await w.store.readThread(actor.id, w.thread.id))?.remindedAt).toBeNull();
+  // Not announced as the person's reminder, and no longer parked behind it (DE-L11).
+  const card = (await w.store.readThread(actor.id, w.thread.id))!;
+  expect([card.remindedAt, card.waitingOn]).toEqual([null, null]);
+});
+test('a snooze whose timer is blocked leaves the card awake, never snoozed for good (DE-L11)', async () => {
+  const w = await world(),
+    id = `snooze:${w.thread.id}`,
+    until = new Date(Date.parse(w.clock().toISOString()) + 1000).toISOString();
+  await w.store.transaction(async tx => {
+    await tx.scheduleTimer({
+      id,
+      personId: actor.id,
+      threadId: w.thread.id,
+      kind: 'snooze',
+      unitId: actor.unitId,
+      authorizationVersion: actor.authorizationVersion,
+      requestedAt: w.clock().toISOString(),
+      dueAt: until,
+    });
+    await tx.updateThread(w.thread.id, { snoozedUntil: until });
+  });
+  w.revoke();
+  w.advance(2000);
+  expect(await w.reminders.fire(id, 1)).toBe('skipped');
+  expect(await w.store.readTimer(id)).toMatchObject({ state: 'blocked' });
+  expect((await w.store.readThread(actor.id, w.thread.id))?.snoozedUntil).toBeNull();
+  expect(w.store.audit.at(-1)).toMatchObject({ action: 'timer.blocked', details: { released: 'snooze' } });
 });
 test('legacy histories still fire, but an accepted cancellation tombstone fences them', async () => {
   const w = await world();

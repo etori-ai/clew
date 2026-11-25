@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 7 | A decision that failed or whose outcome is unknown has a way forward | `DE-M1`, `DE-M2`, `DE-M3`, `DE-L1`, `DE-L2`, `DE-L11`, `DE-L17` | |
 | 8 | Erasure reaches everything | `DE-M6`, `BD-M1`, `BD-M2`, `BD-L1`, `BD-L3`, `BD-L5` | |
 | 9 | Who may see and change what | `ID-3`, `ID-7`, `CO-M1`, `CO-L1`, `CB-7`, `BD-L2`, `CS-M2` | |
 | 10 | The assistant's prompt, tools, provider and record | `AM-2`, `AM-3`, `AM-5`, `AM-6`, `AM-7`, `AM-8`, `AM-9`, `AM-10` | |
@@ -42,14 +41,14 @@ no batch.
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 1 | 2 | 3 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 1 | 5 | 6 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 5 | 5 | 10 |
-| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 8 | 15 | 23 |
+| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 5 | 11 | 16 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 1 | 1 | 2 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 6 | 8 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 1 | 7 | 8 |
-| | **Total** | **0** | **28** | **68** | **96** |
+| | **Total** | **0** | **25** | **64** | **89** |
 
 ## High
 
@@ -106,29 +105,22 @@ ports with no contract under M7.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| DE-M1 | Medium | A work item whose execution settled failed or partial reuses its decision id, so it can never be decided again. | `apps/server/src/threads/usecases/decisions.ts:135-152` |
-| DE-M2 | Medium | A calendar write whose read-back finds nothing stays unknown for good, and while it does the manager's planning card can be neither confirmed, redrawn nor dismissed. | `apps/server/src/modules/calendar/usecases/decisions.ts:464-491` |
-| DE-M3 | Medium | When recording a source's result fails inside `progress`, the catch meant for the source stores it as the source not answering, and nothing is logged. | `apps/server/src/modules/executions/usecases.ts:690-697` |
 | DE-M4 | Medium | The card projection, the owned domains' timer fences and the follow-up's writes are SQL in the composition root with no memory twin, so the unit suite tests a copy. | `apps/server/src/composition/execution-projection.ts:30-247` |
 | DE-M5 | Medium | Connector administration merges and writes from a row read before its transaction, with no version compared, and nothing keeps `header_holder` to one row. | `apps/server/src/connectors/usecases/admin.ts:331` |
 | DE-M6 | Medium | No erasure clears an invitee's `participant_name` and `participant_email` from `proposal`. | `packages/db/src/schema.ts:433-435` |
 | DE-M7 | Medium | Ten ports or groups of ports have behaviour that no contract case holds both adapters to. | `tests/` (the store contracts) |
 | DE-M8 | Medium | The CalDAV adapter builds a person's address as `<login>@clew.test` and reads an appointment with no organiser as someone else's. | `packages/calendar/src/nextcloud.ts:68` |
-| DE-L1 | Low | A workflow that ends in ERROR leaves its execution or follow-up with no way forward except an operator's script. | `apps/server/src/dbos/workflows.ts:62-70` |
-| DE-L2 | Low | The heartbeat sweep deletes a dead executor's row before its workflows are adopted, so a failed adoption leaves them stranded. | `apps/server/src/dbos/heartbeat.ts:36-43` |
 | DE-L3 | Low | `scanInto`, the first scan implementation, is unreachable in the server, and its tests still stand as evidence. | `apps/server/src/threads/usecases/cards.ts:110-203` |
 | DE-L4 | Low | The projection's job inserts, an approved undo's end of the follow-up plan and a connector removal's cascade leave no audit row of their own. | `apps/server/src/composition/execution-projection.ts:227-236` |
 | DE-L7 | Low | A connector's `observedAt` is compared with the stored one as a string, so an offset changes which is newer. | `apps/server/src/threads/usecases/refresh.ts:117` |
 | DE-L8 | Low | `activeByUserName` in the competence store folds a user name's case with a plain `lower`, not ICU, and cannot use the index. | `apps/server/src/modules/competence/adapters/postgres.ts:710-726` |
 | DE-L9 | Low | One open card per topic is enforced on insert only by the memory adapter, and a reopen can violate the PostgreSQL index. | `apps/server/src/threads/adapters/memory.ts:111-118` |
 | DE-L10 | Low | The change-signal triggers miss columns and tables the browser shows, and are hand-written SQL that `schema.ts` does not name. | `packages/db/migrations/0018_black_zarek.sql:46-57` |
-| DE-L11 | Low | A reminder or snooze whose timer is blocked leaves its card parked where the timer would have moved it from. | `apps/server/src/threads/usecases/reminders.ts:218-232` |
 | DE-L12 | Low | Several queries run per page load have no index to serve them. | `apps/server/src/threads/adapters/refresh-postgres.ts:111-113` |
 | DE-L13 | Low | `bun run db:init` applies only migrations newer than the last recorded one, so a skipped migration goes unnoticed. | `scripts/db-init.ts:10-13` |
 | DE-L14 | Low | The CalDAV adapter mishandles time zones in events other clients wrote: a process-wide zone registry, floating times read in the server's zone, and invalid `TZID` with UTC. | `packages/calendar/src/nextcloud.ts:148-151` |
 | DE-L15 | Low | A meeting made all-day and then adopted books the talk from midnight UTC. | `apps/server/src/modules/calendar/usecases/invitations.ts:53-54` |
 | DE-L16 | Low | A nonexistent date gives a 500 in the calendar's reads, and an availability check for eight participants and a room is refused by both adapters. | `apps/server/src/modules/calendar/usecases/events.ts:81-84` |
-| DE-L17 | Low | Undoing sent invitations leaves their proposals `undone` and the planning card open with none proposed, so it offers neither "Skicka" nor "Vecka N i stället"; the next scan marks the rows "behöver en tid", and only another week draws them. Found while making the accessibility suite's mock answer as the server does, 2026-11-23, by reading; not run against the server. | `apps/server/src/composition/execution-projection.ts:186-203`, `apps/web/src/components/work/thread.tsx:186` |
 
 ## Baseline, build and supply chain
 

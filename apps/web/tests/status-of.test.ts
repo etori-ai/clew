@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SUBJECT_CHANGED, type ExecutionSummary, type Receipt, type Thread } from '@clew/contracts';
+import { RELEASED_BY_PERSON, SUBJECT_CHANGED, type ExecutionSummary, type Receipt, type Thread } from '@clew/contracts';
 import { executionKind, executionStatus } from '../src/execution-status';
 import { nothingToDecide, receiptRowsInOrder, statusOf, summaryNotice, type StatusContext } from '../src/status-of';
 
@@ -236,12 +236,29 @@ describe('a decision the source has not confirmed (D45, D47)', () => {
         'Ekonomisystemet gav inget säkert besked när 08:13. Kontrollera om det gick igenom innan du gör något mer.',
       move: { kind: 'check', label: 'Kontrollera status', offer: false },
     });
+    // Under ⋯, the person may let it go once they have seen the source (DE-M2).
+    expect(s.rest).toEqual([{ kind: 'release', label: 'Markera som inte genomfört', offer: true }]);
     expect(statusOf(thread({ execution: execution('unknown') }), ctx()).notice?.title).toBe(
       'Utfallet är inte bekräftat',
     );
   });
+  test('a decision let go by the person: said so, and the item’s own decision is the move (DE-M1, DE-M2)', () => {
+    const s = statusOf(thread({ execution: execution('failed', RELEASED_BY_PERSON) }), ctx());
+    expect(s.kind).toBe('failed');
+    expect(s.notice).toEqual({
+      title: 'Markerat som inte genomfört',
+      description: 'Clew väntar inte längre på besked från Ekonomisystemet. Fatta beslutet igen om det behövs.',
+      move: { kind: 'decide', label: 'Attestera', offer: false },
+    });
+    expect(s.rest).toEqual([]);
+    expect(executionStatus(execution('failed', RELEASED_BY_PERSON))).toBe(
+      'Beslutet är markerat som inte genomfört. Fatta det igen om det behövs.',
+    );
+  });
   test('an undo in doubt: the original receipt is kept', () => {
     const s = statusOf(thread({ execution: execution('unknown', null, 'e0') }), ctx());
+    // Not let go: the decision it would undo stands whatever became of it.
+    expect(s.rest).toEqual([]);
     expect(s.kind).toBe('unconfirmed');
     expect(s.notice).toMatchObject({
       title: 'Det är oklart om beslutet har ångrats',
@@ -291,15 +308,38 @@ describe('a decision the source has not confirmed (D45, D47)', () => {
     });
     expect(s.rest).toEqual([{ kind: 'undo', label: 'Ångra bekräftade · 9 min kvar', offer: true }]);
   });
-  test('failed: nothing more is sent until the person has read why', () => {
+  test('partial without a review: the item’s own decision again, on the rows that remain (DE-M1)', () => {
+    const s = statusOf(
+      thread({
+        execution: execution('partial'),
+        receipt: receipt(['done', 'failed'], {
+          undoUntil: '2026-11-16T08:30:00.000Z',
+          undoCapability: 'finance.unapprove',
+        }),
+      }),
+      ctx({ undoMinutes: 9 }),
+    );
+    expect(s.notice?.move).toEqual({ kind: 'decide', label: 'Attestera', offer: false });
+    expect(s.rest).toEqual([{ kind: 'undo', label: 'Ångra bekräftade · 9 min kvar', offer: true }]);
+  });
+  test('failed: the person reads why and decides again, as a new decision (DE-M1)', () => {
     const s = statusOf(thread({ execution: execution('failed') }), ctx());
     expect(s.kind).toBe('failed');
     expect(s.notice).toEqual({
       title: 'Beslutet gick inte igenom',
       description: 'Kontrollera beskedet innan du fattar ett nytt beslut.',
+      move: { kind: 'decide', label: 'Attestera', offer: false },
     });
-    // Another reason a decision waits on is checked.
-    expect(statusOf(thread({ execution: execution('failed', 'other') }), ctx()).notice?.move?.kind).toBe('check');
+    // A settled refusal has nothing to check, whatever its reason.
+    expect(statusOf(thread({ execution: execution('failed', 'other') }), ctx()).notice?.move?.kind).toBe('decide');
+    // A reviewed decision is seen again on its review's page (D80).
+    expect(statusOf(thread({ execution: execution('failed') }), ctx({ reviewed: true })).notice?.move?.kind).toBe(
+      'review',
+    );
+    // An undo that was refused leaves the decision it would undo standing: nothing to decide again.
+    expect(statusOf(thread({ execution: execution('failed', null, 'e0') }), ctx()).notice?.move).toBeUndefined();
+    // Nor is a handled item decided again.
+    expect(statusOf(thread({ state: 'handled', execution: execution('failed') }), ctx()).notice?.move).toBeUndefined();
   });
 });
 

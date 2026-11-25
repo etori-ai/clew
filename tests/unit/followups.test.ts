@@ -8,5 +8,10 @@ followupContract('memory follow-up', async () => {
     store,
     deliveries: async () => store.deliveries().length,
     audits: async () => store.audits().map(a => a.action),
+    details: async action =>
+      store
+        .audits()
+        .filter(a => a.action === action)
+        .map(a => a.details),
   };
 });
