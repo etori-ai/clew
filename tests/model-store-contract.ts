@@ -124,13 +124,20 @@ export function modelStoreContract(name: string, make: () => Promise<ModelStoreH
       });
       expect(
         await store.transaction(tx =>
-          tx.updateProvider(p, { apiKey: null, keyChangedAt: T1, title: 'Ny titel' }, 'person:mikael', T1),
+          tx.updateProvider(
+            p,
+            // An address on another host takes the key with it, in the one patch (`updateProvider`, D24).
+            { apiKey: null, keyChangedAt: T1, title: 'Ny titel', baseUrl: 'https://annan.example/v1' },
+            'person:mikael',
+            T1,
+          ),
         ),
       ).toBe(true);
       expect(await store.readProvider(p)).toMatchObject({
         apiKey: null,
         keyChangedAt: T1,
         title: 'Ny titel',
+        baseUrl: 'https://annan.example/v1',
         version: 2,
       });
       expect(await store.transaction(tx => tx.updateModel('nope-' + m, { title: 'x' }, 'x', T1))).toBe(false);
@@ -224,6 +231,36 @@ export function modelStoreContract(name: string, make: () => Promise<ModelStoreH
       ).rejects.toThrow('boom');
       expect(await store.readProvider(p)).toMatchObject({ title: 'Kommunens modeller', version: 1 });
       expect(await store.history('provider:' + p)).toHaveLength(1);
+    });
+    test('lockProvider reads the row and holds it: a second lock waits until the first transaction commits, then reads what it wrote', async () => {
+      const { store, fresh } = await make();
+      const p = fresh();
+      await store.transaction(tx => tx.insertProvider(providerRow(p)));
+      expect(await store.transaction(tx => tx.lockProvider(fresh()))).toBeUndefined();
+      let release!: () => void;
+      const held = new Promise<void>(resolve => (release = resolve));
+      let locked!: () => void;
+      const isLocked = new Promise<void>(resolve => (locked = resolve));
+      const order: string[] = [];
+      const first = store.transaction(async tx => {
+        expect(await tx.lockProvider(p)).toMatchObject({ id: p, baseUrl: 'http://llm.test/v1', apiKey: 'sealed:' + p });
+        locked();
+        await held;
+        await tx.updateProvider(p, { baseUrl: 'http://annan.test/v1', apiKey: null }, 'person:mikael', T1);
+        order.push('first wrote');
+      });
+      await isLocked;
+      const second = store.transaction(async tx => {
+        const row = await tx.lockProvider(p);
+        order.push('second read');
+        return row;
+      });
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(order).toEqual([]);
+      release();
+      await first;
+      expect(await second).toMatchObject({ baseUrl: 'http://annan.test/v1', apiKey: null, version: 2 });
+      expect(order).toEqual(['first wrote', 'second read']);
     });
   });
 }

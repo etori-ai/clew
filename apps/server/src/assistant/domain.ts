@@ -2,8 +2,8 @@ import { inAudience, type AudiencedActor } from '@clew/connectors';
 import type { ModelRecord } from './ports';
 
 /**
- * Pure rules of model administration (D24): Clew's id for a model, which models a person may pick, and which one their
- * next question uses. No clock, no store, no network.
+ * Pure rules of model administration (D24): Clew's id for a model, which models a person may pick, which one their
+ * next question uses, and whether a provider's new address is on its old host. No clock, no store, no network.
  */
 
 /** Clew's own id for a model, from the id its endpoint uses: `gpt-oss:120b` becomes `gpt-oss-120b`, then `-2`, `-3` when taken. */
@@ -38,6 +38,18 @@ export function choicesFor(
 /** The person's pick when they may still use it, else the default, else the first they may use; nothing when they have none. */
 export const pickModel = (choices: readonly ModelRecord[], saved: string | undefined): ModelRecord | undefined =>
   choices.find(m => m.id === saved) ?? choices[0];
+
+/**
+ * Whether two endpoint addresses are on the same host: scheme, name and port (the URL standard's origin). A provider's
+ * key goes with its host (`updateProvider`); an address that does not parse is another host.
+ */
+export function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
 
 /** The person stopped the turn before its answer was written; nothing was saved and the model is not marked down. */
 export class TurnStopped extends Error {

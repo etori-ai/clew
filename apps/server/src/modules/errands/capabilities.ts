@@ -55,7 +55,8 @@ export function errandCapabilities(
         },
       },
     },
-    run: (actor, input, clew) => errands.list(actor, input, clew.call),
+    // The model's read lists only the systems it may have (D122 item 4).
+    run: (actor, input, clew) => errands.list(actor, input, clew.call, { forModel: clew.forModel === true }),
   };
   return {
     areas: [

@@ -125,14 +125,16 @@ text, such as one of the durable engine's own, is passed on as it is. The tests 
 
 ## What a model turn leaves behind
 
-Beside the message and the audit row every turn writes, a turn the model answered records
-`MessageMeta.modelCall` ([contracts](../../packages/contracts/src/index.ts), `ModelCallSchema`):
+Beside the message and the audit row every turn writes, a turn sent to a model records
+`MessageMeta.modelCall` ([contracts](../../packages/contracts/src/index.ts), `ModelCallSchema`), whether the model
+answered or the router answered in its place; a call that failed has what is known of it (the provider, the wall time
+and the trace):
 
 | Field | Meaning |
 |---|---|
 | `providerId` | The administered provider (D24) |
 | `durationMs` | Wall time of the model call by the deps' clock |
-| `steps` | Model steps in the turn (at most four) |
+| `steps` | Model steps in the turn (at most five: four that may call tools and the answer) |
 | `inputTokens`, `outputTokens` | The wire's usage report, when the provider gives one |
 | `finishReason` | How the model stopped |
 | `traceId` | The OpenTelemetry trace, when the turn was traced |
@@ -143,8 +145,18 @@ audit row to its trace in the backend. The audit row also lists the reads the tu
 row ([D122](../decisions/D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md)
 item 8). Every such read is made with `caller: 'assistant'`, so a source that logs reads of people (the competence read
 log) records that the assistant made it for the person. When a configured model fails and the router answers (D8),
-`MessageMeta.fallbackReason` and `details.fallbackReason` carry the wire's words, cut to 200 characters. Never the
-text of the prompt or the answer: the message body holds the answer, nothing else does.
+`MessageMeta.fallbackReason` and `details.fallbackReason` carry the wire's words, cut to 200 characters, and
+`details.model` names the model the turn was sent to. A work item a model's propose started is named in the turn's
+row (`details.started`), and its own `thread.started` row says the assistant started it (`by: 'assistant'`) and with
+which model. A turn that ends without an answer saves no conversation, but when it called a model, read anything or
+started a work item it writes one row, `conversation.stopped` (the person pressed Stoppa), `conversation.offered`
+(the model suggested another system's assistant) or `conversation.failed` (the turn threw, with the error's class
+name as `failure`, never its message), about the conversation or, before there is one, about the person, with the
+model, `modelCall`, the reads, the item and the assistant offered. A failure stays its own action, so a count of
+`conversation.stopped` is a count of Stoppa. A read that failed is told to the model in
+Clew's words by the protocol's code of the failure, never in the error's own words, which may be a connector's text or
+name the values a statement was given. Never the text of the prompt or the answer: the message body holds the answer,
+nothing else does.
 
 ## Development stack
 

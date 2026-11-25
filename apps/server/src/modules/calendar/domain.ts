@@ -1,4 +1,4 @@
-import type { StaffOverview, ThreadItem } from '@clew/contracts';
+import type { CalendarEvent, StaffOverview, ThreadItem } from '@clew/contracts';
 import type { UnitMember } from './model';
 
 /** Pure helpers of the calendar module (D20): no I/O, no clock, no runtime library. */
@@ -63,4 +63,19 @@ export function chunks<T>(items: readonly T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
+}
+
+/**
+ * Why the person cannot move or cancel this meeting from Clew, in Swedish for the model, or undefined when they can:
+ * the rules of the decision's `ownEvent` (a single timed meeting the person may change), and that they organise it.
+ * Moving and cancelling share them, so a meeting offers both or neither.
+ */
+export function whyNotChangeable(
+  event: Pick<CalendarEvent, 'mine' | 'canCancel' | 'recurring' | 'allDay'>,
+): string | undefined {
+  if (!event.mine) return 'Bara organisatören kan flytta eller ställa in mötet.';
+  if (!event.canCancel) return 'Mötet går inte att flytta eller ställa in härifrån.';
+  if (event.recurring) return 'Ett återkommande möte går inte att flytta eller ställa in härifrån.';
+  if (event.allDay) return 'En heldag går inte att flytta eller ställa in härifrån.';
+  return undefined;
 }

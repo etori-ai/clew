@@ -31,7 +31,7 @@ import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dat
 import { InputError } from '../context';
 import { cardRows, namedItems, type CardRows } from './card';
 import { resolveChips, type ResolvedChips, type ResolvedObject } from './chips';
-import { openThingLine, serialiseContext, type OpenThingLine } from './context';
+import { openThingLine, serialiseContext, sourceLine, type OpenThingLine } from './context';
 import { routeFixed } from './fixed';
 import {
   headingFollowUps,
@@ -44,7 +44,17 @@ import {
   viewAnswer,
   viewInput,
 } from './router';
-import { modelAnswer, systemPrompt, type ReadRecord, type ToolCallRecord } from './model';
+import {
+  FIXED_ANSWER,
+  HISTORY_MESSAGE_MAX,
+  modelAnswer,
+  ModelUnavailable,
+  systemPrompt,
+  TURN_MS,
+  type ModelUsage,
+  type ReadRecord,
+  type ToolCallRecord,
+} from './model';
 import {
   DRAFT_TOOL,
   draftableActions,
@@ -53,14 +63,8 @@ import {
   type ActionDraft,
   type DraftableAction,
 } from './drafts';
-import {
-  ownOverlaps,
-  prepareCancelTool,
-  prepareMoveTool,
-  PREPARE_TOOLS,
-  PREPARED_TITLES,
-  whyNotChangeable,
-} from './prepared';
+import { ownOverlaps, prepareCancelTool, prepareMoveTool, PREPARE_TOOLS, PREPARED_TITLES } from './prepared';
+import { whyNotChangeable } from '../modules/calendar/domain';
 import { listObjects } from './objects';
 import { openedPath } from './opened';
 import {
@@ -76,11 +80,11 @@ import {
   type ManagedPerson,
   type PeopleInTurn,
 } from './people';
-import type { AssistantDeps, ResolvedModel } from './ports';
+import { WireError, type AssistantDeps, type ResolvedModel } from './ports';
 import { draftSelection, parseVerb, verbsFor } from './verbs';
 import { threadAccess } from '../threads/access';
 import { HandoverOffered, TurnStopped } from './domain';
-import { assistantLine, handoverPath, handoverTool, ROUTABLE_MAX } from './handover';
+import { assistantLine, HANDOVER_TOOL, handoverPath, handoverTool, ROUTABLE_MAX } from './handover';
 
 export { HandoverHeld, HandoverOffered, TurnStopped } from './domain';
 export type { AssistantDeps, ModelResolver } from './ports';
@@ -108,10 +112,21 @@ type Produced = {
   sources?: SourceCitation[];
   /** The administered model that wrote the answer (D24). */
   model?: ModelRef;
-  /** The model turn's cost and trace (D91). */
-  modelCall?: ModelCall;
   /** Work items about a person the model looked up in the turn (D115), drawn with the answer. */
   cards?: string[];
+  /** What the answer's text was written from besides its reads (`MessageMeta.basis`). */
+  basis?: Basis;
+};
+/** `MessageMeta.basis`: the work items whose text, and the connectors whose data, an answer was written from. */
+type Basis = NonNullable<MessageMeta['basis']>;
+const basisOf = (items: Iterable<string>, connectors: Iterable<string>, capabilities: Iterable<string> = []): Basis => {
+  const list = (values: Iterable<string>) => [...new Set(values)].slice(-100);
+  const [i, c, r] = [list(items), list(connectors), list(capabilities)];
+  return {
+    ...(i.length ? { items: i } : {}),
+    ...(c.length ? { connectors: c } : {}),
+    ...(r.length ? { capabilities: r } : {}),
+  };
 };
 /** The model path did not answer (D8): the router takes over and the reason is kept with the turn. */
 type ModelUnavailableOutcome = { unavailable: string };
@@ -124,7 +139,8 @@ export interface TurnObserver {
   signal?: AbortSignal;
   /**
    * The caller can ask the person whether a question should go to another system's assistant (D125 item 11): only
-   * then is Clew's own model offered the choice, and a choice ends the turn as `HandoverOffered`, with nothing saved.
+   * then is Clew's own model offered the choice, and a choice ends the turn as `HandoverOffered`, with no conversation
+   * saved: its audit row (`conversation.offered`) says which model was sent what.
    */
   offers?: boolean;
 }
@@ -141,10 +157,20 @@ type TurnRead = { capability: string; rows?: number; failed?: true };
 interface Turn {
   emit: (event: TurnEvent) => void;
   signal: AbortSignal | undefined;
-  run: <O = unknown>(name: string, input: unknown) => Promise<O>;
+  /**
+   * Run a capability for the turn; `model` names the model whose tool call it is, and a propose's audit row says so.
+   * Every read of a turn, the router's as the model's, holds only what the assistant may have (`RunContext.forModel`):
+   * what it answers is the model's now or later in the conversation.
+   */
+  run: <O = unknown>(name: string, input: unknown, by?: { model: string }) => Promise<O>;
   reads: TurnRead[];
   /** The work item a propose called in this turn became, and what the propose was given (`begin`). */
   started?: { threadId: string; capability: string; input: Record<string, unknown> };
+  /**
+   * The model the turn called and what the call cost (D91), set when the call ends, whether it answered, failed or was
+   * stopped: the turn's record says which model was sent what, also when the router answered or nothing was saved.
+   */
+  called?: { model: ModelRef; call: ModelCall };
 }
 /** How many rows an output holds: its declared view's rows, else a top-level `rows`; undefined when it has none. */
 const rowCount = (view: View | undefined, output: unknown): number | undefined => {
@@ -160,9 +186,28 @@ const isSearchResult = (v: unknown): v is SearchResult =>
 const EARLIER_MAX = 10;
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 /**
+ * The connectors the rows of a read's answer come from (`MessageMeta.basis`): a composite's hit or row names the
+ * connector it is from (`connector`; a search hit several sources found names each of them in `sources`), and so does
+ * a row of the person's work items. An answer written from such rows is theirs too, so closing one of those connectors
+ * to the assistant later withholds the answer from the history (D122 item 4), whichever read carried the rows.
+ */
+function rowConnectors(view: View | undefined, output: unknown): string[] {
+  const rows = view ? viewRows(view, output) : isRecord(output) ? output.rows : undefined;
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap(row => {
+    if (!isRecord(row)) return [];
+    const merged = Array.isArray(row.sources) ? row.sources : [];
+    return [row, ...merged].flatMap(r => (isRecord(r) && typeof r.connector === 'string' ? [r.connector] : []));
+  });
+}
+/**
  * An earlier turn as Clew's model hears it (D125): a question the person sent to another system's assistant, and what
  * that assistant answered, say so in their first words, so the model reads them as an exchange it listened to and
- * never as its own answer or its own read. A turn the other system failed to answer is Clew's own words already.
+ * never as its own answer or its own read. A turn the other system failed to answer is Clew's own words already. An
+ * answer Clew wrote without a model (the router, also when the model did not answer) quotes what other systems wrote:
+ * a work item's summary and why now, a meeting's title, a hit's label. It is heard as such material (D122): on one line
+ * (`sourceLine`), after `FIXED_ANSWER`, which the first rule of the prompt names, so a line a source planted in a
+ * summary is read as material and never as Clew's own words to the model.
  */
 export const heardBody = (m: Pick<Thread['messages'][number], 'role' | 'body' | 'meta'>): string => {
   // A question the person brought to Clew from the panel is a question to Clew.
@@ -172,6 +217,8 @@ export const heardBody = (m: Pick<Thread['messages'][number], 'role' | 'body' | 
   if (handover?.declined) return `(${handover.name} i ${handover.source} svarade inte på frågan.)`;
   if (handover && !handover.failed)
     return `(Det här svarade ${handover.name} i ${handover.source}, inte du. Det är inget du själv har läst.) ${m.body}`;
+  if (m.role === 'assistant' && (m.meta?.assistant === 'router' || m.meta?.assistant === 'unavailable'))
+    return `${FIXED_ANSWER} ${sourceLine(m.body, HISTORY_MESSAGE_MAX - FIXED_ANSWER.length - 1)}`;
   return m.body;
 };
 const whyLine = (t: Thread) =>
@@ -223,10 +270,99 @@ export function assistantUsecases(deps: AssistantDeps) {
   const todayDate = () => displayDate(clock().toISOString());
   const thread = async (persona: AuthenticatedContext, id: string) => (await access.read(persona, id))!;
   const handOver = handoverPath(deps);
+  /** Clew's own tools of a turn (D112 item 8, D115, D125 item 11): never a read of the registry, never switched off. */
+  const OWN_TOOLS = new Set([PERSON_TOOL, DRAFT_TOOL, HANDOVER_TOOL, ...PREPARE_TOOLS]);
+  /**
+   * Whether a read's data may reach the model now (D122 item 4): its connector's assistant switch and its own, as
+   * `Registry.tools` asks them. A read the registry no longer has is closed.
+   */
+  const readOpen = (capability: string) => {
+    if (OWN_TOOLS.has(capability)) return true;
+    const found = registry.find(capability);
+    return !!found && registry.forModel(found.connector.id, capability);
+  };
+  /** The connector a thing the person pointed at belongs to, the read it is when it is one, and its system's name. */
+  function originOf(o: ResolvedObject): { connector: string; capability?: string; source: string } {
+    switch (o.kind) {
+      case 'thread':
+      case 'item':
+      case 'proposal':
+        return { connector: o.thread.connector, source: o.thread.trigger.source };
+      case 'event':
+        return { connector: 'calendar', source: registry.connector('calendar')?.source ?? 'Kalendern' };
+      case 'capability':
+        return { connector: registry.find(o.name)?.connector.id ?? '', capability: o.name, source: o.source };
+      case 'document':
+        // A passage is chipped as `document:<connector>:<the source's ref>` (the search's `fetchSource`).
+        return { connector: o.ref.replace(/^document:/, '').split(':')[0] ?? '', source: o.hit.source };
+    }
+  }
+  /**
+   * Whether the administrator lets the model have a thing the person pointed at (D122 item 4): the same switches as for
+   * a read, asked of the thing's connector, and of the read itself when it is one.
+   */
+  const objectOpen = (o: ResolvedObject) => {
+    const at = originOf(o);
+    return registry.forModel(at.connector, at.capability);
+  };
+  /** What the model is told of a thing the person pointed at that it may not have: that it is there, and whose. */
+  const closedLine = (o: ResolvedObject) =>
+    `Något ur ${originOf(o).source} som du inte får läsa. Säg att du inte kan läsa det, och gissa aldrig vad det är.`;
+  /** What the model is told instead of an earlier answer it may not have again. */
+  const WITHHELD = '(Ett tidigare svar som inte lämnas till dig. Läs med verktygen det du behöver.)';
+  /**
+   * The conversation so far as the model hears it (`heardBody`), each earlier answer checked first. Not handed over is
+   * an answer that read, or was written from, a connector or read the administrator has closed to the assistant since
+   * (D122 item 4), and, while the conversation's words could name someone the asker manages, an answer written from a
+   * work item's own text when that item is about one of them now or can no longer be read (D115): the guard holds for
+   * the conversation, not only for the turn's prompt. What the answers handed over were written from is the new
+   * answer's too (`inherited`), so an answer that repeats one is withheld with it.
+   */
+  async function heardHistory(persona: AuthenticatedContext, messages: Thread['messages'], people: PeopleInTurn) {
+    const items = new Map<string, Thread | undefined>();
+    const itemOf = async (id: string) => {
+      if (!items.has(id)) items.set(id, await access.read(persona, id));
+      return items.get(id);
+    };
+    const heard: Array<{ role: 'user' | 'assistant'; body: string }> = [];
+    const inherited = { items: [] as string[], connectors: [] as string[], capabilities: [] as string[] };
+    for (const m of messages) {
+      if (m.role !== 'assistant') {
+        heard.push({ role: m.role, body: heardBody(m) });
+        continue;
+      }
+      const meta = m.meta;
+      const reads = [
+        ...(meta?.reads ?? []).map(r => r.capability),
+        ...(meta?.toolCalls ?? []).map(c => c.capability),
+        ...(meta?.view ? [meta.view.capability] : []),
+        ...(meta?.basis?.capabilities ?? []),
+      ].filter(c => !OWN_TOOLS.has(c));
+      let withheld = reads.some(c => !readOpen(c)) || (meta?.basis?.connectors ?? []).some(c => !registry.forModel(c));
+      if (!withheld && people.mentioned.length)
+        for (const id of meta?.basis?.items ?? []) {
+          const item = await itemOf(id);
+          if (!item || people.guards(item)) {
+            withheld = true;
+            break;
+          }
+        }
+      if (withheld) {
+        heard.push({ role: 'assistant', body: WITHHELD });
+        continue;
+      }
+      heard.push({ role: 'assistant', body: heardBody(m) });
+      inherited.items.push(...(meta?.basis?.items ?? []));
+      inherited.connectors.push(...(meta?.basis?.connectors ?? []));
+      inherited.capabilities.push(...reads);
+    }
+    return { heard, inherited };
+  }
   /**
    * The prompt's lines about what earlier answers read (D122): when, which reads by title and how many rows each
    * answered, or that it failed. What a read held is never carried into a later turn, so a question about facts reads
-   * again; an answer written before turns kept their reads names its reads without counts.
+   * again; an answer written before turns kept their reads names its reads without counts. A read now closed to the
+   * assistant is not named (D122 item 4).
    */
   function earlierReads(messages: Thread['messages'], now: string): string[] {
     const when = (at: string) =>
@@ -236,9 +372,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       .flatMap(m => {
         const reads: TurnRead[] = m.meta?.reads ?? m.meta?.toolCalls?.map(c => ({ capability: c.capability })) ?? [];
         const said = reads
-          .filter(
-            r => r.capability !== PERSON_TOOL && r.capability !== DRAFT_TOOL && !PREPARE_TOOLS.includes(r.capability),
-          )
+          .filter(r => !OWN_TOOLS.has(r.capability) && readOpen(r.capability))
           .map(
             r =>
               (registry.find(r.capability)?.capability.title ?? r.capability) +
@@ -264,7 +398,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     let n = 0;
     let known: ReturnType<typeof registry.tools> | undefined;
     const reads: TurnRead[] = [];
-    const run = async <O = unknown>(name: string, input: unknown): Promise<O> => {
+    const run = async <O = unknown>(name: string, input: unknown, by?: { model: string }): Promise<O> => {
       known ??= registry.tools(audiencedActorOf(persona));
       const info = known.find(t => t.name === name);
       const step: Omit<TurnStep, 'status'> = {
@@ -280,10 +414,13 @@ export function assistantUsecases(deps: AssistantDeps) {
       try {
         // A propose is never run as a read: asked for in a conversation it becomes a work item the person decides on,
         // through the same use case as an item the person starts themselves. What it was given is kept for the draft.
-        // Every read of the turn is the assistant's, made for the person (D122 items 5 and 6).
+        // Every read of the turn is the assistant's, made for the person (D122 items 5 and 6), and what it answers is
+        // the model's, now or when a later turn hears the answer: the registry keeps from it what the administrator has
+        // closed to the assistant (D122 item 4), the router's reads as the model's, as the router routes only to the
+        // reads `Registry.tools` offers.
         const output = proposed
-          ? ((await begin(name, input)) as O)
-          : await deps.run<O>(persona, name, input, { caller: 'assistant' });
+          ? ((await begin(name, input, by)) as O)
+          : await deps.run<O>(persona, name, input, { caller: 'assistant', forModel: true });
         emit({ type: 'step', step: { ...step, status: 'complete', ms: took() } });
         // A propose that became a work item is not a read: the item has its own audit row.
         if (proposed) return output;
@@ -296,13 +433,15 @@ export function assistantUsecases(deps: AssistantDeps) {
         throw e;
       }
     };
-    const begin = async (name: string, input: unknown) => {
+    const begin = async (name: string, input: unknown, by?: { model: string }) => {
       const given = isRecord(input) ? input : {};
       // The propose's own topic says which work it is: asked again with more, in this turn or a later one, it is the
-      // item that is already open, and what was said before is kept under what is said now.
+      // item that is already open, and what was said before is kept under what is said now. The item's audit row says
+      // the assistant started it, and which model when a model's tool call did (D91).
       const { threadId } = await deps.start!(persona, name, given, {
         reason: 'Du bad assistenten förbereda det',
         same: 'topic',
+        by: { assistant: true, ...(by ? { model: by.model } : {}) },
       });
       const before = turn.started?.threadId === threadId ? turn.started.input : {};
       turn.started = { threadId, capability: name, input: { ...before, ...given } };
@@ -375,7 +514,9 @@ export function assistantUsecases(deps: AssistantDeps) {
     standing: StandingOpen,
   ): Promise<DraftableAction[]> {
     if (standing.refused) return [];
-    const actions = draftableRecordActions(registry, persona, thing.capability);
+    const actions = draftableRecordActions(registry, persona, thing.capability).filter(action =>
+      readOpen(action.capability),
+    );
     if (!actions.length || standing.record) return actions;
     try {
       await registry.validate(audiencedActorOf(persona), thing.capability, thing.input);
@@ -446,10 +587,11 @@ export function assistantUsecases(deps: AssistantDeps) {
       throw e;
     }
     const { draftable, meeting } = await fillable(persona, {
-      subject: chips.primaryThread,
+      subject:
+        chips.primaryThread && registry.forModel(chips.primaryThread.connector) ? chips.primaryThread : undefined,
       thing,
       standing: {},
-      beside: chips.beside ? chips.objects.find(o => o.ref === chips.beside) : undefined,
+      beside: chips.beside ? chips.objects.find(o => o.ref === chips.beside && objectOpen(o)) : undefined,
       tools: true,
     });
     return {
@@ -506,6 +648,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     history: Thread['messages'] = [],
   ): Promise<Produced> {
     const tool = registry.tools(audiencedActorOf(persona)).find(t => t.name === started.capability);
+    const connector = registry.find(started.capability)?.connector.id;
     return {
       body: `Jag har förberett "${tool?.title ?? 'ärendet'}" som ett ärende. Fyll i uppgifterna och skicka när du är klar. Inget är skickat.`,
       source: tool?.source ?? 'Startsidan',
@@ -513,6 +656,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       assistant,
       clewActions: [],
       followUps: [],
+      basis: basisOf([], connector ? [connector] : []),
       ...(await startedDraft(persona, started, clock().toISOString(), history)),
     };
   }
@@ -521,11 +665,13 @@ export function assistantUsecases(deps: AssistantDeps) {
   async function chipPath(persona: AuthenticatedContext, text: string, chipped: Thread): Promise<Produced | undefined> {
     const verb = parseVerb(text, chipped, todayDate());
     if (!verb) return undefined;
+    // Every answer here names the card; why now and the choice of rows quote its own text too.
     const base = {
       source: 'Startsidan',
       assistant: 'router' as const,
       clewActions: [] as ClewAction[],
       followUps: [] as string[],
+      basis: basisOf(verb.kind === 'why' || verb.kind === 'primary' ? [chipped.id] : [], [chipped.connector]),
     };
     switch (verb.kind) {
       case 'dismiss':
@@ -607,7 +753,19 @@ export function assistantUsecases(deps: AssistantDeps) {
     people: PeopleInTurn,
   ): Promise<Produced> {
     const about = personAnswer(people);
-    if (about) return { ...about, shape: 'svar', assistant, clewActions: [], followUps: [] };
+    // The router names the work by title and last day, never its text: the systems it is from are what it rests on.
+    if (about)
+      return {
+        ...about,
+        shape: 'svar',
+        assistant,
+        clewActions: [],
+        followUps: [],
+        basis: basisOf(
+          [],
+          namedWork(people).map(t => t.connector),
+        ),
+      };
     const fixed = await routeFixed(deps, persona, text, { namesPerson: people.named.length > 0 });
     if (fixed)
       return {
@@ -617,6 +775,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         assistant,
         clewActions: [],
         followUps: [],
+        basis: basisOf([], fixed.connectors),
         ...(fixed.forslagThreadId ? { forslag: { threadId: fixed.forslagThreadId } } : {}),
       };
     const tools = registry.tools(audiencedActorOf(persona));
@@ -653,6 +812,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         toolCalls: [{ capability: match.name, input, output }],
         ...(answer.view ? { view: answer.view } : {}),
         ...(answer.view && rows ? { viewRows: { count: rows.length, show: 'all' as const } } : {}),
+        basis: basisOf([], rowConnectors(match.view, output)),
       };
     }
     // The catch-all (D26): a question no capability answers goes to the composite search as typed, and the hits become a view the person reads.
@@ -671,6 +831,8 @@ export function assistantUsecases(deps: AssistantDeps) {
         toolCalls: [{ capability: SEARCH_TOOL, input, output }],
         sources: citationsOf(output),
         view: { capability: SEARCH_TOOL, input, title: 'Källor', source: searchTool.source },
+        // The hits' labels are in the sentence: the answer is written from their systems.
+        basis: basisOf([], rowConnectors(undefined, output)),
       };
     }
     const near = nearest(text, tools).map(t => t.title);
@@ -685,7 +847,8 @@ export function assistantUsecases(deps: AssistantDeps) {
   }
   /**
    * The card path (D34, H1): a question that names an open card is answered with that card, without the model. The
-   * sentence is the connector's own (the card's summary and why now); the card itself follows in the turn.
+   * sentence is the connector's own (the card's summary and why now); the card itself follows in the turn. Several
+   * cards are named by their titles alone.
    */
   function cardPath(named: Thread[], assistant: 'router' | 'unavailable'): Produced {
     const first = named[0]!;
@@ -703,13 +866,23 @@ export function assistantUsecases(deps: AssistantDeps) {
       assistant,
       clewActions: [],
       followUps: [],
+      basis: basisOf(
+        named.length === 1 ? [first.id] : [],
+        named.map(t => t.connector),
+      ),
     };
   }
   /**
    * The model path: the person's model (D24), read tools only (none when the model is set not to use them), chips as
-   * explicit context, the deterministic router as the fallback when it fails. A failure marks the provider down until
-   * the probe or a test brings it back (D8). The text streams to the turn's listener as it is written, the trailer held
-   * back (D36); when the router takes over, the listener is told to start the text over. A stop is not a failure.
+   * explicit context, the deterministic router as the fallback when it fails. An endpoint that did not answer, or refused
+   * the key, marks the provider down until the probe or a test brings it back (D8); a turn that failed for reasons of its
+   * own (it ran out of time, the endpoint refused that one request, the model wrote nothing) marks nothing. The text
+   * streams to the turn's listener as it is written, the trailer held back (D36); when the router takes over, the
+   * listener is told to start the text over. A stop is not a failure. What the call cost is the turn's record whatever
+   * the outcome (`Turn.called`). Nothing the administrator has closed to the assistant reaches the model (D122 item 4):
+   * a read, nor through a read (a composite's source, a work item of a closed system in the person's pile: the model's
+   * reads say `forModel`), a thing the person pointed at, a work item about a person, an earlier answer written from
+   * one or from rows one answered.
    */
   async function modelPath(
     persona: AuthenticatedContext,
@@ -727,10 +900,12 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (!models.health.available(model.providerId)) return { unavailable: 'provider marked down' };
     const tools = model.tools ? registry.tools(audiencedActorOf(persona)) : [];
     const now = clock();
+    // The work about a person the model is told of is the work whose system it may have.
+    const told: PeopleInTurn = { ...people, work: p => people.work(p).filter(t => registry.forModel(t.connector)) };
     // What stands open on the page, resolved as the asker (D136): one of their people, their own page, a unit, a record
     // read for the model. Told first among what stands open beside the conversation; nothing for what resolves to nobody.
     const standing = await standingOpen(persona, thing, turn);
-    const openPerson = openPersonLine(people, now.toISOString());
+    const openPerson = openPersonLine(told, now.toISOString());
     const thingLines = [...(openPerson ? [openPerson] : []), ...(standing.line ? [openThingLine(standing.line)] : [])];
     // The read that draws the open record is told once, as read: the chip that names the same read would tell the model
     // to read it itself, without the input the page drew it with.
@@ -740,7 +915,11 @@ export function assistantUsecases(deps: AssistantDeps) {
     // the person may do, only with a model that uses tools, and nothing is sent. Without one chipped, the one work item
     // about the one person the question names is that item (D115). A record that stands open on the page comes first
     // (D137 item 4): when it has actions to fill in, they are the turn's, and no work item's beside them.
-    const subject = chips.primaryThread ?? personSubject(people);
+    const subject = chips.primaryThread
+      ? registry.forModel(chips.primaryThread.connector)
+        ? chips.primaryThread
+        : undefined
+      : personSubject(told);
     const openRecord = thing?.kind === 'record' ? thing : undefined;
     // The meeting that stands open beside the conversation may be moved or cancelled as a prepared decision, only one
     // the person may change from Clew and only with a model that uses tools; nothing is saved or sent (`prepared.ts`).
@@ -749,7 +928,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       subject,
       thing,
       standing,
-      beside: chips.beside ? chips.objects.find(o => o.ref === chips.beside) : undefined,
+      beside: chips.beside ? chips.objects.find(o => o.ref === chips.beside && objectOpen(o)) : undefined,
       tools: model.tools,
     });
     const drafts: { last?: ActionDraft } = {};
@@ -762,7 +941,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     const lookedUp = new Map<string, ManagedPerson>();
     // The assistant of another system the model hands the question to, if it does (D125 item 11).
     const handTo: { assistant?: HandoverAssistant } = {};
-    const lookup = model.tools && people.people.length > 0;
+    const lookup = model.tools && told.people.length > 0;
     const own = [
       ...(draftable.length
         ? [
@@ -790,7 +969,7 @@ export function assistantUsecases(deps: AssistantDeps) {
             prepareCancelTool({ event: meeting, prepared: hear }),
           ]
         : []),
-      ...(lookup ? [personTool(people, now.toISOString(), p => lookedUp.set(p.key, p))] : []),
+      ...(lookup ? [personTool(told, now.toISOString(), p => lookedUp.set(p.key, p))] : []),
       ...(model.tools && routable.length
         ? [
             handoverTool(routable, a => {
@@ -799,21 +978,15 @@ export function assistantUsecases(deps: AssistantDeps) {
           ]
         : []),
     ];
-    // What the model is given of the conversation so far: the last twenty messages' text, and which reads each earlier
-    // answer made, when and how many rows each answered. Never what a read held: a question about facts reads again.
+    // What the model is given of the conversation so far: the last twenty messages' text, each earlier answer checked
+    // (`heardHistory`), and which reads each earlier answer made, when and how many rows each answered. Never what a
+    // read held: a question about facts reads again.
     const recent = history.slice(-20);
+    const { heard, inherited } = await heardHistory(persona, recent, people);
     const earlier = earlierReads(recent, now.toISOString());
-    // What stands open beside the conversation: the page's thing, then the chip open in the pane beside the transcript.
-    const beside = [
-      ...thingLines,
-      ...(chips.beside
-        ? serialiseContext(
-            chips.objects.filter(o => o.ref === chips.beside && !sameRead(o)),
-            now.toISOString(),
-            people.guards,
-          )
-        : []),
-    ];
+    const lines = (objects: ResolvedObject[]) =>
+      objects.flatMap(o => (objectOpen(o) ? serialiseContext([o], now.toISOString(), told.guards) : [closedLine(o)]));
+    const beside = [...thingLines, ...lines(chips.objects.filter(o => o.ref === chips.beside && !sameRead(o)))];
     const system = systemPrompt({
       name: persona.name,
       role: persona.role,
@@ -822,16 +995,12 @@ export function assistantUsecases(deps: AssistantDeps) {
       now,
       week: weekNumber(displayDate(now.toISOString())),
       // What stands open beside the transcript is said as that, apart from what the person added to the conversation.
-      objects: serialiseContext(
-        chips.objects.filter(o => o.ref !== chips.beside && !sameRead(o)),
-        now.toISOString(),
-        people.guards,
-      ),
+      objects: lines(chips.objects.filter(o => o.ref !== chips.beside && !sameRead(o))),
       ...(beside.length ? { beside } : {}),
       ...(draftable.length ? { drafts: recordActions.length ? ('record' as const) : ('item' as const) } : {}),
       prepares: !!meeting,
-      ...(people.people.length
-        ? { people: { lines: peopleLines(people, now.toISOString()), lookup, ...(openPerson ? { open: true } : {}) } }
+      ...(told.people.length
+        ? { people: { lines: peopleLines(told, now.toISOString()), lookup, ...(openPerson ? { open: true } : {}) } }
         : {}),
       ...(earlier.length ? { earlier } : {}),
       ...(model.tools && routable.length ? { assistants: routable.map(assistantLine) } : {}),
@@ -846,25 +1015,40 @@ export function assistantUsecases(deps: AssistantDeps) {
       } else turn.emit({ type: 'text', delta: visible, reset: true });
       sent = visible;
     };
+    // The turn's record (D91): which model, what the call cost and where its trace is, never what was said.
+    const started = clock().getTime();
+    const called = (usage?: ModelUsage) => {
+      const traceId = deps.trace?.();
+      turn.called = {
+        model: { id: model.id, title: model.title },
+        call: {
+          providerId: model.providerId,
+          durationMs: Math.max(0, clock().getTime() - started),
+          ...(usage?.steps !== undefined ? { steps: usage.steps } : {}),
+          ...(usage?.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}),
+          ...(usage?.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}),
+          ...(usage?.finishReason ? { finishReason: usage.finishReason.slice(0, 40) } : {}),
+          ...(traceId ? { traceId } : {}),
+        },
+      };
+    };
     try {
-      // The search fan-out (D26) takes up to four seconds of its own, so a turn that may search gets a longer budget than a plain read.
-      const timeoutMs = tools.some(t => t.name === SEARCH_TOOL) ? 12_000 : 8_000;
-      const started = clock().getTime();
       const answer = await modelAnswer({
         system,
-        history: recent.map(m => ({ role: m.role, body: heardBody(m) })),
+        history: heard,
         text,
         tools,
-        run: (name, input) => turn.run(name, input),
+        run: (name, input) => turn.run(name, input, { model: model.id }),
         generate: model.generate,
-        timeoutMs,
+        timeoutMs: TURN_MS,
         onText,
         ...(turn.signal ? { signal: turn.signal } : {}),
         ...(own.length ? { own } : {}),
-        pointed: chips.objects.flatMap(o => (o.kind === 'capability' ? [o.name] : [])),
+        pointed: chips.objects.flatMap(o => (o.kind === 'capability' && objectOpen(o) ? [o.name] : [])),
       });
+      called(answer.usage);
+      models.health.mark(model.providerId, true, clock().toISOString());
       if (handTo.assistant) {
-        models.health.mark(model.providerId, true, clock().toISOString());
         // Whatever the model wrote before or after choosing is taken back: the assistant it chose answers.
         if (sent) turn.emit({ type: 'text', delta: '', reset: true });
         return { handTo: handTo.assistant.id };
@@ -878,19 +1062,6 @@ export function assistantUsecases(deps: AssistantDeps) {
           c.capability !== turn.started?.capability,
       );
       const begun = turn.started ? await startedDraft(persona, turn.started, now.toISOString(), history) : {};
-      const ended = clock();
-      models.health.mark(model.providerId, true, ended.toISOString());
-      // The turn's record (D91): what it cost and where its trace is, never what was said.
-      const traceId = deps.trace?.();
-      const modelCall: ModelCall = {
-        providerId: model.providerId,
-        durationMs: Math.max(0, ended.getTime() - started),
-        ...(answer.usage?.steps !== undefined ? { steps: answer.usage.steps } : {}),
-        ...(answer.usage?.inputTokens !== undefined ? { inputTokens: answer.usage.inputTokens } : {}),
-        ...(answer.usage?.outputTokens !== undefined ? { outputTokens: answer.usage.outputTokens } : {}),
-        ...(answer.usage?.finishReason ? { finishReason: answer.usage.finishReason.slice(0, 40) } : {}),
-        ...(traceId ? { traceId } : {}),
-      };
       // The sources are the systems the turn read and that answered, by the registry's names for them; a lookup of a
       // person is Clew's own (D115) and names none. A turn that read nothing names none: the answer is the assistant's.
       const answered: ReadRecord[] = answer.reads.length
@@ -972,13 +1143,31 @@ export function assistantUsecases(deps: AssistantDeps) {
       const recordAction = draft && openRecord ? recordActions.find(a => a.id === draft.actionId)?.record : undefined;
       // Open work about a person the model looked up is drawn only when the answer speaks of it.
       const found = [...lookedUp.values()].flatMap(p =>
-        people
+        told
           .work(p)
           .filter(t => speaksOf(parsed.body, t.title))
           .map(t => t.id),
       );
       const shape: Produced['shape'] =
         draft || prepared.last || turn.started ? 'forslag' : (parsed.shape ?? (view ? 'vy' : 'svar'));
+      // What the answer was written from besides this turn's reads (`MessageMeta.basis`): the work items whose own text
+      // the prompt carried (a guarded item's title and buttons are not its text), the systems of everything the person
+      // pointed at, of the work about the people the turn named or looked up and of the rows its reads answered (a
+      // composite's hits and rows, the person's work items), and what the earlier answers it heard were written from.
+      const pointedAt = chips.objects.filter(objectOpen);
+      const basis = basisOf(
+        [
+          ...pointedAt.flatMap(o => ('thread' in o && !people.guards(o.thread) ? [o.thread.id] : [])),
+          ...inherited.items,
+        ],
+        [
+          ...pointedAt.map(o => originOf(o).connector),
+          ...[...namedWork(told), ...[...lookedUp.values()].flatMap(p => told.work(p))].map(t => t.connector),
+          ...answered.flatMap(r => rowConnectors(registry.find(r.capability)?.capability.view, r.output)),
+          ...inherited.connectors,
+        ],
+        [...inherited.capabilities, ...(standing.record ? [standing.record.capability] : [])],
+      );
       return {
         body: parsed.body,
         source,
@@ -1014,10 +1203,11 @@ export function assistantUsecases(deps: AssistantDeps) {
             : begun),
         ...(prepared.last ? { prepared: prepared.last } : {}),
         model: { id: model.id, title: model.title },
-        modelCall,
         ...(found.length ? { cards: found } : {}),
+        basis,
       };
     } catch (e) {
+      if (!turn.called) called(e instanceof ModelUnavailable ? e.usage : undefined);
       if (turn.signal?.aborted) throw new TurnStopped();
       // The model chose an assistant and then wrote nothing, or ran out of time: its choice stands, since its text was
       // never going to be the answer.
@@ -1025,7 +1215,9 @@ export function assistantUsecases(deps: AssistantDeps) {
         if (sent) turn.emit({ type: 'text', delta: '', reset: true });
         return { handTo: handTo.assistant.id };
       }
-      models.health.mark(model.providerId, false, clock().toISOString());
+      // Only an endpoint that did not answer, or refused the key, is down (`ModelHealth`).
+      const wire = [e, e instanceof Error ? e.cause : undefined].find((c): c is WireError => c instanceof WireError);
+      if (wire && wire.kind !== 'unsupported') models.health.mark(model.providerId, false, clock().toISOString());
       const reason = (e instanceof Error ? e.message : String(e)).slice(0, 200);
       deps.log('assistant: model unavailable, falling back to the router:', reason);
       if (sent) turn.emit({ type: 'text', delta: '', reset: true });
@@ -1036,7 +1228,10 @@ export function assistantUsecases(deps: AssistantDeps) {
    * One turn of the conversation. A listener hears its steps and the model's text while it runs (D36); the turn, its two
    * messages and its audit row are still written together once the answer is known, and a turn stopped before that
    * writes nothing of the conversation. A work item a propose became before the stop is not the turn's: it was
-   * committed with its own audit row when it started, and stays as the person's open item.
+   * committed with its own audit row when it started, and stays as the person's open item. A turn that ends without an
+   * answer after it called a model, read anything or started a work item (stopped, offered to another system's
+   * assistant, or failed on the way) still writes its audit row (`unanswered`): which model was sent what is never lost
+   * (D91, D122 item 8).
    */
   async function converse(
     persona: AuthenticatedContext,
@@ -1046,8 +1241,66 @@ export function assistantUsecases(deps: AssistantDeps) {
     // Handed to an assistant of another system: the person's words go there unchanged and Clew's own model is not
     // asked. Its answer stands as its own; Clew never answers in its place unasked.
     if (input.assistant) return handOver(persona, input, observer);
-    const asked = pageThing(input.thing);
     const turn = turnFor(persona, observer);
+    try {
+      return await answerTurn(persona, input, observer, turn);
+    } catch (e) {
+      try {
+        await unanswered(persona, input, turn, e);
+      } catch (failure) {
+        // The turn's own error is what the person is told; a record that could not be written is logged beside it.
+        deps.log(
+          'assistant: the audit row of a turn without an answer was not written:',
+          String(failure).slice(0, 200),
+        );
+      }
+      throw e;
+    }
+  }
+  /**
+   * The audit row of a turn that ends without an answer: `conversation.stopped` when the person pressed Stoppa,
+   * `conversation.offered` when the model suggested another system's assistant and the person is asked first, and
+   * `conversation.failed` when anything else ended it (a read the router made that failed, a store that did not
+   * answer), with the error's kind (`failure`, its class name) and never its message, which may hold the source's words
+   * or a statement's values. It says which model the turn was sent to and what the call cost, every read the turn made
+   * with its count, the work item a propose became and the assistant offered; never a word of the question or of what
+   * was read. A turn that did none of that writes nothing. The subject is the conversation, or the person when the turn
+   * was to start one. A failure is its own action and not a stop with a reason, so a count of the stops the people
+   * pressed stays a count of those.
+   */
+  async function unanswered(persona: AuthenticatedContext, input: ConversationInput, turn: Turn, ended: unknown) {
+    if (!turn.called && !turn.reads.length && !turn.started) return;
+    const action =
+      ended instanceof TurnStopped
+        ? 'conversation.stopped'
+        : ended instanceof HandoverOffered
+          ? 'conversation.offered'
+          : 'conversation.failed';
+    await store.transaction(tx =>
+      tx.writeAudit({
+        actor: persona.principal.id,
+        action,
+        subject: input.conversationId ? 'thread:' + input.conversationId : 'person:' + persona.id,
+        at: clock().toISOString(),
+        details: {
+          chips: (input.chips ?? []).map(c => c.ref),
+          ...(turn.reads.length ? { reads: turn.reads } : {}),
+          ...(turn.started ? { started: { thread: turn.started.threadId, capability: turn.started.capability } } : {}),
+          ...(turn.called ? { model: turn.called.model.id, modelCall: turn.called.call } : {}),
+          ...(ended instanceof HandoverOffered ? { offered: ended.assistant.id } : {}),
+          ...(action === 'conversation.failed'
+            ? { failure: (ended instanceof Error ? ended.name : typeof ended).slice(0, 40) }
+            : {}),
+        },
+      }),
+    );
+  }
+  async function answerTurn(
+    persona: AuthenticatedContext,
+    input: ConversationInput,
+    observer: TurnObserver,
+    turn: Turn,
+  ): Promise<ConversationResponse> {
     const chips: Chip[] = input.chips ?? [];
     const resolved = await resolveChips(deps, persona, chips, input.beside);
     const existing = input.conversationId ? await access.read(persona, input.conversationId) : undefined;
@@ -1056,6 +1309,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     const history = existing?.messages ?? [];
     // The thing that stands open (D136 item 1): what the page says now, else what the conversation kept from the page it
     // was asked beside, so every later turn is about it wherever it is continued. Resolved again below, as the asker.
+    const asked = pageThing(input.thing);
     const thing = asked ?? existing?.askedBeside?.thing;
     // The people the question names among those the asker manages, and the asker's open work about them (D115); a
     // person whose page stands open is one of them when the asker manages them (D136 item 2).
@@ -1076,13 +1330,15 @@ export function assistantUsecases(deps: AssistantDeps) {
           (await access.list(persona, clock().toISOString())).filter(t => t.state === 'open' && t.kind === 'pushed'),
         );
     const shown = new Set(history.flatMap(m => m.meta?.cards ?? []));
-    // The model reads a named card as if the person had pointed at it.
-    const context: ResolvedChips = named.length
+    // The model reads a named card as if the person had pointed at it, when it may have the card's system (D122 item 4):
+    // the person named it in words and did not point, so one it may not have is left out, not said to be there.
+    const told = named.filter(t => registry.forModel(t.connector));
+    const context: ResolvedChips = told.length
       ? {
           ...resolved,
           objects: [
             ...resolved.objects,
-            ...named.map(t => ({ kind: 'thread' as const, ref: 'thread:' + t.id, thread: t })),
+            ...told.map(t => ({ kind: 'thread' as const, ref: 'thread:' + t.id, thread: t })),
           ],
         }
       : resolved;
@@ -1110,7 +1366,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           : [];
       const outcome = await modelPath(persona, input.text, history, context, model, turn, people, thing, routable);
       // The model suggests an assistant of another system: the person is asked before anything leaves Clew, and the
-      // turn ends here with nothing saved, as a stopped one does.
+      // turn ends here with no conversation saved, as a stopped one does; its audit row is `unanswered`'s.
       if ('handTo' in outcome) {
         const suggested = routable.find(a => a.id === outcome.handTo);
         if (suggested) throw new HandoverOffered(suggested);
@@ -1197,8 +1453,10 @@ export function assistantUsecases(deps: AssistantDeps) {
       ...(cards.length ? { cards } : {}),
       ...(asRows ? { cardsAs: 'rows' as const } : {}),
       ...(produced.model ? { model: produced.model } : {}),
-      ...(produced.modelCall ? { modelCall: produced.modelCall } : {}),
+      // What the model call cost (D91), also when the router answered in its place.
+      ...(turn.called ? { modelCall: turn.called.call } : {}),
       ...(fallbackReason ? { fallbackReason } : {}),
+      ...(produced.basis && Object.keys(produced.basis).length ? { basis: produced.basis } : {}),
     };
     const askedMeta: MessageMeta = {
       ...(chips.length ? { chips, refs } : {}),
@@ -1294,9 +1552,11 @@ export function assistantUsecases(deps: AssistantDeps) {
             : {}),
           ...(produced!.sources?.length ? { sources: produced!.sources.map(s => s.ref) } : {}),
           ...(cards.length ? { cards } : {}),
-          ...(produced!.model ? { model: produced!.model.id } : {}),
-          // The audit row finds the turn's trace and cost (D91); the text stays in the message, never here.
-          ...(produced!.modelCall ? { modelCall: produced!.modelCall } : {}),
+          // A work item a propose became in the turn (its own audit row says so too).
+          ...(turn.started ? { started: { thread: turn.started.threadId, capability: turn.started.capability } } : {}),
+          // The model the turn was sent to, whether it answered or the router did (D91), and what the call cost and
+          // where its trace is; the text stays in the message, never here.
+          ...(turn.called ? { model: turn.called.model.id, modelCall: turn.called.call } : {}),
           ...(fallbackReason ? { fallbackReason } : {}),
         },
       });
