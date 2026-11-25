@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { useLocation, useParams, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser, ViewRef } from '@clew/contracts';
 import type { PanelViewSpec } from '@clew/contracts';
@@ -10,13 +10,13 @@ import { EntityActions } from '../components/people/entity-sections';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
-import { opensAsPage, viewOpenHref, withViewInput } from '../view-address';
+import { opensAsPage, viewOpenHref } from '../view-address';
 import { useShownForTheWayBack } from '../way-back';
 import { Shell, shortQuery } from '../components/shell/shell';
 import { placeOfRead, useNav, type NavCurrent } from '../components/shell/nav';
 import { DeclaredView } from '../components/views/view';
 import { PanelBody, answersWithRowsOf } from '../components/views/panel';
-import { useView, viewSubject } from '../components/views/view-read';
+import { useView, useViewInput, viewSubject } from '../components/views/view-read';
 import { PageFrame, WayBack } from '../components/shell/page-frame';
 import { pageSubject, recordSubject } from '../components/conversation/page-conversation';
 import { PageHeader } from '../components/shell/page-header';
@@ -103,7 +103,6 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const short = useMediaQuery(shortQuery);
   const { capability = '' } = useParams<{ capability: string }>();
   const [search] = useSearchParams();
-  const navigate = useNavigate();
   const location = useLocation();
   const address = location.pathname + location.search;
   useShownForTheWayBack(address);
@@ -115,7 +114,9 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const entry = menu?.find(e => e.capability === capability) ?? null;
   const known = views?.find(v => v.capability === capability) ?? null;
   const unlisted = areasQ.data !== undefined && !entry && !known && views !== undefined;
-  const inputJson = search.get('input');
+  // What the view is read with: the address's input, and what is typed into its search field, which no address holds.
+  const viewInput = useViewInput(capability);
+  const inputJson = viewInput.inputJson;
   const named = entry?.label ?? search.get('title') ?? known?.title ?? '';
   // Read only once the person's reads are known, so a read that is not theirs is never asked for.
   const main = useView(areasQ.data !== undefined && !unlisted ? capability : null, inputJson, {
@@ -327,10 +328,8 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                       tableQuery={tableQuery}
                       title={title}
                       titleId={TITLE_ID}
-                      /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the page. */
-                      onInput={next =>
-                        navigate(withViewInput(location.pathname, location.search, next), { replace: true })
-                      }
+                      /* A choice rewrites the address in place, so one step back leaves the page; typed words stay off it (`useViewInput`). */
+                      onInput={next => viewInput.onInput(next, tool.spec)}
                       hrefFor={hrefFor}
                     />
                   ) : (

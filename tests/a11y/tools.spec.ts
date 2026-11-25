@@ -83,7 +83,7 @@ test.describe('a tool as a page', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('typing asks again in place: the field keeps the focus, the address carries the question, the count is spoken, and one step back leaves the tool', async ({
+  test('typing asks again in place: the field keeps the focus, the address never holds the words, the count is spoken, and one step back leaves the tool', async ({
     page,
     api,
   }) => {
@@ -94,7 +94,8 @@ test.describe('a tool as a page', () => {
     await field.fill('lärare');
     await expect(page.getByRole('row')).toHaveCount(3);
     await expect(field).toBeFocused();
-    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=.*l%C3%A4rare/);
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory(\?|$)/);
+    expect(page.url()).not.toContain('l%C3%A4rare');
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 kontakter'));
     await field.fill('');
     await page.getByRole('combobox', { name: 'Sök i', exact: true }).click();
@@ -201,10 +202,10 @@ test.describe('a tool as a page', () => {
     await expect(title).toHaveText('Telefonlistan');
     await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/');
     await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Start');
-    // Its own search keeps the name and the way back.
+    // Its own search keeps the name and the way back, and its words stay out of the address.
     await page.getByRole('searchbox', { name: 'Sök i telefonboken' }).fill('lärare');
     await expect(page.getByRole('row')).toHaveCount(3);
-    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=.*&title=Telefonlistan&from=%2F$/);
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?title=Telefonlistan&from=%2F$/);
   });
 
   test('a read the person may not open says the same as one that does not exist, and neither is asked for', async ({

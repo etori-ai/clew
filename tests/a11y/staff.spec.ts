@@ -171,16 +171,22 @@ test.describe('Personal', () => {
       await expectNoAxeViolations(page);
     });
 
-    test('the search narrows the rows by name in the address, replaced as the person types, and says when nobody is found', async ({
+    test('the search narrows the rows by name, never in the address or a way back, and says when nobody is found', async ({
       page,
       api: _,
     }) => {
       await open(page, '/staff');
       const search = page.getByRole('searchbox', { name: 'Sök medarbetare' });
       await search.fill('karin');
-      await expect(page).toHaveURL('/staff?q=karin');
+      // The words are a person's name: they stay with the page, never in its address, which access logs and the
+      // browser's history keep, nor in the way back the person's page is given (D100 item 5; WD-M4).
       await expect(page.getByRole('row')).toHaveCount(2);
+      await expect(page).toHaveURL('/staff');
       await expect(row(page, 'Karin Lindqvist')).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Karin Lindqvist', exact: true })).toHaveAttribute(
+        'href',
+        /from=%2Fstaff$/,
+      );
       await search.press('End');
       await page.keyboard.type('x');
       await expect(page.getByRole('heading', { level: 2, name: 'Ingen medarbetare heter så' })).toBeVisible();

@@ -4,7 +4,7 @@ import { InputError } from '../context';
 
 /**
  * What a caller adds to a run: `direct` is for the one caller that is the person's own session asking for a read itself
- * (`GET /api/cap`): only there is a relation the person holds by grant resolved (D121, `RunContext.direct`). `caller` is
+ * (`POST /api/cap`): only there is a relation the person holds by grant resolved (D121, `RunContext.direct`). `caller` is
  * for the assistant's runner, which reads in a conversation turn for the person (D122 item 6, `RunContext.caller`), and
  * `forModel` for every read of such a turn, whose answer the model is handed now or later in the conversation (D122
  * item 4, `RunContext.forModel`).

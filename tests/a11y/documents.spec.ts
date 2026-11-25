@@ -22,9 +22,8 @@ async function originals(page: Page, api: MockApi) {
   // A source whose record has moved on since it was read: the same documents under another revision.
   let revised = false;
   await page.route('**/api/cap/finance.*', async route => {
-    const url = new URL(route.request().url()),
-      capability = url.pathname.split('/').at(-1)!;
-    const output = await registry.run(actor, capability, JSON.parse(url.searchParams.get('input') ?? '{}'));
+    const capability = new URL(route.request().url()).pathname.split('/').at(-1)!;
+    const output = await registry.run(actor, capability, route.request().postDataJSON() ?? {});
     const view = registry.find(capability)!.capability.view!;
     await route.fulfill({
       json: {

@@ -750,7 +750,7 @@ describe('the competence wiring (D108 item 13)', () => {
     registry
       .register({ ...competenceConnector(w.competence, async a => personas.get(a.id)!), uses: ['*'] })
       .govern(COMPETENCE_CONNECTOR, openGovernance());
-    // Her own session's direct read (`GET /api/cap`) is the one call the relation is resolved on.
+    // Her own session's direct read (`POST /api/cap`) is the one call the relation is resolved on.
     expect(
       await registry.run(audiencedActorOf(hr), 'competence.holdings', { person: 'Anna.Lindqvist' }, { direct: true }),
     ).toEqual({ rows: [] });
