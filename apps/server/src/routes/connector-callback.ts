@@ -6,6 +6,7 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { ForbiddenError, InputError, privateHeaders } from '../context';
 import { AssertionError, type CallbackGrant } from '../connectors/authority';
 import { STARTING } from '../startup';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * The one way back in for a remote connector (D21): run another connector's `read` or `propose` as the person the connector
@@ -65,8 +66,8 @@ export function connectorCallback(deps: ConnectorCallbackDeps) {
       deps.failed(e);
       return error('unavailable', 'Tjänsten går inte att nå just nu.', 503);
     }
-    const text = await c.req.raw.text();
-    if (text.length > 8000) return error('invalid', 'För stor förfrågan.', 400);
+    const text = await textOfAtMost(c.req.raw, 8000);
+    if (text === undefined) return error('invalid', 'För stor förfrågan.', 400);
     let body: unknown;
     try {
       body = text ? JSON.parse(text) : {};

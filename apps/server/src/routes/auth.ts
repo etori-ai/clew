@@ -24,6 +24,7 @@ import { tokenDigest } from '../auth-crypto';
 import { failureDetails } from '../auth-refresh';
 import { protectedRoute, privateHeaders, sessionCookie, type Env } from '../context';
 import { logger } from '../logging';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * Sign-in and logout. A sign-in or logout that fails is answered as the person or the provider needs it, and said in
@@ -118,8 +119,9 @@ authRoutes.post('/logout', async c => {
 authRoutes.post('/backchannel-logout', async c => {
   try {
     if (!c.req.header('content-type')?.startsWith('application/x-www-form-urlencoded')) throw new Error('Format');
-    const body = await c.req.text();
-    if (body.length > 16000) throw new Error('Limit');
+    // Read no further than the limit: the address is public, and a body is measured before it is held (ID-8).
+    const body = await textOfAtMost(c.req.raw, 16000);
+    if (body === undefined) throw new Error('Limit');
     const token = new URLSearchParams(body).get('logout_token');
     if (!token) throw new Error('Missing');
     await receiveLogout(token);

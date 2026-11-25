@@ -43,9 +43,25 @@ interface Descriptor {
   /** The protocol a remote connector's manifest is written to (D60); absent for Clew's own, which follow the current one. */
   protocol?: number;
 }
-function schemaCompiler() {
+/** A schema compiled: whether a value is valid. */
+export type SchemaValidator = (value: unknown) => boolean;
+/**
+ * A compiler for one manifest's schemas, the loader's and the dry run's alike (CB-6). It is made per use and never kept:
+ * Ajv holds every schema it compiles, so a compiler shared across manifests grew with each one. It registers no schema
+ * by its `$id` (`addUsedSchema: false`), so two capabilities whose inputs carry the same `$id` compile apart, and it
+ * compiles each schema object once, so the rules and the question of empty input share one compilation.
+ */
+export function schemaCompiler(): (schema: object) => SchemaValidator {
   const ajv = addFormats(new Ajv({ strict: false, addUsedSchema: false }));
-  return (schema: object) => ajv.compile(schema);
+  const compiled = new WeakMap<object, SchemaValidator>();
+  return schema => {
+    let validate = compiled.get(schema);
+    if (!validate) {
+      validate = ajv.compile(schema);
+      compiled.set(schema, validate);
+    }
+    return validate;
+  };
 }
 type Schema = { type?: unknown; properties?: Record<string, Schema>; items?: Schema; required?: unknown };
 const asSchema = (value: unknown): Schema | undefined =>

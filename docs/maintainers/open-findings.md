@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 5 | A limit on what another party sends | `CB-4`, `CB-5`, `CB-6`, `CS-M1`, `CS-L3`, `ID-8`, `ID-10` | |
 | 6 | A decision is bound to what the person was shown | `AM-4`, `DE-M9`, `DE-L5`, `DE-L6` | |
 | 7 | A decision that failed or whose outcome is unknown has a way forward | `DE-M1`, `DE-M2`, `DE-M3`, `DE-L1`, `DE-L2`, `DE-L11`, `DE-L17` | |
 | 8 | Erasure reaches everything | `DE-M6`, `BD-M1`, `BD-M2`, `BD-L1`, `BD-L3`, `BD-L5` | |
@@ -41,8 +40,8 @@ no batch.
 
 | Area | Review | High | Medium | Low | Total |
 |---|---|---|---|---|---|
-| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 1 | 4 | 5 |
-| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 4 | 5 | 9 |
+| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 1 | 2 | 3 |
+| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 1 | 5 | 6 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 6 | 5 | 11 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 9 | 17 | 26 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
@@ -50,8 +49,8 @@ no batch.
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 6 | 8 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
-| CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 2 | 8 | 10 |
-| | **Total** | **0** | **34** | **73** | **107** |
+| CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 1 | 7 | 8 |
+| | **Total** | **0** | **30** | **70** | **100** |
 
 ## High
 
@@ -66,9 +65,7 @@ points, and it carries a section on the earlier SCIM reviews.
 |---|---|---|---|
 | ID-3 | Medium | `followedUnits` builds the signed `units` from every assignment, so a unit a manager is only placed on is told to a source as one they follow up. | `apps/server/src/composition/people.ts:116` |
 | ID-7 | Low | The mapping to Kompetenssökning is not held as a capability mapping is: decided before the group is held, a NUL answers 503, and some stale rows cannot be removed. | `apps/server/src/modules/people/usecases.ts:1126` |
-| ID-8 | Low | The back-channel logout address refetches the provider's keys for every unknown `kid` and reads the whole body before measuring it. | `apps/server/src/auth.ts:449` |
 | ID-9 | Low | No test covers a sign-in that succeeds, a second sign-in replacing the first, the mutation guard, `access-revoked`, sign-out or `localReturnTo`. | `tests/unit/auth-*.test.ts` |
-| ID-10 | Low | A path-less SCIM patch is not held to the nesting limit, so a deeply nested value overflows the stack and answers 500. | `apps/server/src/modules/people/domain.ts:570` |
 
 ## The connector boundary in the core
 
@@ -77,9 +74,6 @@ It carries no tables of its own.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| CB-4 | Medium | The transport follows redirects on capability calls, scans, figures and manifest reads, sending the transport key and the person's token, and shows the other host's words. | `packages/connectors/src/remote.ts:218-230` |
-| CB-5 | Medium | A connector's answer to a capability call, scan, figure or manifest is read into memory whatever its size. | `packages/connectors/src/remote.ts:236` |
-| CB-6 | Medium | The public manifest dry run compiles every capability's schema into one module-wide `Ajv` that keeps them all, so memory grows without bound. | `apps/server/src/routes/protocol.ts:21` |
 | CB-7 | Medium | A job proposal names a connector, with its id, name and capability, to a person outside its audience. | `packages/connectors/src/index.ts:1517-1527` |
 | CB-9 | Low | Adding or testing a connector whose service does not answer ends in "Något gick fel", and `unreachable` is never recorded. | `apps/server/src/composition/index.ts:403-405` |
 | CB-10 | Low | Several connector administration audit rows and the signing key's rows have no scenario test that asserts them. | `apps/server/src/connectors/usecases/admin.ts:609-618` |
@@ -239,11 +233,9 @@ fields an administrator never sees, writes and their deduplication, and error me
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| CS-M1 | Medium | Eight connectors' HTTP wrappers read any body whole and turn a malformed request into an unhandled rejection that ends the process, with no key needed. | `connectors/hello/server.mjs:10` |
 | CS-M2 | Medium | Five undo writes and `timesheet.markAbsence` in the HR, finance and time fixtures act on records outside the caller's unit. | `connectors/hr/connector.mjs:438` |
 | CS-L1 | Low | The verifier never records `jti` and the operation id is outside the binding, so a captured write sent under a new operation id runs again in five connectors. | `connectors/*/verification.mjs:62` |
 | CS-L2 | Low | Fifteen connectors run a capability on a path the verifier does not bind to a capability, so D117's capability binding does not hold. | `connectors/*/verification.mjs:12-34` |
-| CS-L3 | Low | The phonebook's HTTP adapter sends its API key across a redirect to another host, and neither it nor Eneo requires https. | `connectors/phonebook/directory.mjs:55-66` |
 | CS-L4 | Low | The supportmanagement and pob compose files give a `CLEW_URL` over `http:` that the verifier refuses to fetch keys from. | `connectors/supportmanagement/compose.yaml:4` |
 | CS-L5 | Low | `reference` answers 401 to an employee, which Clew reads as the source unavailable, and fails the conformance check. | `connectors/reference/connector.mjs:98` |
 | CS-L6 | Low | `hello` puts the underlying error's text in its answer. | `connectors/hello/connector.mjs:295` |
