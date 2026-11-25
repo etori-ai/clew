@@ -17,6 +17,7 @@ the address or the session lives in the web app (`apps/web/src/components`, grou
 | `AreaChip`, `AreaGlyph`, `AreaLine`, `SystemSwatch` | `mark.tsx` | `Badge`, `Icon` | The mark of an area and its system (D71) |
 | `CompletionMark`, `CompletionFeedback` | `completion.tsx` | `Icon`, `Text`, `HStack`, `VStack` | That something was done |
 | `MetricView`, `SeriesView`, `ActivityView` | `presentation.tsx` | `Card`, `Grid`, `List`, `Table`, `Badge`, `Text` | A connector's declared presentation (D38) |
+| `UntrustedMarkdown` | `untrusted-markdown.tsx` | `Markdown` with its `components.image` | Markdown Clew did not write (an answer, another system's assistant's, a source's text view): an image is drawn as its alternative text, so nothing is fetched from an address the text names |
 
 `FigureTile` and `KeyFigure` draw the same kind of thing from two models. They become one when the unit's page is
 gone through against the prototype.
