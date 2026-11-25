@@ -77,6 +77,57 @@ export const healthLabel: Record<ConnectorSummary['health']['status'], string> =
   'secret-rejected': 'Nyckeln avvisas',
   untested: 'Inte kontrollerad',
 };
+/** A changed manifest field as the review names it (D144); a field not named here is shown by its protocol name. */
+export const manifestFieldLabel: Record<string, string> = {
+  protocol: 'protokollversion',
+  kind: 'typ av anslutning',
+  source: 'systemets namn',
+  scan: 'skickar ärenden',
+  installation: 'läsningar utan någon person bakom',
+  facts: 'uppgifter som anslutningen skapar',
+  assignments: 'uppdrag',
+  documents: 'dokument',
+  assistants: 'assistenter',
+  header: 'sidhuvudet',
+  capabilities: 'funktionernas ordning',
+  areas: 'områdenas ordning',
+};
+/** A capability's fields as the review of a changed manifest names them (D144); a field not listed is named by its key. */
+export const capabilityFieldLabel: Record<string, string> = {
+  kind: 'typ',
+  title: 'namn',
+  description: 'beskrivning',
+  input: 'indata',
+  output: 'svar',
+  model: 'erbjuds assistenten',
+  scope: 'vem som får använda den',
+  execution: 'upprepning efter ett förlorat svar',
+  kinds: 'vad sökningen hittar',
+  view: 'visning',
+  review: 'underlag vid beslut',
+  menu: 'menyraden',
+  about: 'vad den gäller',
+  person: 'vilka personer den gäller',
+  unit: 'vilka enheter den gäller',
+  follows: 'uppgifter den följer',
+  creates: 'uppgift den skapar',
+  asks: 'frågor till personen',
+  effect: 'förhandsvisning av ändringen',
+};
+/** An area's fields as the review names them. */
+export const areaFieldLabel: Record<string, string> = {
+  title: 'namn',
+  roles: 'vem som ser området',
+  standing: 'funktioner i området',
+  schedules: 'schema',
+  figure: 'nyckeltal',
+  icon: 'ikon',
+};
+/** "vem som får använda den och svar": the changed fields of one capability or area, in words. */
+export function fieldList(fields: readonly string[], labels: Record<string, string>): string {
+  const words = fields.map(f => labels[f] ?? f);
+  return words.length > 1 ? `${words.slice(0, -1).join(', ')} och ${words.at(-1)}` : (words[0] ?? '');
+}
 /** One line for the audience: "Alla", "Chefer", "Chefer · 2 enheter", "Ingen". */
 export function audienceLabel(a: ConnectorAudience): string {
   if (a.mode === 'all') return 'Alla';

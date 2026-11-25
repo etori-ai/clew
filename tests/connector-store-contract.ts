@@ -14,7 +14,19 @@ export interface ConnectorStoreHarness {
   cardState(threadId: string): Promise<string | undefined>;
 }
 const T0 = '2026-11-04T06:00:00.000Z',
-  T1 = '2026-11-04T06:05:00.000Z';
+  T1 = '2026-11-04T06:05:00.000Z',
+  T2 = '2026-11-04T06:10:00.000Z';
+/** The same document with every object's keys in the reverse order, as a jsonb round trip may hand it back. */
+const reversed = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(reversed)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.entries(value)
+            .reverse()
+            .map(([k, v]) => [k, reversed(v)]),
+        )
+      : value;
 export const remoteRow = (id: string, overrides: Partial<NewConnector> = {}): NewConnector => ({
   id,
   bundled: false,
@@ -131,24 +143,94 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       await store.transaction(tx => tx.update(id, { areas: {} }, 'person:mikael', T1));
       expect((await store.read(id))!.areas).toEqual({});
     });
-    test('recordHealth changes health and the manifest without a version bump', async () => {
+    test('recordCheck records the health and what the service serves, never the approved manifest, without a version bump (D144)', async () => {
       const { store, fresh } = await make();
       const id = fresh();
       await store.transaction(tx => tx.insert(remoteRow(id)));
-      await store.recordHealth(id, { status: 'unreachable', at: T1, detail: 'ECONNREFUSED' });
+      const approved = (await store.read(id))!.manifest;
+      await store.recordCheck(id, { health: { status: 'unreachable', at: T1, detail: 'ECONNREFUSED' }, at: T1 });
       expect(await store.read(id)).toMatchObject({
         health: { status: 'unreachable', at: T1, detail: 'ECONNREFUSED' },
         version: 1,
         manifestAt: T0,
+        offered: null,
+        offeredAt: null,
       });
-      await store.recordHealth(
-        id,
-        { status: 'ok', at: T1 },
-        { protocol: 1, id, kind: 'passthrough', source: 'Hello 2', areas: [], capabilities: [], scan: true },
-        T1,
-      );
-      expect(await store.read(id)).toMatchObject({ manifestAt: T1, version: 1 });
-      expect(((await store.read(id))!.manifest as { source: string }).source).toBe('Hello 2');
+      const served = { ...(approved as object), source: 'Hello 2', scan: true };
+      // A manifest without a check keeps the health as it was.
+      await store.recordCheck(id, { served, at: T1 });
+      let row = (await store.read(id))!;
+      expect(row).toMatchObject({ manifest: approved, manifestAt: T0, offeredAt: T1, version: 1 });
+      expect(row.health.status).toBe('unreachable');
+      expect((row.offered as { source: string }).source).toBe('Hello 2');
+      // The same offer seen again, its keys in the reverse order, keeps the instant it was first seen.
+      await store.recordCheck(id, { health: { status: 'ok', at: T2 }, served: reversed(served), at: T2 });
+      expect((await store.read(id))!.offeredAt).toBe(T1);
+      await store.recordCheck(id, { served: { ...served, source: 'Hello 3' }, at: T2 });
+      expect((await store.read(id))!.offeredAt).toBe(T2);
+      // The service serves the approved manifest again, its keys in another order: the offer goes in the same write.
+      await store.recordCheck(id, { health: { status: 'ok', at: T2 }, served: reversed(approved), at: T2 });
+      row = (await store.read(id))!;
+      expect(row).toMatchObject({ offered: null, offeredAt: null, manifest: approved, version: 1 });
+      // A draft with nothing approved yet: whatever the service serves is the offer.
+      const draft = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(draft, { manifest: null })));
+      await store.recordCheck(draft, { served, at: T1 });
+      expect(await store.read(draft)).toMatchObject({ manifest: null, offeredAt: T1 });
+    });
+    test('approveOffer puts the reviewed offer live only while it is still the stored one, and bumps the version (D144)', async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      const approved = (await store.read(id))!.manifest as object;
+      const first = { ...approved, source: 'Hello 2' };
+      await store.recordCheck(id, { served: first, at: T1 });
+      // Another offer took its place after the review: the review's offer is no longer the stored one.
+      const second = { ...approved, source: 'Hello 3' };
+      await store.recordCheck(id, { served: second, at: T2 });
+      expect(
+        await store.transaction(tx => tx.approveOffer(id, { at: T1, manifest: first }, first, 'person:mikael', T2)),
+      ).toBe(false);
+      // Same instant, other content: refused too.
+      expect(
+        await store.transaction(tx => tx.approveOffer(id, { at: T2, manifest: first }, first, 'person:mikael', T2)),
+      ).toBe(false);
+      expect(await store.read(id)).toMatchObject({ manifest: approved, version: 1 });
+      // The stored offer, named by its instant and its content (keys in any order), goes live.
+      expect(
+        await store.transaction(tx =>
+          tx.approveOffer(id, { at: T2, manifest: reversed(second) }, second, 'person:mikael', T2),
+        ),
+      ).toBe(true);
+      const row = (await store.read(id))!;
+      expect(row).toMatchObject({
+        manifestAt: T2,
+        offered: null,
+        offeredAt: null,
+        updatedBy: 'person:mikael',
+        version: 2,
+      });
+      expect((row.manifest as { source: string }).source).toBe('Hello 3');
+      // Once applied there is no offer left to apply again.
+      expect(
+        await store.transaction(tx => tx.approveOffer(id, { at: T2, manifest: second }, second, 'person:mikael', T2)),
+      ).toBe(false);
+    });
+    test("recordDescription moves a bundled row's description and never a remote row's manifest", async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      const approved = (await store.read(id))!.manifest;
+      await store.recordDescription(id, { source: 'Somebody else' }, T1);
+      expect(await store.read(id)).toMatchObject({ manifest: approved, manifestAt: T0 });
+      const bundled = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(bundled, { bundled: true, url: null, secret: null })));
+      await store.recordDescription(bundled, { source: 'The new build' }, T1);
+      expect(await store.read(bundled)).toMatchObject({
+        manifest: { source: 'The new build' },
+        manifestAt: T1,
+        version: 1,
+      });
     });
     test('the audit row is written through the transaction and read back as history; a throw rolls everything back', async () => {
       const { store, fresh } = await make();

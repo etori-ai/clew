@@ -76,6 +76,6 @@ For a check without any running Clew services:
 docker exec -w /workspace clew-app-1 bun run docs:smoke
 ```
 
-After a change to the manifest, restart the connector and press "Hämta manifest igen" on its page in Administration.
+After a change to the manifest, restart the connector and press "Läs in igen från systemet" on its page in Administration: Clew keeps the manifest it has until the change is reviewed and approved there ([D144](../../docs/decisions/D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md)).
 
 Node's official image is MIT. The connector has no other dependency.

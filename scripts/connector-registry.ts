@@ -16,6 +16,7 @@ import {
 import { fetchManifest, parseManifest } from '../packages/connectors/src/remote';
 import { sealSecret } from '../apps/server/src/auth-crypto';
 import { secretPurpose } from '../apps/server/src/connectors/remote';
+import { diffDetails, isManifest, manifestDiff, sameManifest } from '../apps/server/src/connectors/manifests';
 import { internalIds } from '../apps/server/src/connectors/registry';
 
 const requireManaged = (id: string) => {
@@ -57,6 +58,9 @@ export async function registerConnector(options: {
         state,
         manifest,
         manifestAt: new Date(),
+        // The operator who runs this approves what the service serves now (D144); an earlier offer is settled with it.
+        offered: null,
+        offeredAt: null,
         health: { status: 'ok', at: new Date().toISOString() },
       });
     else
@@ -69,20 +73,44 @@ export async function registerConnector(options: {
         manifest,
         health: { status: 'ok', at: new Date().toISOString() },
       });
+    // What is approved is in the history (D144): what the connector reads back as the person and whose token it gets.
+    const approved = {
+      source: manifest.source,
+      capabilities: manifest.capabilities.length,
+      uses: manifest.uses ?? [],
+      delegation: manifest.delegation?.audience ?? null,
+    };
     await writeAudit(tx, {
       actor,
       action: existing ? 'connector.secret' : 'connector.added',
       subject: 'connector:' + id,
-      details: { url, source: manifest.source, capabilities: manifest.capabilities.length },
+      details: existing ? { url } : { url, ...approved },
     });
+    // The row the administration page writes when an offer is approved, the whole diff from what was approved, without
+    // the offer's instant: the operator approves what the service serves now.
+    if (existing && !sameManifest(existing.manifest, manifest))
+      await writeAudit(tx, {
+        actor,
+        action: 'connector.manifest',
+        subject: 'connector:' + id,
+        details: diffDetails(manifestDiff(isManifest(existing.manifest) ? existing.manifest : undefined, manifest)),
+      });
     if (state === 'enabled') await writeAudit(tx, { actor, action: 'connector.enabled', subject: 'connector:' + id });
   });
   return { manifest, existing: !!existing, state };
 }
 
-/** Enable or disable a registered connector. Answers false when there is no such row. */
+/**
+ * Enable or disable a registered connector. Answers false when there is no such row. A remote row is enabled only with
+ * an approved manifest (D144), as on the administration page.
+ */
 export async function setConnectorState(id: string, state: 'enabled' | 'disabled') {
   requireManaged(id);
+  const row = await readConnector(id);
+  if (state === 'enabled' && row && !row.bundled && !row.manifest)
+    throw new Error(
+      `Connector ${id} has no approved manifest. Register it with its url and --secret, which fetches and approves what the service serves, or read it in and approve it on Administration › Anslutna system.`,
+    );
   return database().transaction(async tx => {
     const done = await updateConnector(tx, id, actor, { state });
     if (done) await writeAudit(tx, { actor, action: 'connector.' + state, subject: 'connector:' + id });

@@ -702,9 +702,14 @@ export const api = {
     remove: (id: string) => del<{ closedCards: number }>(`/api/admin/connectors/${id}`),
     rotateSecret: (id: string, secret: string) =>
       post<ConnectorDetail>(`/api/admin/connectors/${id}/secret`, { secret }),
-    test: (id: string) => post<CheckReport & { health: ConnectorHealth }>(`/api/admin/connectors/${id}/test`),
-    refresh: (id: string, apply: boolean) =>
-      post<{ diff: ManifestDiff; connector: ConnectorDetail }>(`/api/admin/connectors/${id}/refresh`, { apply }),
+    test: (id: string) =>
+      post<CheckReport & { health: ConnectorHealth; offered: boolean }>(`/api/admin/connectors/${id}/test`),
+    /** `offered` names the offer reviewed, when applying it (D144). */
+    refresh: (id: string, apply: boolean, offered?: string) =>
+      post<{ diff: ManifestDiff; connector: ConnectorDetail }>(`/api/admin/connectors/${id}/refresh`, {
+        apply,
+        ...(offered ? { offered } : {}),
+      }),
     preview: (id: string, role: Role, unitId?: string) =>
       call<ConnectorPreview>(
         `/api/admin/connectors/${id}/preview?role=${role}` + (unitId ? `&unitId=${encodeURIComponent(unitId)}` : ''),
