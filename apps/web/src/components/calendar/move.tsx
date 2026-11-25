@@ -1,3 +1,4 @@
+import { invalidateCalendar } from '../../thread-cache';
 import { useState, type Ref } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Thread } from '@clew/contracts';
@@ -16,7 +17,6 @@ import {
 import { dayLabel, displayDate, shortDayLabel, timeRange } from '@clew/calendar/dates';
 import { api } from '../../api';
 import { useThreadAction } from '../../mutations';
-import { keys } from '../../query-keys';
 import { fieldsOf, instantOf } from './booking';
 
 const minutes = (item: { start: string; end: string }) =>
@@ -62,7 +62,7 @@ export function useMove() {
     const act = (action: () => Promise<Thread | void>, said: string) =>
       run(async () => {
         const thread = await action();
-        if (!thread) void client.invalidateQueries({ queryKey: keys.calendarAll });
+        if (!thread) void invalidateCalendar(client);
         announce(said);
         setMoving(null);
         return thread;

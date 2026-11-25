@@ -8,6 +8,7 @@ import {
   hiddenFocusStops,
   narrow,
   open,
+  pagesNav,
   phone,
   reflowProblems,
   test,
@@ -360,6 +361,22 @@ test.describe('model administration', () => {
       await expect(add).toBeInViewport();
       await add.click();
       await expect(dialog).toHaveCount(0);
+    });
+  });
+
+  test.describe('between the old 720 px line and the app’s 768 px (WA-L9)', () => {
+    test('at 740 px the frame and the models list are both in their phone layout', async ({ page, api }) => {
+      api.admin = true;
+      await page.setViewportSize({ width: 740, height: 900 });
+      await open(page, '/admin/models');
+      // The frame: the header's "Meny" in place of the pages' row.
+      await expect(page.getByRole('banner').getByRole('button', { name: 'Meny', exact: true })).toBeVisible();
+      await expect(pagesNav(page)).toHaveCount(0);
+      // The page: a provider's models as rows of a list, not a table, by the same line.
+      const main = page.getByRole('main');
+      await expect(main.getByRole('list', { name: 'Modeller hos Kommunens modeller' })).toBeVisible();
+      await expect(main.getByRole('table')).toHaveCount(0);
+      expect(await reflowProblems(page)).toEqual([]);
     });
   });
 
