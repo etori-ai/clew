@@ -656,6 +656,8 @@ export function connectorUsecases(deps: AdminDeps) {
     const { by, at } = await mutating(persona);
     const row = await must(id);
     remote(row);
+    const draftOnly = input.draftVersion !== undefined;
+    if (draftOnly && (row.state !== 'draft' || row.version !== input.draftVersion)) throw new InputError(CHANGED_SINCE);
     const offer = pendingOffer(row);
     if (!offer) throw new InputError('Systemet erbjuder ingen ändring att godkänna. Läs in det igen.');
     if (input.offered !== offer.revision) throw new InputError(changedAgain);
@@ -670,7 +672,13 @@ export function connectorUsecases(deps: AdminDeps) {
     const approved = await store.transaction(async tx => {
       // Only while it is still the stored offer: a check that recorded another in between makes this false.
       if (
-        !(await tx.approveOffer(id, { at: offer.at, manifest: offer.manifest, version: row.version }, offered, by, at))
+        !(await tx.approveOffer(
+          id,
+          { at: offer.at, manifest: offer.manifest, version: row.version, draftOnly },
+          offered,
+          by,
+          at,
+        ))
       )
         return false;
       await tx.writeAudit({
@@ -684,7 +692,7 @@ export function connectorUsecases(deps: AdminDeps) {
     });
     if (!approved) throw new InputError(changedAgain);
     const updated = (await store.read(id))!;
-    applyLive(updated, offered);
+    applyLive(updated);
     return { diff, connector: await detail(updated) };
   }
   /**

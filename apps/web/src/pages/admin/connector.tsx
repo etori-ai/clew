@@ -330,7 +330,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
             clickAction={() =>
               run(async () => {
                 // The review is the stored offer, its diff and its revision from one read, so approving names what was shown.
-                const offer = (await api.admin.refresh(id, false)).connector.offered;
+                const offer = (await api.admin.refresh(id, { apply: false })).connector.offered;
                 if (!offer) return 'Inget har ändrats i systemet.';
                 setReview({ diff: offer.diff, offered: offer.revision });
               })
@@ -925,7 +925,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
               isDisabled={busy || !review}
               clickAction={() =>
                 run(async () => {
-                  if (review) await api.admin.refresh(id, true, review.offered);
+                  if (review) await api.admin.refresh(id, { apply: true, offered: review.offered });
                   setReview(null);
                   return 'Uppdaterat från systemet.';
                 })

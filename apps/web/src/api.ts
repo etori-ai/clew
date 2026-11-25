@@ -55,6 +55,7 @@ import type {
   SnoozeInput,
   SnoozePreset,
   AddConnectorInput,
+  RefreshManifestInput,
   Area,
   AssistantReach,
   AssistantReachInput,
@@ -736,11 +737,8 @@ export const api = {
     test: (id: string) =>
       post<CheckReport & { health: ConnectorHealth; offered: boolean }>(`/api/admin/connectors/${id}/test`),
     /** `offered` names the offer reviewed, when applying it (D144). */
-    refresh: (id: string, apply: boolean, offered?: string) =>
-      post<{ diff: ManifestDiff; connector: ConnectorDetail }>(`/api/admin/connectors/${id}/refresh`, {
-        apply,
-        ...(offered ? { offered } : {}),
-      }),
+    refresh: (id: string, input: RefreshManifestInput) =>
+      post<{ diff: ManifestDiff; connector: ConnectorDetail }>(`/api/admin/connectors/${id}/refresh`, input),
     preview: (id: string, role: Role, unitId?: string) =>
       call<ConnectorPreview>(
         `/api/admin/connectors/${id}/preview?role=${role}` + (unitId ? `&unitId=${encodeURIComponent(unitId)}` : ''),
