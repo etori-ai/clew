@@ -51,7 +51,7 @@ import { ActionDialog } from './action-dialog';
 import { dismissed, handedBack, handedOn, reopened, snoozed } from '../../optimistic';
 import { invalidateStream } from '../../thread-cache';
 import { useConversation } from '../conversation/conversation-context';
-import { executionStatus } from '../../execution-status';
+import { executionStatus, releaseQuestion } from '../../execution-status';
 import { statusOf, type ItemStatus, type StatusMoveWords } from '../../status-of';
 import { whenWord } from '../../when-word';
 import { QUEUED_LINE, silentLine, useSilentSources } from '../shell/silent-sources';
@@ -370,13 +370,13 @@ export function useCardAction({
   }, [settling]);
   const selectable = thread.items.some(i => i.selectable);
   // The question an action asks before it runs. The one asked stays in the dialog while it closes.
-  const [asked, setAsked] = useState<ThreadAction | null>(null);
+  const [asked, setAsked] = useState<Question | null>(null);
   const answered = useRef<((yes: boolean) => void) | null>(null);
-  const question = useRef<ThreadAction | null>(null);
+  const question = useRef<Question | null>(null);
   if (asked) question.current = asked;
   // Astryx runs a button's `clickAction` as a transition, which holds every state change until the action has ended.
   // The question is therefore asked a task later, outside it, so the dialog can open while a caller waits for the answer.
-  const ask = (action: ThreadAction) =>
+  const ask = (action: Question) =>
     new Promise<boolean>(resolve => {
       answered.current = resolve;
       setTimeout(() => setAsked(action), 0);
@@ -518,6 +518,12 @@ export function useCardAction({
     );
     return true;
   };
+  // A decision in doubt is let go only once the person has said, in the question, that they saw in the source that it
+  // did not go through (DE-M2).
+  const release = async () => {
+    if (!(await ask(releaseQuestion(thread.trigger.source)))) return;
+    await run(() => api.releaseExecution(thread.id));
+  };
   return {
     run,
     apply,
@@ -527,11 +533,14 @@ export function useCardAction({
     error,
     selectable,
     perform,
+    release,
     confirmation,
     openDialog,
     dialog: actionDialog,
   };
 }
+/** What a question before an action says: its label is the button that answers yes (`confirmParts`). */
+type Question = Pick<ThreadAction, 'label' | 'confirm'>;
 /** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which leads to the review's page (D73, amended 2026-11-12). */
 export const reviewedAction = (thread: Thread) =>
   thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
@@ -566,6 +575,7 @@ export function useThreadActions({ thread, onChange }: ActionProps) {
     error,
     selectable,
     perform: performRefs,
+    release,
     confirmation,
     openDialog,
     dialog,
@@ -593,7 +603,15 @@ export function useThreadActions({ thread, onChange }: ActionProps) {
   // change to the thread starts it over. Back from the review, the item gives the focus to the control that led there
   // (`reviewLeftFor`, read as the item is drawn).
   const [draft] = useReviewDraft(reviewedAction(thread) ? thread : undefined);
-  const marked = () => thread.items.filter(i => i.selected).map(i => i.ref);
+  // After a partial answer, the rows the source got done are not chosen again: the person decides on the rest (DE-M1).
+  const done = () =>
+    thread.execution?.state === 'partial'
+      ? new Set(thread.receipt?.rows.filter(row => row.outcome === 'done').map(row => row.ref))
+      : undefined;
+  const marked = () => {
+    const confirmed = done();
+    return thread.items.filter(i => i.selected && !confirmed?.has(i.ref)).map(i => i.ref);
+  };
   const withDraft = () =>
     selectionAfterReview(marked(), { approved: approvedOf(draft, thread.items), left: leftOf(draft, thread.items) });
   const [selected, setSelected] = useState<string[]>(withDraft);
@@ -689,6 +707,7 @@ export function useThreadActions({ thread, onChange }: ActionProps) {
     dismiss,
     handOn,
     pickRemind,
+    release,
     reviewed,
     /** The review begun on its page, if any: "Granska N" is then "Fortsätt granska". */
     draft,
@@ -904,6 +923,8 @@ export function ActionRow({
     switch (m.kind) {
       case 'check':
         return { label: m.label, clickAction: () => run(() => api.checkExecution(thread.id)) };
+      case 'release':
+        return { label: m.label, clickAction: actions.release };
       case 'review':
         return { label: m.label, href: reviewHref(thread.id, { from }), ref: review };
       case 'undo':
@@ -928,7 +949,8 @@ export function ActionRow({
       case 'remind':
         return { label: m.label, menu: [...remindRows.rows, { type: 'divider' as const }, remindRows.own] };
       case 'decide':
-        // Decided again on the user name the person has now (D122), with the item's own next step.
+        // Decided again, on what the item says now (DE-M1) and the user name the person has now (D122), with the item's
+        // own next step.
         if (!primary) return undefined;
         if (reviewed)
           return { label: going ? 'Fortsätt granska' : `Granska ${rows.length}`, href: reviewLink, ref: review };

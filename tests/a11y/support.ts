@@ -313,6 +313,10 @@ export class MockApi {
    * them as its query.
    */
   acted: Array<{ threadId: string; body: Record<string, unknown> }> = [];
+  /** The items whose decision in doubt the person let go (DE-M2). */
+  released: string[] = [];
+  /** Rows an earlier decision on the item got done, which the server's ledger keeps across decisions (DE-M1). */
+  carried: Record<string, string[]> = {};
   actRefusal: string | null = null;
   /**
    * A decision as the server makes one (D45, D47): `act`, `confirm`, `undo` and `undo-receipt` record it and answer with
@@ -809,6 +813,28 @@ export class MockApi {
         body: `retry: 60000\n\ndata: ${JSON.stringify({ revision: String(this.revision), policy: CHANGE_POLICY })}\n\n`,
       });
     if (path === `/threads/${id}/execution/check`) return json(this.threads.find(t => t.id === id));
+    // A decision in doubt the person lets go (DE-M2), refused as the server refuses it: one being read back now (the mock
+    // knows no lease, so a running one is always being read), one no longer in doubt, an undo. It ends in the person's
+    // name, a new version of the item, and the item is decided again from there (DE-M1): partial when the source had
+    // confirmed rows, which stay done, failed when it had confirmed none.
+    if (path === `/threads/${id}/execution/release` && post) {
+      const t = this.threads.find(t => t.id === id);
+      if (!t) return route.fulfill({ status: 404, json: { error: 'Ärendet finns inte.' } });
+      if (t.execution?.state === 'running')
+        return route.fulfill({
+          status: 400,
+          json: { error: 'Beslutet kontrolleras just nu. Försök igen om en stund.' },
+        });
+      if (!t.execution || t.execution.state !== 'unknown' || t.execution.compensates)
+        return route.fulfill({ status: 400, json: { error: 'Beslutet väntar inte längre på besked.' } });
+      this.released.push(id);
+      const done = t.receipt?.rows.some(row => row.outcome === 'done') ?? false;
+      return json(
+        this.update(id, {
+          execution: { ...t.execution, state: done ? 'partial' : 'failed', reason: 'released-by-person' },
+        }),
+      );
+    }
     if (path === '/auth/session') {
       if (this.sessionDelay) await new Promise(resolve => setTimeout(resolve, this.sessionDelay));
       return this.signedIn
@@ -2220,8 +2246,9 @@ export class MockApi {
             handledAt: null,
             waitingOn: null,
             receipt: null,
+            // An undone invitation is a proposed time again (DE-L17), as the projection writes it.
             proposals: t.proposals.map(p =>
-              p.status === 'confirmed' ? { ...p, status: 'undone', undoUntil: null } : p,
+              p.status === 'confirmed' ? { ...p, status: 'proposed', eventRef: null, undoUntil: null } : p,
             ),
           }),
           t.execution.compensates ?? t.execution.id,
@@ -2279,20 +2306,35 @@ export class MockApi {
         this.acted.push({ threadId: id, body });
         if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
         if (this.mutationFails) return route.fulfill({ status: 503, json: { error: FAILED } });
-        // Refused as the server's `act` refuses, in its order: the answers against the asks (`answersOf`), then an item
-        // that is no longer open, then one that has changed since the person was shown it (AM-4), then an earlier decision
+        // Refused as the server's `act` refuses, in its order: the answers against the asks (`answersOf`), then rows the
+        // source already got done, then an item that is no longer open, then one that has changed since the person was
+        // shown it (AM-4), then an earlier decision
         // of another action. The same action decided again is the same decision, which the ledger replays whatever version
-        // it names: the item as it is, nothing new (`threads/usecases/decisions.ts`). A decision that dispatch refused
-        // because its user name moved to someone else (`SUBJECT_CHANGED`, D122) is decided anew.
+        // it names: the item as it is, nothing new (`threads/usecases/decisions.ts`). One that ended without its effect or
+        // with part of it, refused, let go by the person or not sent because its user name moved (D122), is decided anew
+        // (DE-M1), on the rows the source did not get done.
         const values = body.values ?? {};
         const missing = (action.path?.asks ?? []).find(a => a.required && !values[a.property]);
-        const refused = t.execution?.state === 'failed' && t.execution.reason === 'subject-changed';
-        const previous = t.execution && !t.execution.compensates && !refused ? t.execution : undefined;
+        const ended = !!t.execution && ['failed', 'partial'].includes(t.execution.state);
+        const previous = t.execution && !t.execution.compensates && !ended ? t.execution : undefined;
+        // The server reads the done rows from the ledger, across every decision on the item; the mock has the latest
+        // receipt's, and `carried` stands for those of earlier decisions.
+        const done = new Set([
+          ...(this.carried[id] ?? []),
+          ...(t.execution?.state === 'partial'
+            ? (t.receipt?.rows.filter(r => r.outcome === 'done').map(r => r.ref) ?? [])
+            : []),
+        ]);
         const refusal =
           this.actRefusal ??
           (missing ? `${missing.label} behöver fyllas i.` : undefined) ??
           (Object.keys(values).some(k => !(action.path?.asks ?? []).some(a => a.property === k))
             ? 'Åtgärden frågar inte efter det värdet.'
+            : undefined) ??
+          (!previous &&
+          action.usesItems &&
+          (body.refs ?? t.items.filter(i => i.selected).map(i => i.ref)).some(ref => done.has(ref))
+            ? 'En del av raderna är redan genomförda. Välj bara de som återstår.'
             : undefined) ??
           (!previous && t.state !== 'open' ? 'Ärendet är redan hanterat.' : undefined) ??
           (!previous && body.version !== t.updatedAt

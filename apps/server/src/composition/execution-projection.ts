@@ -187,9 +187,22 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
         }
       } else if (item.action === 'cancel') {
         const replaced = item.id.startsWith('replace:');
+        // An undone invitation is a proposed time again (DE-L17): the card is open again, and the person sends it once
+        // more or draws another week. A replaced one gave way to the invitation that replaced it.
         const ended = await tx
           .update(schema.proposals)
-          .set({ status: replaced ? 'superseded' : 'undone', undoUntil: null })
+          .set(
+            replaced
+              ? { status: 'superseded', undoUntil: null }
+              : {
+                  status: 'proposed',
+                  undoUntil: null,
+                  eventUid: null,
+                  eventRef: null,
+                  eventRevision: null,
+                  confirmedAt: null,
+                },
+          )
           .where(and(eq(schema.proposals.id, item.proposalId), eq(schema.proposals.personId, e.personId)))
           .returning({ id: schema.proposals.id });
         // The invitation is gone from the calendar, so the talk it booked lacks a time again.
