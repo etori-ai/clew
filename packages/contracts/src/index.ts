@@ -470,13 +470,19 @@ export const AnswerShape = Type.Union([
   Type.Literal('steg'),
 ]);
 export type AnswerShape = Static<typeof AnswerShape>;
+/**
+ * A link into the answering system. Absolute http(s) only, so a page can put it in an `href` or open it in a new tab and
+ * no other scheme reaches the browser (D145 item 5): every link a source gives is one.
+ */
+export const SourceLinkSchema = Type.String({ maxLength: 1000, pattern: '^https?://[^\\s]+$' });
+const sourceLink = SourceLinkSchema;
 /** A source the answer cites as `[n]` (D26): a ref the person can open or add to the conversation, never the text. */
 export const SourceCitationSchema = object({
   n: Type.Integer({ minimum: 1 }),
   ref: Type.String({ maxLength: 260 }),
   label: Type.String(),
   source: Type.String(),
-  link: Type.Optional(Type.String()),
+  link: Type.Optional(sourceLink),
   section: Type.Optional(Type.String()),
   owner: Type.Optional(Type.String()),
   reviewedAt: Type.Optional(instant),
@@ -1129,7 +1135,7 @@ export const SearchHitSchema = object({
   /** The passage that matched, or a summary; what the model reads and the person sees under the title. */
   snippet: Type.String({ maxLength: 1200 }),
   /** Where to open it, in the source system. */
-  link: Type.Optional(Type.String({ maxLength: 1000 })),
+  link: Type.Optional(sourceLink),
   /** The source as shown to the person: "Eneo", "Intranätet". */
   source: Type.String({ minLength: 1, maxLength: 80 }),
   /** The heading of the passage inside the document, when the source knows it. */
@@ -1217,7 +1223,7 @@ export const ErrandRowSchema = object(
       description:
         'Swedish. The business area or namespace, as a label. Clew never reads it for access: the case system decides what the person sees.',
     }),
-    link: Type.Optional(Type.String({ maxLength: 1000, description: 'The errand in its own system.' })),
+    link: Type.Optional({ ...sourceLink, description: 'The errand in its own system.' }),
   },
   "One errand in a case system's list (D35, D89).",
 );
@@ -1255,8 +1261,6 @@ export type ErrandsResult = Static<typeof ErrandsResultSchema>;
 const calendarDay = Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$', maxLength: 10 });
 /** A user's account name as provisioned (SCIM `userName`, D68): what another system knows a person by, since it cannot know Clew's ids. */
 const userName = Type.String({ minLength: 1, maxLength: 512 });
-/** A link into the answering system. Absolute http(s) only, so a page can put it in an `href`. */
-const sourceLink = Type.String({ maxLength: 1000, pattern: '^https?://[^\\s]+$' });
 /**
  * Where something a person ordered or reported stands, seen from the person who waits for it (D123): whose move it is,
  * in words every service desk can answer in, so that lists from several systems are ordered together. The names are the

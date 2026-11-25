@@ -1,6 +1,6 @@
 # D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file
 
-**Status:** accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet · **Date:** 2026-11-10 · **Area:** ui
+**Status:** accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet; item 5's check of an SVG amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the file is read as XML, held to what a drawing needs and to UTF-8, so a namespace prefix, a character reference, a CSS escape or another encoding hides nothing) · **Date:** 2026-11-10 · **Area:** ui
 
 **Decision.** An installation's colours and its header logo are data in Clew's own PostgreSQL, changed on
 Administration › Utseende by a person with the grant capability `admin.appearance`, and read by every browser from

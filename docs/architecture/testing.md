@@ -146,7 +146,9 @@ The browser suite has an explicit ESM boundary and an isolated Vite configuratio
 environment files. The theme and the logo are answers of the suite's mocked API (D98), so one build serves every
 saved appearance; typed fixtures (`tests/a11y/branding-fixtures.ts`) name three. CI runs the suite on Neutral, then
 the Sundsvall and custom cases of `branding.spec.ts` sequentially, with one worker. Reports have separate profile
-directories.
+directories. The build is served with the web image's security headers (`apps/web/security-headers.conf`, D145), and
+the fixture fails a spec on any violation of the content security policy that the page or a frame in it reports;
+`policy.spec.ts` holds that the guard is on.
 
 ## Rules the tools enforce
 

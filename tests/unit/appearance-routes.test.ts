@@ -59,7 +59,7 @@ describe('public appearance routes', () => {
     const current = await get('/logo/light?v=1');
     expect(current.status).toBe(200);
     expect(await current.text()).toBe(SVG);
-    expect(current.headers.get('content-type')).toBe('image/svg+xml');
+    expect(current.headers.get('content-type')).toBe('image/svg+xml; charset=utf-8');
     expect(current.headers.get('x-content-type-options')).toBe('nosniff');
     expect(current.headers.get('content-security-policy')).toBe(
       "default-src 'none'; style-src 'unsafe-inline'; sandbox",
