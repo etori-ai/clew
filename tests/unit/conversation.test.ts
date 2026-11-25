@@ -134,6 +134,7 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     obligations: memoryObligations(),
   });
   const threads = threadUsecases({
+    doneOnCards: async () => new Map(),
     store,
     registry,
     run,

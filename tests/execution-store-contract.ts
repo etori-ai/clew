@@ -288,10 +288,29 @@ export function executionStoreContract(name: string, create: () => Promise<Execu
       await w.store.transaction(async tx => {
         for (const e of [later, first, undo, other, none]) await tx.insert(e);
       });
-      expect((await w.store.readCard(w.personId, 'card-a')).map(e => e.id)).toEqual([first.id, undo.id, later.id]);
-      expect(await w.store.readCard(w.personId, 'card-a')).toEqual([first, undo, later]);
-      expect(await w.store.readCard('someone-else', 'card-a')).toEqual([]);
-      expect(await w.store.readCard(w.personId, 'card-c')).toEqual([]);
+      expect((await w.store.readCardResults(w.personId, ['card-a'])).map(e => e.id)).toEqual([
+        first.id,
+        undo.id,
+        later.id,
+      ]);
+      expect(await w.store.readCardResults(w.personId, ['card-a'])).toEqual(
+        [first, undo, later].map(e => ({
+          threadId: 'card-a',
+          id: e.id,
+          state: e.state,
+          compensates: e.compensates,
+          result: e.result,
+        })),
+      );
+      expect(await w.store.readCardResults('someone-else', ['card-a', 'card-b'])).toEqual([]);
+      expect(await w.store.readCardResults(w.personId, ['card-c'])).toEqual([]);
+      expect((await w.store.readCardResults(w.personId, ['card-a', 'card-b'])).map(e => e.threadId)).toEqual([
+        'card-a',
+        'card-b',
+        'card-a',
+        'card-a',
+      ]);
+      expect(await w.store.readCardResults(w.personId, [])).toEqual([]);
     });
     test('the person a started action is about (D122) survives a round trip, the lock and an update; none stays none', async () => {
       const w = await create(),
