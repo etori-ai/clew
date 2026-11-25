@@ -1846,7 +1846,7 @@ export const schemaDocuments = (base: string) => [
           attribute('managerId', 'string', {
             caseExact: true,
             description:
-              "The 'id' of the User this employment reports to: a user of the same organisation, sent before an employment names them, and never the user themselves.",
+              "The Clew-assigned 'id' of the manager's SCIM User in the same organisation. Match the source's 'externalId' to that User before sending the employment. A user cannot name themselves as manager.",
           }),
         ],
       }),
