@@ -4723,6 +4723,7 @@ export const AreaOverrideSchema = object({ figure: Type.Optional(Type.Literal(fa
 export type AreaOverride = Static<typeof AreaOverrideSchema>;
 const connectorId = Type.String({ pattern: '^[a-z][a-z0-9-]*$', minLength: 1, maxLength: 40 });
 const connectorUrl = Type.String({ pattern: '^https?://[^\\s]+$', minLength: 8, maxLength: 500 });
+const registrationId = Type.String({ pattern: '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$' });
 const connectorSecret = Type.String({ minLength: 16, maxLength: 500 });
 /** Administration inputs (D23). Validated again on the server; a secret never comes back out. */
 export const AddConnectorInput = object({ id: connectorId, url: connectorUrl, secret: connectorSecret });
@@ -4733,6 +4734,7 @@ export const ConnectorPatchInput = object({
    * saved since, by another administrator or another tab, refuses it instead of being merged with it unseen.
    */
   version: Type.Integer({ minimum: 1 }),
+  registrationId: Type.Optional(registrationId),
   state: Type.Optional(ConnectorStateSchema),
   audience: Type.Optional(ConnectorAudienceSchema),
   scanEnabled: Type.Optional(Type.Boolean()),
@@ -4758,7 +4760,7 @@ export const RefreshManifestInput = object({
   /** With `apply`: the revision of the offer the administrator reviewed, so another offer is never applied in its place (D144). */
   offered: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$', maxLength: 64 })),
   /** The add dialog may accept an offer only on the draft version it opened. */
-  draftVersion: Type.Optional(Type.Integer({ minimum: 1 })),
+  draft: Type.Optional(object({ registrationId, version: Type.Integer({ minimum: 1 }) })),
 });
 export type RefreshManifestInput = Static<typeof RefreshManifestInput>;
 export const PreviewQuery = object({
@@ -4858,6 +4860,8 @@ export interface AuditEntryView {
   details: Record<string, unknown>;
 }
 export interface ConnectorDetail extends ConnectorSummary {
+  /** Stable for this registration even when its connector ID is later reused. */
+  registrationId: string;
   protocol: number | null;
   scan: boolean;
   /** What the approved manifest lets the connector read back through Clew as the person (`uses`, D144). */
