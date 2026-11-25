@@ -25,7 +25,9 @@ type Vars = RunOptions & { fn: Action<Thread | void> };
  * takes longer is shown as what it is, with Kontrollera status.
  */
 export const SETTLE_MS = 4_000;
-const holds = new Map<string, number>();
+/** A hold: until when, and the version of the answer that set it, which the drawn thread may not yet have. */
+type Hold = { until: number; version?: string };
+const holds = new Map<string, Hold>();
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach(listener => listener());
 const subscribe = (listener: () => void) => {
@@ -34,24 +36,35 @@ const subscribe = (listener: () => void) => {
     listeners.delete(listener);
   };
 };
-/** The card is held in its in-progress look until `until`, shared by every component that draws the thread. */
-export function holdSettling(id: string, until: number): void {
-  holds.set(id, until);
+/**
+ * The card is held in its in-progress look until `until`, shared by every component that draws the thread. `version` is
+ * the `updatedAt` of the answer that set the hold: the answer reaches the cache only after the thread's running reads
+ * have settled (`applyThread`), and until then the thread drawn is the one before the action, at rest.
+ */
+export function holdSettling(id: string, until: number, version?: string): void {
+  const hold: Hold = version === undefined ? { until } : { until, version };
+  holds.set(id, hold);
   notify();
   setTimeout(
     () => {
-      if (holds.get(id) !== until) return;
+      if (holds.get(id) !== hold) return;
       holds.delete(id);
       notify();
     },
     Math.max(0, until - Date.now()),
   );
 }
-export const settlingUntil = (id: string): number => holds.get(id) ?? 0;
+export const settlingUntil = (id: string): number => holds.get(id)?.until ?? 0;
+/**
+ * Whether a hold keeps the thread drawn as on its way: while the thread is not at rest, and while it is older than the
+ * answer that set the hold, so the moment before the answer is in the cache does not read as rest.
+ */
+export const heldBy = (thread: Pick<Thread, 'execution' | 'timers' | 'updatedAt'>, hold: Hold | undefined): boolean =>
+  !!hold && (!atRest(thread) || (hold.version !== undefined && thread.updatedAt < hold.version));
 /** Whether the card still shows the person's action as on its way: held after an answer that was not at rest, until the state rests or the window ends. */
-export function useSettling(thread: Pick<Thread, 'id' | 'execution' | 'timers'>): boolean {
-  const until = useSyncExternalStore(subscribe, () => holds.get(thread.id) ?? 0);
-  return until > 0 && !atRest(thread);
+export function useSettling(thread: Pick<Thread, 'id' | 'execution' | 'timers' | 'updatedAt'>): boolean {
+  const hold = useSyncExternalStore(subscribe, () => holds.get(thread.id));
+  return heldBy(thread, hold);
 }
 
 /**
@@ -83,7 +96,7 @@ export function useThreadAction({
       if (!thread) return;
       if (!vars.optimistic) latest.current?.(thread);
       void applyThread(client, thread);
-      if (vars.settle && !atRest(thread)) holdSettling(thread.id, Date.now() + SETTLE_MS);
+      if (vars.settle && !atRest(thread)) holdSettling(thread.id, Date.now() + SETTLE_MS, thread.updatedAt);
     },
   });
   const inFlight = useRef(false);
@@ -139,7 +152,7 @@ export function useDecisionSend({
     onSuccess: thread => {
       latest.current?.(thread);
       void applyThread(client, thread);
-      if (!atRest(thread)) holdSettling(thread.id, Date.now() + SETTLE_MS);
+      if (!atRest(thread)) holdSettling(thread.id, Date.now() + SETTLE_MS, thread.updatedAt);
     },
   });
   const inFlight = useRef(false);

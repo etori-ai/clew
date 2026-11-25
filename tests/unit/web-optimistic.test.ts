@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Thread } from '@clew/contracts';
 import { atRest, dismissed, reopened, snoozed } from '../../apps/web/src/optimistic';
-import { holdSettling, settlingUntil } from '../../apps/web/src/mutations';
+import { heldBy, holdSettling, settlingUntil } from '../../apps/web/src/mutations';
 
 const NOW = '2026-11-06T08:00:00.000Z';
 const thread = (values: Partial<Thread> = {}): Thread => ({
@@ -63,6 +63,20 @@ describe("the person's action as the card shows it before the answer (D64)", () 
     expect(atRest(thread({ execution: execution('succeeded') }))).toBe(true);
     expect(atRest(thread({ timers: [{ kind: 'reminder', dueAt: NOW, state: 'queued' }] }))).toBe(false);
     expect(atRest(thread({ timers: [{ kind: 'reminder', dueAt: NOW, state: 'scheduled' }] }))).toBe(true);
+  });
+  test('a hold keeps a card on its way until it is at rest, and the card drawn before the answer reached the cache too', () => {
+    const LATER = '2026-11-06T08:00:01.000Z';
+    const hold = { until: Date.now() + 4_000, version: LATER };
+    // The answer is not yet in the cache: the card drawn is the one before the action, at rest, and still held.
+    expect(heldBy(thread(), hold)).toBe(true);
+    // The answer is: pending, so held; then the source's outcome, newer and at rest, which ends it.
+    expect(heldBy(thread({ updatedAt: LATER, execution: execution('pending') }), hold)).toBe(true);
+    expect(heldBy(thread({ updatedAt: '2026-11-06T08:00:02.000Z', execution: execution('succeeded') }), hold)).toBe(
+      false,
+    );
+    // Without a hold nothing is held, and a hold without a version waits on rest alone.
+    expect(heldBy(thread({ execution: execution('pending') }), undefined)).toBe(false);
+    expect(heldBy(thread(), { until: hold.until })).toBe(false);
   });
   test('a hold ends on its own, and a later hold on the same card is not cut short by the earlier one', async () => {
     const start = Date.now();
