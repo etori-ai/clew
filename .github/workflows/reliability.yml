@@ -16,7 +16,7 @@ jobs:
           persist-credentials: false
       - name: Start isolated PostgreSQL
         run: sh scripts/compose.sh up -d --wait postgres
-      - name: Verify database contracts, real workflows and upgrade
+      - name: Verify database contracts, real workflows and backup fixtures
         run: >-
           sh scripts/compose.sh run --rm --no-deps --build app sh -c
           "bun install --frozen-lockfile && bun run db:init && bun run test:db && bun run test:durability && bun scripts/recovery-rehearsal.ts prepare"
