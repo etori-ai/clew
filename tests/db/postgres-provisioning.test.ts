@@ -167,6 +167,7 @@ import { cLocaleDatabase, type CLocaleDatabase } from './c-locale';
 const scimHarness = (prefix: string, db: () => Database = database): ScimStoreHarness => ({
   store: postgresProvisionStore({ db }),
   withLeavers: (leavers, leaverFailed) => postgresProvisionStore({ leavers: () => leavers(), leaverFailed, db }),
+  withErasure: erasure => postgresProvisionStore({ erasure: () => erasure(), db }),
   prefix,
   async seedProvisioner(p, digest, revoked, previous) {
     await db()

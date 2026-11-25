@@ -5,6 +5,7 @@ import { schema, type Transaction } from '@clew/db';
 import type { ThreadTx } from '../threads/model';
 import { APPROVAL_READ } from '../modules/competence/domain';
 import type { ApprovalOutcome, ApprovalWorkItemTx } from '../modules/competence/model';
+import { removeCards } from './card-removal';
 
 /**
  * The cards of a person's own registration waiting for approval (D108 item 7): the competence module's
@@ -84,27 +85,9 @@ export function competenceWorkItems(
       .orderBy(threads.id)
       .for('update');
   /** Remove these cards with what hangs on them, as erasure does; the running waits end after the commit. */
-  async function removeCards(ids: readonly string[]) {
+  async function removeThese(ids: readonly string[]) {
     if (!ids.length) return;
-    const at = options.clock().toISOString();
-    const timers = await tx
-      .select({ id: schema.timerIntents.id })
-      .from(schema.timerIntents)
-      .where(inArray(schema.timerIntents.threadId, [...ids]))
-      .orderBy(schema.timerIntents.id)
-      .for('update');
-    for (const timer of timers) await thread.cancelTimer(timer.id, at);
-    // Messages, proposals, timers, deliveries and follow-up policies cascade; an occurrence only loses its pointer.
-    await tx.delete(schema.workOccurrences).where(inArray(schema.workOccurrences.threadId, [...ids]));
-    await tx.delete(threads).where(inArray(threads.id, [...ids]));
-    for (const id of ids)
-      await thread.writeAudit({
-        actor: ACTOR,
-        action: 'thread.removed',
-        subject: `thread:${id}`,
-        at,
-        details: { reason: 'erasure' },
-      });
+    await removeCards(tx, thread, inArray(threads.id, [...ids]), ACTOR, options.clock().toISOString(), 'erasure');
   }
   return {
     async open({ threadId, holdingId, managers, at, subject }) {
@@ -216,7 +199,7 @@ export function competenceWorkItems(
         .where(and(eq(threads.connector, COMPETENCE_CONNECTOR), inArray(threads.topic, threadIds.map(approvalTopic))))
         .orderBy(threads.id)
         .for('update');
-      await removeCards(cards.map(c => c.id));
+      await removeThese(cards.map(c => c.id));
     },
     async removeAbout(subject) {
       // Through the index from entity to cards, which holds a person by Clew's key, their id, compared exactly (D122).
@@ -233,7 +216,7 @@ export function competenceWorkItems(
           ),
         )
         .orderBy(threads.id);
-      await removeCards(rows.map(r => r.id));
+      await removeThese(rows.map(r => r.id));
     },
     async removeOwned(personId) {
       // Every card of the module in their stream: the approvals they decide as a manager, and the scan's cards about
@@ -244,7 +227,7 @@ export function competenceWorkItems(
         .where(and(eq(threads.personId, personId), eq(threads.connector, COMPETENCE_CONNECTOR)))
         .orderBy(threads.id)
         .for('update');
-      await removeCards(cards.map(c => c.id));
+      await removeThese(cards.map(c => c.id));
       // The occurrences the scan keeps for them, a type and its dates in each key and period, card or none.
       await tx
         .delete(schema.workOccurrences)

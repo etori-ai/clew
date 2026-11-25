@@ -7,6 +7,7 @@ import { reminderStart } from '../threads/domain';
 import { authorizationVersion } from '../auth-crypto';
 import type { DialogueWorkItems } from '../modules/dialogue/model';
 import { dueAtFor, swedishDay } from './talk-work-items';
+import { removeCards } from './card-removal';
 
 /**
  * The owner's card of an activity in the follow-up dialogue (D118 item 4): the dialogue module's `DialogueWorkItems`,
@@ -240,37 +241,17 @@ export function dialogueWorkItems(
       });
       return true;
     },
-    async remove(threadIds) {
+    async remove(threadIds, why) {
       if (!threadIds.length) return;
-      const at = options.clock().toISOString();
       // Only the dialogue's own cards: an id of any other card is left alone.
-      const cards = await tx
-        .select({ id: schema.threads.id })
-        .from(schema.threads)
-        .where(and(inArray(schema.threads.id, [...threadIds]), eq(schema.threads.connector, DIALOGUE_CONNECTOR)))
-        .orderBy(schema.threads.id)
-        .for('update');
-      if (!cards.length) return;
-      const ids = cards.map(c => c.id);
-      // Every running wait ends after the commit, as a replaced generation's does; the rows go with the thread.
-      const timers = await tx
-        .select({ id: schema.timerIntents.id })
-        .from(schema.timerIntents)
-        .where(inArray(schema.timerIntents.threadId, ids))
-        .orderBy(schema.timerIntents.id)
-        .for('update');
-      for (const timer of timers) await thread.cancelTimer(timer.id, at);
-      // Messages, timers and deliveries cascade; an occurrence only loses its pointer, so it goes here.
-      await tx.delete(schema.workOccurrences).where(inArray(schema.workOccurrences.threadId, ids));
-      await tx.delete(schema.threads).where(inArray(schema.threads.id, ids));
-      for (const id of ids)
-        await thread.writeAudit({
-          actor: ACTOR,
-          action: 'thread.removed',
-          subject: `thread:${id}`,
-          at,
-          details: { reason: 'activity-removed' },
-        });
+      await removeCards(
+        tx,
+        thread,
+        and(inArray(schema.threads.id, [...threadIds]), eq(schema.threads.connector, DIALOGUE_CONNECTOR)),
+        ACTOR,
+        options.clock().toISOString(),
+        why,
+      );
     },
   };
 }

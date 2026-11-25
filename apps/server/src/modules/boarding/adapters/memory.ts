@@ -246,6 +246,9 @@ export function memoryBoardingStore(seed: { persons?: PersonRef[] } = {}) {
     async persons(ids) {
       return [...new Set(ids)].flatMap(id => (state.persons.has(id) ? [{ ...state.persons.get(id)! }] : []));
     },
+    async lockPersonForErasure(personId) {
+      return state.persons.get(personId)?.enabled;
+    },
     async erasePerson(personId) {
       const threadIds = new Set<string>(),
         cleared = new Set<string>();

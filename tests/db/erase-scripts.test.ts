@@ -5,14 +5,16 @@ import { eq, inArray, or } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import type { AuthenticatedContext, StaffOverview } from '../../packages/contracts/src/index';
 import { COMPETENCE_CONNECTOR } from '../../packages/connectors/src/index';
+import { boardingStoreWithCards } from '../../apps/server/src/composition/boarding';
+import { boardingTimerId } from '../../apps/server/src/composition/boarding-work-items';
 import { talkStoreWithCards } from '../../apps/server/src/composition/talks';
 import { dueTimerId } from '../../apps/server/src/composition/talk-work-items';
 import { talkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
 
 /**
- * The operator's erasures of a leaver's cards, talks, competence and follow-up dialogue (D122 item 7, D123 item 3), each run as a script as
- * the runbook runs it, against the database the test is given. Each refuses an id the people table does not hold and a
+ * The operator's erasures of a leaver's cards, talks, competence, follow-up dialogue and introduction and leaving (D122
+ * item 7, D123 item 3), each run as a script as the runbook runs it, against the database the test is given. Each refuses an id the people table does not hold and a
  * person who is still active, with exit code 1, writing nothing and no audit row. A deactivated person is erased with
  * the script's own answer alone on standard output, also when a removed card has a timer still waiting: the timer goes
  * with its card, and the script sends no cancel to the durable engine, which a script never starts, so no "durable
@@ -35,7 +37,10 @@ const manager = `${ORG}-manager`,
   leaverName = `Leaver.${tag}`;
 const typeId = `${ORG}-type`,
   card = `${ORG}-card`,
-  reminder = `reminder:${card}`;
+  reminder = `reminder:${card}`,
+  // The item the leaver owns as the colleague's buddy, and its card in the leaver's stream.
+  boardingItem = `${ORG}-boarding-item`,
+  boardingCard = `${ORG}-boarding-card`;
 const at = new Date('2026-11-13T08:00:00.000Z');
 let n = 0;
 const ids = () => `${ORG}-${++n}`;
@@ -117,6 +122,8 @@ afterAll(async () => {
           `person:${leaverName}`,
           `organisation:${ORG}`,
           `thread:${card}`,
+          `thread:${boardingCard}`,
+          `timer:${boardingTimerId(boardingCard)}`,
           ...threadIds.map(id => `thread:${id}`),
           ...commitmentIds.map(id => `commitment:${id}`),
         ]),
@@ -145,13 +152,15 @@ afterAll(async () => {
   await db.delete(schema.competenceHoldings).where(eq(schema.competenceHoldings.typeId, typeId));
   await db.delete(schema.competenceTypes).where(eq(schema.competenceTypes.id, typeId));
   await db.delete(schema.dialogueAssessments).where(eq(schema.dialogueAssessments.organisationId, ORG));
+  // A plan's items go with it.
+  await db.delete(schema.boardingPlans).where(eq(schema.boardingPlans.organisationId, ORG));
   await db.delete(schema.people).where(inArray(schema.people.id, [manager, leaver, active]));
   await forgetTestWorkflows();
   await closeDatabase();
 });
 
 describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
-  test('setup: a leaver still active, with an action point and a competence card that each have a timer waiting', async () => {
+  test('setup: a leaver still active, with an action point, a competence card and a buddy item whose cards each have a timer waiting, and plans', async () => {
     const db = database();
     await db.insert(schema.people).values([
       { id: manager, organisationId: ORG, name: 'Synthetic Chef' },
@@ -168,6 +177,62 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       authorId: leaver,
       at,
     });
+    // Their leaving plan, which the manager started, and a colleague's introduction plan with the leaver as buddy.
+    await db.insert(schema.boardingPlans).values([
+      {
+        id: ORG + '-leaving',
+        organisationId: ORG,
+        personId: leaver,
+        event: 'leaving',
+        anchorOn: '2026-12-31',
+        startedBy: manager,
+        startedAt: at,
+      },
+      {
+        id: ORG + '-introduction',
+        organisationId: ORG,
+        personId: active,
+        event: 'introduction',
+        anchorOn: '2026-12-01',
+        buddyId: leaver,
+        startedBy: manager,
+        startedAt: at,
+      },
+    ]);
+    // An item of the colleague's introduction that the leaver owns as buddy, its card opened in the leaver's stream by
+    // the module's own work items, with the timer that brings it back the morning after its due day.
+    await boardingStoreWithCards({ durable: testDurable, cancel: async () => {} }, { clock: () => at }).transaction(
+      async tx => {
+        await tx.workItems.open({
+          threadId: boardingCard,
+          personId: leaver,
+          itemId: boardingItem,
+          planId: ORG + '-introduction',
+          event: 'introduction',
+          title: 'Visa arbetsplatsen',
+          dueOn: '2026-12-01',
+          at: at.toISOString(),
+          subject: { entity: 'person', key: active },
+        });
+        await tx.insertItem({
+          id: boardingItem,
+          planId: ORG + '-introduction',
+          position: 0,
+          title: 'Visa arbetsplatsen',
+          added: false,
+          kind: 'todo',
+          ownerRole: 'buddy',
+          ownerId: leaver,
+          dueOn: '2026-12-01',
+          doneAt: null,
+          doneBy: null,
+          threadId: boardingCard,
+          sourceLayerId: null,
+          tiedTo: null,
+          createdAt: at.toISOString(),
+        });
+      },
+    );
     await talks.openRound('operator:cli', {
       organisationId: ORG,
       label: 'Omgång',
@@ -239,6 +304,14 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       ).map(t => t.state),
     ).toEqual(['active']);
     expect((await enqueuedWorkflows(dueTimerId(leaversCard!))).map(w => w.status)).toEqual(['ENQUEUED']);
+    expect(
+      (
+        await db
+          .select()
+          .from(schema.timerIntents)
+          .where(eq(schema.timerIntents.id, boardingTimerId(boardingCard)))
+      ).map(t => [t.threadId, t.state]),
+    ).toEqual([[boardingCard, 'active']]);
   });
 
   test('an id the people table does not hold, such as the user name, is refused by each, and nothing is written', () => {
@@ -247,7 +320,7 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       out: '',
       err: unknown(leaverName),
     });
-    for (const script of ['talks-erase.ts', 'competence-erase.ts', 'dialogue-erase.ts'])
+    for (const script of ['talks-erase.ts', 'competence-erase.ts', 'dialogue-erase.ts', 'boarding-erase.ts'])
       expect([script, run(script, '--person', leaverName, '--confirm')]).toEqual([
         script,
         { code: 1, out: '', err: unknown(leaverName) },
@@ -260,7 +333,7 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       out: '',
       err: stillActive(leaver),
     });
-    for (const script of ['talks-erase.ts', 'competence-erase.ts', 'dialogue-erase.ts'])
+    for (const script of ['talks-erase.ts', 'competence-erase.ts', 'dialogue-erase.ts', 'boarding-erase.ts'])
       expect([script, run(script, '--person', leaver, '--confirm')]).toEqual([
         script,
         { code: 1, out: '', err: stillActive(leaver) },
@@ -271,7 +344,7 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       (await db.select({ id: schema.threads.id }).from(schema.threads).where(eq(schema.threads.personId, leaver)))
         .map(t => t.id)
         .sort(),
-    ).toEqual([card, threadIds[0]!].sort());
+    ).toEqual([card, threadIds[0]!, boardingCard].sort());
     // Their action point card still names them.
     expect(
       await db
@@ -285,6 +358,16 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
         .from(schema.competenceHoldings)
         .where(eq(schema.competenceHoldings.personId, leaver)),
     ).toEqual([{ id: `${ORG}-holding` }]);
+    expect(
+      await db
+        .select({ id: schema.boardingPlans.id, buddyId: schema.boardingPlans.buddyId })
+        .from(schema.boardingPlans)
+        .where(eq(schema.boardingPlans.organisationId, ORG))
+        .orderBy(schema.boardingPlans.id),
+    ).toEqual([
+      { id: ORG + '-introduction', buddyId: leaver },
+      { id: ORG + '-leaving', buddyId: null },
+    ]);
   }, 60_000);
 
   test("a query that fails is answered by each with the database's own message and that nothing was written", () => {
@@ -297,6 +380,7 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       ['talks-erase.ts', ['--person', leaver, '--confirm']],
       ['competence-erase.ts', ['--person', leaver, '--confirm']],
       ['dialogue-erase.ts', ['--person', leaver, '--confirm']],
+      ['boarding-erase.ts', ['--person', leaver, '--confirm']],
       ['person-erase.ts', ['--person', leaver, '--confirm']],
     ];
     expect(calls.map(([script, args]) => [script, runOn(elsewhere.href, script, ...args)])).toEqual(
@@ -340,6 +424,36 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       .from(schema.dialogueAssessments)
       .where(eq(schema.dialogueAssessments.id, ORG + '-assessment'));
     expect(assessment?.authorId).toBeNull();
+    expect(run('boarding-erase.ts', '--person', leaver, '--confirm')).toEqual({
+      code: 0,
+      out: `Erased person "${leaver}" from introduction and leaving: 1 plans and 0 items removed, 2 other records cleared, 1 cards removed. Audited as person:${leaver}.`,
+      err: '',
+    });
+    // The buddy item stays on the colleague's plan and falls to its manager; its card went, as an erasure, with its
+    // timer, and the script sent the engine nothing (no line on standard error, above).
+    expect(
+      await db
+        .select({ ownerId: schema.boardingItems.ownerId, threadId: schema.boardingItems.threadId })
+        .from(schema.boardingItems)
+        .where(eq(schema.boardingItems.id, boardingItem)),
+    ).toEqual([{ ownerId: null, threadId: null }]);
+    expect((await auditAbout(`thread:${boardingCard}`)).map(a => [a.actor, a.action, a.details])).toEqual([
+      ['boarding:item', 'thread.pushed', expect.objectContaining({ item: boardingItem, owner: leaver })],
+      ['boarding:item', 'thread.removed', { reason: 'erasure' }],
+    ]);
+    expect(
+      await db
+        .select({ id: schema.timerIntents.id })
+        .from(schema.timerIntents)
+        .where(eq(schema.timerIntents.id, boardingTimerId(boardingCard))),
+    ).toEqual([]);
+    // Their plan is gone; the colleague's stays, with no buddy.
+    expect(
+      await db
+        .select({ id: schema.boardingPlans.id, buddyId: schema.boardingPlans.buddyId })
+        .from(schema.boardingPlans)
+        .where(eq(schema.boardingPlans.organisationId, ORG)),
+    ).toEqual([{ id: ORG + '-introduction', buddyId: null }]);
     // The cards went with their timers; the action point's workflow is left queued, and the fence covers it.
     const [leaversCard, activesCard] = threadIds;
     expect(await db.select().from(schema.threads).where(eq(schema.threads.personId, leaver))).toEqual([]);
@@ -357,6 +471,7 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       ['operator:cli', 'talks.person_erased'],
       ['operator:cli', 'competence.person_erased'],
       ['operator:cli', 'dialogue.person_erased'],
+      ['operator:cli', 'boarding.person_erased'],
     ]);
     // The colleague who is still active keeps their action point, its card and its timer.
     expect(

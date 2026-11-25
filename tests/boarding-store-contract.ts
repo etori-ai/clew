@@ -317,6 +317,17 @@ export function boardingStoreContract(name: string, make: () => Promise<Boarding
       expect(await w.store.transaction(tx => tx.persons([]))).toEqual([]);
     });
 
+    test('an erasure locks the person and reads whether they are active; an unknown id has no state', async () => {
+      const w = await world();
+      const gone = w.p + '-gone';
+      await w.seedPerson(person(gone, w.org, false));
+      expect(await w.store.transaction(tx => tx.lockPersonForErasure(w.anna))).toBe(true);
+      expect(await w.store.transaction(tx => tx.lockPersonForErasure(gone))).toBe(false);
+      // A user name is not an id.
+      expect(await w.store.transaction(tx => tx.lockPersonForErasure('u-' + w.anna))).toBeUndefined();
+      expect(await w.store.transaction(tx => tx.lockPersonForErasure(w.p + '-nobody'))).toBeUndefined();
+    });
+
     test('erasing a person removes their plans with every item and card, and removes them from the rest', async () => {
       const w = await world();
       const hers = planRow(w.p + '-p1', w.org, w.anna, { startedBy: w.boss, buddyId: w.bo });

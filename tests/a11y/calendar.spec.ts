@@ -171,6 +171,34 @@ test.describe('the levels and the mark (D71, artboard 6)', () => {
     await expect(page.getByRole('complementary', { name: 'Förslag' })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
+  test('a sent time whose invitee an erasure cleared is drawn and heard as Okänd, in the grid and in the panel (D123)', async ({
+    page,
+    api,
+  }) => {
+    // Erik's invitation was sent before he left; the erasure cleared the name and the address it was drawn with.
+    api.threads = api.threads.map(t =>
+      t.id === 'samtal'
+        ? {
+            ...t,
+            proposals: t.proposals.map(p =>
+              p.id === 'p2'
+                ? { ...p, status: 'confirmed' as const, eventRef: 'memory:p2', participant: { name: '', email: '' } }
+                : p,
+            ),
+          }
+        : t,
+    );
+    await page.setViewportSize(WIDE);
+    await open(page, `/calendar?date=${NEXT_WEEK}`);
+    const block = page.locator('.clew-cal-event-booked');
+    await expect(block).toHaveAccessibleName(/^Utvecklingssamtal\s*\d\d:\d\d–\d\d:\d\d\s·\sOkänd\s*, bokat samtal$/);
+    await block.focus();
+    await page.keyboard.press('Enter');
+    const panel = page.getByRole('complementary', { name: 'Utvecklingssamtal' });
+    await expect(panel.getByText('Inbjudan skickad', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Okänd', { exact: true })).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
   test('Skicka inbjudan sends that one time through the proposals’ own decision', async ({ page, api: _ }) => {
     await page.setViewportSize(WIDE);
     const sent: unknown[] = [];
