@@ -2425,7 +2425,11 @@ export const EntityCardSchema = object({
   kind: Type.Union([Type.Literal('act'), Type.Literal('proposal'), Type.Literal('fyi')]),
 });
 export type EntityCard = Static<typeof EntityCardSchema>;
-/** Employment data is descriptive. Unit memberships remain the authority for access. */
+/**
+ * A person's current employments. Unit memberships remain the authority for access, and the unit, the title and the
+ * other details only describe the job. `managerId` is a fact of its own (D147): the id of the person this employment
+ * reports to, as the directory says it, stored and not yet read by anything that decides who reports to whom.
+ */
 export const SCIM_EMPLOYMENT_SCHEMA = 'urn:clew:params:scim:schemas:extension:employment:2.0:User';
 const DirectoryPhoneSchema = object({ type: Type.String(), value: Type.String() });
 export type DirectoryPhone = Static<typeof DirectoryPhoneSchema>;
@@ -2435,13 +2439,20 @@ export const EmploymentSchema = object({
   employmentType: Type.Optional(Type.String()),
   startDate: Type.Optional(Type.String({ format: 'date', maxLength: 10 })),
   employmentPercentage: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
+  /** The id of the person this employment reports to: a user of the same organisation, never the person themselves. */
+  managerId: Type.Optional(Type.String()),
 });
 export type Employment = Static<typeof EmploymentSchema>;
+const { managerId: _employmentManager, ...shownEmployment } = EmploymentSchema.properties;
 const PersonProfileSchema = object({
   email: Type.Union([Type.String(), Type.Null()]),
   phoneNumbers: Type.Array(DirectoryPhoneSchema),
-  /** `unitLabel` is absent when the unit has been removed since the directory sent the employment. */
-  employments: Type.Array(object({ ...EmploymentSchema.properties, unitLabel: Type.Optional(Type.String()) })),
+  /**
+   * `unitLabel` is absent when the unit has been removed since the directory sent the employment. The manager of an
+   * employment is not part of a profile: it is told to the provisioner that wrote it and to nobody else until a
+   * decision says who reads it (D147).
+   */
+  employments: Type.Array(object({ ...shownEmployment, unitLabel: Type.Optional(Type.String()) })),
   title: Type.Union([Type.String(), Type.Null()]),
 });
 export type PersonProfile = Static<typeof PersonProfileSchema>;

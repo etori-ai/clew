@@ -539,6 +539,40 @@ export function scimUsecases(deps: {
       'invalidValue',
     );
   };
+  /**
+   * D147: an employment names its manager by the id of a user of this organisation, and never the person themselves.
+   * One that names anybody else is refused where it is written, as an employment on a unit the organisation does not
+   * hold is: stored, it would name someone no reader could open. A manager who has been deactivated is still a user of
+   * the organisation and is stored, since the directory says so; what a deactivated manager means is for whatever reads
+   * the line. A chain of managers that comes back to the person is not looked for here: two writes can close one between
+   * them, so a reader of the line stops at a person it has passed. Asked when a request changes the list.
+   */
+  const unknownManagers = async (
+    tx: ProvisionTx,
+    p: Provisioner,
+    employments: UserFields['employments'],
+    personId?: string,
+  ) => {
+    const named = [...new Set(employments.flatMap(job => (job.managerId === undefined ? [] : [job.managerId])))];
+    if (!named.length) return undefined;
+    if (personId !== undefined && named.includes(personId))
+      return new ScimError(
+        400,
+        "An employment names the user as their own manager. 'managerId' is the id of another user of this organisation (D147). The user was not stored.",
+        'invalidValue',
+      );
+    // A NUL is nobody's id, and PostgreSQL refuses to compare one.
+    const asked = named.filter(id => !id.includes('\u0000')),
+      held = new Set(asked.length ? await tx.usersAmong(p.organisationId, asked) : []),
+      unknown = named.filter(id => !held.has(id));
+    if (!unknown.length) return undefined;
+    const listed = unknown.slice(0, 5).map(id => `'${id.replaceAll('\u0000', '')}'`);
+    return new ScimError(
+      400,
+      `${unknown.length === 1 ? 'An employment names the manager' : 'Employments name the managers'} ${listed.join(', ')}${unknown.length > listed.length ? ` and ${unknown.length - listed.length} more` : ''}, which ${unknown.length === 1 ? 'is no user' : 'are no users'} of this organisation. 'managerId' is the 'id' of the manager's User resource, and the manager is sent before an employment names them (D147). The user was not stored.`,
+      'invalidValue',
+    );
+  };
   async function writeUser(
     tx: ProvisionTx,
     p: Provisioner,
@@ -551,7 +585,8 @@ export function scimUsecases(deps: {
       sent = read(held),
       wrongUnit = isDeepStrictEqual(held.employments, sent.employments)
         ? undefined
-        : await unknownUnits(tx, p, sent.employments);
+        : ((await unknownUnits(tx, p, sent.employments)) ??
+          (await unknownManagers(tx, p, sent.employments, current.id)));
     // D113: beside a deactivation the list is left as it was, and the person is deactivated.
     if (wrongUnit && !saysInactive(sent)) throw wrongUnit;
     const fields = wrongUnit ? { ...sent, employments: held.employments } : sent,
@@ -727,7 +762,8 @@ export function scimUsecases(deps: {
       deps.store.transaction(async tx => {
         const fields = userFields(body);
         await uniqueUser(tx, fields);
-        const wrongUnit = await unknownUnits(tx, p, fields.employments);
+        const wrongUnit =
+          (await unknownUnits(tx, p, fields.employments)) ?? (await unknownManagers(tx, p, fields.employments));
         if (wrongUnit) throw wrongUnit;
         const at = now(),
           record: UserRecord = {
@@ -1561,13 +1597,16 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
               // The core title where no employment carries one; the employments say their own.
               title: found.employments.some(row => row.title) ? null : found.title,
               // A removed unit has no name to show. Keep any employment details that still describe the job.
-              employments: found.employments.flatMap((row): PersonProfile['employments'] => {
-                const unitLabel = labels.get(row.unitId);
-                if (unitLabel !== undefined) return [{ ...row, unitLabel }];
-                return row.title || row.employmentType || row.startDate || row.employmentPercentage !== undefined
-                  ? [row]
-                  : [];
-              }),
+              // D147: who an employment reports to is not part of a profile.
+              employments: found.employments.flatMap(
+                ({ managerId: _manager, ...row }): PersonProfile['employments'] => {
+                  const unitLabel = labels.get(row.unitId);
+                  if (unitLabel !== undefined) return [{ ...row, unitLabel }];
+                  return row.title || row.employmentType || row.startDate || row.employmentPercentage !== undefined
+                    ? [row]
+                    : [];
+                },
+              ),
             }
           : undefined;
         return {

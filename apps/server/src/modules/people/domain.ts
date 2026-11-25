@@ -553,6 +553,7 @@ const CONTACT_NAMES: Names = { value: true, type: true, primary: true, display: 
     employmentType: true,
     startDate: true,
     employmentPercentage: true,
+    managerId: true,
   },
   MEMBER_NAMES: Names = { value: true, display: true, $ref: true, type: true },
   NAME_NAMES: Names = { formatted: true, givenName: true, familyName: true };
@@ -794,7 +795,7 @@ function distinctEntries<T>(rows: T[], key: (row: T) => string): T[] {
 }
 const phoneKey = (row: DirectoryPhone) => JSON.stringify([row.type.toLowerCase(), row.value]);
 const employmentKey = (row: Employment) =>
-  JSON.stringify([row.unitId, row.title, row.employmentType, row.startDate, row.employmentPercentage]);
+  JSON.stringify([row.unitId, row.title, row.employmentType, row.startDate, row.employmentPercentage, row.managerId]);
 const EMPLOYMENTS = SCIM.employment + ':employments';
 /** The employments of a body or of a patch value: a list, or the one entry by itself. */
 function employmentList(value: unknown): Employment[] {
@@ -807,9 +808,15 @@ function employmentList(value: unknown): Employment[] {
       startDate = checkContract(EmploymentSchema.properties.startDate, row.startDate) ? row.startDate : undefined,
       employmentPercentage = checkContract(EmploymentSchema.properties.employmentPercentage, row.employmentPercentage)
         ? row.employmentPercentage
-        : undefined;
+        : undefined,
+      // D147: who the employment reports to, by the id of their User resource. Null or empty is no manager; anything
+      // else must be a string, since a manager Clew cannot read would be stored as none while the answer said stored.
+      managerId =
+        row.managerId === undefined || row.managerId === null || row.managerId === ''
+          ? undefined
+          : asString(row.managerId, EMPLOYMENTS + '.managerId');
     if (row.unitId === undefined || row.unitId === '') {
-      if (!title && !employmentType && !startDate && employmentPercentage === undefined) return [];
+      if (!title && !employmentType && !startDate && employmentPercentage === undefined && !managerId) return [];
       throw new ScimError(
         400,
         `An employment needs a 'unitId': the id of the unit, which is what follows '${UNIT_KEY}' in the externalId of its group. A title that belongs to no unit is sent as the user's 'title'.`,
@@ -823,6 +830,7 @@ function employmentList(value: unknown): Employment[] {
         ...(employmentType ? { employmentType } : {}),
         ...(startDate ? { startDate } : {}),
         ...(employmentPercentage !== undefined ? { employmentPercentage } : {}),
+        ...(managerId ? { managerId } : {}),
       },
     ];
   });
@@ -1831,6 +1839,11 @@ export const schemaDocuments = (base: string) => [
           attribute('employmentPercentage', 'decimal', {
             description:
               'Percentage of full-time hours for this employment. Send a JSON number from 0 to 100 inclusive without a percent sign. Use 50 for half time.',
+          }),
+          attribute('managerId', 'string', {
+            caseExact: true,
+            description:
+              "The 'id' of the User this employment reports to: a user of the same organisation, sent before an employment names them, and never the user themselves.",
           }),
         ],
       }),

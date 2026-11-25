@@ -56,8 +56,16 @@ boardingDirectoryContract('postgres', async () => {
         organisationId: person.organisationId,
         name: person.name,
         enabled: person.enabled,
-        employments: person.employments.map(e => ({ unitId: person.assignments[0]?.unitId ?? '', ...e })),
       });
+      if (person.employments.length)
+        await db.insert(schema.employments).values(
+          person.employments.map((e, position) => ({
+            personId: person.id,
+            position,
+            unitId: person.assignments[0]?.unitId ?? '',
+            ...e,
+          })),
+        );
       if (person.assignments.length)
         await db.insert(schema.assignments).values(person.assignments.map(a => ({ personId: person.id, ...a })));
       for (const code of person.positionCodes) {

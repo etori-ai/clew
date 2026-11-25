@@ -206,6 +206,11 @@ const snapshot = async () => ({
     .select()
     .from(schema.assignments)
     .where(like(schema.assignments.personId, prefix + '%')),
+  employments: await db
+    .select()
+    .from(schema.employments)
+    .where(like(schema.employments.personId, prefix + '%'))
+    .orderBy(schema.employments.personId, schema.employments.position),
   grants: await db
     .select()
     .from(schema.accessGrants)
@@ -409,7 +414,6 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     name: '',
     email: null,
     phoneNumbers: [],
-    employments: [],
     title: null,
     userName: null,
     externalId: null,
@@ -433,6 +437,9 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     [choir.id, erasedAt],
   ]);
   expect(after.assignments.map(a => a.personId)).toEqual([bo]);
+  // D147: her employments were rows of their own, and they are gone with the rest of her profile.
+  expect(before.employments.some(row => row.personId === asa)).toBe(true);
+  expect(after.employments.filter(row => row.personId === asa)).toEqual([]);
   expect(after.grants.map(g => g.personId)).toEqual([bo]);
   expect(after.bindings.map(b => [b.issuer, b.subject, b.personId])).toEqual([[issuerA, 'sub-bo-' + prefix, bo]]);
   expect(after.sessions).toEqual([{ digest: prefix + '-s3', personId: bo }]);

@@ -40,6 +40,8 @@ export interface Employment {
   startDate?: string;
   /** Of full time, from 0 to 100. */
   employmentPercentage?: number;
+  /** The `id` Clew gave the User this employment reports to (D147). */
+  managerId?: string;
 }
 export type { Capability };
 export interface DirectoryUnit {
