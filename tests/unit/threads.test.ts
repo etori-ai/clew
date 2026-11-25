@@ -184,6 +184,21 @@ describe('avfärda, inte nu and ångra', () => {
     ]);
     expect(w.calendar.calls).toEqual([]);
   });
+  test('ångra on a card whose topic a card made since holds is refused, and nothing is written (DE-L9)', async () => {
+    const w = world();
+    const card = await invoices(w);
+    await w.threads.dismissAny(hillevi, card.id);
+    const { id: _, ...rest } = (await w.store.readThread(hillevi.id, card.id))!;
+    void _;
+    await w.store.transaction(tx =>
+      tx.insertThread({ ...rest, id: 'made-again', personId: hillevi.id, state: 'open', items: [], actions: [] }),
+    );
+    await expect(w.threads.reopenThread(hillevi, card.id)).rejects.toThrow(
+      'Det finns redan ett öppet ärende om samma sak. Fortsätt i det.',
+    );
+    expect(await w.threads.threadFor(hillevi, card.id)).toMatchObject({ state: 'dismissed', handledAt: T0 });
+    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.dismissed']);
+  });
   test('a snoozed card wakes when its time passes, with an audit row saying so', async () => {
     const w = world();
     const card = await invoices(w);
@@ -580,6 +595,29 @@ describe('påminn mig', () => {
     });
     expect(actions(w.store, card.id).at(-1)).toBe('thread.reminded');
     expect(w.store.deliveries.filter(id => !id.startsWith('work:'))).toEqual([`reminded:${card.id}:2`]);
+  });
+  test('a reminder on a card dismissed and made again leaves it dismissed, and its row says why (DE-L9)', async () => {
+    const w = world();
+    const card = await invoices(w);
+    await w.reminders.remind(hillevi, card.id, 600);
+    await w.threads.dismissThread(hillevi, card.id);
+    const { id: _, ...rest } = (await w.store.readThread(hillevi.id, card.id))!;
+    void _;
+    await w.store.transaction(tx =>
+      tx.insertThread({ ...rest, id: 'made-again', personId: hillevi.id, state: 'open', items: [], actions: [] }),
+    );
+    w.clock.advance(10 * MINUTE);
+    expect(await w.reminders.fire(`reminder:${card.id}`, 1)).toBe('skipped');
+    expect(await w.threads.threadFor(hillevi, card.id)).toMatchObject({ state: 'dismissed' });
+    expect((await w.store.readTimer(`reminder:${card.id}`))?.state).toBe('fired');
+    expect(w.store.audit.at(-1)).toMatchObject({
+      actor: 'assistant:reminder',
+      action: 'thread.reminder_skipped',
+      subject: 'thread:' + card.id,
+      details: { reason: 'topic-open', requestedAt: T0, wasState: 'dismissed', owner: 'hillevi' },
+    });
+    expect(w.store.audit.filter(e => e.action === 'thread.reminded')).toEqual([]);
+    expect(w.store.deliveries.filter(id => id.startsWith('reminded:'))).toEqual([]);
   });
   test('when the timer fires the card comes back once, reopened and marked, with the reason on its trigger', async () => {
     const w = world();

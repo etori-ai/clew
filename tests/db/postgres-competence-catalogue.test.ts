@@ -199,8 +199,9 @@ describe('the catalogue at scale on Postgres (D120 item 7, D108 item 2)', () => 
     expect(types.filter(t => t.mergedInto !== null)).toHaveLength(1);
   });
 
-  test('a name the database folds as one, where JavaScript does not, is skipped by an import and never refused', async () => {
-    // `lower()` of this database makes "İ" an "i"; JavaScript makes it "i" and a combining dot, another name.
+  test('a name is one name to the database exactly when it is to JavaScript, and one in use is skipped, never refused', async () => {
+    // The name index folds by ICU's root locale (DE-L8), as JavaScript does and whatever the database's locale: "İ" is
+    // "i" and a combining dot to both, another name than "Istanbul", where the locale's own `lower()` made it an "i".
     await competence.seedType('operator:test', ORG, { name: `Istanbul ${tag}`, area: 'Resor', kind: 'course' });
     const outcome = await competence.importTypes(admin, {
       format: 'clew',
@@ -208,9 +209,11 @@ describe('the catalogue at scale on Postgres (D120 item 7, D108 item 2)', () => 
         { row: 2, name: `İSTANBUL ${tag}`, area: 'Resor', kind: 'course', validityMonths: null, uri: null },
         { row: 3, name: `Ankara ${tag}`, area: 'Resor', kind: 'course', validityMonths: null, uri: null },
         { row: 4, name: `ANKARA ${tag}`, area: 'Resor', kind: 'course', validityMonths: null, uri: null },
+        // The name in use in capitals: the same name, skipped.
+        { row: 5, name: `ISTANBUL ${tag}`, area: 'Resor', kind: 'course', validityMonths: null, uri: null },
       ],
     });
-    expect(outcome).toEqual({ added: 1, skipped: 2 });
+    expect(outcome).toEqual({ added: 2, skipped: 2 });
   });
 
   test('a merge decides from a confirmation that came first: it waits for the holding, and keeps the level just confirmed', async () => {

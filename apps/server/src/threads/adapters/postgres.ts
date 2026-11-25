@@ -48,6 +48,13 @@ const naming = (subjects: readonly Subject[]) => {
     ),
   );
 };
+/** The unique index `thread_open_topic` refused a write; the driver may wrap the error once. */
+function openTopicTaken(error: unknown) {
+  const e = error as { code?: string; constraint_name?: string; cause?: { code?: string; constraint_name?: string } };
+  return (
+    (e?.code ?? e?.cause?.code) === '23505' && (e?.constraint_name ?? e?.cause?.constraint_name) === 'thread_open_topic'
+  );
+}
 const date = (value: string | null | undefined) =>
   value === undefined ? undefined : value === null ? null : new Date(value);
 const toRow = (patch: ThreadPatch) => {
@@ -149,6 +156,43 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
       .where(eq(threads.id, id))
       .returning({ id: threads.id, personId: threads.personId, items: threads.items, subjects: threads.subjects });
     if (row) await indexSubjects(tx, row, true);
+  },
+  async reopenThread(id, patch) {
+    // Only while no other open pushed card of the person holds the topic (DE-L9). In a savepoint, so a card made on the
+    // topic by another transaction at this moment, which the index `thread_open_topic` refuses this update for, leaves
+    // this transaction as it was.
+    try {
+      return await tx.transaction(async savepoint => {
+        const reopened = await savepoint
+          .update(threads)
+          .set(toRow({ ...patch, state: 'open' }))
+          .where(
+            and(
+              eq(threads.id, id),
+              // The row being updated is `thread`; `other` is any other card of the person on the same topic.
+              sql`(thread.kind <> 'pushed' or not exists (
+                select 1 from thread other where other.person_id = thread.person_id and other.topic = thread.topic
+                  and other.state = 'open' and other.kind = 'pushed' and other.id <> thread.id))`,
+            ),
+          )
+          .returning({ id: threads.id });
+        return reopened.length > 0;
+      });
+    } catch (error) {
+      if (openTopicTaken(error)) return false;
+      throw error;
+    }
+  },
+  async topicHolder(id) {
+    // A statement of its own, so after a reopen refused for a race it sees the card the other transaction committed.
+    const [holder] = await tx.execute<{ id: string }>(
+      sql`select other.id from thread other join thread own on other.person_id = own.person_id
+            and other.topic = own.topic
+          where own.id = ${id} and own.kind = 'pushed' and other.id <> own.id
+            and other.state = 'open' and other.kind = 'pushed'
+          limit 1`,
+    );
+    return holder?.id;
   },
   async eraseSubject(subject) {
     const erased = { cards: 0, rows: 0, cardSubjects: 0 };

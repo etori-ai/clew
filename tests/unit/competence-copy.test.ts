@@ -322,6 +322,33 @@ describe('a read of a source', () => {
     for (const word of [...NAMES, ...KEYS, ...LABELS]) expect(written).not.toContain(word);
   });
 
+  test('a key written decomposed (NFD) finds its person and keeps the holding, as the directory folds a user name (DE-L8)', async () => {
+    const { hlr } = await catalogue();
+    await competence.mapSourceType(admin, 'lms', { sourceType: 'clew-dev:hlr', typeId: hlr });
+    store.state.persons.set('asa', {
+      id: 'asa',
+      organisationId: ORG,
+      name: 'Åsa Öberg',
+      userName: 'Åsa.Öberg'.normalize('NFC'),
+      enabled: true,
+    });
+    const key = 'Åsa.Öberg'.normalize('NFD');
+    expect(key).not.toBe('Åsa.Öberg'.normalize('NFC'));
+    source.pages.set('lms', [
+      {
+        rows: [row(key, [holding('course:7:user:5', 'clew-dev:hlr', 'Hjärt-lungräddning', '2025-11-01')])],
+        withdrawalsReported: false,
+      },
+    ]);
+    const result = await competence.copySource(COPY_ACTOR, 'run-1', lms);
+    expect(result).toMatchObject({ outcome: 'complete', unmatched: 0, counts: { read: 1, stored: 1, invalid: 0 } });
+    expect(copied().map(h => [h.personId, h.typeId, h.copy?.sourceId])).toEqual([['asa', hlr, 'course:7:user:5']]);
+    expect(audits().at(-1)).toMatchObject({
+      action: 'competence.source_read',
+      details: { outcome: 'complete', unmatched: 0, read: 1, stored: 1 },
+    });
+  });
+
   test('read again, nothing changes but the time it was read', async () => {
     await catalogue();
     platform();

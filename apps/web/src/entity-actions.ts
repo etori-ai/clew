@@ -81,7 +81,7 @@ export const withPreset = (
   preset: AskValues | undefined,
 ): Readonly<Record<string, AskValues>> => (preset && !drafts[key] ? { ...drafts, [key]: preset } : drafts);
 
-/** Starting an action about an entity or a record, and the source's refusal of the last one when it refused. */
+/** Starting an action about an entity or a record; a source's refusal is said in the action dialog, never by the page (D126 item 7). */
 export interface EntityActionStart {
   /**
    * Open the action dialog of `action` about `subject`. `values` are answers it starts from (a plan's item tied to the
@@ -97,8 +97,6 @@ export interface EntityActionStart {
     startAt?: ActionStep,
     from?: RecordDraftRef,
   ) => void;
-  /** The source's Swedish sentence, shown beside what started it until the next start. */
-  error: string | null;
   busy: boolean;
   /** The action dialog (D112 item 10); the page renders it wherever it renders the buttons. */
   dialog: ReactNode;
@@ -184,7 +182,7 @@ export function useEntityAction(): EntityActionStart {
   const client = useQueryClient();
   const here = useRef(location);
   here.current = location;
-  const { start, busy, error, reset } = useEntityStart();
+  const { start, busy, reset } = useEntityStart();
   // The dialog, and what the person typed while the page stays (`askDraftKey`), so a closed and reopened dialog keeps it.
   const [asking, setAsking] = useState<{
     action: SubjectAction;
@@ -254,5 +252,5 @@ export function useEntityAction(): EntityActionStart {
         onSend: send,
       })
     : null;
-  return { start: run, error, busy, dialog };
+  return { start: run, busy, dialog };
 }

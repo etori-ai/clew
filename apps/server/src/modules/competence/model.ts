@@ -576,7 +576,7 @@ export interface CompetenceTx {
   /**
    * Insert these types at once, as an import does (D120 item 7), each that may be: one whose name another type of the
    * organisation in use has (by the store's own comparison without regard to case, which in Postgres is the name index's
-   * `lower()`), or whose address another type keeps whatever its state, or that an earlier one of the batch took, is
+   * `lower()` by ICU's root locale), or whose address another type keeps whatever its state, or that an earlier one of the batch took, is
    * left out without an error. Returns the ids inserted.
    */
   insertTypes(types: readonly TypeRecord[]): Promise<string[]>;

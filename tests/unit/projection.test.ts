@@ -22,7 +22,7 @@ projectionContract('memory', async () => {
           id: card.id,
           personId: card.personId,
           kind: 'pushed',
-          topic: card.id,
+          topic: card.topic ?? card.id,
           title: 'Synthetic card',
           state: card.state ?? 'open',
           week: null,
