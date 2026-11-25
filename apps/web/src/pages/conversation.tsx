@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { OpenThing, Thread, ViewRef } from '@clew/contracts';
@@ -26,14 +26,12 @@ import {
   pixel,
   useMediaQuery,
   useResizable,
-  type AgendaItem,
 } from '@clew/ui';
 import { areasQuery, entityDetailQuery, entityListQuery, threadQuery, threadsQuery } from '../queries';
 import { api } from '../api';
 import { errorMessage } from '../query-policy';
-import { keys } from '../query-keys';
 import { applyThread } from '../thread-cache';
-import { withCard, withoutPanel } from '../panel-address';
+import { calendarEntryHref, withCard, withoutPanel } from '../panel-address';
 import { addressInput, lensTabHref, openedAsPage, opensAsPage, viewOpenHref, viewPageHref } from '../view-address';
 import { itemPageHref } from '../work-items';
 import { personPageHref, unitPageHref } from '../person-address';
@@ -52,6 +50,7 @@ import {
   type EntitySubjectKind,
 } from '../conversation-about';
 import { mobileQuery, shortQuery } from '../components/shell/shell';
+import { placeOfRead } from '../components/shell/nav';
 import { Composer } from '../components/conversation/composer';
 import { Transcript } from '../components/conversation/conversation';
 import { AssistantPane, AssistantsMenu } from '../components/conversation/assistant-pane';
@@ -62,7 +61,6 @@ import { cardBody } from '../components/work/card-panel';
 import { PanelBody, answersWithRowsOf } from '../components/views/panel';
 import { useView } from '../components/views/view-read';
 import { BriefSkeleton } from '../components/work/brief';
-import { EventDialog } from '../components/calendar/event-dialog';
 import { PageFrame, type EntryStyle } from '../components/shell/page-frame';
 import { recordThing } from '../components/conversation/page-conversation';
 import { EntityPane } from './entity-pane';
@@ -173,11 +171,8 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   const location = useLocation();
   const { pathname, search } = location;
   const here = pathname + search;
-  const client = useQueryClient();
   const views = useQuery(areasQuery).data?.views;
   const marks = useMarks();
-  // An entry opened from a day beside the conversation (D32): the calendar's own dialog, over the page.
-  const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
   useOpenedHere(pathname);
   /** ✕, or Esc in the pane: the thing leaves the address, the conversation stays, and the box has the focus. */
   const closePane = useCallback(() => {
@@ -192,7 +187,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   };
   // The menu over what the conversation has named, in the header of whatever stands beside the transcript.
   const named = <NamedMenu />;
-  const about = useAbout({ here, closePane, escape, onChange, onOpenItem: setOpenItem, tools: named });
+  const about = useAbout({ here, closePane, escape, onChange, tools: named });
   const pane = useResizable({
     defaultSize: PANE,
     minSize: PANE_MIN,
@@ -337,49 +332,11 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   ) : (
     transcript
   );
-  const dialog = (
-    <EventDialog
-      item={openItem?.item ?? null}
-      dayItems={openItem?.dayItems ?? []}
-      onClose={() => setOpenItem(null)}
-      /* The day beside the conversation and every loaded week are read again; a moved proposal's thread goes into the cache like any other answer. */
-      onChanged={t => {
-        if (t) {
-          onChange(t);
-          void applyThread(client, t);
-        }
-        void client.invalidateQueries({ queryKey: keys.viewAll });
-        void client.invalidateQueries({ queryKey: keys.calendarAll });
-      }}
-    />
-  );
   // The conversation in the page frame every page has (D126, the product owner 2026-11-14): the title on Hem's line,
   // the transcript and its box in the column under it, and the thing it is about in the end panel inside the same frame.
   // On a short screen (1.4.10) nothing is docked and the page scrolls as one.
   if (short)
     return (
-      <>
-        <PageFrame
-          ask={{ none: 'assistant' }}
-          entry={entry}
-          title={heading}
-          titleId="samtal"
-          meta={meta}
-          actions={assistants}
-          label="Samtalet"
-        >
-          {aside ?? (
-            <VStack gap={4}>
-              {body}
-              {composer}
-            </VStack>
-          )}
-        </PageFrame>
-        {dialog}
-      </>
-    );
-  return (
-    <>
       <PageFrame
         ask={{ none: 'assistant' }}
         entry={entry}
@@ -388,51 +345,67 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
         meta={meta}
         actions={assistants}
         label="Samtalet"
-        bare
-        end={
-          beside && (aside || about.pane) ? (
-            <>
-              {/* The grip draws the line between the transcript and the pane, so the pane draws none of its own. */}
-              <ResizeHandle
-                direction="horizontal"
-                isReversed
-                hasDivider
-                resizable={pane.props}
-                label="Ändra rutans bredd"
-              />
-              {aside ? (
-                <LayoutPanel
-                  width={pane.size}
-                  padding={0}
-                  hasDivider={false}
-                  role="complementary"
-                  label="Assistent i ett annat system"
-                >
-                  {aside}
-                </LayoutPanel>
-              ) : (
-                <LayoutPanel
-                  width={pane.size}
-                  padding={0}
-                  hasDivider={false}
-                  isScrollable={about.pane!.scrolls}
-                  role="complementary"
-                  label={about.pane!.label}
-                >
-                  {about.pane!.body}
-                </LayoutPanel>
-              )}
-            </>
-          ) : undefined
-        }
       >
-        {/* As the `ai-chat` template holds it: the chat column is the content's full height, and ChatLayout owns the
-            scroll, so the box stays docked inside the window. */}
-        {/* Where nothing fits beside the transcript, the assistant's exchange takes the column until it is closed. */}
-        <VStack height="100%">{!beside && aside ? aside : <ChatLayout composer={composer}>{body}</ChatLayout>}</VStack>
+        {aside ?? (
+          <VStack gap={4}>
+            {body}
+            {composer}
+          </VStack>
+        )}
       </PageFrame>
-      {dialog}
-    </>
+    );
+  return (
+    <PageFrame
+      ask={{ none: 'assistant' }}
+      entry={entry}
+      title={heading}
+      titleId="samtal"
+      meta={meta}
+      actions={assistants}
+      label="Samtalet"
+      bare
+      end={
+        beside && (aside || about.pane) ? (
+          <>
+            {/* The grip draws the line between the transcript and the pane, so the pane draws none of its own. */}
+            <ResizeHandle
+              direction="horizontal"
+              isReversed
+              hasDivider
+              resizable={pane.props}
+              label="Ändra rutans bredd"
+            />
+            {aside ? (
+              <LayoutPanel
+                width={pane.size}
+                padding={0}
+                hasDivider={false}
+                role="complementary"
+                label="Assistent i ett annat system"
+              >
+                {aside}
+              </LayoutPanel>
+            ) : (
+              <LayoutPanel
+                width={pane.size}
+                padding={0}
+                hasDivider={false}
+                isScrollable={about.pane!.scrolls}
+                role="complementary"
+                label={about.pane!.label}
+              >
+                {about.pane!.body}
+              </LayoutPanel>
+            )}
+          </>
+        ) : undefined
+      }
+    >
+      {/* As the `ai-chat` template holds it: the chat column is the content's full height, and ChatLayout owns the
+            scroll, so the box stays docked inside the window. */}
+      {/* Where nothing fits beside the transcript, the assistant's exchange takes the column until it is closed. */}
+      <VStack height="100%">{!beside && aside ? aside : <ChatLayout composer={composer}>{body}</ChatLayout>}</VStack>
+    </PageFrame>
   );
 }
 
@@ -465,14 +438,12 @@ function useAbout({
   closePane,
   escape,
   onChange,
-  onOpenItem,
   tools,
 }: {
   here: string;
   closePane: () => void;
   escape: (e: KeyboardEvent) => void;
   onChange: (thread: Thread) => void;
-  onOpenItem: (item: { item: AgendaItem; dayItems: AgendaItem[] }) => void;
   /** What stands before ✕ in the pane's header, whatever the pane holds (`NamedMenu`). */
   tools: ReactNode;
 }): About {
@@ -593,7 +564,9 @@ function useAbout({
             input={shown.input}
             inline
             isLoading={side.isLoading}
-            onOpenItem={(item, dayItems) => onOpenItem({ item, dayItems })}
+            /* A calendar read's entry is a link to its own place in Kalender (D126 rules 1 and 3): nothing opens over the
+               conversation, and Back returns to it with the day still beside it. */
+            {...(placeOfRead(open)?.surface === 'calendar' ? { entryHref: calendarEntryHref } : {})}
             hrefFor={v => viewOpenHref(views, pathname, search, v)}
           />
         ) : side.failed ? (

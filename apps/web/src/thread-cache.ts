@@ -25,10 +25,23 @@ const writeThread = (client: QueryClient, thread: Thread) => {
 };
 
 /**
+ * Everything that draws the person's calendar, read again after a change to it: Kalender's loaded weeks, and a calendar
+ * read (`calendar.day`, `calendar.today`, `calendar.week`) wherever it is drawn, beside a conversation or on its own
+ * page, so Back from Kalender shows the change there too.
+ */
+export const invalidateCalendar = (client: QueryClient) =>
+  Promise.all([
+    client.invalidateQueries({ queryKey: keys.calendarAll }),
+    client.invalidateQueries({
+      predicate: q => q.queryKey[0] === keys.viewAll[0] && String(q.queryKey[1]).startsWith('calendar.'),
+    }),
+  ]);
+
+/**
  * A mutation returned a thread (D33): it is the truth for every screen that shows it. The list and the single-thread entry
- * are written in place; the counts beside them (areas, attention) are re-read; the loaded weeks are re-read only when the
- * thread carries proposals, since nothing else draws in a calendar. A list refetch that left before the mutation is
- * cancelled first, so an older answer cannot land afterwards and put the old thread back.
+ * are written in place; the counts beside them (areas, attention) are re-read; the calendar (`invalidateCalendar`) is
+ * re-read only when the thread carries proposals, since nothing else draws in a calendar. A list refetch that left
+ * before the mutation is cancelled first, so an older answer cannot land afterwards and put the old thread back.
  */
 export async function applyThread(client: QueryClient, thread: Thread): Promise<void> {
   await settleFetches(client, thread.id);
@@ -37,7 +50,7 @@ export async function applyThread(client: QueryClient, thread: Thread): Promise<
   void client.invalidateQueries({ queryKey: keys.attention });
   // Alla samtal is ordered by the latest activity: a conversation that moved is read in its new place (WD-L1).
   if (thread.kind === 'question') void client.invalidateQueries({ queryKey: keys.conversations });
-  if (thread.proposals.length > 0) void client.invalidateQueries({ queryKey: keys.calendarAll });
+  if (thread.proposals.length > 0) void invalidateCalendar(client);
 }
 
 /**

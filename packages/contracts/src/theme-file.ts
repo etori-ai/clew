@@ -105,9 +105,12 @@ export function contrastRatio(first: string, second: string): number {
  * The colours of Clew's base theme (Astryx Neutral with Clew's overrides, `clewBaseTheme`) for every token a contrast
  * pair names. A file that sets one half of a pair is checked against the other half as the page will draw it.
  * `tests/unit/theme-file.test.ts` holds this table to the theme itself, so an Astryx upgrade cannot leave it behind.
+ * Neutral's dark status tints are translucent (`#88bcff3d`): such a value is kept as Astryx resolves it and laid over
+ * the surface before it is measured (`over`). A file's own colours are always opaque (`colorOf`).
  */
 export const THEME_BASE_COLORS = {
   accent: ['#1b1b1b', '#f1f1f1'],
+  'accent-muted': ['#d4d4d4', '#474747'],
   'on-accent': ['#ffffff', '#111111'],
   'text-accent': ['#1b1b1b', '#f1f1f1'],
   'icon-accent': ['#1b1b1b', '#f1f1f1'],
@@ -122,59 +125,119 @@ export const THEME_BASE_COLORS = {
   'icon-secondary': ['#6a6a6a', '#9e9e9e'],
   info: ['#0074e2', '#6d9cfe'],
   'on-info': ['#ffffff', '#111111'],
+  'info-muted': ['#b9d7ff', '#88bcff3d'],
+  'on-info-muted': ['#003978', '#a1caff'],
   'text-info': ['#0067ce', '#a1caff'],
+  'icon-info': ['#0067ce', '#a1caff'],
   success: ['#198100', '#64af4c'],
   'on-success': ['#ffffff', '#111111'],
+  'success-muted': ['#bce0bb', '#90ca903d'],
+  'on-success-muted': ['#00490b', '#90ca90'],
   'text-success': ['#2f7d33', '#90ca90'],
+  'icon-success': ['#2f7d33', '#90ca90'],
   'background-blue': ['#b9d7ff', '#253c5a'],
   'text-blue': ['#003978', '#a1caff'],
   'background-green': ['#f6fbf8', '#192b19'],
   'text-green': ['#00490b', '#90ca90'],
   track: ['#ccd3db', '#5a5e66'],
 } as const satisfies ThemeColors;
-type PairToken = keyof typeof THEME_BASE_COLORS;
+/** A token a contrast pair names, which the base table carries. */
+export type ThemeContrastToken = keyof typeof THEME_BASE_COLORS;
 
 const TEXT = 4.5,
   MARK = 3;
+type ContrastPair = readonly [foreground: ThemeContrastToken, background: ThemeContrastToken, min: number];
+/**
+ * The grounds Clew draws on: the page, a surface, a card (Hem's boards, a work item's sections) and what opens over the
+ * page (a dialog, a menu, a popover, the composer).
+ */
+const GROUNDS = ['background-body', 'background-surface', 'background-card', 'background-popover'] as const;
+/**
+ * The four and the muted ground, for what is also drawn on it: a muted card (Organisation's units, the handover links in
+ * a conversation, "Visa här"), a striped table row, Astryx's Stepper, and in Kalender the week numbers, the lanes outside
+ * office hours, which the now line crosses, and the "+N" link of a full day. Secondary words, links, the secondary icon
+ * and the accent, which is also the focus ring around a control on a muted card, are held there too.
+ */
+const WITH_MUTED = [...GROUNDS, 'background-muted'] as const;
+const on = (grounds: readonly ThemeContrastToken[], foreground: ThemeContrastToken, min: number): ContrastPair[] =>
+  grounds.map(ground => [foreground, ground, min] as const);
 /**
  * What must be readable on what (WCAG 2.2 AA: 1.4.3 for text at 4.5:1, 1.4.11 for marks and the focus ring at 3:1),
  * in both appearances. The base theme passes every row; a file is refused when the theme it would make does not.
  */
-export const THEME_CONTRAST_PAIRS: ReadonlyArray<readonly [foreground: PairToken, background: PairToken, min: number]> =
-  [
-    ['text-primary', 'background-body', TEXT],
-    ['text-primary', 'background-surface', TEXT],
-    ['text-primary', 'background-card', TEXT],
-    ['text-primary', 'background-popover', TEXT],
-    ['text-primary', 'background-muted', TEXT],
-    ['text-secondary', 'background-body', TEXT],
-    ['text-secondary', 'background-surface', TEXT],
-    ['text-secondary', 'background-card', TEXT],
-    ['text-accent', 'background-surface', TEXT],
-    ['text-accent', 'background-card', TEXT],
-    ['text-info', 'background-surface', TEXT],
-    ['text-success', 'background-surface', TEXT],
-    ['on-accent', 'accent', TEXT],
-    ['on-info', 'info', TEXT],
-    ['on-success', 'success', TEXT],
-    ['text-blue', 'background-blue', TEXT],
-    ['text-green', 'background-green', TEXT],
-    ['accent', 'background-surface', MARK],
-    ['accent', 'background-body', MARK],
-    ['icon-accent', 'background-surface', MARK],
-    ['icon-primary', 'background-surface', MARK],
-    ['icon-secondary', 'background-surface', MARK],
-    // A progress bar's fill on its track: Clew draws its bars in the text colour on Astryx's track colour (D71 item 5).
-    ['text-primary', 'track', MARK],
-  ];
+export const THEME_CONTRAST_PAIRS: ReadonlyArray<ContrastPair> = [
+  ...on(WITH_MUTED, 'text-primary', TEXT),
+  ...on(WITH_MUTED, 'text-secondary', TEXT),
+  // Astryx's Link is drawn in `text-accent`: on a page's lines, a card, a menu, and Kalender's "+N" on the muted ground.
+  ...on(WITH_MUTED, 'text-accent', TEXT),
+  // Status words: a receipt's, a notice's, a status mark's (WA-M1).
+  ...on(GROUNDS, 'text-info', TEXT),
+  ...on(GROUNDS, 'text-success', TEXT),
+  ['on-accent', 'accent', TEXT],
+  ['on-info', 'info', TEXT],
+  ['on-success', 'success', TEXT],
+  // Tints: a badge, a notice (Banner), a proposal in Kalender (`info-muted`), and the label of a selected Item.
+  ['text-blue', 'background-blue', TEXT],
+  ['text-green', 'background-green', TEXT],
+  ['on-info-muted', 'info-muted', TEXT],
+  ['on-success-muted', 'success-muted', TEXT],
+  ['text-primary', 'accent-muted', TEXT],
+  // The accent is also the focus ring (`--focus-outline-color`, `theme.ts`), Astryx's accent StatusDot and Kalender's
+  // now line.
+  ...on(WITH_MUTED, 'accent', MARK),
+  ...on(GROUNDS, 'icon-accent', MARK),
+  ...on(GROUNDS, 'icon-primary', MARK),
+  // Astryx's StatusDot paints its neutral variant in `icon-secondary` (a muted card's chevron too) and its success
+  // variant in `icon-success`; `icon-info` is the information icon of a notice.
+  ...on(WITH_MUTED, 'icon-secondary', MARK),
+  ...on(GROUNDS, 'icon-info', MARK),
+  ...on(GROUNDS, 'icon-success', MARK),
+  // A progress bar's fill on its track: Clew draws its bars in the text colour on Astryx's track colour (D71 item 5).
+  ['text-primary', 'track', MARK],
+];
 
-/** Every pair the theme made of these colours over the base would fail, as problems an administrator can act on. */
+/**
+ * Astryx draws a status icon in its status's text colour (`--color-icon-info: var(--color-text-info)`) until it is set,
+ * the file's text colour where the file sets one.
+ */
+const FOLLOWS: Partial<Record<ThemeContrastToken, ThemeContrastToken>> = {
+  'icon-info': 'text-info',
+  'icon-success': 'text-success',
+};
+const fromFile = (colors: ThemeColors, token: ThemeContrastToken) =>
+  colors[token] ?? (FOLLOWS[token] ? colors[FOLLOWS[token]] : undefined);
+/** The colour the page draws for a token: the file's, else that of the colour it follows in the file, else the base's. */
+export const themeColorOf = (colors: ThemeColors, token: ThemeContrastToken): ThemeColorPair =>
+  fromFile(colors, token) ?? THEME_BASE_COLORS[token];
+/** A translucent colour (`#rrggbbaa`) as it shows over an opaque ground, blended as the browser blends sRGB; an opaque one as it is. */
+function over(color: string, ground: string): string {
+  if (color.length !== 9) return color;
+  const alpha = parseInt(color.slice(7), 16) / 255;
+  const channel = (hex: string, offset: number) => parseInt(hex.slice(offset, offset + 2), 16);
+  return (
+    '#' +
+    [1, 3, 5]
+      .map(offset =>
+        Math.round(channel(color, offset) * alpha + channel(ground, offset) * (1 - alpha))
+          .toString(16)
+          .padStart(2, '0'),
+      )
+      .join('')
+  );
+}
+
+/**
+ * Every pair the theme made of these colours over the base would fail, as problems an administrator can act on. A status
+ * icon the file leaves to follow its text colour is that colour's problem: the words are held at least as strictly on
+ * the same grounds, so the problem is named once, on the colour the file sets, and never on an icon it does not.
+ */
 export function checkThemeContrast(colors: ThemeColors): ThemeProblem[] {
   const problems: ThemeProblem[] = [];
-  const at = (token: PairToken, index: 0 | 1) => (colors[token] ?? THEME_BASE_COLORS[token])[index];
+  const at = (token: ThemeContrastToken, index: 0 | 1) =>
+    over(themeColorOf(colors, token)[index], themeColorOf(colors, 'background-surface')[index]);
   for (const [foreground, background, min] of THEME_CONTRAST_PAIRS) {
-    // A pair the file does not touch is the base theme's own and already holds.
-    if (!colors[foreground] && !colors[background]) continue;
+    const follows = colors[foreground] ? undefined : FOLLOWS[foreground];
+    if (follows && THEME_CONTRAST_PAIRS.some(([f, b, m]) => f === follows && b === background && m >= min)) continue;
     for (const [index, mode] of [
       [0, 'light'],
       [1, 'dark'],
@@ -191,6 +254,20 @@ export function checkThemeContrast(colors: ThemeColors): ThemeProblem[] {
   }
   return problems;
 }
+
+/**
+ * The file Hämta mall för temafil gives while no theme is saved: the base colours for the roles a contrast pair names,
+ * less a status icon, which then follows the text colour the file sets as Astryx draws it (`FOLLOWS`), and less a
+ * translucent tint, which a file cannot carry.
+ */
+export const THEME_TEMPLATE: InstallationTheme = {
+  name: 'Mall: Clews standardfärger',
+  colors: Object.fromEntries(
+    Object.entries(THEME_BASE_COLORS).filter(
+      ([token, pair]) => !FOLLOWS[token as ThemeContrastToken] && pair.every(hex => HEX.test(hex)),
+    ),
+  ) as ThemeColors,
+};
 
 /** A DTCG colour value in sRGB without transparency, or a six-digit hex string as older exports write it. */
 function colorOf(value: unknown): string | { problem: string } {

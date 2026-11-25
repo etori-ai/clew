@@ -1,12 +1,16 @@
 import { audiencedActorOf, type AboutRead } from '@clew/connectors';
-import type {
-  AuthenticatedContext,
-  EntityDetail,
-  EntityKind,
-  EntityList,
-  EntityRows,
-  EntitySection,
+import {
+  ENTITY_NAMES_MAX,
+  type AuthenticatedContext,
+  type EntityDetail,
+  type EntityKind,
+  type EntityList,
+  type EntityName,
+  type EntityRows,
+  type EntitySection,
+  type Subject,
 } from '@clew/contracts';
+import { InputError } from '../../context';
 import {
   actionOf,
   attentionOf,
@@ -33,7 +37,7 @@ import {
   type Checked,
   type ReportRow,
 } from './domain';
-import { DEFAULT_BUDGET, type EntityDeps, type ReportDirectory } from './model';
+import { DEFAULT_BUDGET, type EntityDeps, type Reach, type ReportDirectory } from './model';
 
 type Answer = ({ status: 'ok' } & Checked) | { status: 'unavailable' | 'timeout' };
 type Found = Pick<EntityDetail, 'entity' | 'relation' | 'profile' | 'below' | 'above'>;
@@ -136,10 +140,11 @@ export function entityUsecases(deps: EntityDeps) {
     kind: EntityKind,
     key: string,
     includeProfile = false,
+    reachOf: () => Promise<Reach> = () => deps.directory.reach(persona),
   ): Promise<Found | undefined> {
     if (!isKey(kind, key)) return undefined;
     if (kind === 'unit') {
-      const reach = await deps.directory.reach(persona);
+      const reach = await reachOf();
       const member = memberUnit(reach, key),
         below = member ? undefined : belowUnit(reach, key),
         unit = member ?? below,
@@ -160,7 +165,7 @@ export function entityUsecases(deps: EntityDeps) {
     const person = await deps.directory.person(persona, key, includeProfile);
     if (!person || person.id !== key || !personKey(person) || !person.userName) return undefined;
     const self = person.id === persona.id;
-    const reach = self ? undefined : await deps.directory.reach(persona);
+    const reach = self ? undefined : await reachOf();
     // The rule the registry applies to every call (D117): this page and a source's answer never disagree on it.
     const relation = personRelation(persona, reach ?? NOBODY, person);
     const managed = reach && managedPerson(reach, person.id);
@@ -289,7 +294,33 @@ export function entityUsecases(deps: EntityDeps) {
     return { capability, status: 'ok', ...(row ? { row } : {}) };
   }
 
-  return { list, rows, detail, section };
+  /**
+   * The names of the people and units a list's rows are about (Att göra, a work item's "Berör"), as the directory holds
+   * them now (D62, D122). Each by the rule of the opened entity (`resolve`), so a key the reader may not open, or that
+   * names nobody now, is absent and never told apart. One request reads where the reader stands once and the directory
+   * for at most `concurrency` keys at a time; it takes at most `ENTITY_NAMES_MAX` subjects and refuses more.
+   */
+  async function names(persona: AuthenticatedContext, subjects: readonly Subject[]): Promise<EntityName[]> {
+    if (subjects.length > ENTITY_NAMES_MAX) throw new InputError('Ogiltig förfrågan.');
+    const distinct = [...new Map(subjects.map(s => [`${s.entity}\u0000${s.key}`, s])).values()];
+    let reach: Promise<Reach> | undefined;
+    const reachOnce = () => (reach ??= deps.directory.reach(persona));
+    const named: Array<EntityName | undefined> = [];
+    let next = 0;
+    const worker = async () => {
+      while (next < distinct.length) {
+        const i = next++;
+        const { entity, key } = distinct[i]!;
+        const found = await resolve(persona, entity, key, false, reachOnce);
+        if (found) named[i] = { entity, key, name: found.entity.name };
+      }
+    };
+    const concurrency = Math.max(1, Math.floor(budget.concurrency));
+    await Promise.all(Array.from({ length: Math.min(concurrency, distinct.length) }, worker));
+    return named.filter(n => n !== undefined);
+  }
+
+  return { list, rows, detail, section, names };
 }
 /**
  * `people.reports` (D141 rule 4): the people Personal lists for the reader, the list `GET /api/entities/person` draws

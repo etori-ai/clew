@@ -1,5 +1,6 @@
 /*
-  Clew's FullCalendar theme (D27). Every value is an Astryx token; no hex, no px that a token covers.
+  Clew's FullCalendar theme (D27). Every value is an Astryx token or a multiple of one; no hex, and no px outside a
+  media query, where a custom property cannot stand (the app's own lines, `media.ts`).
   Class names are set by `calendar-theme.ts`; FullCalendar's own `skeleton.css` does the structural layout.
   Colours use the semantic tokens, so dark mode follows the theme through light-dark() for free.
 */
@@ -22,18 +23,18 @@
   border-width: 0;
 }
 .clew-cal-view-top {
-  border-top-width: var(--border-width, 1px);
+  border-top-width: var(--border-width);
   border-top-left-radius: var(--radius-container);
   border-top-right-radius: var(--radius-container);
 }
 .clew-cal-view-bottom {
-  border-bottom-width: var(--border-width, 1px);
+  border-bottom-width: var(--border-width);
   border-bottom-left-radius: var(--radius-container);
   border-bottom-right-radius: var(--radius-container);
 }
 .clew-cal-view-x {
-  border-left-width: var(--border-width, 1px);
-  border-right-width: var(--border-width, 1px);
+  border-left-width: var(--border-width);
+  border-right-width: var(--border-width);
 }
 .clew-cal-view-fixed {
   overflow: hidden;
@@ -58,11 +59,11 @@
   background-color: var(--color-background-surface);
   border-color: var(--clew-cal-line);
   border-style: var(--clew-cal-border-style);
-  border-width: 1px;
+  border-width: var(--border-width);
   opacity: 0.5;
 }
 .clew-cal-divider {
-  border-bottom: 1px var(--clew-cal-border-style) var(--clew-cal-line);
+  border-bottom: var(--border-width) var(--clew-cal-border-style) var(--clew-cal-line);
 }
 
 /* Pressable and focusable surfaces share Astryx's hover, pressed and focus tokens */
@@ -113,7 +114,7 @@
   font: inherit;
   color: var(--color-text-primary);
   background: transparent;
-  border: 1px var(--clew-cal-border-style) var(--clew-cal-line-strong);
+  border: var(--border-width) var(--clew-cal-border-style) var(--clew-cal-line-strong);
   border-radius: var(--radius-full);
   padding: var(--spacing-1-5) var(--spacing-3);
   margin: 0;
@@ -130,12 +131,12 @@
 
 /* Day headers: weekday small and secondary, the day number as the heading; today in the accent */
 .clew-cal-day-header-row {
-  border-bottom: 1px var(--clew-cal-border-style) var(--clew-cal-line);
+  border-bottom: var(--border-width) var(--clew-cal-border-style) var(--clew-cal-line);
 }
 .clew-cal-day-header {
   border-color: var(--clew-cal-line);
   border-style: var(--clew-cal-border-style);
-  border-width: 0 0 0 1px;
+  border-width: 0 0 0 var(--border-width);
 }
 .clew-cal-day-header.clew-cal-major {
   border-left-color: var(--clew-cal-line-strong);
@@ -150,7 +151,7 @@
   justify-content: center;
   gap: var(--spacing-0-5);
   padding: var(--spacing-2) var(--spacing-1);
-  min-height: 44px;
+  min-height: var(--spacing-11);
   outline: none !important;
 }
 .clew-cal-day-header-inner > * {
@@ -214,7 +215,7 @@
   justify-content: flex-end;
   border-color: var(--clew-cal-line);
   border-style: var(--clew-cal-border-style);
-  border-width: 1px 0 0 0;
+  border-width: var(--border-width) 0 0 0;
 }
 .clew-cal-slot-header.clew-cal-minor {
   border-top-style: dotted;
@@ -236,14 +237,14 @@
   background-color: transparent;
 }
 .clew-cal-slot-header-divider {
-  border-inline-end: 1px var(--clew-cal-border-style) var(--clew-cal-line);
+  border-inline-end: var(--border-width) var(--clew-cal-border-style) var(--clew-cal-line);
 }
 
 /* Lanes: one column per day, one row per slot */
 .clew-cal-day-lane {
   border-color: var(--clew-cal-line);
   border-style: var(--clew-cal-border-style);
-  border-width: 0 0 0 1px;
+  border-width: 0 0 0 var(--border-width);
 }
 .clew-cal-day-lane.clew-cal-major {
   border-left-color: var(--clew-cal-line-strong);
@@ -260,7 +261,7 @@
 .clew-cal-slot-lane {
   border-color: var(--clew-cal-line);
   border-style: var(--clew-cal-border-style);
-  border-width: 1px 0 0 0;
+  border-width: var(--border-width) 0 0 0;
 }
 .clew-cal-slot-lane.clew-cal-minor {
   border-top-style: dotted;
@@ -275,14 +276,15 @@
 
 /* Now: a thin accent line with a dot on the axis */
 .clew-cal-now-line {
-  border-top: 2px solid var(--color-accent);
-  margin-top: -1px;
+  border-top: calc(2 * var(--border-width)) solid var(--color-accent);
+  margin-top: calc(-1 * var(--border-width));
 }
 .clew-cal-now-dot {
   width: 0;
   height: 0;
-  margin: -5px;
-  border: 5px solid var(--color-accent);
+  /* 5 px: --spacing-1 is 4 px, so the dot is 10 px across, as it was drawn in pixels. */
+  margin: calc(-1.25 * var(--spacing-1));
+  border: calc(1.25 * var(--spacing-1)) solid var(--color-accent);
   border-radius: var(--radius-full);
 }
 
@@ -337,8 +339,8 @@
   border-radius: var(--radius-inner);
   background-color: var(--clew-cal-event-bg);
   color: var(--clew-cal-event-fg);
-  border: var(--border-width, 1px) var(--clew-cal-event-line) var(--clew-cal-event-border);
-  border-inline-start: calc(3 * var(--border-width, 1px)) var(--clew-cal-event-line) var(--clew-cal-event-edge);
+  border: var(--border-width) var(--clew-cal-event-line) var(--clew-cal-event-border);
+  border-inline-start: calc(3 * var(--border-width)) var(--clew-cal-event-line) var(--clew-cal-event-edge);
   overflow: hidden;
 }
 .clew-cal-block-event-inner {
@@ -351,11 +353,11 @@
 }
 
 .clew-cal-column-event {
-  margin-bottom: 1px;
-  box-shadow: 0 0 0 1px var(--color-background-surface);
+  margin-bottom: var(--border-width);
+  box-shadow: 0 0 0 var(--border-width) var(--color-background-surface);
 }
 .clew-cal-column-event-start {
-  margin-top: 1px;
+  margin-top: var(--border-width);
 }
 .clew-cal-column-event-inner {
   display: flex;
@@ -405,22 +407,22 @@
   cursor: ns-resize;
 }
 .clew-cal-resizer-top {
-  top: -4px;
+  top: calc(-1 * var(--spacing-1));
 }
 .clew-cal-resizer-bottom {
-  bottom: -4px;
+  bottom: calc(-1 * var(--spacing-1));
 }
 
 .clew-cal-row-event {
-  margin-bottom: 1px;
+  margin-bottom: var(--border-width);
 }
 .clew-cal-row-event-start {
-  margin-inline-start: 1px;
+  margin-inline-start: var(--border-width);
   border-start-start-radius: var(--radius-element);
   border-end-start-radius: var(--radius-element);
 }
 .clew-cal-row-event-end {
-  margin-inline-end: 1px;
+  margin-inline-end: var(--border-width);
   border-start-end-radius: var(--radius-element);
   border-end-end-radius: var(--radius-element);
 }
@@ -452,7 +454,7 @@
   flex-direction: row;
   align-items: center;
   gap: var(--spacing-1);
-  margin-bottom: 1px;
+  margin-bottom: var(--border-width);
   margin-inline: var(--spacing-0-5);
   padding: var(--spacing-0-5) var(--spacing-1);
   border-radius: var(--radius-inner);
@@ -463,7 +465,7 @@
   height: var(--spacing-2);
   border-radius: var(--radius-full);
   background-color: var(--clew-cal-event-edge);
-  border: 2px var(--clew-cal-event-line) var(--clew-cal-event-edge);
+  border: calc(2 * var(--border-width)) var(--clew-cal-event-line) var(--clew-cal-event-edge);
   box-sizing: border-box;
 }
 .clew-cal-event-proposal .clew-cal-dot-event-dot {
@@ -492,26 +494,26 @@
   white-space: nowrap;
 }
 .clew-cal-column-more-link {
-  margin-bottom: 1px;
+  margin-bottom: var(--border-width);
   padding: var(--spacing-0-5) var(--spacing-1-5);
   border-radius: var(--radius-inner);
   background-color: var(--color-background-muted);
   color: var(--color-text-accent);
   font-size: var(--font-size-sm);
-  box-shadow: 0 0 0 1px var(--color-background-surface);
+  box-shadow: 0 0 0 var(--border-width) var(--color-background-surface);
 }
 .clew-cal-row-more-link {
-  margin: 0 var(--spacing-0-5) 1px;
+  margin: 0 var(--spacing-0-5) var(--border-width);
   padding: var(--spacing-0-5) var(--spacing-1);
   border-radius: var(--radius-inner);
   color: var(--color-text-accent);
   font-size: var(--font-size-sm);
 }
 .clew-cal-popover {
-  min-width: 240px;
+  min-width: calc(5 * var(--spacing-12));
   background-color: var(--color-background-popover);
   color: var(--color-text-primary);
-  border: 1px var(--clew-cal-border-style) var(--clew-cal-line);
+  border: var(--border-width) var(--clew-cal-border-style) var(--clew-cal-line);
   border-radius: var(--radius-container);
   box-shadow: var(--shadow-high);
   overflow: hidden;
@@ -531,12 +533,12 @@
 
 /* Month grid */
 .clew-cal-day-row {
-  border-bottom: 1px var(--clew-cal-border-style) var(--clew-cal-line);
+  border-bottom: var(--border-width) var(--clew-cal-border-style) var(--clew-cal-line);
 }
 .clew-cal-day-cell {
   border-color: var(--clew-cal-line);
   border-style: var(--clew-cal-border-style);
-  border-width: 0 0 0 1px;
+  border-width: 0 0 0 var(--border-width);
 }
 .clew-cal-day-cell.clew-cal-major {
   border-left-color: var(--clew-cal-line-strong);
@@ -548,7 +550,7 @@
   display: flex;
   flex-direction: row;
   justify-content: flex-end;
-  min-height: 2px;
+  min-height: var(--spacing-0-5);
 }
 .clew-cal-day-number {
   display: inline-flex;
@@ -612,8 +614,8 @@
 .clew-cal-list-day-header {
   flex-shrink: 0;
   width: 33.3333%;
-  max-width: 176px;
-  min-height: 36px;
+  max-width: calc(4 * var(--spacing-11));
+  min-height: var(--spacing-9);
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -661,7 +663,7 @@
 .clew-cal-list-event-time {
   flex-shrink: 0;
   width: 50%;
-  max-width: 160px;
+  max-width: calc(4 * var(--spacing-10));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

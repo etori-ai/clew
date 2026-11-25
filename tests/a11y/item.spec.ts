@@ -244,16 +244,54 @@ test.describe('the work item as a page', () => {
     card.deadline = null;
     card.remindedAt = NOW;
     // The row: in its Status column what the state concerns, the reminder; under Behöver dig the state's word is the
-    // tab's, said by the dot's name. Whom the row names it is about is left out here: today it takes the source row's
-    // label, "Ansökan", which is the register's WA-L14 and not what the row should say.
+    // tab's, said by the dot's name. Under the title, whom it is about by the directory's name, never the source row's
+    // label ("Ansökan"), and the reason with it.
     await open(page, '/todo');
     const row = page.getByRole('main').locator('#work-ledighet');
     await expect(row).toContainText('påminnelse');
     await expect(row.getByRole('img', { name: 'Behöver dig, påminnelse' })).toBeVisible();
+    await expect(row).toContainText('Johan Byström · Ansökan väntar på beslut');
+    await expect(row).not.toContainText(/Ansökan ·|· Ansökan$/);
     // The page: a plain to-do, so no notice, and no badge that says the word beside the title.
     await open(page, '/items/ledighet');
     await expect(page.getByRole('heading', { level: 1, name: card.title })).toBeVisible();
     await expect(page.locator('.astryx-badge').filter({ hasText: 'Påminnelse' })).toHaveCount(0);
+  });
+
+  test('Berör links whom the item is about by the directory’s name; the row’s label stands without a link while the name is read, and for someone the reader may not open', async ({
+    page,
+    api,
+  }) => {
+    let release!: () => void;
+    api.entityNamesHold = new Promise<void>(resolve => (release = resolve));
+    // Not `open`, which waits for the network to rest: the held read keeps it busy.
+    await page.goto('/items/ledighet');
+    const main = page.getByRole('main');
+    // The row's label says what the row is ("Ansökan"), never whom: until the name is read it is no link (2.4.4).
+    const about = main.getByRole('definition').filter({ hasText: /^(Ansökan|Johan Byström)$/ });
+    await expect(about).toHaveText('Ansökan');
+    await expect(about.getByRole('link')).toHaveCount(0);
+    release();
+    const johan = about.getByRole('link', { name: 'Johan Byström', exact: true });
+    await expect(johan).toHaveAttribute('href', /^\/people\/johan(\?|$)/);
+    await expect(about.getByRole('link')).toHaveCount(1);
+    await expect(about).not.toContainText('Ansökan');
+    expect(api.entityNamesAsked).toEqual([[{ entity: 'person', key: 'johan' }]]);
+    await expectNoAxeViolations(page);
+    // Someone the directory does not give this reader: the label alone, and no link to a page that would not open.
+    api.threads = api.threads.map(t =>
+      t.id === 'ledighet'
+        ? {
+            ...t,
+            items: t.items.map(i => (i.subject ? { ...i, subject: { entity: 'person' as const, key: 'okand' } } : i)),
+          }
+        : t,
+    );
+    await open(page, '/items/ledighet');
+    await expect(main.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect.poll(() => api.entityNamesAsked.length).toBe(2);
+    await expect(about).toHaveText('Ansökan');
+    await expect(about.getByRole('link')).toHaveCount(0);
   });
 
   test('an item that is not the person’s says so as the page', async ({ page, api: _ }) => {
