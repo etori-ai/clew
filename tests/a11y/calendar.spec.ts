@@ -39,6 +39,40 @@ test.describe('the three views', () => {
         await open(page, path);
         await expectNoAxeViolations(page);
       });
+  test('a week with nothing in it is still read by keyboard: its column scrolls with a tab stop of its own', async ({
+    page,
+    api: _,
+  }) => {
+    // No meeting and no proposal: the grid holds nothing focusable, so the column it scrolls in has to take the stop
+    // (axe: scrollable-region-focusable, WCAG 2.1.1).
+    await page.route('**/api/calendar?*', route =>
+      route.fulfill({
+        json: { from: new URL(route.request().url()).searchParams.get('from'), events: [], proposals: [] },
+      }),
+    );
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    await expect(heading(page, 1, 'Vecka 45')).toBeVisible();
+    const grid = page.getByRole('group', { name: /^Vecka 45/ });
+    const days = grid.getByRole('cell').and(grid.locator('[data-date][tabindex="0"]'));
+    await expect(days).toHaveCount(1);
+    const scrollTop = () =>
+      grid
+        .locator('.clew-cal-slot-lane')
+        .first()
+        .evaluate(lane => {
+          let el = lane.parentElement;
+          while (el && !/auto|scroll/.test(getComputedStyle(el).overflowY)) el = el.parentElement;
+          return el?.scrollTop ?? 0;
+        });
+    await days.focus();
+    const before = await scrollTop();
+    await page.keyboard.press('PageDown');
+    await expect.poll(scrollTop).toBeGreaterThan(before);
+    await page.keyboard.press('Home');
+    await expect.poll(scrollTop).toBe(0);
+    await expectNoAxeViolations(page);
+  });
   for (const [name, path] of views)
     test(`${name} reflows at 320 px`, async ({ page, api: _ }) => {
       await page.setViewportSize(narrow);
@@ -77,24 +111,35 @@ test.describe('the three views', () => {
       expect((await at()).y).toBe(before.y);
     }
   });
-  for (const viewport of [desktop, narrow])
-    test(`at ${viewport.width} px the day headers close against the column's top as the grid scrolls`, async ({
-      page,
-      api: _,
-    }) => {
-      await page.setViewportSize(viewport);
-      await open(page, '/calendar?view=day');
-      // The column's inset is padding of the scroller; a header stuck under it let the meetings show through above it.
-      const gap = await page.evaluate(() => {
-        const header = document.querySelector('.clew-cal-table-header') as HTMLElement;
-        let scroller: HTMLElement | null = header.parentElement;
-        while (scroller && !['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY))
-          scroller = scroller.parentElement;
-        scroller!.scrollTop = 300;
-        return header.getBoundingClientRect().top - scroller!.getBoundingClientRect().top;
-      });
-      expect(Math.round(gap)).toBe(0);
+  test('on desktop the day header stays in place while the hours scroll beneath it', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar?view=day');
+    const header = page.locator('.clew-cal-table-header');
+    const hour = page.locator('.clew-cal-slot-lane').first();
+    await page.getByRole('cell').and(page.locator('[data-date][tabindex="0"]')).focus();
+    const top = (element: typeof header) => element.evaluate(el => el.getBoundingClientRect().top);
+    const firstHour = await top(hour);
+    const headerTop = await top(header);
+    await page.keyboard.press('PageDown');
+    await expect.poll(() => top(hour)).toBeLessThan(firstHour);
+    expect(await top(header)).toBe(headerTop);
+  });
+
+  test('on a narrow screen the day header stays flush with the scrolling column', async ({ page, api: _ }) => {
+    await page.setViewportSize(narrow);
+    await open(page, '/calendar?view=day');
+    const header = page.locator('.clew-cal-table-header');
+    const position = await header.evaluate(el => {
+      let column = el.parentElement;
+      while (column && !['auto', 'scroll'].includes(getComputedStyle(column).overflowY)) column = column.parentElement;
+      if (!column) throw new Error('No scrolling calendar column');
+      column.scrollTop = 300;
+      const insideTop = column.getBoundingClientRect().top + column.clientTop;
+      return { scrolled: column.scrollTop, gap: Math.round(el.getBoundingClientRect().top - insideTop) };
     });
+    expect(position.scrolled).toBeGreaterThan(0);
+    expect(position.gap).toBe(0);
+  });
   test('the phone week is a list with a heading per day, and the day view fits one column', async ({
     page,
     api: _,

@@ -273,6 +273,7 @@ test.describe('the work item as a page', () => {
     await events.getByRole('button', { name: /^Händelser/ }).click();
     await expect(events.getByText('Något gick fel. Försök igen.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
+    await expectNoAxeViolations(page);
     api.itemEventsFail = false;
     await events.getByRole('button', { name: 'Försök igen' }).click();
     await expect(events.getByRole('list', { name: 'Händelser, de senaste först' })).toContainText('skapade ärendet');

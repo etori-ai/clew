@@ -35,7 +35,9 @@ export function memoryFollowBindingStore() {
           a = structuredClone(audit);
         const result = await fn({
           async upsert(binding) {
-            b.set(binding.id, structuredClone(binding));
+            // A binding written again keeps when it was made, as Postgres's upsert does (`tests/follow-binding-store-contract.ts`).
+            const made = b.get(binding.id)?.createdAt ?? binding.createdAt;
+            b.set(binding.id, { ...structuredClone(binding), createdAt: made });
           },
           async remove(id) {
             b.delete(id);

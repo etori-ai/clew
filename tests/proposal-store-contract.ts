@@ -155,6 +155,39 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
       expect((await store.openThread(a, t.topic))?.thread.id).toBe(t.id);
       expect(await store.transaction(tx => tx.insertThread(draft(a, { topic: t.topic })))).toBe(false);
     });
+    test("a topic's latest thread is the person's newest of any state, and a lock reads only the person's own thread, every record with it (DE-M7)", async () => {
+      const {
+        store,
+        people: [a, b],
+      } = await make();
+      const topic = `utvecklingssamtal-${unique()}`;
+      const first = draft(a, { topic }),
+        second = draft(a, { topic, createdAt: plus(T0, 3_600_000), updatedAt: plus(T0, 3_600_000) });
+      const kept = proposal(first.id, a, 'Anna'),
+        gone = proposal(first.id, a, 'Erik', { status: 'superseded' });
+      expect(await store.latestThread(a, topic)).toBeUndefined();
+      await store.transaction(async tx => {
+        await tx.insertThread(first);
+        await tx.insertProposals([kept, gone]);
+      });
+      expect((await store.latestThread(a, topic))?.thread.id).toBe(first.id);
+      // Put away, the first is still the latest until a second is made on the topic.
+      await store.transaction(tx => tx.updateThread(first.id, { state: 'handled', updatedAt: plus(T0, 60_000) }));
+      expect((await store.latestThread(a, topic))?.thread).toMatchObject({ id: first.id, state: 'handled' });
+      expect(await store.openThread(a, topic)).toBeUndefined();
+      await store.transaction(tx => tx.insertThread(second));
+      expect((await store.latestThread(a, topic))?.thread.id).toBe(second.id);
+      await store.transaction(tx => tx.updateThread(second.id, { state: 'handled', updatedAt: plus(T0, 7_200_000) }));
+      expect((await store.latestThread(a, topic))?.thread.id).toBe(second.id);
+      expect(await store.latestThread(b, topic)).toBeUndefined();
+      // The lock reads what a read does, the superseded records included, and only for the thread's owner.
+      const locked = await store.transaction(tx => tx.lockThread(a, first.id));
+      expect(locked).toEqual(await store.readThread(a, first.id));
+      expect(locked?.proposals.map(p => p.id).sort()).toEqual([kept.id, gone.id].sort());
+      expect(locked?.thread.proposals.map(p => p.id)).toEqual([kept.id]);
+      expect(await store.transaction(tx => tx.lockThread(b, first.id))).toBeUndefined();
+      expect(await store.transaction(tx => tx.lockThread(a, `t-${unique()}`))).toBeUndefined();
+    });
     test('active proposals are the proposed, confirmed and final ones of a person across threads', async () => {
       const {
         store,

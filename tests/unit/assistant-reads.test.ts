@@ -24,7 +24,7 @@ import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapt
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { memoryPersonKeys } from '../person-keys';
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
-import { followedUnits, personKey, reportsByUnit, unitRelation } from '../../apps/server/src/modules/entities/domain';
+import { assistantUnits, personKey, reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { memoryCompetenceStore } from '../../apps/server/src/modules/competence/adapters/memory';
 import {
   attentionView,
@@ -37,7 +37,7 @@ import { workCapabilities } from '../../apps/server/src/modules/work/capabilitie
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { assistantUsecases, type AssistantDeps, type TurnObserver } from '../../apps/server/src/assistant';
 import { TOOL_REFUSED, type ModelGenerate } from '../../apps/server/src/assistant/model';
-import { managedPeople } from '../../apps/server/src/assistant/people';
+import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import { CARD_MARKS_MAX, cardRows, namedItems } from '../../apps/server/src/assistant/card';
 import { fixtureConnectors } from '../fixture-connectors';
 
@@ -283,8 +283,6 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
   const deps: AssistantDeps = {
     store: threads,
     registry,
-    // The server's `runCapability`: the registry as the person, with what the assistant says about the call.
-    run: (persona, name, input, context) => registry.run(actorOf(persona), name, input, context),
     calendar: {} as AssistantDeps['calendar'],
     models: {
       resolve: async () => ({
@@ -301,13 +299,11 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
     log: (...args) => {
       logged.push(args);
     },
-    people: async persona => managedPeople((await d.staff.reach(persona)).managed, personKey),
-    units: async persona => {
-      const reach = await d.staff.reach(persona);
-      return followedUnits(reach)
-        .filter(u => unitRelation(reach, u.unitId) !== 'member')
-        .map(u => ({ id: u.unitId, name: u.unitLabel }));
-    },
+    // `run`, `handover` and `people` as composition binds them (AM-13): the registry as the person, with what the
+    // assistant says about the call, and the people Personal lists for the asker, co-managers included, by Clew's key
+    // and the user name a read takes (D115).
+    units: async persona => assistantUnits(await d.staff.reach(persona)),
+    ...assistantFunctions({ registry, people: { reach: d.staff.reach, userNameOf: personKey } }),
   };
   const assistant = assistantUsecases(deps);
   /**

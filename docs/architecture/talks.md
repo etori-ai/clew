@@ -80,7 +80,7 @@ Only the manager whose booking it is gets them. A card names nobody: the person 
 | What is a talk's state, and does its booking count? | [domain.ts](../../apps/server/src/modules/talks/domain.ts) (`talkState`, `standingBooking`) | [talks.test.ts](../../tests/unit/talks.test.ts) |
 | What does an invitation do to a talk? | [usecases.ts](../../apps/server/src/modules/talks/usecases.ts) (`talkInvitations`) | [talks.test.ts](../../tests/unit/talks.test.ts) |
 | How is the meeting read back and a difference settled? | [invitations.ts](../../apps/server/src/modules/calendar/usecases/invitations.ts) (`follow`, `settle`) | [invitations.test.ts](../../tests/unit/invitations.test.ts) |
-| Where does the ledger tell the talk? | [execution-projection.ts](../../apps/server/src/composition/execution-projection.ts) | [postgres-calendar-decisions.test.ts](../../tests/db/postgres-calendar-decisions.test.ts) |
+| Where does the ledger tell the talk? | [projection.ts](../../apps/server/src/threads/usecases/projection.ts) (`projectOntoCard`) | [projection-contract.ts](../../tests/projection-contract.ts), [postgres-calendar-decisions.test.ts](../../tests/db/postgres-calendar-decisions.test.ts) |
 | Which cards are asked for, and what do they say? | [capabilities.ts](../../apps/server/src/modules/talks/capabilities.ts) (`scan`), [domain.ts](../../apps/server/src/modules/talks/domain.ts) (`bookingAsks`) | [talks.test.ts](../../tests/unit/talks.test.ts) |
 | What does the manager see and press? | [talk-overlay.tsx](../../apps/web/src/components/people/talk-overlay.tsx) | [talk.spec.ts](../../tests/a11y/talk.spec.ts) |
 

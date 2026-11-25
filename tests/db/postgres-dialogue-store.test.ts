@@ -36,8 +36,10 @@ dialogueStoreContract('postgres', async () => {
   return {
     store: dialogueStoreWithCards({ durable: testDurable, cancel: async () => {} }, { clock: () => new Date() }),
     prefix,
-    async seedPerson(id, organisationId, name) {
-      await database().insert(schema.people).values({ id, organisationId, name });
+    async seedPerson(id, organisationId, name, extra = {}) {
+      await database()
+        .insert(schema.people)
+        .values({ id, organisationId, name, ...extra });
     },
     async seedUnit(id, organisationId, label) {
       await database().insert(schema.units).values({ id, organisationId, label });

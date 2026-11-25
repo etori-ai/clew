@@ -241,6 +241,7 @@ test.describe('Kompetens › Kompetenssökning', () => {
         await open(page, SEARCH);
         await chooseType(page, 'hlr', 'HLR');
         await expect(page.getByRole('alert').filter({ hasText: 'Något gick fel. Försök igen.' })).toBeVisible();
+        await expectNoAxeViolations(page);
         api.searchFails = false;
         await page.getByRole('button', { name: 'Försök igen' }).click();
         await expect(readout(page)).toHaveText('3 personer med HLR');

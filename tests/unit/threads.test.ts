@@ -1,9 +1,9 @@
 import { Registry } from '../registry';
-import { invoiceInput } from '../document-fixtures';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
 import { audiencedActorOf, type Connector } from '../../packages/connectors/src/index';
 import { fixtureConnectors } from '../fixture-connectors';
+import { refreshScan } from '../refresh-scan';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { ATTENTION_BUDGET, threadUsecases, type ThreadDeps } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
@@ -61,10 +61,6 @@ function world() {
   const calendar = {
     calls: [] as string[],
     today: [] as Array<{ title: string; end: string }>,
-    async ensureProposalThread() {
-      calendar.calls.push('ensure');
-      return undefined;
-    },
     async replan(_p: AuthenticatedContext, threadId: string) {
       calendar.calls.push('replan');
       return (await store.readThreadById(threadId))!;
@@ -87,14 +83,16 @@ function world() {
   };
   const threads = threadUsecases(deps);
   const reminders = reminderUsecases({ store, clock, authorized: async () => true });
-  return { registry, store, clock, calendar, deps, threads, reminders };
+  // The person's scan as the server runs it: the refresh path over this store (D47).
+  const scan = refreshScan({ store, registry, clock });
+  return { registry, store, clock, calendar, deps, threads, reminders, scan };
 }
 const actions = (store: ReturnType<typeof memoryThreadStore>, id: string) =>
   store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);
 
 test('rejected-row recovery is scoped, audited once, and never repeats a completed retry or an uncertain write', async () => {
   const w = world();
-  await w.threads.ensureThreads(hillevi);
+  await w.scan(hillevi);
   const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
   const original = {
     ...card,
@@ -155,74 +153,9 @@ test('rejected-row recovery is scoped, audited once, and never repeats a complet
   await expect(w.threads.retryRejected(hillevi, uncertain.id)).rejects.toThrow(/Kontrollera/);
 });
 async function invoices(w: ReturnType<typeof world>) {
-  await w.threads.ensureThreads(hillevi);
-  return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
+  await w.scan(hillevi);
+  return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('finance:invoices:'))!;
 }
-
-describe('the scan', () => {
-  test('a disabled calendar cannot be scanned through the legacy proposal path', async () => {
-    const w = world();
-    w.registry.govern('calendar', { ...w.registry.governance('calendar'), state: 'disabled' });
-    await w.threads.ensureThreads(hillevi);
-    expect(w.calendar.calls).toEqual([]);
-  });
-  test('pushes one card per draft in scope, with the source on the trigger and an audit row each', async () => {
-    const w = world();
-    await w.threads.ensureThreads(hillevi, 'Första besöket i dag');
-    const mine = await w.threads.listThreadsFor(hillevi);
-    expect(mine.length).toBeGreaterThan(1);
-    const card = mine.find(t => t.topic === 'finance:invoices')!;
-    expect(card).toMatchObject({
-      kind: 'pushed',
-      state: 'open',
-      connector: 'finance',
-      area: 'budget',
-      createdAt: T0,
-      trigger: { source: 'Ekonomisystemet', at: T0 },
-    });
-    expect(card.messages.map(m => m.body)).toEqual([card.summary]);
-    expect(w.store.audit.filter(e => e.action === 'thread.pushed').map(e => e.details)).toContainEqual({
-      connector: 'finance',
-      topic: 'finance:invoices',
-      owner: 'hillevi',
-    });
-    expect(w.calendar.calls).toEqual(['ensure']);
-    await w.threads.ensureThreads(hassan);
-    expect((await w.threads.listThreadsFor(hassan)).some(t => t.connector === 'finance')).toBe(false);
-  });
-  test('is idempotent: a second scan writes nothing when the source is unchanged', async () => {
-    const w = world();
-    await w.threads.ensureThreads(hillevi);
-    const before = { threads: w.store.dump().length, audit: w.store.audit.length };
-    w.clock.advance(60 * MINUTE);
-    await w.threads.ensureThreads(hillevi);
-    expect({ threads: w.store.dump().length, audit: w.store.audit.length }).toEqual(before);
-  });
-  test("refreshes an untouched card from its source and keeps the person's selection", async () => {
-    const w = world();
-    const card = await invoices(w);
-    const [first, second] = card.items;
-    expect(first!.selected).toBe(true);
-    await w.store.transaction(tx =>
-      tx.updateThread(card.id, { items: card.items.map(i => (i.ref === first!.ref ? { ...i, selected: false } : i)) }),
-    );
-    // One invoice is approved outside Clew: the next scan drops it from the card.
-    await w.registry.run(hillevi, 'finance.approve', await invoiceInput(w.registry, hillevi, [second!.ref]));
-    await w.threads.ensureThreads(hillevi);
-    const after = (await w.threads.threadFor(hillevi, card.id))!;
-    expect(after.items.map(i => i.ref)).not.toContain(second!.ref);
-    expect(after.items.find(i => i.ref === first!.ref)?.selected).toBe(false);
-    expect(after.title).not.toBe(card.title);
-    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.refreshed']);
-  });
-  test('runs once per person at a time: two concurrent first visits push one set of cards', async () => {
-    const w = world();
-    await Promise.all([w.threads.ensureThreads(hillevi), w.threads.ensureThreads(hillevi)]);
-    expect(w.calendar.calls).toEqual(['ensure']);
-    const topics = (await w.threads.listThreadsFor(hillevi)).map(t => t.topic);
-    expect(new Set(topics).size).toBe(topics.length);
-  });
-});
 
 describe('avfärda, inte nu and ångra', () => {
   test('a dismissed card comes back within ten minutes, a snoozed one any time', async () => {
@@ -249,7 +182,7 @@ describe('avfärda, inte nu and ångra', () => {
       { from: 'dismissed' },
       { from: 'snoozed' },
     ]);
-    expect(w.calendar.calls).toEqual(['ensure']);
+    expect(w.calendar.calls).toEqual([]);
   });
   test('a snoozed card wakes when its time passes, with an audit row saying so', async () => {
     const w = world();
@@ -286,20 +219,6 @@ describe('avfärda, inte nu and ångra', () => {
     w.clock.set('2026-11-05T05:00:01.000Z');
     expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === card.id)?.snoozedUntil).toBeNull();
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.snoozed', 'thread.woken']);
-  });
-  test('a snoozed card wakes early when its source changes (the snooze breaks on activity)', async () => {
-    const w = world();
-    const card = await invoices(w);
-    await w.threads.snoozeThread(hillevi, card.id);
-    await w.registry.run(hillevi, 'finance.approve', await invoiceInput(w.registry, hillevi, [card.items[1]!.ref]));
-    await w.threads.ensureThreads(hillevi);
-    const after = (await w.threads.threadFor(hillevi, card.id))!;
-    expect(after.snoozedUntil).toBeNull();
-    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.snoozed', 'thread.refreshed', 'thread.woken']);
-    expect(w.store.audit.at(-1)?.details).toMatchObject({ reason: 'changed' });
-    expect(await w.store.readTimer(`snooze:${card.id}`)).toMatchObject({ state: 'cancelled' });
-    // The timer is gone, so the word the person was promised goes out now (D49).
-    expect(w.store.deliveries).toEqual([expect.stringMatching(new RegExp(`^woken:${card.id}:`))]);
   });
   test('the picker (D29): a preset, free text or an instant sets the time; the rows carry their resolved times', async () => {
     const w = world();
@@ -361,7 +280,8 @@ describe('avfärda, inte nu and ångra', () => {
     expect(back).toMatchObject({ state: 'open', snoozedUntil: null, remindedAt: '2026-11-04T09:00:00.000Z' });
     expect(back.trigger.reason).toBe(`Du bad 08:00 om en påminnelse · ${card.trigger.reason}`);
     expect(back.messages.at(-1)!.body).toBe('Påminnelse: du bad 08:00 om att få det här ärendet igen.');
-    expect(w.store.deliveries).toEqual([`reminded:${card.id}:1`]);
+    // Besides the word each scanned card brought (`work:`).
+    expect(w.store.deliveries.filter(id => !id.startsWith('work:'))).toEqual([`reminded:${card.id}:1`]);
     expect(w.store.audit.at(-1)).toMatchObject({
       actor: 'assistant:reminder',
       action: 'thread.woken',
@@ -521,6 +441,7 @@ describe('the person says the next step is someone else’s and taken (D139)', (
       scan: async () => [
         {
           topic: 'intyg:1',
+          occurrences: [{ key: 'intyg:1', revision: '1', period: '2026' }],
           area: 'intyg',
           title: 'Intyget gick ut',
           summary: 'Prata med din chef.',
@@ -530,11 +451,12 @@ describe('the person says the next step is someone else’s and taken (D139)', (
         },
       ],
     } as unknown as Connector);
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'intyg')!;
     expect(card.handOn).toEqual(OFFER);
     offer.label = 'Jag har pratat med min chef';
-    await w.threads.ensureThreads(hillevi);
+    w.clock.advance(MINUTE + 1);
+    await w.scan(hillevi);
     expect((await w.threads.threadFor(hillevi, card.id))!.handOn).toEqual({ ...OFFER, label: offer.label });
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.refreshed']);
   });
@@ -578,7 +500,7 @@ describe('attention and areas', () => {
       budget: ATTENTION_BUDGET,
       bundledUntil: null,
     });
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     expect((await w.threads.listThreadsFor(hillevi)).filter(t => t.kind === 'pushed').length).toBeGreaterThan(1);
     expect(await w.threads.attentionFor(hillevi)).toMatchObject({
       used: 1,
@@ -590,7 +512,7 @@ describe('attention and areas', () => {
   });
   test('draws the day as one track with the cards a scan pushed folded into one moment', async () => {
     const w = world();
-    await w.threads.ensureThreads(hillevi);
+    await w.scan(hillevi);
     const pushed = (await w.threads.listThreadsFor(hillevi)).filter(t => t.kind === 'pushed');
     const { rhythm } = await w.threads.attentionFor(hillevi);
     expect(rhythm.map(p => p.kind)).toEqual<string[]>(['review', 'interruption', 'bundle', 'bundle', 'quiet']);
@@ -657,7 +579,7 @@ describe('påminn mig', () => {
       trigger: { reason: `Du bad 08:00 om en påminnelse · Väntade på skyddsombudet · ${card.trigger.reason}` },
     });
     expect(actions(w.store, card.id).at(-1)).toBe('thread.reminded');
-    expect(w.store.deliveries).toEqual([`reminded:${card.id}:2`]);
+    expect(w.store.deliveries.filter(id => !id.startsWith('work:'))).toEqual([`reminded:${card.id}:2`]);
   });
   test('when the timer fires the card comes back once, reopened and marked, with the reason on its trigger', async () => {
     const w = world();
@@ -875,8 +797,8 @@ test('a connector for one provisioned group only gives its members cards, an are
   // Two managers of the same unit, one in the group and one outside it: the scan and the areas run with the groups.
   const member = { ...hillevi, groups: ['S-1-5-21-ekonomi'] },
     outsider = { ...persona('karin', 'manager'), groups: ['S-1-5-21-annan'] };
-  await w.threads.ensureThreads(member);
-  await w.threads.ensureThreads(outsider);
+  await w.scan(member);
+  await w.scan(outsider);
   expect((await w.threads.listThreadsFor(member)).some(t => t.connector === 'finance')).toBe(true);
   expect((await w.threads.listThreadsFor(outsider)).some(t => t.connector === 'finance')).toBe(false);
   expect((await w.threads.listAreas(member)).map(a => a.id)).toContain('budget');
