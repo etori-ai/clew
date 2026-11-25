@@ -1,4 +1,5 @@
 import {
+  cardDecisionVersion,
   EffectOutputSchema,
   PreviewOutputSchema,
   type AskValues,
@@ -33,7 +34,7 @@ export interface CardDecisionsDeps {
       operation: string;
       payload: unknown;
       compensates?: string;
-      presentation: { threadId: string; version: string; actionId: string };
+      presentation: { threadId: string; version: string; actionId: string; decisionRevision?: number };
       /** The person's answers to the asks (D112), already in `payload`; the audit row names them. */
       asked?: Record<string, string>;
       /**
@@ -118,7 +119,7 @@ export function cardDecisions({
     return { t, action, found, selected, payload, asked: answered.answers, subject };
   }
   /**
-   * The human decision on a work item's action (D45, D47). `version` is the item's `updatedAt` as the person was shown
+   * The human decision on a work item's action (D45, D47). `version` is the item's `cardDecisionVersion` as the person was shown
    * it (AM-4): an execute is decided on that version, so an item that has changed since is refused and the person
    * decides on what it says now. The route always gives it (`ActInput`). Only the entity menu decides without one (D126
    * item 7): the card `startCard` made or found for the dialog the person decided in, which is the card of that action,
@@ -181,7 +182,7 @@ export function cardDecisions({
     )
       throw new InputError('Underlaget och ärendet gäller olika versioner. Läs in ärendet igen.');
     if (!previous && t.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
-    if (!previous && version !== undefined && version !== t.updatedAt)
+    if (!previous && version !== undefined && version !== cardDecisionVersion(t))
       throw new InputError('Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.');
     if (previous && previous.operation !== action.capability)
       throw new InputError('Ett tidigare beslut väntar redan på besked.');
@@ -192,10 +193,10 @@ export function cardDecisions({
         // item's version moved by.
         decisionId:
           previous?.decisionId ??
-          `card:${id}:${actionId}:${Date.parse(t.updatedAt)}${ended ? `:after:${t.execution!.id}` : ''}`,
+          `card:${id}:${actionId}:${Date.parse(t.updatedAt)}${t.decisionRevision ? `:r${t.decisionRevision}` : ''}${ended ? `:after:${t.execution!.id}` : ''}`,
         operation: action.capability,
         payload,
-        presentation: { threadId: id, version: t.updatedAt, actionId },
+        presentation: { threadId: id, version: t.updatedAt, actionId, decisionRevision: t.decisionRevision ?? 0 },
         ...(Object.keys(asked).length ? { asked } : {}),
         ...(subject ? { subject } : {}),
         ...(unit ? { unit } : {}),

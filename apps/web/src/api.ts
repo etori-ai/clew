@@ -1,3 +1,4 @@
+import { cardDecisionVersion } from '@clew/contracts';
 import type {
   CommitmentAddBody,
   DialogueActivityAddBody,
@@ -602,10 +603,10 @@ export const api = {
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
   /**
    * The human decision on a work item's action (D45/D47), with the person's answers to its asks (D112) in `values`. It is
-   * on the item as the person was shown it: its `updatedAt` goes with it, and the server refuses an item changed since.
+   * on the item as the person was shown it: its content revision and timestamp go with it, and the server refuses an item changed since.
    */
   act: (
-    thread: Pick<Thread, 'id' | 'updatedAt'>,
+    thread: Pick<Thread, 'id' | 'updatedAt' | 'decisionRevision'>,
     actionId: string,
     refs?: string[],
     reviews?: ReviewEvidence[],
@@ -613,7 +614,7 @@ export const api = {
   ) =>
     post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(
       `/api/threads/${thread.id}/act`,
-      { actionId, version: thread.updatedAt, refs, reviews, ...(values ? { values } : {}) },
+      { actionId, version: cardDecisionVersion(thread), refs, reviews, ...(values ? { values } : {}) },
     ),
   /** "Det här händer" (D112): what the action would write with these rows and answers, from its effect read. Writes nothing. */
   effect: (id: string, actionId: string, refs?: string[], values?: AskValues) =>

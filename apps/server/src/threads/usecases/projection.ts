@@ -55,7 +55,14 @@ export async function projectOntoCard(tx: ProjectionTx, e: Execution, stage: Pro
   if (!thread) throw new ExecutionError('Ärendet finns inte.');
   const previous = thread.execution;
   if (stage === 'approval') {
-    if ((!e.presentation.newTitle && thread.updatedAt !== e.presentation.version) || thread.connector !== e.connector)
+    const staleDecision =
+      e.presentation.decisionRevision !== undefined &&
+      e.presentation.decisionRevision !== (thread.decisionRevision ?? 0);
+    if (
+      staleDecision ||
+      (!e.presentation.newTitle && thread.updatedAt !== e.presentation.version) ||
+      thread.connector !== e.connector
+    )
       throw new ExecutionError('Ärendet har ändrats. Läs tillbaka det innan du bekräftar.');
     if (previous && ['pending', 'running', 'unknown'].includes(previous.state))
       throw new ExecutionError('Ett tidigare beslut väntar redan på besked.');

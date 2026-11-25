@@ -440,7 +440,12 @@ describe('a work item whose write asks (D112)', () => {
     ]);
     const execution = (await w.ledger.read('execution-1'))!;
     expect(execution.payload).toEqual({ refs: ['hr:emp:1001'], ...asked });
-    expect(execution.presentation).toEqual({ threadId: rehab.id, version: rehab.updatedAt, actionId: 'book' });
+    expect(execution.presentation).toEqual({
+      threadId: rehab.id,
+      version: rehab.updatedAt,
+      decisionRevision: 0,
+      actionId: 'book',
+    });
     expect(w.ledger.enqueued().map(s => s.id)).toEqual(['execution:execution-1']);
     // Dispatched as the ledger dispatches it, the source keeps the time, the place and the message with the talk.
     await w.registry.run(audiencedActorOf(persona()), 'hr.bookTalk', execution.payload, { operationId: execution.id });

@@ -67,6 +67,7 @@ export function toThread(
     ...(row.execution ? { execution: row.execution } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    ...(row.decisionRevision ? { decisionRevision: row.decisionRevision } : {}),
     handledAt: iso(row.handledAt),
     remindedAt: iso(row.remindedAt),
     snoozedUntil: iso(row.snoozedUntil),
