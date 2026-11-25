@@ -11,6 +11,7 @@
 //   MOODLE_TIMEZONE       the zone Moodle's times are read as days in (default "Europe/Stockholm")
 //   MOODLE_CONCURRENCY    how many Moodle calls one request may have open at once (default 4, at most 16)
 import { createServer } from 'node:http';
+import { listener } from './http.mjs';
 import { adapterOf } from './config.mjs';
 import { MATCH_FIELDS, createConnector } from './connector.mjs';
 import { createFixtureLearning } from './learning.mjs';
@@ -66,24 +67,6 @@ const { handle } = createConnector({
   concurrency,
 });
 const port = Number(env.PORT ?? 4053);
-createServer(async (req, res) => {
-  // When Clew goes away before the answer (its own timeout, a page closed), the read's Moodle calls are stopped.
-  const gone = new AbortController();
-  res.on('close', () => {
-    if (!res.writableFinished) gone.abort();
-  });
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const request = new Request(`http://${req.headers.host ?? 'connector'}${req.url}`, {
-    method: req.method,
-    headers: req.headers,
-    body: chunks.length ? Buffer.concat(chunks) : undefined,
-    signal: gone.signal,
-  });
-  const response = await handle(request);
-  if (gone.signal.aborted) return;
-  res.writeHead(response.status, Object.fromEntries(response.headers));
-  res.end(Buffer.from(await response.arrayBuffer()));
-}).listen(port, () =>
+createServer(listener(handle)).listen(port, () =>
   console.log(`moodle connector listening on :${port} (${adapter} adapter, people matched on ${match})`),
 );

@@ -37,6 +37,7 @@ import { actionMenuItems } from '../entity-actions';
 import { markText } from './staff-model';
 import {
   MANIFEST_MAX,
+  overManifestMax,
   SAMPLE_NAMES,
   START_WORDS,
   STEP_WORDS,
@@ -606,7 +607,7 @@ function Page() {
       return;
     }
     setEmpty(false);
-    const parsed = text.length > MANIFEST_MAX ? null : parseDocument(text);
+    const parsed = overManifestMax(text) ? null : parseDocument(text);
     if (!parsed || !parsed.ok) {
       dryRun.reset();
       setOutcome({

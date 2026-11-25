@@ -1,4 +1,4 @@
-import { openGovernance, Registry, type Connector } from '../../packages/connectors/src/index';
+import { openGovernance, Registry, schemaCompiler, type Connector } from '../../packages/connectors/src/index';
 import { remoteConnector } from '../../packages/connectors/src/remote';
 import { describe, expect, test } from 'bun:test';
 import Ajv from 'ajv';
@@ -17,6 +17,8 @@ import { previewManifest } from '../../packages/connectors/src/preview';
 import { HOLDINGS_EXAMPLE, RULES, manifestReference } from '../../packages/connectors/src/reference';
 import { ManifestError, manifestProblems, parseManifest } from '../../packages/connectors/src/remote';
 import { PROTOCOL_PAGE_HEADERS, protocolRoutes } from '../../apps/server/src/routes/protocol';
+import { MAX_CAPABILITIES, MAX_MANIFEST_BYTES } from '../../packages/connectors/src/protocol';
+import { MANIFEST_MAX, overManifestMax } from '../../apps/web/src/pages/protocol-preview-model';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
 import { manifest as phonebook } from '../../connectors/phonebook/connector.mjs';
 
@@ -196,7 +198,7 @@ describe('the manifest dry run', () => {
         }
     });
     expect(previewManifest(strict).problems).toEqual([]);
-    const loose = previewManifest(strict, { acceptsEmptyInput: () => true }).manifest!;
+    const loose = previewManifest(strict, { compile: () => () => true }).manifest!;
     const byRule = previewManifest(strict).manifest!;
     expect(loose.capabilities.every(c => !c.needsInput)).toBe(true);
     expect(byRule.capabilities.filter(c => c.kind === 'read').every(c => c.needsInput)).toBe(true);
@@ -228,6 +230,14 @@ describe('the served protocol routes', () => {
       delete process.env.PUBLIC_URL;
     }
   });
+  test('the dry run page sends no more than the route and the loader take', () => {
+    expect(MANIFEST_MAX).toBe(MAX_MANIFEST_BYTES);
+    // Counted in bytes, as the route counts them: a character outside ASCII is more than one.
+    expect(overManifestMax('x'.repeat(MAX_MANIFEST_BYTES))).toBe(false);
+    expect(overManifestMax('x'.repeat(MAX_MANIFEST_BYTES + 1))).toBe(true);
+    expect(overManifestMax('ö'.repeat(MAX_MANIFEST_BYTES / 2))).toBe(false);
+    expect(overManifestMax('ö'.repeat(MAX_MANIFEST_BYTES / 2 + 1))).toBe(true);
+  });
   test('the dry run answers a manifest, refuses what is not JSON, and takes the id from the query', async () => {
     const post = (body: string, query = '') =>
       protocolRoutes.request('http://clew.local/manifest' + query, {
@@ -244,11 +254,99 @@ describe('the served protocol routes', () => {
     );
     expect((await post('{not json')).status).toBe(400);
     expect((await post('x'.repeat(500_001))).status).toBe(413);
+    // The limit is the loader's, in bytes: fewer characters than that may still be more bytes.
+    expect((await post('"' + 'ö'.repeat(250_001) + '"')).status).toBe(413);
+    // A body that declares no length is stopped at the limit as it is read, not read whole first (CB-6).
+    let pieces = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pieces++;
+        controller.enqueue(new TextEncoder().encode(' '.repeat(64 * 1024)));
+      },
+    });
+    const chunked = await protocolRoutes.request(
+      new Request('http://clew.local/manifest', { method: 'POST', body: endless, duplex: 'half' } as RequestInit),
+    );
+    expect(chunked.status).toBe(413);
+    expect(pieces).toBeLessThanOrEqual(Math.ceil(MAX_MANIFEST_BYTES / (64 * 1024)) + 2);
     expect(
       (await protocolRoutes.request('http://clew.local/manifest', { method: 'OPTIONS' })).headers.get(
         'access-control-allow-methods',
       ),
     ).toContain('POST');
+  });
+  test('the dry run keeps nothing of a request once it is answered (CB-6)', async () => {
+    // One compiler for the module kept every schema it compiled, and each request brings new ones: forty requests of a
+    // manifest with a hundred capabilities once left some 30 MB behind for good.
+    const person = (phonebook as { capabilities: Array<{ name: string; input: unknown }> }).capabilities.find(
+      c => c.name === 'phonebook.person',
+    )!;
+    const many = {
+      ...(phonebook as object),
+      capabilities: [
+        ...(phonebook as { capabilities: unknown[] }).capabilities,
+        ...Array.from({ length: 100 }, (_, i) => ({
+          ...person,
+          name: `phonebook.person${i}`,
+          input: structuredClone(person.input),
+        })),
+      ],
+    };
+    const body = JSON.stringify(many);
+    const post = () =>
+      protocolRoutes.request('http://clew.local/manifest', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      });
+    expect((await (await post()).json()).ok).toBe(true);
+    Bun.gc(true);
+    const before = process.memoryUsage().heapUsed;
+    for (let i = 0; i < 40; i++) await (await post()).text();
+    Bun.gc(true);
+    expect((process.memoryUsage().heapUsed - before) / 1e6).toBeLessThan(16);
+  }, 30_000);
+  test('a manifest of more capabilities than the protocol allows is refused before any schema is compiled', () => {
+    const own = (phonebook as { capabilities: Array<{ name: string; input: object }> }).capabilities;
+    const person = own.find(c => c.name === 'phonebook.person')!;
+    const team = own.find(c => c.name === 'phonebook.team')!;
+    const compiled: object[] = [];
+    const counting = () => {
+      const compile = schemaCompiler();
+      return (schema: object) => {
+        compiled.push(schema);
+        return compile(schema);
+      };
+    };
+    const filled = (count: number) => ({
+      ...(phonebook as object),
+      capabilities: [
+        ...own,
+        ...Array.from({ length: count - own.length }, (_, i) => ({ ...person, name: `phonebook.p${i}` })),
+      ],
+    });
+    const refused = previewManifest(filled(MAX_CAPABILITIES + 1), { compile: counting() });
+    expect(refused.ok).toBe(false);
+    expect(refused.problems.join(' ')).toContain('/capabilities');
+    expect(compiled).toEqual([]);
+    expect(previewManifest(filled(MAX_CAPABILITIES), { compile: counting() }).ok).toBe(true);
+    // One compilation a schema: the rules and the question of empty input share it.
+    const compile = schemaCompiler();
+    expect(compile(team.input)).toBe(compile(team.input));
+    // Two inputs that carry the same `$id` compile apart, as in the loader, and each still takes `{}`.
+    const twins = {
+      ...(phonebook as object),
+      capabilities: [
+        ...own,
+        ...[0, 1].map(i => ({ ...team, name: `phonebook.twin${i}`, input: { ...team.input, $id: 'input' } })),
+      ],
+    };
+    const preview = previewManifest(twins, { compile: schemaCompiler() });
+    expect(preview.ok).toBe(true);
+    expect(preview.manifest!.capabilities.filter(c => c.name.includes('twin')).map(c => c.needsInput)).toEqual([
+      false,
+      false,
+    ]);
   });
   test('the viewer page and its scripts come from the image, not a CDN, under a policy of the page’s own', async () => {
     const page = await protocolRoutes.request('http://clew.local/');

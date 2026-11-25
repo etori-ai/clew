@@ -15,7 +15,7 @@
   "tags": [
     {
       "name": "Connector",
-      "description": "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117). On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119)."
+      "description": "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117). On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119). Answer at the registered address itself: Clew follows no redirect, and a 3xx answer is the connector failing. Clew reads at most 500000 bytes of a manifest and 4194304 bytes of any other JSON answer; a larger one is the connector failing too."
     },
     {
       "name": "Clew",
@@ -3132,7 +3132,8 @@
               },
               "additionalProperties": false
             },
-            "description": "What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one."
+            "maxItems": 200,
+            "description": "What the connector can do, one entry per operation, at most 200. The name is the contract (D37): a break is a new name, never a changed one."
           },
           "installation": {
             "type": "array",

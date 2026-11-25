@@ -718,4 +718,42 @@ describe('the model path only reads, and falls back when the provider fails', ()
       expect(body).not.toHaveProperty('max_completion_tokens');
     }
   });
+  test('the wire sends the key to the saved address only and reads no more of an answer than its limit', async () => {
+    const redirects: Array<RequestRedirect | undefined> = [];
+    const counted = { pieces: 0, cancelled: false };
+    const endless = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      redirects.push(init?.redirect);
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            counted.pieces++;
+            controller.enqueue(new TextEncoder().encode('{"data":[' + '"x",'.repeat(16 * 1024)));
+          },
+          cancel() {
+            counted.cancelled = true;
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as unknown as typeof fetch;
+    const wire = openAICompatibleWire(endless);
+    await expect(wire.listModels({ baseUrl: 'http://llm.test', apiKey: 'nyckel' })).rejects.toMatchObject({
+      kind: 'unsupported',
+    });
+    expect(counted.cancelled).toBe(true);
+    // 64 kB a piece: the limit of 4 MiB and a piece more, never the whole of an endless answer.
+    expect(counted.pieces).toBeLessThanOrEqual(66);
+    // The test of a model, and a turn's requests too: the generator is handed a fetch that follows no redirect.
+    const refusing = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      redirects.push(init?.redirect);
+      return new Response('{}', { status: 500 });
+    }) as unknown as typeof fetch;
+    await openAICompatibleWire(refusing)
+      .ping({ baseUrl: 'http://llm.test' }, 'x', { tools: false, reasoning: 'provider-default' })
+      .catch(() => 0);
+    const turn = openAICompatibleWire(refusing).generator({ baseUrl: 'http://llm.test' }, 'x', 'provider-default');
+    await turn({ system: 's', messages: [{ role: 'user', content: 'Hej' }], timeoutMs: 2_000 } as never).catch(() => 0);
+    expect(redirects.length).toBeGreaterThanOrEqual(3);
+    expect(redirects.filter(r => r !== 'error')).toEqual([]);
+  });
 });

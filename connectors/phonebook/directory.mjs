@@ -48,18 +48,78 @@ export function toPerson(raw, baseUrl = '') {
   return person;
 }
 
+/** The most of one answer that is read: as much as Clew itself reads of a connector's answer. */
+const ANSWER_LIMIT = 4 * 1024 * 1024;
+
+/**
+ * An answer's JSON, read a piece at a time. An answer that declares more than `limit` bytes is given up before any of
+ * it is read, and one that passes `limit` as it is read is given up there; either is the phone book not answering.
+ */
+async function jsonWithin(response, limit) {
+  const tooLarge = () => new DirectoryUnavailable(`The phone book answered more than ${limit} bytes.`);
+  const declared = response.headers.get('content-length');
+  if (declared !== null && Number(declared) > limit) {
+    await response.body?.cancel().catch(() => undefined);
+    throw tooLarge();
+  }
+  const pieces = [];
+  let size = 0;
+  if (response.body) {
+    const reader = response.body.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > limit) throw tooLarge();
+        pieces.push(value);
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error instanceof DirectoryUnavailable ? error : new DirectoryUnavailable();
+    }
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const piece of pieces) {
+    bytes.set(piece, at);
+    at += piece.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new DirectoryUnavailable('The phone book answered something that is not JSON.');
+  }
+}
+
 /**
  * The organisation's phone book over HTTP with one integration key (`service` mode: the connector narrows every answer
  * itself). Expects `GET {url}/persons?q=&unit=&limit=` -> `{ persons: [...] }` and `GET {url}/persons/{id}` -> one record.
+ * The integration key crosses the network with every call, so the address is https; plain http only towards this host
+ * itself, or with `allowHttp` (PHONEBOOK_ALLOW_HTTP=true) for a development stack on a private network.
  */
-export function createHttpDirectory({ url, apiKey, fetch: fetchImpl = globalThis.fetch, timeoutMs = 5000 }) {
+export function createHttpDirectory({
+  url,
+  apiKey,
+  fetch: fetchImpl = globalThis.fetch,
+  timeoutMs = 5000,
+  allowHttp = process.env.PHONEBOOK_ALLOW_HTTP === 'true',
+}) {
   if (!url) throw new Error('PHONEBOOK_URL is required for the http adapter.');
+  const address = new URL(url);
+  if (
+    address.protocol !== 'https:' &&
+    !(address.protocol === 'http:' && (allowHttp || ['localhost', '127.0.0.1'].includes(address.hostname)))
+  )
+    throw new Error('PHONEBOOK_URL must be https outside local development (PHONEBOOK_ALLOW_HTTP=true allows http).');
   const base = url.replace(/\/+$/, '');
   async function get(path) {
     let response;
     try {
       response = await fetchImpl(base + path, {
         headers: { accept: 'application/json', ...(apiKey ? { 'x-api-key': apiKey } : {}) },
+        // The phone book's own address only: a redirect would carry the key to a host nobody configured.
+        redirect: 'error',
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
@@ -67,11 +127,7 @@ export function createHttpDirectory({ url, apiKey, fetch: fetchImpl = globalThis
     }
     if (response.status === 404) return null;
     if (!response.ok) throw new DirectoryUnavailable(`The phone book answered ${response.status}.`);
-    try {
-      return await response.json();
-    } catch {
-      throw new DirectoryUnavailable('The phone book answered something that is not JSON.');
-    }
+    return jsonWithin(response, ANSWER_LIMIT);
   }
   return {
     async search(query, { unit, limit = 50 } = {}) {
