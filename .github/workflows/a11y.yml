@@ -28,15 +28,16 @@ jobs:
       # The dev image's Bun, pinned by digest, fills the node_modules volume that scripts/a11y.sh mounts in the
       # Playwright image, as it does on a workstation.
       - name: Install dependencies
+        id: dependencies
         run: sh scripts/compose.sh run --rm --no-deps --build app bun install --frozen-lockfile
       - name: Run the suite
         run: sh scripts/a11y.sh --shard=${{ matrix.shard }}/3
-      - name: Check other municipal profiles sequentially
-        if: matrix.shard == 1
-        run: |
-          for profile in sundsvall custom; do
-            CLEW_A11Y_BRAND_PROFILE="$profile" sh scripts/a11y.sh branding.spec.ts
-          done
+      - name: Check the Sundsvall profile
+        if: ${{ !cancelled() && matrix.shard == 1 && steps.dependencies.outcome == 'success' }}
+        run: CLEW_A11Y_BRAND_PROFILE=sundsvall sh scripts/a11y.sh branding.spec.ts
+      - name: Check the custom profile
+        if: ${{ !cancelled() && matrix.shard == 1 && steps.dependencies.outcome == 'success' }}
+        run: CLEW_A11Y_BRAND_PROFILE=custom sh scripts/a11y.sh branding.spec.ts
       - name: Keep the report
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
