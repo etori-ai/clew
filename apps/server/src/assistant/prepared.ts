@@ -1,4 +1,5 @@
 import type { AuthenticatedContext, CalendarEvent, Prepared } from '@clew/contracts';
+import { whyNotChangeable } from '../modules/calendar/domain';
 import { dayLabel, displayDate, localInstant, timeRange } from '@clew/calendar/dates';
 import type { AssistantDeps } from './ports';
 import type { ClewTool } from './model';
@@ -24,21 +25,6 @@ export const PREPARE_TOOLS: readonly string[] = [PREPARE_MOVE_TOOL, PREPARE_CANC
  * (`whyNotChangeable`).
  */
 export const PREPARED_TITLES: readonly string[] = ['Flytta mötet', 'Ställ in mötet'];
-
-/**
- * Why the person cannot move or cancel this meeting from Clew, in Swedish for the model, or undefined when they can:
- * the rules of the decision's `ownEvent` (a single timed meeting the person may change), and that they organise it.
- * Moving and cancelling share them, so a meeting offers both or neither.
- */
-export function whyNotChangeable(
-  event: Pick<CalendarEvent, 'mine' | 'canCancel' | 'recurring' | 'allDay'>,
-): string | undefined {
-  if (!event.mine) return 'Bara organisatören kan flytta eller ställa in mötet.';
-  if (!event.canCancel) return 'Mötet går inte att flytta eller ställa in härifrån.';
-  if (event.recurring) return 'Ett återkommande möte går inte att flytta eller ställa in härifrån.';
-  if (event.allDay) return 'En heldag går inte att flytta eller ställa in härifrån.';
-  return undefined;
-}
 
 const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;

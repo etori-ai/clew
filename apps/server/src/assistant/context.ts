@@ -1,10 +1,35 @@
 import { isSnoozed, type CalendarEvent, type ReceiptRow, type SearchHit, type Thread } from '@clew/contracts';
 import { dayLabel, shortDayLabel, timeLabel, timeRange } from '@clew/calendar/dates';
-import { whyNotChangeable } from './prepared';
+import { whyNotChangeable } from '../modules/calendar/domain';
 
 /** A meeting of the person's own, as the model is told it: the buttons where the meeting is shown do both. */
 const OWN_MEETING =
   'Det är personens eget möte: personen kan själv flytta det med "Flytta …" och ställa in det med "Ställ in …" där mötet visas, utan något annat program.';
+
+/**
+ * Text another system wrote, as the system prompt carries it: on one line, so nothing a source writes can stand in the
+ * prompt as a line of Clew's own rules. Every line break, tab, control and format character becomes a space and a run
+ * of spaces one space; a no-break space (as in "37 050 kr") stays. A chat template's control token (`<|end|>`,
+ * `<|im_start|>`, DeepSeek's `<｜…｜>` with the full-width bar) is broken apart at its delimiters (`< |end| >`), so a
+ * server that reads such tokens out of the prompt's text cannot be told that a new turn or another role begins there.
+ * What is longer than `max` characters is cut and ends with "…".
+ */
+export function sourceLine(text: string, max: number): string {
+  const flat = text
+    .normalize('NFC')
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, ' ')
+    .replace(/<(?=[|｜])/g, '< ')
+    .replace(/([|｜])>/g, '$1 >')
+    .replace(/ {2,}/g, ' ')
+    .trim();
+  const chars = [...flat];
+  return chars.length > max
+    ? chars
+        .slice(0, Math.max(0, max - 1))
+        .join('')
+        .trimEnd() + '…'
+    : flat;
+}
 
 /** A chip resolved against what the person may actually see. Labels from the browser are never trusted. */
 export type ResolvedObject =
@@ -16,6 +41,16 @@ export type ResolvedObject =
   | { kind: 'document'; ref: string; hit: SearchHit };
 
 const day = (iso: string) => shortDayLabel(iso.slice(0, 10));
+/**
+ * The bounds on what another system wrote as it enters the prompt (D122): each field on one line (`sourceLine`) and no
+ * longer than its bound, and at most `ROWS_MAX` rows of a card or a receipt. Nothing a source writes reaches the prompt
+ * any other way.
+ */
+const NAME_MAX = 200;
+const SUMMARY_MAX = 1_000;
+const ROW_MAX = 300;
+const ROWS_MAX = 30;
+const said = (text: string, max = NAME_MAX) => sourceLine(text, max);
 const outcome: Record<ReceiptRow['outcome'], string> = {
   done: 'klart',
   unknown: 'okänt',
@@ -33,7 +68,8 @@ function cardState(t: Thread, now: string): string {
   const overflow = t.actions.filter(a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)));
   const more = (...own: string[]) => `Fler val (${[...overflow.map(a => a.label), ...own, 'Avfärda'].join(', ')})`;
   const buttons = (labels: string[]) =>
-    labels.length ? ` Knappar i ärendet nu: ${labels.join(', ')}.` : ' Ärendet har inga knappar nu.';
+    labels.length ? ` Knappar i ärendet nu: ${labels.map(l => said(l)).join(', ')}.` : ' Ärendet har inga knappar nu.';
+  const source = said(t.trigger.source);
   if (t.state === 'dismissed') return ' Ärendet är avfärdat.' + buttons([]);
   if (t.state === 'handled') {
     const r = t.receipt;
@@ -50,22 +86,25 @@ function cardState(t: Thread, now: string): string {
         (undoOpen ? ` Ångra allt tar tillbaka inbjudningarna fram till ${timeLabel(undoUntil)}.` : '')
       );
     }
-    const done = ` Ärendet är redan hanterat${t.handledAt ? ' ' + timeLabel(t.handledAt) : ''}: ${r.headline} Kvitto: ${r.rows.map(x => `${x.label} · ${x.detail} (${outcome[x.outcome]})`).join('; ')}.`;
+    const done = ` Ärendet är redan hanterat${t.handledAt ? ' ' + timeLabel(t.handledAt) : ''}: ${said(r.headline, SUMMARY_MAX)} Kvitto: ${r.rows
+      .slice(0, ROWS_MAX)
+      .map(x => `${said(`${x.label} · ${x.detail}`, ROW_MAX)} (${outcome[x.outcome]})`)
+      .join('; ')}.`;
     const undoOpen = !!r.undoCapability && !!r.undoUntil && Date.parse(r.undoUntil) > Date.parse(now);
     if (!undoOpen)
-      return done + ` Det går inte längre att ångra i Startsidan; en ändring görs i ${t.trigger.source}.` + buttons([]);
-    const own = [primary, ...secondary].filter(a => !!a && a.kind !== 'read').map(a => a!.label);
+      return done + ` Det går inte längre att ångra i Startsidan; en ändring görs i ${source}.` + buttons([]);
+    const own = [primary, ...secondary].filter(a => !!a && a.kind !== 'read').map(a => said(a!.label));
     return (
       done +
       buttons([
         `Ångra (fram till ${timeLabel(r.undoUntil!)})`,
         ...secondary.filter(a => a.kind === 'read').map(a => a.label),
       ]) +
-      ` Ångra tar tillbaka det som gjordes i ${t.trigger.source}${own.length ? ` och först därefter visar ärendet ${own.join(' och ')} igen` : ''}.`
+      ` Ångra tar tillbaka det som gjordes i ${source}${own.length ? ` och först därefter visar ärendet ${own.join(' och ')} igen` : ''}.`
     );
   }
   if (isSnoozed(t, now)) return ' Ärendet ligger under Inte nu.' + buttons(['Ta upp nu', more()]);
-  if (t.waitingOn) return ` Ärendet väntar på ${t.waitingOn}.` + buttons(['Påminn mig', more()]);
+  if (t.waitingOn) return ` Ärendet väntar på ${said(t.waitingOn)}.` + buttons(['Påminn mig', more()]);
   // The source's offer to say that the next step is someone else's and taken (D139) is a button of the person's own:
   // the model is told it is there, and has no tool that presses it.
   const handOn = t.handOn && !t.receipt && !t.execution ? [t.handOn.label] : [];
@@ -80,7 +119,7 @@ export const dueLabel = (date: string) => (/^\d{4}-\d{2}-\d{2}$/.test(date) ? da
  */
 export function workItemLine(t: Thread, now: string): string {
   return (
-    `Ärende "${t.title}" (${t.trigger.source}${t.deadline ? ', senast ' + dueLabel(t.deadline) : ''}).` +
+    `Ärende "${said(t.title)}" (${said(t.trigger.source)}${t.deadline ? ', senast ' + said(dueLabel(t.deadline)) : ''}).` +
     (t.state === 'handled' ? ' Ärendet är hanterat.' : cardState(t, now))
   );
 }
@@ -134,35 +173,39 @@ export function serialiseContext(
     switch (o.kind) {
       case 'thread': {
         const t = o.thread;
-        const rows = t.items.map(
-          i => `${i.label} · ${i.detail}${i.selectable ? (i.selected ? ' [vald]' : ' [avmarkerad]') : ''}`,
-        );
+        const rows = t.items
+          .slice(0, ROWS_MAX)
+          .map(
+            i =>
+              `${said(`${i.label} · ${i.detail}`, ROW_MAX)}${i.selectable ? (i.selected ? ' [vald]' : ' [avmarkerad]') : ''}`,
+          );
         const proposals = t.proposals
           .filter(p => p.status === 'proposed')
-          .map(p => `${p.participant.name} ${day(p.start)} ${timeRange(p.start, p.end)}`);
+          .slice(0, ROWS_MAX)
+          .map(p => `${said(p.participant.name)} ${day(p.start)} ${timeRange(p.start, p.end)}`);
         return (
-          `Ärende "${t.title}" (${t.trigger.source}, område ${t.area}${t.deadline ? ', senast ' + t.deadline : ''}). ${t.summary}` +
+          `Ärende "${said(t.title)}" (${said(t.trigger.source)}, område ${said(t.area)}${t.deadline ? ', senast ' + said(t.deadline) : ''}). ${said(t.summary, SUMMARY_MAX)}` +
           (rows.length ? ` Rader: ${rows.join('; ')}.` : '') +
           (proposals.length ? ` Förslag: ${proposals.join('; ')}.` : '') +
           cardState(t, now)
         );
       }
       case 'item':
-        return `Rad "${o.item.label} · ${o.item.detail}" i ärendet "${o.thread.title}" (${o.thread.trigger.source}).${cardState(o.thread, now)}`;
+        return `Rad "${said(`${o.item.label} · ${o.item.detail}`, ROW_MAX)}" i ärendet "${said(o.thread.title)}" (${said(o.thread.trigger.source)}).${cardState(o.thread, now)}`;
       case 'proposal':
-        return `Förslaget ${o.proposal.participant.name} ${day(o.proposal.start)} ${timeRange(o.proposal.start, o.proposal.end)} i ärendet "${o.thread.title}".`;
+        return `Förslaget ${said(o.proposal.participant.name)} ${day(o.proposal.start)} ${timeRange(o.proposal.start, o.proposal.end)} i ärendet "${said(o.thread.title)}".`;
       case 'event':
         // What the person can do with it themselves, so the model neither offers what it cannot prepare nor sends the
         // person to another program for what the meeting's own buttons do.
         return (
-          `Mötet "${o.event.title}" ${day(o.event.start)} ${o.event.allDay ? 'heldag' : timeRange(o.event.start, o.event.end)}${o.event.room ? ', ' + o.event.room : ''} i kalendern. ` +
+          `Mötet "${said(o.event.title)}" ${day(o.event.start)} ${o.event.allDay ? 'heldag' : timeRange(o.event.start, o.event.end)}${o.event.room ? ', ' + said(o.event.room) : ''} i kalendern. ` +
           (whyNotChangeable(o.event) ?? OWN_MEETING)
         );
       case 'capability':
         // A list or a view that stands open is named with the read that draws it (D141 rule 4): asked "vad väntar de
         // på?" beside a register, the model otherwise reads whichever list it knows best, not the one on the page.
         return (
-          `Förmågan "${o.title}" (${o.source}), verktyget ${o.name}. ` +
+          `Förmågan "${said(o.title)}" (${said(o.source)}), verktyget ${o.name}. ` +
           `Gäller frågan det som visas där och verktyget finns bland dina, läs med det innan du svarar; ` +
           `finns det inte, säg att du inte kan läsa det som visas.`
         );
@@ -174,7 +217,7 @@ export function serialiseContext(
         ]
           .filter(Boolean)
           .join(', ');
-        return `Avsnitt "${h.label}${h.section ? ', ' + h.section : ''}" ur ${h.source}${kept ? ` (${kept})` : ''}: "${h.snippet}"`;
+        return `Avsnitt "${said(h.label + (h.section ? ', ' + h.section : ''), NAME_MAX * 2)}" ur ${said(h.source)}${kept ? ` (${said(kept)})` : ''}: "${said(h.snippet, SUMMARY_MAX + 200)}"`;
       }
     }
   });

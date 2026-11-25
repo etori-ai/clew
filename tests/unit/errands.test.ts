@@ -4,6 +4,7 @@ import type { ErrandRow, ErrandsResult } from '../../packages/contracts/src/inde
 import {
   audiencedActorOf,
   CapabilityError,
+  openGovernance,
   SEARCH_CONNECTOR,
   type Actor,
   type AudiencedActor,
@@ -152,7 +153,7 @@ function caseSystem(
 }
 function world(connectors: Connector[], budget = { perSourceMs: 40, totalMs: 80 }) {
   const registry = new Registry();
-  const errands = errandUsecases({ sources: a => registry.errandSources(a), budget });
+  const errands = errandUsecases({ sources: (a, o) => registry.errandSources(a, o), budget });
   for (const c of connectors) registry.register(c);
   registry.register({
     id: SEARCH_CONNECTOR,
@@ -167,6 +168,24 @@ const list = (registry: Registry, actor: AudiencedActor, input: Record<string, u
   registry.run<ErrandsResult>(actor, 'clew.errands', input, context);
 
 describe('clew.errands', () => {
+  test('the model’s call leaves out a case system the administrator closed to the assistant, and none left offers no list; the person and the router get every one (D122 item 4)', async () => {
+    const registry = world([
+      caseSystem('permits', 'Bygglovssystemet', [row('permits', 1)]),
+      caseSystem('support', 'Kundtjänsten', [row('support', 7)]),
+    ]);
+    registry.govern('permits', { ...openGovernance(), toolsEnabled: false });
+    const forModel = await list(registry, mikael, {}, { caller: 'assistant', forModel: true });
+    expect(forModel.rows.map(r => r.connector)).toEqual(['support']);
+    expect(JSON.stringify(forModel)).not.toContain('Bygglovssystemet');
+    for (const context of [{}, { caller: 'assistant' }])
+      expect((await list(registry, mikael, {}, context)).rows.map(r => r.connector).sort()).toEqual([
+        'permits',
+        'support',
+      ]);
+    expect(registry.tools(mikael).map(t => t.name)).toContain('clew.errands');
+    registry.govern('support', { ...openGovernance(), toolsEnabled: false });
+    expect(registry.tools(mikael).map(t => t.name)).not.toContain('clew.errands');
+  });
   test('asks every case system at once and answers with one list, each row opening in its own system', async () => {
     const calls: unknown[] = [];
     const registry = world([

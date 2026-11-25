@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { ProviderSummary, ProviderTestReport } from '@clew/contracts';
+import { providerAddressProblem } from '@clew/contracts';
 import {
   Banner,
   Button,
@@ -39,7 +40,6 @@ import { DialogFrame } from '../../components/shell/dialog-frame';
  * organisation may process personal data with it before anything is added.
  */
 const ID = /^[a-z][a-z0-9-]*$/;
-const URL_PATTERN = /^https?:\/\/\S+$/;
 const WIRE = /^\S+$/;
 export const slug = (text: string) =>
   text
@@ -212,16 +212,16 @@ export function AddProviderDialog({ isOpen, onClose }: { isOpen: boolean; onClos
     if (isOpen) heading.current?.focus();
   }, [step, isOpen]);
   const shownId = idTouched ? id : slug(title);
+  // The server's own check (D24): an http or https address it can read, with no user name or password in it.
+  const urlProblem = providerAddressProblem(url);
   const errors = touched
     ? {
         title: title.trim() ? undefined : 'Ge leverantören ett namn.',
         id: ID.test(shownId) ? undefined : 'Små bokstäver, siffror och bindestreck; börjar med en bokstav.',
-        url: URL_PATTERN.test(url)
-          ? undefined
-          : 'En adress som börjar med http:// eller https://, till exempel https://modeller.kommunen.se/v1.',
+        url: urlProblem,
       }
     : {};
-  const valid = !!title.trim() && ID.test(shownId) && URL_PATTERN.test(url);
+  const valid = !!title.trim() && ID.test(shownId) && !urlProblem;
   const reset = () => {
     setStep(0);
     setTitle('');

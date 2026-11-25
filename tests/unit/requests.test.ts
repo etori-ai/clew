@@ -1,7 +1,13 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import { VALUE_WORDS, fieldTone, type RequestRow, type RequestsResult } from '../../packages/contracts/src/index';
-import { CapabilityError, SEARCH_CONNECTOR, type Actor, type Connector } from '../../packages/connectors/src/index';
+import {
+  CapabilityError,
+  openGovernance,
+  SEARCH_CONNECTOR,
+  type Actor,
+  type Connector,
+} from '../../packages/connectors/src/index';
 import {
   DELEGATED_TOKEN_HEADER,
   manifestProblems,
@@ -171,7 +177,7 @@ function desk(
 }
 function world(connectors: Connector[], budget = { perSourceMs: 40, totalMs: 80 }) {
   const registry = new Registry();
-  const requests = requestUsecases({ sources: a => registry.requestSources(a), budget });
+  const requests = requestUsecases({ sources: (a, o) => registry.requestSources(a, o), budget });
   for (const c of connectors) registry.register(c);
   registry.register({
     id: SEARCH_CONNECTOR,
@@ -247,6 +253,21 @@ function remoteDesk(manifest: unknown, answer: (url: string, init?: RequestInit)
 }
 
 describe('clew.requests', () => {
+  test('the model’s call leaves out a service desk the administrator closed to the assistant, and none left offers no list; the person and the router get every one (D122 item 4)', async () => {
+    const registry = world([
+      desk('it', 'IT-servicedesken', [row('it', 1)]),
+      desk('fast', 'Fastighet', [row('fast', 2)]),
+    ]);
+    registry.govern('fast', { ...openGovernance(), toolsEnabled: false });
+    const forModel = await list(registry, mikael, { caller: 'assistant', forModel: true });
+    expect(forModel.rows.map(r => r.connector)).toEqual(['it']);
+    expect(JSON.stringify(forModel)).not.toContain('Fastighet');
+    for (const context of [{}, { caller: 'assistant' }])
+      expect((await list(registry, mikael, context)).rows.map(r => r.connector).sort()).toEqual(['fast', 'it']);
+    expect(registry.tools(mikael).map(t => t.name)).toContain('clew.requests');
+    registry.govern('it', { ...openGovernance(), toolsEnabled: false });
+    expect(registry.tools(mikael).map(t => t.name)).not.toContain('clew.requests');
+  });
   test('asks every service desk at once and answers with one list, each row opening in its own system', async () => {
     const calls: unknown[] = [];
     const registry = world([
