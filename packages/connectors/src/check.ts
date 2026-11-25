@@ -24,7 +24,14 @@ import {
   type NamedInputs,
   type RelationResolver,
 } from './index';
-import { fetchManifest, remoteConnector, type AssertionBinding, type FetchLike } from './remote';
+import {
+  failureCode,
+  fetchManifest,
+  manifestFailure,
+  remoteConnector,
+  type AssertionBinding,
+  type FetchLike,
+} from './remote';
 import { INSTALLATION_ROUTE, type AboutPlace, type ConnectorManifest } from './protocol';
 import { menuRowOf, placesOf, rowsKey, viewRows, viewOutputProblem } from './views';
 
@@ -183,9 +190,18 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 const who = (roles: Role[]) => roles.map(r => ROLE[r]).join(' och ');
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-export async function checkConnector(
-  options: CheckOptions,
-): Promise<CheckReport & { findings: CheckFinding[]; manifest?: ConnectorManifest }> {
+/**
+ * The check's result. Without `manifest`, the service's manifest could not be read, and `failure` says whether it did
+ * not answer or answered with an error status (`unreachable`), or served one Clew does not load (`manifest-invalid`),
+ * by the loader's rule (`manifestFailure`).
+ */
+export async function checkConnector(options: CheckOptions): Promise<
+  CheckReport & {
+    findings: CheckFinding[];
+    manifest?: ConnectorManifest;
+    failure?: 'unreachable' | 'manifest-invalid';
+  }
+> {
   const findings: CheckFinding[] = [];
   const items: CheckItem[] = [];
   const ok = (text: string) => findings.push({ level: 'ok', text });
@@ -199,9 +215,14 @@ export async function checkConnector(
   try {
     manifest = await fetchManifest(url, options.id, fetchImpl);
   } catch (error) {
-    fail('manifest: ' + (error as Error).message);
-    item('fail', 'connection', 'Systemets beskrivning kunde inte hämtas', (error as Error).message);
-    return { ok: false, items, findings };
+    // A refused connection, a name that does not resolve and a certificate that does not hold all read "fetch failed":
+    // the cause's code says which, and never its message, which can carry what the other end said.
+    const said = (error as Error).message,
+      code = failureCode(error);
+    const message = code && !said.includes(code) ? `${said} (${code})` : said;
+    fail('manifest: ' + message);
+    item('fail', 'connection', 'Systemets beskrivning kunde inte hämtas', message);
+    return { ok: false, items, findings, failure: manifestFailure(error) };
   }
   ok(
     `manifest valid: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas, scan ${manifest.scan}`,

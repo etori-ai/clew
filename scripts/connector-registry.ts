@@ -1,31 +1,48 @@
 /**
  * Registering a connector from a script (D23): what `connector-add.ts` does from the command line and `dev-connectors.ts`
  * does for the development chain, in one place. Fetches the manifest, runs the loader's validation, seals the secret and
- * writes the row and its audit row in one transaction. The BFF registers enabled rows at boot and watches the rows every
- * few seconds, so a change here reaches it without a restart.
+ * writes the row and its audit rows in one transaction. The BFF registers enabled rows at boot and watches the rows every
+ * few seconds, so a change here reaches it without a restart. Each change that happened is one audit row, with the same
+ * action and details the administration page writes (`connectors/usecases/admin.ts`), and a change that did not happen
+ * writes nothing (CB-11).
  */
-import { database } from '@clew/db';
+import { eq } from 'drizzle-orm';
+import { database, schema } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import {
-  deleteConnector,
   insertConnector,
   listConnectors as storedConnectors,
   readConnector,
+  recordCheck,
   updateConnector,
 } from '@clew/db/connectors';
 import { fetchManifest, parseManifest } from '../packages/connectors/src/remote';
-import { sealSecret } from '../apps/server/src/auth-crypto';
+import { openSecret, sealSecret } from '../apps/server/src/auth-crypto';
 import { secretPurpose } from '../apps/server/src/connectors/remote';
 import { diffDetails, isManifest, manifestDiff, sameManifest } from '../apps/server/src/connectors/manifests';
 import { internalIds } from '../apps/server/src/connectors/registry';
+import { postgresConnectorStore } from '../apps/server/src/connectors/adapters/postgres';
 
 const requireManaged = (id: string) => {
   if (internalIds.includes(id)) throw new Error('Users are part of Clew core, not a managed connector.');
 };
 export const listConnectors = async () => (await storedConnectors()).filter(row => !internalIds.includes(row.id));
 const actor = 'bootstrap:connector';
+const subject = (id: string) => 'connector:' + id;
+/** Whether the sealed secret is this one; one that cannot be opened any more is not. */
+const sameSecret = (sealed: string | null, secret: string, id: string) => {
+  try {
+    return sealed !== null && openSecret(sealed, secretPurpose(id)) === secret;
+  } catch {
+    return false;
+  }
+};
 
-/** Add a connector or update its address and secret; `enable` makes it live, otherwise it is or stays a draft. */
+/**
+ * Add a connector, or update its address, secret and manifest. `enable` makes it live; otherwise a new connector is a
+ * draft and an existing one keeps its state, so moving or rekeying an enabled connector does not switch it off.
+ * `changes` are the audit actions written: none when the address, the secret, the manifest and the state are as stored.
+ */
 export async function registerConnector(options: {
   id: string;
   url: string;
@@ -44,84 +61,136 @@ export async function registerConnector(options: {
     throw new Error('Connector ' + id + ' is still bundled. Complete the fixture cutover before registration.');
   if (existing && options.ifMissing) {
     if (!existing.manifest) throw new Error('Existing connector ' + id + ' has no manifest; refresh it explicitly.');
-    return { manifest: parseManifest(existing.manifest, id), existing: true, state: existing.state };
+    return { manifest: parseManifest(existing.manifest, id), existing: true, state: existing.state, changes: [] };
   }
   const manifest = await fetchManifest(url, id);
-  const sealed = sealSecret(secret, secretPurpose(id));
-  const state = options.enable ? ('enabled' as const) : ('draft' as const);
-  await database().transaction(async tx => {
-    if (existing)
-      await updateConnector(tx, id, actor, {
-        url,
-        secret: sealed,
-        secretChangedAt: new Date(),
-        state,
-        manifest,
-        manifestAt: new Date(),
-        // The operator who runs this approves what the service serves now (D144); an earlier offer is settled with it.
-        offered: null,
-        offeredAt: null,
-        health: { status: 'ok', at: new Date().toISOString() },
-      });
-    else
+  const at = new Date();
+  const health = { status: 'ok' as const, at: at.toISOString() };
+  const written = await database().transaction(async tx => {
+    // The row as it stands now, held until this commits: the changes are decided on it, not on the read above.
+    const [row] = await tx.select().from(schema.connectors).where(eq(schema.connectors.id, id)).for('update');
+    if (row?.bundled)
+      throw new Error('Connector ' + id + ' is still bundled. Complete the fixture cutover before registration.');
+    const state = options.enable ? ('enabled' as const) : (row?.state ?? ('draft' as const));
+    const audit = (action: string, details?: Record<string, unknown>) =>
+      writeAudit(tx, { actor, action, subject: subject(id), ...(details ? { details } : {}) });
+    if (!row) {
       await insertConnector(tx, {
         id,
         url,
-        secret: sealed,
+        secret: sealSecret(secret, secretPurpose(id)),
         createdBy: actor,
         state,
         manifest,
-        health: { status: 'ok', at: new Date().toISOString() },
+        health,
       });
-    // What is approved is in the history (D144): what the connector reads back as the person and whose token it gets.
-    const approved = {
-      source: manifest.source,
-      capabilities: manifest.capabilities.length,
-      uses: manifest.uses ?? [],
-      delegation: manifest.delegation?.audience ?? null,
-    };
-    await writeAudit(tx, {
-      actor,
-      action: existing ? 'connector.secret' : 'connector.added',
-      subject: 'connector:' + id,
-      details: existing ? { url } : { url, ...approved },
-    });
-    // The row the administration page writes when an offer is approved, the whole diff from what was approved, without
-    // the offer's instant: the operator approves what the service serves now.
-    if (existing && !sameManifest(existing.manifest, manifest))
-      await writeAudit(tx, {
-        actor,
+      // What is approved is in the history (D144): what the connector reads back as the person and whose token it gets.
+      // The details are the page's (`add`, then the switch's change from the draft it stores).
+      await audit('connector.added', {
+        url,
+        source: manifest.source,
+        capabilities: manifest.capabilities.length,
+        uses: manifest.uses ?? [],
+        delegation: manifest.delegation?.audience ?? null,
+        health: health.status,
+      });
+      if (state === 'enabled') await audit('connector.enabled', { from: 'draft' });
+      return { state, changes: ['connector.added', ...(state === 'enabled' ? ['connector.enabled'] : [])] };
+    }
+    const changes: Array<{ action: string; details?: Record<string, unknown> }> = [];
+    if (row.url !== url) changes.push({ action: 'connector.url', details: { from: row.url, to: url } });
+    const rekeyed = !sameSecret(row.secret, secret, id);
+    if (rekeyed) changes.push({ action: 'connector.secret' });
+    // The operator who runs this approves what the service serves now (D144): the row the administration page writes
+    // when an offer is approved, the whole diff from what was approved, without the offer's instant.
+    const approved = !sameManifest(row.manifest, manifest);
+    if (approved)
+      changes.push({
         action: 'connector.manifest',
-        subject: 'connector:' + id,
-        details: diffDetails(manifestDiff(isManifest(existing.manifest) ? existing.manifest : undefined, manifest)),
+        details: diffDetails(manifestDiff(isManifest(row.manifest) ? row.manifest : undefined, manifest)),
       });
-    if (state === 'enabled') await writeAudit(tx, { actor, action: 'connector.enabled', subject: 'connector:' + id });
+    if (state !== row.state) changes.push({ action: 'connector.' + state, details: { from: row.state } });
+    if (!changes.length) return { state, changes: [] as string[] };
+    await updateConnector(tx, id, actor, {
+      ...(row.url !== url ? { url } : {}),
+      ...(rekeyed ? { secret: sealSecret(secret, secretPurpose(id)), secretChangedAt: at } : {}),
+      ...(approved ? { manifest, manifestAt: at } : {}),
+      ...(state !== row.state ? { state } : {}),
+      // An offer is settled with what the operator approved now.
+      offered: null,
+      offeredAt: null,
+      health,
+    });
+    for (const c of changes) await audit(c.action, c.details);
+    return { state, changes: changes.map(c => c.action) };
   });
-  return { manifest, existing: !!existing, state };
+  // Nothing to administer: what the service serves is what is approved, so it is recorded as a check records it, after
+  // the row's lock is let go, and only while the row is still at the address read (D144): one an administrator moved
+  // in between keeps nothing of this answer.
+  if (existing && !written.changes.length && !(await recordCheck(id, { url, health, served: manifest, at })))
+    throw new Error(`Connector ${id} was changed while this ran; run it again.`);
+  return { manifest, existing: !!existing, ...written };
 }
 
 /**
- * Enable or disable a registered connector. Answers false when there is no such row. A remote row is enabled only with
- * an approved manifest (D144), as on the administration page.
+ * Enable or disable a registered connector, as its switch on the administration page does: one audit row with the
+ * state it came from, and none when it is already in that state. A remote row is enabled only with an approved manifest
+ * (D144), as on the page.
  */
-export async function setConnectorState(id: string, state: 'enabled' | 'disabled') {
+export async function setConnectorState(
+  id: string,
+  state: 'enabled' | 'disabled',
+): Promise<'missing' | 'unchanged' | 'changed'> {
   requireManaged(id);
-  const row = await readConnector(id);
-  if (state === 'enabled' && row && !row.bundled && !row.manifest)
+  const store = postgresConnectorStore();
+  const row = await store.read(id);
+  if (!row) return 'missing';
+  if (state === 'enabled' && !row.bundled && !row.manifest)
     throw new Error(
       `Connector ${id} has no approved manifest. Register it with its url and --secret, which fetches and approves what the service serves, or read it in and approve it on Administration › Anslutna system.`,
     );
-  return database().transaction(async tx => {
-    const done = await updateConnector(tx, id, actor, { state });
-    if (done) await writeAudit(tx, { actor, action: 'connector.' + state, subject: 'connector:' + id });
-    return done;
+  if (row.state === state) return 'unchanged';
+  const at = new Date().toISOString();
+  await store.transaction(async tx => {
+    // Written only on the row read above (DE-M5); one changed meanwhile is left as it is.
+    if (!(await tx.update(id, { state }, actor, at, row.version)))
+      throw new Error(`Connector ${id} was changed while this ran; run it again.`);
+    await tx.writeAudit({
+      actor,
+      action: 'connector.' + state,
+      subject: subject(id),
+      at,
+      details: { from: row.state },
+    });
   });
+  return 'changed';
 }
 
-export async function removeConnector(id: string) {
+/**
+ * Remove a remote connector, as the administration page does: its open cards close, the row goes and one audit row
+ * says how many cards closed, in one transaction. An id with no row removes and writes nothing; one of Clew's own
+ * connectors is refused, since it can be switched off but not removed.
+ */
+export async function removeConnector(
+  id: string,
+): Promise<{ removed: false } | { removed: true; closedCards: number }> {
   requireManaged(id);
-  await database().transaction(async tx => {
-    await deleteConnector(tx, id);
-    await writeAudit(tx, { actor, action: 'connector.removed', subject: 'connector:' + id });
+  const store = postgresConnectorStore();
+  const row = await store.read(id);
+  if (!row) return { removed: false };
+  if (row.bundled) throw new Error(`Connector ${id} is one of Clew's own: it can be disabled, not removed.`);
+  const at = new Date().toISOString();
+  const closedCards = await store.transaction(async tx => {
+    const closed = await tx.dismissOpenThreadsOf(id, at);
+    await tx.remove(id);
+    await tx.writeAudit({
+      actor,
+      action: 'connector.removed',
+      subject: subject(id),
+      at,
+      details: { closedCards: closed },
+    });
+    return closed;
   });
+  return { removed: true, closedCards };
 }

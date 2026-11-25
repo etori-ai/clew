@@ -769,8 +769,9 @@ describe('assertions and configuration', () => {
   test('the loader registers the approved manifest, and one the service changed waits as offered, never live (D144)', async () => {
     const { registry, connectorFetch } = stack();
     const records: Array<[string, ConnectorHealth['status'], unknown]> = [];
-    const record = async (id: string, seen: { health: ConnectorHealth; served?: unknown }) => {
+    const record = async (id: string, seen: { url: string; health: ConnectorHealth; served?: unknown }) => {
       records.push([id, seen.health.status, seen.served]);
+      return seen.url === 'http://hello';
     };
     // What an administrator approved before the service began to read the calendar back as the person.
     const approved = { ...(helloManifest as object), source: 'Hello förr', uses: [] };
@@ -798,6 +799,7 @@ describe('assertions and configuration', () => {
       ],
       record: async (id, seen) => {
         records.push([id, seen.served]);
+        return true;
       },
       fetch: connectorFetch,
       attempts: 1,
@@ -813,6 +815,7 @@ describe('assertions and configuration', () => {
       rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }],
       record: async (_id, seen) => {
         offers.push(seen.served);
+        return true;
       },
       fetch: connectorFetch,
       attempts: 1,
@@ -832,6 +835,7 @@ describe('assertions and configuration', () => {
       rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: helloManifest }],
       record: async (_id, seen) => {
         health.push(seen.health);
+        return true;
       },
       fetch: down,
       attempts: 2,
@@ -856,6 +860,7 @@ describe('assertions and configuration', () => {
       rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }],
       record: async (_id, seen) => {
         health.push(seen.health);
+        return true;
       },
       fetch: bad,
       attempts: 5,
@@ -863,6 +868,28 @@ describe('assertions and configuration', () => {
     });
     expect(health.map(h => h.status)).toEqual(['manifest-invalid']);
     expect(registry.connector('hello')).toBeUndefined();
+  });
+  test('a row moved while its old address answered records nothing of that answer, and the loader says so instead of loading it', async () => {
+    const { registry, connectorFetch } = stack();
+    const seen: string[] = [],
+      lines: string[] = [];
+    const loaded = await loadConnectors(registry, {
+      authority: await testAuthority(),
+      rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: helloManifest }],
+      // The store writes only on the row still at the address read: an administrator moved it meanwhile.
+      record: async (_id, check) => {
+        seen.push(check.url);
+        return false;
+      },
+      fetch: connectorFetch,
+      attempts: 1,
+      log: line => lines.push(line),
+    });
+    expect(seen).toEqual(['http://hello']);
+    expect(loaded).toEqual([]);
+    expect(lines).toEqual([
+      'Connector "hello" moved from http://hello while it was read there; nothing of that answer was recorded.',
+    ]);
   });
 });
 
