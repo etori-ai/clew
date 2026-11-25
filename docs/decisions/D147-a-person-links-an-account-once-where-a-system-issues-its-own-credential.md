@@ -207,35 +207,58 @@ connected?" without settling the rest of that question. D45, D47, D75, D86, D121
 
 ## As built
 
-The first slice, on the branch `linked-accounts`, 2026-11-25. It is everything below the routes, on the memory
-adapters, and it is not ready for `main`: the published protocol describes a token that no call carries yet.
+Two slices on the branch `linked-accounts`, 2026-11-25 and 2026-11-26: everything but the pages, the administrator's
+review and the live tests. A person cannot link from the web app yet, so the branch is not ready for `main`.
 
-- The protocol: `LinkedAccountSchema` and the manifest's `linkedAccount` in
+- **The protocol.** `LinkedAccountSchema` and the manifest's `linkedAccount` in
   [protocol.ts](../../packages/connectors/src/protocol.ts); the rule that a manifest declares one way and an address
   Clew can discover from, `actsAsProblems` in [validation.ts](../../packages/connectors/src/validation.ts), applied by
-  the loader and listed as `acts-as-one-way` in the manifest reference; `connector-check` names the field and takes a
-  refusal without a linked account as the expected answer.
-- The module [linked-accounts](../../apps/server/src/modules/linked-accounts/usecases.ts): `begin` and `complete`
-  either side of the system's page, `tokenFor` before a call, `refused` after one, `list`, `unlink`, and
-  `forgetPerson`, `forgetConnector` and `forgetLink` for item 10. The rules of items 3 and 7 are pure functions in
-  `domain.ts` (`clientChoice`, `isFresh`, `withTokens`, `lost`). The audit actions are `account.linked`,
-  `account.unlinked`, `account.link-lost` and `account.client-registered`; a refresh that succeeds writes none.
-- The OAuth port over `openid-client` in
+  the loader, placed in the preview and listed as `acts-as-one-way` in the manifest reference. The error code
+  `authorization-required` is new (item 7): a connector answers it with a 403 when its system would not take the
+  token, and Clew answers a caller with it when the person has no link. `connector-check` names the field.
+- **The module** [linked-accounts](../../apps/server/src/modules/linked-accounts/usecases.ts): `approve` for item 4,
+  `begin` and `complete` either side of the system's page, `tokenFor` before a call, `refused` after one, `list`,
+  `unlink`, and `forgetPerson`, `forgetConnector` and `forgetLink`. The rules of items 3 and 7 are pure functions in
+  `domain.ts`. The audit actions are `account.server-approved`, `account.client-registered`, `account.linked`,
+  `account.unlinked` and `account.link-lost`; a refresh that succeeds writes none.
+- **The OAuth port** over `openid-client` in
   [adapters/oauth.ts](../../apps/server/src/modules/linked-accounts/adapters/oauth.ts). The server metadata is looked
   for at RFC 8414's place and then after the issuer's path, where Keycloak serves it. A failure is final or passing
   (`refusalOf`), and only a final one loses a link.
-- The store port and its memory adapter, held to
-  [the store contract](../../tests/linked-account-store-contract.ts). A link is held by the transaction that refreshes
-  it, the refresh request included: that is the lock of item 7, and the request's ten-second limit bounds it.
-- Evidence: [the scenarios](../../tests/unit/linked-accounts.test.ts) run the real OAuth client against
+- **The store**: four tables (`linked_account`, `linked_account_pending`, `linked_account_client`,
+  `linked_account_server`, migration `0001_linked_accounts`), with every token, verifier and client secret sealed
+  under the installation's key and bound to its person and connector. One contract runs on the memory and the
+  Postgres adapter. A link is held by the transaction that refreshes it, the refresh request included: that is the
+  lock of item 7, and the request's ten-second limit bounds it.
+- **The token on a call.** Bound once, where the server builds a connector's transport
+  ([remote.ts](../../apps/server/src/connectors/remote.ts), `useLinkedAccounts`), so every path gets it without
+  threading: a request, an approved write, a scan, a document read and a question to the source's assistant.
+- **The ledger.** `needsLink` beside `needsSession`: the link's token is asked for before the dispatch is recorded,
+  a write whose link is gone waits unsent with `needs-link`, and the dispatch's audit row says `credential: linked`.
+- **The routes** under `/api/linked-accounts`
+  ([linked-accounts.ts](../../apps/server/src/routes/linked-accounts.ts)): the list, the start, the callback and the
+  removal.
+- **Evidence**: the scenarios run the real OAuth client against
   [an authorization server in memory](../../tests/authorization-server.ts), of today's kind and of the older kind,
-  and assert the audit rows.
+  and assert the audit rows ([use cases](../../tests/unit/linked-accounts.test.ts),
+  [calls](../../tests/unit/linked-account-calls.test.ts), [the ledger](../../tests/unit/linked-executions.test.ts),
+  [routes](../../tests/unit/linked-account-routes.test.ts)).
 
-Not built: the Postgres adapter and its migration; the routes and the callback; the token on a call (`delegated` in
-`remote.ts` still knows `delegation` only) and the ledger's `needs-link`; the administrator's review and the entered
-addresses on Administration › Anslutna system (the use cases read them through the `ConnectorLinks` port, which has no
-live adapter); item 10's same transaction as the grant rewrite; a client metadata document served by Clew; both pages;
-and the three live tests of item 14 beyond the first.
+Where it differs from the items above:
+
+- **Item 4.** The approval is kept in the module's own table and made by an operator with
+  `bun scripts/connector-link.ts <connector id>`. D144's review does not name the field yet, and no page enters
+  addresses.
+- **Item 6.** The button does not go to a route that redirects. The page asks `POST /api/linked-accounts/:connector/link`
+  for the system's address, with the session's CSRF token, and then leaves for it in the same tab: a link that could
+  be started by a plain address could be started by any other site.
+- **Item 10.** A deactivation removes the person's links in the SCIM transaction, through the people module's leavers
+  port, with their audit rows. It does not revoke them at the system: that transaction waits for no network, and the
+  tokens are gone when it commits. `forgetPerson` revokes, for an operator's own removal.
+
+Not built: both pages and anything in the web app that starts linking; the administrator's review and the entered
+addresses on Administration › Anslutna system; a client metadata document served by Clew; the callback for a person
+whose session ended while they were at the system; and the live tests of item 14 beyond the first.
 
 ## Sources
 

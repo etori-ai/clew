@@ -216,7 +216,24 @@ export interface ExecutionSource {
     operation: string,
     input: unknown,
     options?: AuthorizeOptions,
-  ): Promise<{ connector: string; safety: WriteSafety; needsSession: boolean; resolution?: unknown }>;
+  ): Promise<{
+    connector: string;
+    safety: WriteSafety;
+    needsSession: boolean;
+    /**
+     * The connector acts as the person with an account they linked at its system (D147): no session is asked for, and
+     * `linked` says before dispatch whether a token of that account can be had.
+     */
+    needsLink?: boolean;
+    resolution?: unknown;
+  }>;
+  /**
+   * For a connector whose person links an account (D147): whether a token of that account can be had now, asked before
+   * dispatch is recorded, as `ExecutionSessions.ready` is asked for a session. False when the person has no link the
+   * system accepts, and the write then waits with `needs-link`; a throw when the system's authorization server cannot be
+   * asked now. The token stays with the link for the call that follows; it is never returned.
+   */
+  linked?(persona: AuthenticatedContext, execution: Execution): Promise<boolean>;
   current(personId: string): Promise<AuthenticatedContext | undefined>;
   /**
    * `resolution` is what `authorize` resolved about whom the payload names, just before (D117): handed on so the

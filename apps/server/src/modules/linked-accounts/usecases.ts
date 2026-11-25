@@ -1,4 +1,5 @@
-import type { AuthenticatedContext } from '@clew/contracts';
+import type { AuthenticatedContext, Capability } from '@clew/contracts';
+import { ForbiddenError, InputError } from '../../context';
 import {
   LinkRefusedError,
   LinkRequiredError,
@@ -10,6 +11,7 @@ import {
 import { PENDING_MS, clientChoice, isFresh, localPath, lost, viewOf, withTokens } from './domain';
 import {
   GrantRefused,
+  type Approval,
   type AuthorizationServer,
   type ConnectorLinks,
   type LinkSetting,
@@ -28,12 +30,45 @@ import {
  * what a call asks before it is sent; `refused` is what a call reports when the system would not take the token;
  * `unlink` is the person's own; `forgetPerson` and `forgetConnector` end the links of a person or a connector that
  * leaves. Linking, unlinking and a link lost each write an audit row in the transaction that changes the link
- * (`account.linked`, `account.unlinked`, `account.link-lost`), as does a client Clew registers
- * (`account.client-registered`). A row names the connector, the issuer and the person's id, never a token, an account
+ * (`account.linked`, `account.unlinked`, `account.link-lost`), as do a client Clew registers
+ * (`account.client-registered`) and an administrator's approval (`account.server-approved`). A row names the connector, the issuer and the person's id, never a token, an account
  * or a name. A refresh that succeeds changes nothing a person or an administrator did and writes none, as a session's
  * refresh writes none.
  */
 export const LINK_SYSTEM_ACTOR = 'system:linked-accounts';
+/** Approving where a connector's people are sent is a connector administrator's (D23, D144). */
+export const LINK_ADMIN_CAPABILITY: Capability = 'admin.connectors';
+/** The operator's command line, where no person is signed in. */
+const OPERATOR = { actor: 'bootstrap:linked-accounts', name: 'Kommandoraden' };
+
+/** What an administrator enters beside a connector's declaration: a server that publishes no metadata, a client, or both. */
+export interface ApprovalInput {
+  server?: {
+    issuer: string;
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+    revocationEndpoint?: string | null;
+  };
+  client?: { id: string; secret?: string | null };
+}
+/** An approval as an administrator is shown it: never the client's secret. */
+export interface ApprovalView {
+  connectorId: string;
+  resource: string;
+  issuer: string;
+  origin: Approval['origin'];
+  clientId: string | null;
+  approvedBy: string;
+  approvedAt: string;
+}
+const address = (value: string) => {
+  try {
+    const url = new URL(value);
+    return /^https?:$/.test(url.protocol) && !url.username && !url.password && !url.hash;
+  } catch {
+    return false;
+  }
+};
 export const linkSubject = (connectorId: string) => 'linked-account:' + connectorId;
 
 export interface LinkedAccountDeps {
@@ -55,11 +90,111 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
 
   /** The setting of a connector this person may link, or the refusal that tells them nothing about one they may not. */
   async function settingFor(persona: AuthenticatedContext, connectorId: string): Promise<LinkSetting> {
-    const setting = await deps.connectors.setting(connectorId);
-    if (!setting || !(await deps.connectors.reaches(persona, connectorId)))
+    const setting = await settingOf(connectorId);
+    if (setting === 'undeclared' || !(await deps.connectors.reaches(persona, connectorId)))
       throw new LinkRefusedError('unknown-connector');
+    if (setting === 'unapproved') throw new LinkRefusedError('not-approved');
     return setting;
   }
+
+  /**
+   * What the connector declares together with what an administrator approved for it. `unapproved` until somebody has
+   * approved the address the manifest names now: an approval for another address approves nothing.
+   */
+  async function settingOf(connectorId: string): Promise<LinkSetting | 'undeclared' | 'unapproved'> {
+    const declared = await deps.connectors.declared(connectorId);
+    if (!declared) return 'undeclared';
+    const approval = await deps.store.transaction(tx => tx.approval(connectorId));
+    if (!approval || approval.resource !== declared.resource) return 'unapproved';
+    return {
+      connectorId,
+      resource: declared.resource,
+      scopes: declared.scopes,
+      server: approval.server,
+      origin: approval.origin,
+      client: approval.client,
+    };
+  }
+
+  /** One approval, with its audit row, as whoever `by` is. */
+  async function approved(
+    by: { actor: string; name: string },
+    connectorId: string,
+    input: ApprovalInput,
+  ): Promise<ApprovalView> {
+    const declared = await deps.connectors.declared(connectorId);
+    if (!declared) throw new LinkRefusedError('unknown-connector');
+    const entered = input.server;
+    if (
+      entered &&
+      ![
+        entered.issuer,
+        entered.authorizationEndpoint,
+        entered.tokenEndpoint,
+        entered.revocationEndpoint ?? entered.issuer,
+      ].every(address)
+    )
+      throw new InputError('Adresserna måste vara fullständiga webbadresser.');
+    if (input.client && !input.client.id.trim()) throw new InputError('Klientens id saknas.');
+    let server: AuthorizationServer | null;
+    if (entered)
+      server = {
+        issuer: entered.issuer,
+        authorizationEndpoint: entered.authorizationEndpoint,
+        tokenEndpoint: entered.tokenEndpoint,
+        revocationEndpoint: entered.revocationEndpoint ?? null,
+        registrationEndpoint: null,
+        // Nothing says what an entered server checks, so Clew is never a client without a secret there (item 3).
+        pkce: false,
+        issuerOnReturn: false,
+        clientDocuments: false,
+      };
+    else
+      try {
+        server = await deps.oauth.discover(declared.resource);
+      } catch (error) {
+        throw failed(connectorId, error, () => new LinkRefusedError('no-server'));
+      }
+    if (!server) throw new LinkRefusedError('no-server');
+    const approval: Approval = {
+      resource: declared.resource,
+      server,
+      origin: entered ? 'entered' : 'discovered',
+      client: input.client
+        ? { id: input.client.id.trim(), secret: input.client.secret || null, source: 'entered' }
+        : null,
+      approvedBy: by.name,
+      approvedAt: deps.clock().toISOString(),
+    };
+    await deps.store.transaction(async tx => {
+      await tx.approve(connectorId, approval);
+      await tx.audit({
+        actor: by.actor,
+        action: 'account.server-approved',
+        subject: linkSubject(connectorId),
+        details: {
+          connector: connectorId,
+          resource: approval.resource,
+          issuer: server.issuer,
+          origin: approval.origin,
+          client: approval.client?.id ?? null,
+        },
+      });
+    });
+    return approvalView(connectorId, approval);
+  }
+  const approvalView = (connectorId: string, approval: Approval): ApprovalView => ({
+    connectorId,
+    resource: approval.resource,
+    issuer: approval.server.issuer,
+    origin: approval.origin,
+    clientId: approval.client?.id ?? null,
+    approvedBy: approval.approvedBy,
+    approvedAt: approval.approvedAt,
+  });
+  const administrator = (persona: AuthenticatedContext) => {
+    if (!persona.capabilities.includes(LINK_ADMIN_CAPABILITY)) throw new ForbiddenError();
+  };
 
   /** A failure of the authorization server as this module's errors: lost for good, or passing. */
   function failed(connectorId: string, error: unknown, final: () => Error): Error {
@@ -138,8 +273,13 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
   /** Revokes a removed link's tokens at the system, best effort: the row is already gone whatever the system answers. */
   async function revokeAt(link: LinkedAccount): Promise<Revocation> {
     const token = link.refreshToken ?? link.accessToken;
-    const setting = await deps.connectors.setting(link.connectorId);
-    if (!token || !setting || setting.server.issuer !== link.issuer || !setting.server.revocationEndpoint)
+    const setting = await settingOf(link.connectorId);
+    if (
+      !token ||
+      typeof setting === 'string' ||
+      setting.server.issuer !== link.issuer ||
+      !setting.server.revocationEndpoint
+    )
       return 'not-offered';
     const choice = await deps.store.transaction(tx => knownClient(tx, setting, setting.server));
     if (!('use' in choice)) return 'not-offered';
@@ -185,6 +325,31 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
   }
 
   return {
+    /**
+     * An administrator approves where a connector's people are sent (D147 item 4): the authorization server the
+     * system names, discovered from the address in its approved manifest, or the addresses the administrator enters
+     * for a system that publishes none, and the client they registered there. It replaces an earlier approval, and
+     * links to another issuer than the new one are not used from then on.
+     */
+    async approve(persona: AuthenticatedContext, connectorId: string, input: ApprovalInput = {}) {
+      administrator(persona);
+      await persona.authorize();
+      return approved({ actor: actorOf(persona), name: persona.name }, connectorId, input);
+    },
+    /** The same from the operator's command line (`scripts/connector-link.ts`). */
+    approveAsOperator: (connectorId: string, input: ApprovalInput = {}) => approved(OPERATOR, connectorId, input),
+    /** What is approved for a connector, from the operator's command line. */
+    async approvalAsOperator(connectorId: string): Promise<ApprovalView | null> {
+      const approval = await deps.store.transaction(tx => tx.approval(connectorId));
+      return approval ? approvalView(connectorId, approval) : null;
+    },
+    /** What is approved for a connector, for its administrator: never the client's secret. */
+    async approval(persona: AuthenticatedContext, connectorId: string): Promise<ApprovalView | null> {
+      administrator(persona);
+      const approval = await deps.store.transaction(tx => tx.approval(connectorId));
+      return approval ? approvalView(connectorId, approval) : null;
+    },
+
     /**
      * Starts linking: where to send the person. Nothing about them is changed yet; the state and the PKCE verifier are
      * kept until they return, for ten minutes.
@@ -293,8 +458,10 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
      * the authorization server could not be asked (the link is kept).
      */
     async tokenFor(personId: string, connectorId: string): Promise<string> {
-      const setting = await deps.connectors.setting(connectorId);
-      if (!setting) throw new LinkRefusedError('unknown-connector');
+      const setting = await settingOf(connectorId);
+      if (setting === 'undeclared') throw new LinkRefusedError('unknown-connector');
+      // Declared, and no administrator has approved where its people are sent: no call can carry a token yet.
+      if (setting === 'unapproved') throw new LinkUnavailableError(connectorId, 'not-approved');
       // The link is held while its token is refreshed, so a second call waits and reads the token the first one got.
       const outcome = await deps.store.transaction(
         async (tx): Promise<{ token: string } | { required: string } | { unavailable: string }> => {
@@ -383,3 +550,33 @@ export function linkedAccountUsecases(deps: LinkedAccountDeps) {
   };
 }
 export type LinkedAccounts = ReturnType<typeof linkedAccountUsecases>;
+
+/**
+ * What a change of a person's `active` means to linked accounts (D147 item 10), in the shape the people module's
+ * leavers port tells every domain: a person who is deactivated keeps no link. It runs on the transaction that
+ * deactivates them, so the links go and their audit rows are written if and only if the deactivation commits. Nothing
+ * is asked of a system here: a transaction that holds the person's row waits for no network. The tokens are deleted,
+ * not revoked, and a system that shares the installation's directory has lost the account by the same change.
+ */
+export function linkedAccountLeavers(tx: LinkTx) {
+  return {
+    async deactivated(change: { actor: string; personId: string }): Promise<void> {
+      for (const link of await tx.linksOf(change.personId)) {
+        await tx.remove(link.personId, link.connectorId);
+        await tx.audit({
+          actor: change.actor,
+          action: 'account.unlinked',
+          subject: linkSubject(link.connectorId),
+          details: {
+            connector: link.connectorId,
+            issuer: link.issuer,
+            person: link.personId,
+            reason: 'person-deactivated',
+          },
+        });
+      }
+    },
+    /** A person who is active again links again themselves. */
+    async reactivated(): Promise<void> {},
+  };
+}

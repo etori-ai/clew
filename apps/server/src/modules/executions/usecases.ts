@@ -601,6 +601,7 @@ export function executionUsecases({
     if (e === 'busy') return 'busy';
     let persona: AuthenticatedContext | undefined,
       needsSession = false,
+      needsLink = false,
       resolution: unknown;
     try {
       persona = await source.current(e.personId);
@@ -609,6 +610,7 @@ export function executionUsecases({
       await persona.authorize();
       const access = await source.authorize(persona, e.operation, e.payload);
       needsSession = access.needsSession;
+      needsLink = !!access.needsLink;
       // Whom the payload names is resolved here, before the dispatch is recorded, and the send uses this (D117): a
       // directory that cannot be read is found now, while nothing has been sent, and never after.
       resolution = access.resolution;
@@ -649,6 +651,22 @@ export function executionUsecases({
       }
       persona = stood.persona;
       backing = stood.backing;
+    }
+    // A connector whose person links an account (D147) needs no session: the link's token is asked for here, before the
+    // dispatch is recorded, so a link that is gone leaves the write unsent and says so, never uncertain. Linking again
+    // does not send it (as with `needs-session`): the person checks it from its card.
+    if (needsLink) {
+      let ready: boolean;
+      try {
+        ready = !!source.linked && (await source.linked(persona, e));
+      } catch {
+        await settle(e, e.dispatchedAt ? 'unknown' : 'pending', 'source-unavailable');
+        return 'done';
+      }
+      if (!ready) {
+        await settle(e, e.dispatchedAt ? 'unknown' : 'pending', 'needs-link');
+        return 'done';
+      }
     }
     if (e.dispatchedAt) {
       if (e.safety.strategy === 'manual') {
@@ -693,7 +711,12 @@ export function executionUsecases({
         action: 'execution.dispatched',
         subject: 'execution:' + id,
         at: time,
-        details: { attempt: e.attempt, ...(backing ? { session: backing } : {}) },
+        // Which credential stood behind the call: a session of the person's (D103) or their linked account (D147).
+        details: {
+          attempt: e.attempt,
+          ...(backing ? { session: backing } : {}),
+          ...(needsLink ? { credential: 'linked' } : {}),
+        },
       });
       return true;
     });

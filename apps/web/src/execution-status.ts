@@ -20,6 +20,7 @@ export function executionStatus(execution: ExecutionSummary | null | undefined, 
   if (silent && !execution.reason && !execution.compensates && ['pending', 'running'].includes(execution.state))
     return 'Ditt beslut är sparat. Det du skickar köas och läses tillbaka när systemet svarar.';
   if (execution.reason === 'needs-session') return 'Källan kräver en aktiv inloggning. Åtgärden väntar.';
+  if (execution.reason === 'needs-link') return 'Källan behöver ditt konto. Åtgärden väntar.';
   if (execution.reason === 'authority-revoked') return 'Behörigheten har ändrats. Åtgärden väntar på kontroll.';
   if (execution.reason === 'source-contract-changed')
     return 'Källans villkor har ändrats. Åtgärden väntar på kontroll.';
@@ -52,7 +53,12 @@ export const releaseQuestion = (source: string) => ({
 });
 
 /** The reasons a decision waits before it can be sent: a sign-in, an authority or the source's terms (D45, D47). */
-export const WAITING_REASONS: readonly string[] = ['needs-session', 'authority-revoked', 'source-contract-changed'];
+export const WAITING_REASONS: readonly string[] = [
+  'needs-session',
+  'needs-link',
+  'authority-revoked',
+  'source-contract-changed',
+];
 
 /**
  * Where a decision the source has not confirmed stands, as one state of the vocabulary (D126 item 13), in the order

@@ -240,6 +240,12 @@ function executionNotice(thread: Thread, kind: StatusKind, ctx: StatusContext): 
       { title: 'Kan inte skickas än', description: `${source} kräver en aktiv inloggning. Åtgärden väntar.` },
       [CHECK, release(thread)],
     );
+  // The system needs the account the person linked there, and it has none it accepts (D147).
+  if (reason === 'needs-link')
+    return withMoves({ title: 'Kan inte skickas än', description: `${source} behöver ditt konto. Åtgärden väntar.` }, [
+      CHECK,
+      release(thread),
+    ]);
   if (reason === 'authority-revoked')
     return withMoves(
       { title: 'Kan inte skickas än', description: 'Behörigheten har ändrats. Åtgärden väntar på kontroll.' },

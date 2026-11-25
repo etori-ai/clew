@@ -30,12 +30,13 @@ export interface OAuthClient {
   source: 'entered' | 'document' | 'registered';
 }
 
-/** What an administrator approved for one connector that declares `linkedAccount` (D144, D147 item 4). */
-export interface LinkSetting {
-  connectorId: string;
+/**
+ * What an administrator approved for one connector that declares `linkedAccount` (D144, D147 item 4), as it is kept:
+ * the authorization server people are sent to and Clew's client there, for the address the manifest named then.
+ */
+export interface Approval {
+  /** The system's address the approval is for. A manifest that names another address is not approved. */
   resource: string;
-  scopes: string[];
-  /** The authorization server people are sent to. */
   server: AuthorizationServer;
   /**
    * `discovered`: read from the system's metadata, and read again each time a person links, so a system that starts
@@ -45,12 +46,24 @@ export interface LinkSetting {
   origin: 'discovered' | 'entered';
   /** The client an administrator registered at the system, when there is one. */
   client: OAuthClient | null;
+  approvedBy: string;
+  approvedAt: string;
+}
+
+/** A connector's declaration and its approval together: what linking and a call need. */
+export interface LinkSetting {
+  connectorId: string;
+  resource: string;
+  scopes: string[];
+  server: AuthorizationServer;
+  origin: Approval['origin'];
+  client: OAuthClient | null;
 }
 
 /** The connectors' side, which this module does not own: the registry and the approved manifests. */
 export interface ConnectorLinks {
-  /** The approved setting of a connector that declares a linked account; null for any other. */
-  setting(connectorId: string): Promise<LinkSetting | null>;
+  /** What the connector's approved manifest declares as its linked account; null for a connector that declares none. */
+  declared(connectorId: string): Promise<{ resource: string; scopes: string[] } | null>;
   /** Whether the connector is in this person's scope and audience today. A person outside it cannot tell it exists. */
   reaches(persona: AuthenticatedContext, connectorId: string): Promise<boolean>;
 }
@@ -128,6 +141,9 @@ export interface LinkTx {
   /** The client Clew registered at this issuer for this connector, when it did. */
   client(connectorId: string, issuer: string): Promise<OAuthClient | null>;
   saveClient(connectorId: string, issuer: string, client: OAuthClient): Promise<void>;
+  /** What an administrator approved for the connector; null when nothing is. */
+  approval(connectorId: string): Promise<Approval | null>;
+  approve(connectorId: string, approval: Approval): Promise<void>;
   audit(entry: LinkAuditEntry): Promise<void>;
 }
 

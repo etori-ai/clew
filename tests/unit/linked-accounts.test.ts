@@ -14,10 +14,13 @@ import {
   GrantRefused,
   type AuthorizationServer,
   type ConnectorLinks,
-  type LinkSetting,
   type OAuthClient,
 } from '../../apps/server/src/modules/linked-accounts/ports';
-import { LINK_SYSTEM_ACTOR, linkedAccountUsecases } from '../../apps/server/src/modules/linked-accounts/usecases';
+import {
+  LINK_SYSTEM_ACTOR,
+  linkedAccountLeavers,
+  linkedAccountUsecases,
+} from '../../apps/server/src/modules/linked-accounts/usecases';
 import {
   authorizationServer,
   type AuthorizationServerOptions,
@@ -66,24 +69,25 @@ function world(options: AuthorizationServerOptions & { client?: OAuthClient | nu
   /** Which server answers an address; a test replaces it to move the system to another authorization server. */
   const routing = { to: (_url: string): MemoryAuthorizationServer => vendor };
   const store = memoryLinkStore();
-  const settings = new Map<string, LinkSetting>([
-    [
-      'hr',
-      {
-        connectorId: 'hr',
-        resource: vendor.resource,
-        scopes: ['leave'],
-        server: approved(vendor),
-        origin: vendor.kind === 'modern' ? 'discovered' : 'entered',
-        client: options.client ?? null,
-      },
-    ],
-  ]);
+  /** What each connector's approved manifest declares. */
+  const declared = new Map([['hr', { resource: vendor.resource, scopes: ['leave'] }]]);
+  // An administrator has approved the server already, as most scenarios find it. The store runs its transactions in
+  // the order they were asked for, so this write is in before a scenario's first.
+  void store.transaction(tx =>
+    tx.approve('hr', {
+      resource: vendor.resource,
+      server: approved(vendor),
+      origin: vendor.kind === 'modern' ? 'discovered' : 'entered',
+      client: options.client ?? null,
+      approvedBy: 'Mikael Lund',
+      approvedAt: T,
+    }),
+  );
   /** The people a connector's audience leaves out. */
   const outside = new Set<string>();
   const connectors: ConnectorLinks = {
-    setting: async id => settings.get(id) ?? null,
-    reaches: async (who, id) => settings.has(id) && !outside.has(who.id),
+    declared: async id => declared.get(id) ?? null,
+    reaches: async (who, id) => declared.has(id) && !outside.has(who.id),
   };
   const logged: string[] = [];
   const links = linkedAccountUsecases({
@@ -99,7 +103,7 @@ function world(options: AuthorizationServerOptions & { client?: OAuthClient | nu
     vendor,
     routing,
     store,
-    settings,
+    declared,
     outside,
     links,
     logged,
@@ -394,7 +398,8 @@ describe('a system that names another authorization server', () => {
     // Until then the link an administrator did approve is used as before.
     expect(await w.links.tokenFor('anna', 'hr')).toBe(token);
 
-    w.settings.set('hr', { ...w.settings.get('hr')!, server: approved(moved) });
+    // An administrator approves again: the server the system names now.
+    expect((await w.links.approveAsOperator('hr')).issuer).toBe(moved.issuer);
     expect(await required(w.links.tokenFor('anna', 'hr'))).toBe('issuer-changed');
     expect(w.rows().at(-1)).toEqual([
       LINK_SYSTEM_ACTOR,
@@ -414,6 +419,94 @@ describe('a system that names another authorization server', () => {
     w.vendor.claims = 'https://another.vendor.test';
     expect(await refusal(w.links.begin(anna, 'hr'))).toBe('no-server');
     expect(w.vendor.clientIds()).toEqual([]);
+  });
+});
+
+describe('an administrator approves where people are sent', () => {
+  const admin = { ...persona('mikael'), name: 'Mikael Lund', capabilities: ['admin.connectors'] };
+
+  test('the server is discovered from the address the manifest names, and nobody links before it is approved', async () => {
+    const w = world();
+    w.declared.set('ledger', { resource: w.vendor.resource, scopes: [] });
+    expect(await refusal(w.links.begin(anna, 'ledger'))).toBe('not-approved');
+    const unavailable = await w.links.tokenFor('anna', 'ledger').catch(e => e);
+    expect(unavailable).toBeInstanceOf(LinkUnavailableError);
+    expect(unavailable.reason).toBe('not-approved');
+    expect(await w.links.approval(admin, 'ledger')).toBeNull();
+
+    w.advance(60);
+    const view = await w.links.approve(admin, 'ledger');
+    expect(view).toEqual({
+      connectorId: 'ledger',
+      resource: w.vendor.resource,
+      issuer: w.vendor.issuer,
+      origin: 'discovered',
+      clientId: null,
+      approvedBy: 'Mikael Lund',
+      approvedAt: '2026-11-25T08:01:00.000Z',
+    });
+    expect(await w.links.approval(admin, 'ledger')).toEqual(view);
+    expect(w.rows()).toEqual([
+      [
+        'person:mikael',
+        'account.server-approved',
+        'linked-account:ledger',
+        {
+          connector: 'ledger',
+          resource: w.vendor.resource,
+          issuer: w.vendor.issuer,
+          origin: 'discovered',
+          client: null,
+        },
+      ],
+    ]);
+    expect((await w.links.begin(anna, 'ledger')).url.startsWith(w.vendor.endpoints.authorize)).toBe(true);
+    // A manifest that later names another address is not approved by this.
+    w.declared.set('ledger', { resource: 'https://other.vendor.test', scopes: [] });
+    expect(await refusal(w.links.begin(anna, 'ledger'))).toBe('not-approved');
+  });
+
+  test('a system without metadata is approved with the addresses and the client an administrator enters', async () => {
+    const w = world({ kind: 'legacy' });
+    w.vendor.addClient('clew', 'a-secret', REDIRECT);
+    w.declared.set('files', { resource: w.vendor.resource, scopes: [] });
+    // Nothing to discover: the administrator is told so, and enters the addresses.
+    expect(await refusal(w.links.approve(admin, 'files'))).toBe('no-server');
+    const entered = {
+      server: {
+        issuer: w.vendor.issuer,
+        authorizationEndpoint: w.vendor.endpoints.authorize,
+        tokenEndpoint: w.vendor.endpoints.token,
+      },
+      client: { id: 'clew', secret: 'a-secret' },
+    };
+    expect(await w.links.approve(admin, 'files', entered)).toMatchObject({ origin: 'entered', clientId: 'clew' });
+    // The secret is in no view and no audit row.
+    expect(JSON.stringify([await w.links.approval(admin, 'files'), w.store.audit])).not.toContain('a-secret');
+    expect(w.rows().at(-1)![3]).toMatchObject({ origin: 'entered', client: 'clew', issuer: w.vendor.issuer });
+    const { url } = await w.links.begin(anna, 'files');
+    await w.links.complete(anna, await w.vendor.consent(url, 'account-anna'));
+    expect(w.vendor.accepts(await w.links.tokenFor('anna', 'files'))).toBe('account-anna');
+
+    const bad = { ...entered, server: { ...entered.server, tokenEndpoint: 'not an address' } };
+    await expect(w.links.approve(admin, 'files', bad)).rejects.toThrow(
+      'Adresserna måste vara fullständiga webbadresser.',
+    );
+  });
+
+  test('only a connector administrator approves, after the step-up, and only what a manifest declares', async () => {
+    const w = world();
+    await expect(w.links.approve(anna, 'hr')).rejects.toThrow('Du saknar behörighet för åtgärden.');
+    await expect(w.links.approval(anna, 'hr')).rejects.toThrow('Du saknar behörighet för åtgärden.');
+    const refusedStepUp = {
+      ...admin,
+      authorize: async () => {
+        throw new Error('step-up refused');
+      },
+    };
+    await expect(w.links.approve(refusedStepUp, 'hr')).rejects.toThrow('step-up refused');
+    expect(await refusal(w.links.approve(admin, 'payroll'))).toBe('unknown-connector');
+    expect(w.rows()).toEqual([]);
   });
 });
 
@@ -484,6 +577,38 @@ describe('unlinking', () => {
       ['person:admin', 'account.unlinked', SUBJECT, ended('bo', 'connector-removed')],
       ['person:admin', 'account.unlinked', SUBJECT, ended('carl', 'connector-removed')],
     ]);
+  });
+});
+
+describe('a person provisioning deactivates', () => {
+  test('keeps no link, by the transaction that deactivates them, and the other people keep theirs', async () => {
+    const w = world();
+    await w.link(anna);
+    await w.link(bo);
+    const change = { actor: 'provisioner:hr-export', personId: 'anna' };
+    await w.store.transaction(tx => linkedAccountLeavers(tx).deactivated(change));
+    expect(await w.held('anna')).toBeNull();
+    expect(await required(w.links.tokenFor('anna', 'hr'))).toBe('not-linked');
+    expect(w.vendor.accepts(await w.links.tokenFor('bo', 'hr'))).toBe('account-bo');
+    expect(w.rows().at(-1)).toEqual([
+      'provisioner:hr-export',
+      'account.unlinked',
+      SUBJECT,
+      { connector: 'hr', issuer: w.vendor.issuer, person: 'anna', reason: 'person-deactivated' },
+    ]);
+    // When the deactivation does not commit, neither does the removal.
+    await expect(
+      w.store.transaction(async tx => {
+        await linkedAccountLeavers(tx).deactivated({ actor: 'provisioner:hr-export', personId: 'bo' });
+        throw new Error('the change was rolled back');
+      }),
+    ).rejects.toThrow('the change was rolled back');
+    expect((await w.held('bo'))!.state).toBe('linked');
+    expect(w.actions().filter(a => a === 'account.unlinked').length).toBe(1);
+    // Nothing waits for a system: the deactivation asked nothing of it.
+    const asked = w.vendor.requests.length;
+    await w.store.transaction(tx => linkedAccountLeavers(tx).deactivated({ ...change, personId: 'bo' }));
+    expect(w.vendor.requests.length).toBe(asked);
   });
 });
 

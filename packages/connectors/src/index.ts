@@ -549,6 +549,8 @@ export interface AreaDefinition {
 export interface Connector {
   documents?: (actor: Actor, request: DocumentRequest, clew: Clew) => Promise<DocumentContent>;
   delegation?: { audience: string };
+  /** The connector acts as the person with an account they linked at its system (D147), as its manifest declares. */
+  linkedAccount?: { resource: string; scopes?: string[] };
   id: string;
   kind: ConnectorKind;
   /** Swedish label of the source, shown on cards: "Personalsystemet", "Ekonomisystemet". */
@@ -612,8 +614,12 @@ export class CapabilityError extends Error {
   }
 }
 /** What the person is told when a source's assistant did not answer: Clew's words, never the source's (D91). */
-export function askRefusal(code: 'denied' | 'not-found' | 'unavailable' | 'unknown', source: string): string {
+export function askRefusal(
+  code: 'denied' | 'not-found' | 'unavailable' | 'unknown' | 'authorization-required',
+  source: string,
+): string {
   if (code === 'denied') return `Du får inte fråga den här assistenten i ${source}.`;
+  if (code === 'authorization-required') return `${source} behöver ditt konto. Koppla ditt konto och fråga igen.`;
   if (code === 'not-found') return `Assistenten eller samtalet finns inte längre i ${source}.`;
   return `${source} svarar inte just nu.`;
 }
@@ -1401,18 +1407,27 @@ export class Registry implements HoldingsReader {
     const m = this.connectors.get(connectorId);
     if (!m?.scan || !this.visible(actor, connectorId) || !this.governance(connectorId).scanEnabled)
       throw unknownCapability();
-    if (m.delegation && !(context.delegate && (await context.delegate(m.delegation.audience))))
-      return {
-        drafts: [],
-        observation: {
-          scope: actor.unitId + ':' + actor.role,
-          observedAt: new Date().toISOString(),
-          version: '',
-          completeness: 'authorization-required',
-          exhausted: false,
-        },
-      };
-    const value = await m.scan(actor, this.clewFor(actor, context, m.id));
+    const unauthorized = (): ScanObservation => ({
+      drafts: [],
+      observation: {
+        scope: actor.unitId + ':' + actor.role,
+        observedAt: new Date().toISOString(),
+        version: '',
+        completeness: 'authorization-required',
+        exhausted: false,
+      },
+    });
+    if (m.delegation && !(context.delegate && (await context.delegate(m.delegation.audience)))) return unauthorized();
+    let value: Awaited<ReturnType<NonNullable<Connector['scan']>>>;
+    try {
+      value = await m.scan(actor, this.clewFor(actor, context, m.id));
+    } catch (error) {
+      // A connector whose person links an account (D147) is scanned with no session: without a link the system
+      // accepts there is nothing to send, the scan is blocked and the person's cards are left alone.
+      if (m.linkedAccount && error instanceof CapabilityError && error.code === 'authorization-required')
+        return unauthorized();
+      throw error;
+    }
     const result = Array.isArray(value) ? { drafts: value } : value;
     const drafts = result.drafts.filter(d => !this.draftProblem(m.id, d));
     return {

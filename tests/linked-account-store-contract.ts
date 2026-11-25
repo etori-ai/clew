@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { LinkedAccount, PendingLink } from '../apps/server/src/modules/linked-accounts/contracts';
-import type { LinkAuditEntry, LinkStore, OAuthClient } from '../apps/server/src/modules/linked-accounts/ports';
+import type {
+  Approval,
+  LinkAuditEntry,
+  LinkStore,
+  OAuthClient,
+} from '../apps/server/src/modules/linked-accounts/ports';
 
 /**
  * The link store contract (D25, D147): one suite for every adapter. `tests/unit/linked-account-store.test.ts` runs it
@@ -102,6 +107,46 @@ export function linkStoreContract(name: string, make: () => Promise<LinkStoreHar
       expect(await store.transaction(tx => tx.client(prefix + 'hr', 'https://id.vendor.test'))).toEqual(client);
       expect(await store.transaction(tx => tx.client(prefix + 'hr', 'https://other.vendor.test'))).toBeNull();
       expect(await store.transaction(tx => tx.client(prefix + 'ledger', 'https://id.vendor.test'))).toBeNull();
+    });
+
+    test('an approval is kept per connector, its client with it, and replaced by the next', async () => {
+      const { store, prefix } = await make();
+      const approval: Approval = {
+        resource: 'https://hr.vendor.test',
+        server: {
+          issuer: 'https://id.vendor.test',
+          authorizationEndpoint: 'https://id.vendor.test/authorize',
+          tokenEndpoint: 'https://id.vendor.test/token',
+          revocationEndpoint: 'https://id.vendor.test/revoke',
+          registrationEndpoint: 'https://id.vendor.test/register',
+          pkce: true,
+          issuerOnReturn: true,
+          clientDocuments: false,
+        },
+        origin: 'discovered',
+        client: null,
+        approvedBy: 'Mikael Lund',
+        approvedAt: T,
+      };
+      expect(await store.transaction(tx => tx.approval(prefix + 'hr'))).toBeNull();
+      await store.transaction(tx => tx.approve(prefix + 'hr', approval));
+      expect(await store.transaction(tx => tx.approval(prefix + 'hr'))).toEqual(approval);
+      expect(await store.transaction(tx => tx.approval(prefix + 'ledger'))).toBeNull();
+      const entered: Approval = {
+        ...approval,
+        server: {
+          ...approval.server,
+          revocationEndpoint: null,
+          registrationEndpoint: null,
+          pkce: false,
+          issuerOnReturn: false,
+        },
+        origin: 'entered',
+        client: { id: 'clew', secret: 'a-secret', source: 'entered' },
+        approvedAt: '2026-11-25T09:00:00.000Z',
+      };
+      await store.transaction(tx => tx.approve(prefix + 'hr', entered));
+      expect(await store.transaction(tx => tx.approval(prefix + 'hr'))).toEqual(entered);
     });
 
     test('a transaction that throws writes nothing, its audit row included', async () => {

@@ -714,6 +714,14 @@ export const RULES: Rule[] = [
     text: "A manifest declares `delegation`, for a system that takes the identity provider's token, or `linkedAccount`, for a system whose own authorization server issues the token, and never both. `linkedAccount.resource` is an http or https address without credentials, a query or a fragment: Clew looks for the system's authorization server from it, and an administrator approves it with the manifest.",
   },
   {
+    id: 'linked-account-token',
+    title: "A linked account brings the person's own token",
+    fields: ['linkedAccount.resource', 'linkedAccount.scopes'],
+    enforced: 'call',
+    decision: 'D147',
+    text: "With `linkedAccount`, the person links their account at the system once and Clew keeps the tokens. A fresh access token is sent in `X-Clew-Delegated-Token` beside the assertion on a request, an approved write, every scan, a document read and a question to the source's assistant, with or without a session; figures, callbacks and installation reads carry none. A person with no link is never sent to the connector: the caller is answered `authorization-required`. When the system refuses the token, the connector answers `authorization-required` with a 403 and Clew counts the link as lost.",
+  },
+  {
     id: 'about-call',
     title: 'A read about an entity answers for the keys it may',
     fields: ['capabilities[].about', 'capabilities[].about.entity'],

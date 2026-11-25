@@ -82,6 +82,8 @@ export class LinkUnavailableError extends Error {
 export type LinkRefusal =
   /** No such connector for this person, or it declares no linked account. */
   | 'unknown-connector'
+  /** The connector declares a linked account that no administrator has approved for its address. */
+  | 'not-approved'
   /** The system now answers another authorization server than the one an administrator approved. */
   | 'issuer-changed'
   /** The system publishes no authorization server and none was entered. */

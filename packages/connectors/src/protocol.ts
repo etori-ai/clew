@@ -603,6 +603,10 @@ export const ProtocolErrorSchema = object({
     Type.Literal('not-found'),
     Type.Literal('unavailable'),
     Type.Literal('unknown'),
+    Type.Literal('authorization-required', {
+      description:
+        "The connector's system would not take the person's token, answered with status 403. From a connector that declares `linkedAccount` it tells Clew the link is lost: the person is asked to link their account again (D147). Clew answers a caller the same when a person has no linked account, without calling the connector.",
+    }),
   ]),
   message: swedish('Swedish. Shown to the person.'),
 });

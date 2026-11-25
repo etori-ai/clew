@@ -1057,6 +1057,12 @@ export const unsignalledTables: Readonly<Record<string, string>> = {
   auth_logout_receipt: 'a sign-out under way',
   attention_day: "the attention budget's counter; the deliveries it admits are signalled",
   work_occurrence: 'the source occurrence behind a thread, drawn through the thread',
+  linked_account:
+    "a person's link to a system (D147), read when it is asked for and drawn by no page yet; it gets a signal with the page that lists it",
+  linked_account_pending: 'a link under way',
+  linked_account_client: "Clew's client at a system's authorization server, drawn by no page",
+  linked_account_server:
+    "where a connector's people are sent to link, approved by an operator and drawn by no page yet",
   watch_intent: "a watch step's timer, drawn through its job's thread",
   dispatch_outbox: 'the dispatch queue of an execution, drawn through the execution',
   job: 'scheduled work, drawn through what it changes',
@@ -2005,5 +2011,99 @@ export const competenceErasures = pgTable(
     index('competence_erasure_inactive')
       .on(t.inactiveSince)
       .where(sql`${t.state} = 'inactive'`),
+  ],
+);
+
+/*
+ * Linked accounts (D147): a person's link to a system that issues its own credential. One row per person and
+ * connector, keyed by the person's id (D122). `tokens` is the access and the refresh token as one sealed envelope,
+ * purpose-bound to the person and the connector, and null once the system refused them for good (`needs-link`), when
+ * `last_error` says why as a code. No foreign key to `auth_person`, as `competence_erasure` has none: ending a leaver's
+ * links takes no lock on the row the SCIM transaction holds. A connector's rows go with the connector.
+ */
+export const linkedAccounts = pgTable(
+  'linked_account',
+  {
+    personId: text('person_id').notNull(),
+    connectorId: text('connector_id')
+      .notNull()
+      .references(() => connectors.id, { onDelete: 'cascade' }),
+    issuer: text('issuer').notNull(),
+    resource: text('resource').notNull(),
+    scopes: jsonb('scopes').$type<string[]>().notNull().default([]),
+    state: text('state').$type<'linked' | 'needs-link'>().notNull(),
+    tokens: text('tokens'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).notNull(),
+  },
+  t => [
+    primaryKey({ columns: [t.personId, t.connectorId] }),
+    check('linked_account_state', sql`${t.state} IN ('linked', 'needs-link')`),
+    // A lost link holds no token, and a link that is held has one.
+    check('linked_account_tokens', sql`(${t.state} = 'linked') = (${t.tokens} IS NOT NULL)`),
+    index('linked_account_connector').on(t.connectorId),
+  ],
+);
+// An authorization a person started and has not returned from (D147 item 6): taken once, and removed when its time has
+// passed. The PKCE verifier is sealed.
+export const linkedAccountPending = pgTable(
+  'linked_account_pending',
+  {
+    state: text('state').primaryKey(),
+    verifier: text('verifier').notNull(),
+    personId: text('person_id').notNull(),
+    connectorId: text('connector_id')
+      .notNull()
+      .references(() => connectors.id, { onDelete: 'cascade' }),
+    issuer: text('issuer').notNull(),
+    returnTo: text('return_to').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  t => [index('linked_account_pending_expires').on(t.expiresAt)],
+);
+// The client Clew registered itself as at a system's authorization server (RFC 7591), per connector and issuer; its
+// secret, when it has one, is sealed.
+export const linkedAccountClients = pgTable(
+  'linked_account_client',
+  {
+    connectorId: text('connector_id')
+      .notNull()
+      .references(() => connectors.id, { onDelete: 'cascade' }),
+    issuer: text('issuer').notNull(),
+    clientId: text('client_id').notNull(),
+    secret: text('secret'),
+    source: text('source').$type<'entered' | 'document' | 'registered'>().notNull(),
+  },
+  t => [primaryKey({ columns: [t.connectorId, t.issuer] })],
+);
+// The authorization server an administrator approved for a connector that declares `linkedAccount` (D147 item 4): the
+// issuer people are sent to, its addresses as discovered or entered, and the client an administrator registered at
+// the system, its secret sealed. `resource` is the address it was approved for: a manifest that names another is not
+// approved.
+export const linkedAccountServers = pgTable(
+  'linked_account_server',
+  {
+    connectorId: text('connector_id')
+      .primaryKey()
+      .references(() => connectors.id, { onDelete: 'cascade' }),
+    resource: text('resource').notNull(),
+    origin: text('origin').$type<'discovered' | 'entered'>().notNull(),
+    issuer: text('issuer').notNull(),
+    authorizationEndpoint: text('authorization_endpoint').notNull(),
+    tokenEndpoint: text('token_endpoint').notNull(),
+    revocationEndpoint: text('revocation_endpoint'),
+    registrationEndpoint: text('registration_endpoint'),
+    pkce: boolean('pkce').notNull(),
+    issuerOnReturn: boolean('issuer_on_return').notNull(),
+    clientDocuments: boolean('client_documents').notNull(),
+    clientId: text('client_id'),
+    clientSecret: text('client_secret'),
+    approvedBy: text('approved_by').notNull(),
+    approvedAt: timestamp('approved_at', { withTimezone: true }).notNull(),
+  },
+  t => [
+    check('linked_account_server_origin', sql`${t.origin} IN ('discovered', 'entered')`),
+    check('linked_account_server_client', sql`${t.clientSecret} IS NULL OR ${t.clientId} IS NOT NULL`),
   ],
 );

@@ -1,4 +1,4 @@
-import type { Actor, Registry } from '@clew/connectors';
+import { CapabilityError, type Actor, type Registry } from '@clew/connectors';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import {
   fetchManifest,
@@ -7,6 +7,7 @@ import {
   remoteConnector,
   type AssertionBinding,
   type FetchLike,
+  type RemoteTransport,
 } from '@clew/connectors/remote';
 import { enabledConnectors, recordCheck, type ConnectorHealth, type ConnectorRow } from '@clew/db/connectors';
 import { openSecret } from '../auth-crypto';
@@ -63,6 +64,16 @@ export interface LoadOptions {
   log?: (message: string) => void;
   authority?: ConnectorAuthority;
 }
+/**
+ * Who answers for the account a person linked at a connector's system (D147): the linked-accounts module, bound once by
+ * composition. A connector registered before that, or in a test that binds none, is called with no token and refuses
+ * the person, as it would without a link.
+ */
+type LinkedAccess = (connectorId: string) => NonNullable<RemoteTransport['linked']>;
+let linkedAccess: LinkedAccess | undefined;
+export function useLinkedAccounts(access: LinkedAccess | undefined) {
+  linkedAccess = access;
+}
 /** Put one connector in the live registry from a manifest, replacing an earlier registration with the same id. */
 export function registerConnector(
   registry: Registry,
@@ -86,6 +97,18 @@ export function registerConnector(
             installation: authority
               ? binding => authority.installation(source.id, binding)
               : installationAssertionFor(source.id),
+          }
+        : {}),
+      // Asked for at each call, so the order composition and the loader run in does not matter.
+      ...(manifest.linkedAccount
+        ? {
+            linked: {
+              token: actor => {
+                if (!linkedAccess) throw new CapabilityError(`${manifest.source} svarar inte just nu.`, 'unavailable');
+                return linkedAccess(source.id).token(actor);
+              },
+              refused: async (actor, token) => linkedAccess?.(source.id).refused(actor, token),
+            },
           }
         : {}),
       ...(fetchImpl ? { fetch: fetchImpl } : {}),

@@ -1,5 +1,5 @@
 import type { LinkedAccount, PendingLink } from '../contracts';
-import type { LinkAuditEntry, LinkStore, OAuthClient } from '../ports';
+import type { Approval, LinkAuditEntry, LinkStore, OAuthClient } from '../ports';
 
 /**
  * The link store in memory (D25, D147): the unit tests' adapter, held to the store contract in
@@ -19,6 +19,7 @@ export function memoryLinkStore(): MemoryLinkStore {
   let links = new Map<string, LinkedAccount>();
   let pendings = new Map<string, PendingLink>();
   let clients = new Map<string, OAuthClient>();
+  let approvals = new Map<string, Approval>();
   let queue: Promise<unknown> = Promise.resolve();
   const listed = (keep: (link: LinkedAccount) => boolean) =>
     [...links.values()]
@@ -37,6 +38,7 @@ export function memoryLinkStore(): MemoryLinkStore {
           links: new Map(links),
           pendings: new Map(pendings),
           clients: new Map(clients),
+          approvals: new Map(approvals),
           audit: self.audit.length,
         };
         try {
@@ -66,6 +68,10 @@ export function memoryLinkStore(): MemoryLinkStore {
             saveClient: async (connectorId, issuer, client) => {
               clients.set(key(connectorId, issuer), structuredClone(client));
             },
+            approval: async connectorId => structuredClone(approvals.get(connectorId) ?? null),
+            approve: async (connectorId, approval) => {
+              approvals.set(connectorId, structuredClone(approval));
+            },
             audit: async entry => {
               self.audit.push(structuredClone(entry));
             },
@@ -74,6 +80,7 @@ export function memoryLinkStore(): MemoryLinkStore {
           links = before.links;
           pendings = before.pendings;
           clients = before.clients;
+          approvals = before.approvals;
           self.audit.length = before.audit;
           throw error;
         }

@@ -18,6 +18,8 @@ import { boardingLeavers } from '../modules/boarding/usecases';
 import { proposalTx } from '../modules/calendar/adapters/postgres';
 import { inviteeErasure } from '../modules/calendar/usecases/erasure';
 import { combineLeavers } from '../modules/people/leavers';
+import { linkTx } from '../modules/linked-accounts/adapters/postgres';
+import { linkedAccountLeavers } from '../modules/linked-accounts/usecases';
 import type { LeaverChange, LeaversTx } from '../modules/people/ports';
 import type { Transaction } from '@clew/db';
 import { openSecret, randomToken, sealSecret, tokenDigest } from '../auth-crypto';
@@ -55,6 +57,11 @@ export const leavers = combineLeavers<Transaction>(
           postgresBoardingDirectory(tx),
         ),
     },
+    // A deactivated person keeps no linked account (D147 item 10): the links go in this transaction.
+    {
+      module: 'linked-accounts',
+      port: tx => linkedAccountLeavers(linkTx(tx, { seal: sealSecret, open: openSecret })),
+    },
   ],
   (tx, fn) => tx.transaction(fn),
   (error: unknown, change: LeaverChange, kind: keyof LeaversTx, module: string) =>
@@ -62,7 +69,9 @@ export const leavers = combineLeavers<Transaction>(
       { scope: 'scim', module, person: change.personId, kind, code: codeOf(error) },
       module === 'competence'
         ? 'the competence module could not record a change of active; its hourly sweep reconciles it with the directory'
-        : "the boarding module could not record who holds a leaver's plans; the manager who started each holds it",
+        : module === 'linked-accounts'
+          ? "a leaver's linked accounts could not be removed; they stay until an operator removes them"
+          : "the boarding module could not record who holds a leaver's plans; the manager who started each holds it",
     ),
 );
 /**
