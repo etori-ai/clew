@@ -150,8 +150,9 @@ export function talkUsecases(deps: TalkDeps) {
     if (!employee) throw new ForbiddenError(NOT_YOURS);
     return employee;
   }
+  /** The open round, held against closing until the write that reads it commits. */
   async function openRoundOf(tx: TalkTx, organisationId: string) {
-    const round = await tx.currentRound(organisationId);
+    const round = await tx.currentRound(organisationId, 'development', 'write');
     if (!round) throw new TalkError(NO_ROUND);
     return round;
   }
@@ -323,7 +324,7 @@ export function talkUsecases(deps: TalkDeps) {
       const at = now().toISOString(),
         id = deps.ids();
       return deps.store.transaction(async tx => {
-        const current = await tx.currentRound(input.organisationId);
+        const current = await tx.currentRound(input.organisationId, 'development', 'close');
         if (current) {
           await tx.closeRound(current.id, at);
           await tx.audit({
@@ -894,7 +895,7 @@ export function talkInvitations(
       const manager = persons.find(p => p.id === i.managerId),
         employee = persons.find(p => p.id === i.employeeId);
       if (!span || !manager || !employee || manager.organisationId !== employee.organisationId) return;
-      const round = await tx.currentRound(manager.organisationId);
+      const round = await tx.currentRound(manager.organisationId, 'development', 'write');
       if (!round) return;
       const existing = await tx.talk(round.id, i.employeeId);
       if (existing?.heldOn) return;

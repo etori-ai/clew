@@ -10,11 +10,14 @@ import { sameManifest } from '../manifests';
  * committed. A throw rolls back every write of its transaction, the audit row included, and only those: nothing else
  * wrote meanwhile, so what another committed stays, as in Postgres. Unlike Postgres, `read` and `list` see a
  * transaction's writes before it ends. `threads` is a tiny stand-in for the open cards a connector pushed, so
- * `dismissOpenThreadsOf` can be observed.
+ * `dismissOpenThreadsOf` can be observed, and `copied` for what the competence register copied from it, so `remove`
+ * can be.
  */
 export interface MemoryConnectorStore extends ConnectorStore {
   audit: AuditEntry[];
   threads: Array<{ id: string; connector: string; state: 'open' | 'handled' | 'dismissed'; handledAt: string | null }>;
+  /** A stand-in for what the competence register copied from a connector, which `remove` takes with its row. */
+  copied: Array<{ connector: string; kind: 'source' | 'holding' | 'mapping' }>;
 }
 export function memoryConnectorStore(): MemoryConnectorStore {
   const rows = new Map<string, ConnectorRecord>();
@@ -29,6 +32,7 @@ export function memoryConnectorStore(): MemoryConnectorStore {
   const self: MemoryConnectorStore = {
     audit,
     threads: [],
+    copied: [],
     async list() {
       return [...rows.values()].sort((a, b) => a.id.localeCompare(b.id)).map(r => structuredClone(r));
     },
@@ -74,6 +78,7 @@ export function memoryConnectorStore(): MemoryConnectorStore {
             MemoryConnectorStore['threads'][number],
             { state: 'open'; handledAt: string | null }
           >();
+        let copiedBefore: MemoryConnectorStore['copied'] | undefined;
         const keep = (id: string) => {
           if (!rowsBefore.has(id)) rowsBefore.set(id, structuredClone(rows.get(id)));
         };
@@ -141,6 +146,14 @@ export function memoryConnectorStore(): MemoryConnectorStore {
           async remove(id) {
             keep(id);
             rows.delete(id);
+            copiedBefore ??= [...self.copied];
+            const gone = self.copied.filter(c => c.connector === id);
+            self.copied = self.copied.filter(c => c.connector !== id);
+            return {
+              source: gone.some(c => c.kind === 'source'),
+              holdings: gone.filter(c => c.kind === 'holding').length,
+              mappings: gone.filter(c => c.kind === 'mapping').length,
+            };
           },
           async dismissOpenThreadsOf(connectorId, at) {
             let n = 0;
@@ -167,6 +180,7 @@ export function memoryConnectorStore(): MemoryConnectorStore {
             else rows.delete(id);
           for (const row of written) self.audit.splice(self.audit.indexOf(row), 1);
           for (const [t, was] of threadsBefore) Object.assign(t, was);
+          if (copiedBefore) self.copied = copiedBefore;
           throw error;
         }
       }),

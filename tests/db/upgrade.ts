@@ -46,12 +46,20 @@ export interface UpgradeDatabase {
 /**
  * An empty database created beside the suite's, on the same server, to be migrated step by step and upgraded with rows
  * in it, or migrated at once to hold rows whose statistics a test controls. The caller drops it when its tests end.
+ * With `locale: 'C'` it is created from `template0` with the locale C, as `cLocaleDatabase()` creates one, where a
+ * plain `lower` folds only A to Z.
  */
-export async function upgradeDatabase(): Promise<UpgradeDatabase> {
+export async function upgradeDatabase(options: { locale?: 'C' } = {}): Promise<UpgradeDatabase> {
   const name = 'clew_test_upgrade_' + randomUUID().replaceAll('-', '').slice(0, 12),
     url = new URL(process.env.DATABASE_URL!);
   url.pathname = '/' + name;
-  await database().execute(sql.raw(`create database ${name}`));
+  await database().execute(
+    sql.raw(
+      options.locale === 'C'
+        ? `create database ${name} template template0 encoding 'UTF8' locale_provider libc locale 'C'`
+        : `create database ${name}`,
+    ),
+  );
   const db = connect(url.toString()),
     folders: string[] = [];
   return {

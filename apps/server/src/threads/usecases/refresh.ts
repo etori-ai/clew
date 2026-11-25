@@ -118,7 +118,9 @@ export function refreshUsecases({
     await store.transaction(async tx => {
       const row = await tx.lockRequest(job.id);
       if (!row || row.attempt !== job.attempt || row.state !== 'running') return;
-      const observedAt = observation?.observedAt ?? at;
+      // The protocol's `date-time` may carry any offset, so the observation is compared and stored as an instant (DE-L7):
+      // `…T09:10:00+01:00` is earlier than `…T08:30:00.000Z`, though it sorts after it as text.
+      const observed = Date.parse(observation?.observedAt ?? at);
       // An observation that says nothing was read (no session or token behind the scan, the source away) carries no
       // content that could be stale, so the ordering rule does not judge it; like every failure it leaves `observedAt`
       // as it was. Its time may be stamped by another clock than the last read's (the registry stamps a refusal itself).
@@ -129,9 +131,9 @@ export function refreshUsecases({
         observation &&
         !nothingRead &&
         (observation.scope !== job.assignment ||
-          !Number.isFinite(Date.parse(observedAt)) ||
-          Date.parse(observedAt) > Date.parse(at) + 300_000 ||
-          (row.observedAt && observedAt < row.observedAt))
+          !Number.isFinite(observed) ||
+          observed > Date.parse(at) + 300_000 ||
+          (row.observedAt && observed < Date.parse(row.observedAt)))
       )
         error = 'stale-observation';
       if (error || !result) {
@@ -155,6 +157,8 @@ export function refreshUsecases({
         });
         return;
       }
+      // In UTC with milliseconds, as PostgreSQL reads a timestamp back, so both stores keep the same text.
+      const observedAt = new Date(observed).toISOString();
       const existing = await tx.occurrences(job),
         seen = new Set<string>(),
         touched = new Set<string>();

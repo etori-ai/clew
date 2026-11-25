@@ -55,12 +55,17 @@ function world(people?: PersonKeys) {
     uc,
     deps,
     clock,
-    set: (drafts: ThreadDraft[], completeness: 'complete' | 'partial' | 'delta' = 'complete') => {
+    /** `observedAt`: the instant the source says it read, as it writes it; the clock's, in UTC, by default. */
+    set: (
+      drafts: ThreadDraft[],
+      completeness: 'complete' | 'partial' | 'delta' = 'complete',
+      observedAt = clock().toISOString(),
+    ) => {
       observation = {
         drafts,
         observation: {
           scope: 'unit:manager',
-          observedAt: clock().toISOString(),
+          observedAt,
           version: String(now),
           completeness,
           exhausted: true,
@@ -90,6 +95,34 @@ test("a scanned card's trigger names the system in words, the id stays on the th
   w.set([draft('2')]);
   await w.uc.tick();
   expect(w.store.threads.dump()[0]!.thread.trigger.source).toBe('Ärendesystemet');
+});
+test('an observation is ordered by its instant, whatever offset the source writes it with (DE-L7)', async () => {
+  const w = world();
+  const request = () => w.store.requests()[0]!;
+  // 12:00 UTC, written in Swedish winter time: stored as an instant, in UTC with milliseconds as PostgreSQL reads it.
+  w.set([draft('1')], 'complete', '2026-11-05T13:00:00+01:00');
+  await w.uc.request(actor);
+  await w.uc.tick();
+  expect(request()).toMatchObject({ state: 'complete', observedAt: '2026-11-05T12:00:00.000Z' });
+  // Half an hour older, though as text it sorts after what is stored: refused as stale, and nothing of it is kept.
+  w.advance();
+  w.set([draft('2')], 'complete', '2026-11-05T12:30:00+01:00');
+  await w.uc.tick();
+  expect(request()).toMatchObject({
+    state: 'failed',
+    error: 'stale-observation',
+    observedAt: '2026-11-05T12:00:00.000Z',
+  });
+  expect(w.store.dump()[0]?.revision).toBe('1');
+  expect(w.store.threads.audit.filter(a => a.action === 'refresh.failed').at(-1)).toMatchObject({
+    details: { reason: 'stale-observation' },
+  });
+  // A minute newer, though as text it sorts before what is stored: taken.
+  w.advance();
+  w.set([draft('3')], 'complete', '2026-11-05T08:01:00-04:00');
+  await w.uc.tick();
+  expect(request()).toMatchObject({ state: 'complete', error: null, observedAt: '2026-11-05T12:01:00.000Z' });
+  expect(w.store.dump()[0]).toMatchObject({ revision: '3', observedAt: '2026-11-05T12:01:00.000Z' });
 });
 test('the units a scanned card says it is about are kept on the card, and a card that says none has none (D135)', async () => {
   const w = world();
