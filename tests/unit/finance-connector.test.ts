@@ -164,6 +164,17 @@ describe('the finance fixture connector', () => {
       'finance:inv:55121',
     ]);
     expect((await registry.scan(hillevi))[0]!.items).toHaveLength(1);
+    // Another cost centre's manager cannot take the attest back: each invoice is a failed row and stays attested (CS-M2).
+    const foreign = await registry.run<{ headline: string; rows: Array<{ outcome: string; detail: string }> }>(
+      stranger,
+      'finance.unapprove',
+      { refs },
+    );
+    expect(foreign.headline).toBe('Attesten kunde inte återtas.');
+    expect(foreign.rows.map(r => [r.outcome, r.detail])).toEqual(
+      refs.map(() => ['failed', 'finns inte i ekonomisystemet']),
+    );
+    expect(Object.keys(state.get<Record<string, string>>('approved'))).toHaveLength(2);
     await registry.run(hillevi, 'finance.unapprove', { refs });
     expect((await registry.scan(hillevi))[0]!.items).toHaveLength(3);
   });

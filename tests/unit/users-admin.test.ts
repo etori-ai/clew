@@ -866,6 +866,87 @@ describe('Användare', () => {
     ).toEqual([]);
     expect(store.state.audit).toEqual([]);
   });
+  test('the mapping to Kompetenssökning is decided as a capability mapping is: on the group once it is held, a NUL names nothing, and a row another organisation took the key of is removed (ID-7)', async () => {
+    const row = { groupExternalId: 'S-1-5-21-it-staff', relation: 'registrar' as const };
+    // A group re-keyed or removed while "Lägg till" waited for its row: refused, nothing written, nobody given it.
+    for (const meanwhile of ['re-keyed', 'removed'] as const) {
+      const { store, waiting, admin } = stack(),
+        s = store.state;
+      const changing = waiting(() => {
+        if (meanwhile === 're-keyed') s.groups.get('g-ad')!.externalId = 'S-1-5-21-it-staff-v2';
+        else {
+          s.groups.delete('g-ad');
+          s.members.delete(memberKey('g-ad', 'mikael'));
+        }
+      });
+      await expect(changing.addGroupRelation(admin, row)).rejects.toThrow(
+        'Gruppen finns inte bland de provisionerade grupperna.',
+      );
+      expect(s.groupRelations).toEqual([]);
+      expect(s.audit).toEqual([]);
+      expect(s.grants.get('mikael')?.relations).toBeUndefined();
+    }
+    // Renamed while it waited: audited by the name the group has once the change holds it.
+    {
+      const { store, waiting, admin } = stack(),
+        s = store.state;
+      await waiting(() => (s.groups.get('g-ad')!.label = 'IT-avdelningen')).addGroupRelation(admin, row);
+      expect(s.audit[0]).toEqual({
+        actor: 'person:mikael',
+        action: 'group-relation.added',
+        subject: 'group:S-1-5-21-it-staff',
+        details: { relation: 'registrar', groupLabel: 'IT-avdelningen' },
+      });
+      expect(s.grants.get('mikael')?.relations).toEqual(['registrar']);
+    }
+    // A NUL names no group and no row: refused to add, nothing to remove, and the store, which refuses one as
+    // PostgreSQL does, is never handed it.
+    {
+      const { usecases, admin, store } = stack(),
+        nul = { ...row, groupExternalId: 'S-1-5-21-it-staff\u0000' };
+      await expect(usecases.addGroupRelation(admin, nul)).rejects.toThrow(
+        'Gruppen finns inte bland de provisionerade grupperna.',
+      );
+      expect((await usecases.removeGroupRelation(admin, nul)).groupRelations).toEqual([]);
+      expect(await usecases.seedGroupRelation('operator:cli', 'poc', nul)).toBe(false);
+      expect(store.state.audit).toEqual([]);
+    }
+    // A row whose key another organisation's group now holds is a row whose group is gone: removed, audited without a
+    // name, and nobody of the other organisation is derived from here.
+    {
+      const { usecases, admin, store } = stack(),
+        s = store.state;
+      s.groupRelations.push({ organisationId: 'poc', groupExternalId: 'S-1-5-21-moved', relation: 'registrar' });
+      s.groups.set('g-timra', {
+        ...s.groups.get('g-ad')!,
+        id: 'g-timra',
+        organisationId: 'timra',
+        externalId: 'S-1-5-21-moved',
+        label: 'Timrås grupp',
+      });
+      s.users.set('ulla', { ...s.users.get('mikael')!, id: 'ulla', organisationId: 'timra', name: 'Ulla Timrå' });
+      s.members.add(memberKey('g-timra', 'ulla'));
+      s.grants.set('ulla', { unitId: 'unit-t', unitLabel: 'Timrå', role: 'employee', capabilities: [] });
+      const moved = { groupExternalId: 'S-1-5-21-moved', relation: 'registrar' as const };
+      await expect(usecases.addGroupRelation(admin, moved)).rejects.toThrow('Gruppen finns inte');
+      expect((await usecases.removeGroupRelation(admin, moved)).groupRelations).toEqual([]);
+      expect(s.groupRelations).toEqual([]);
+      expect(s.audit).toEqual([
+        {
+          actor: 'person:mikael',
+          action: 'group-relation.removed',
+          subject: 'group:S-1-5-21-moved',
+          details: { relation: 'registrar', groupLabel: null },
+        },
+      ]);
+      expect(s.grants.get('ulla')).toEqual({
+        unitId: 'unit-t',
+        unitLabel: 'Timrå',
+        role: 'employee',
+        capabilities: [],
+      });
+    }
+  });
   test('a group that is not provisioned cannot be mapped, but a stale mapping can be removed; an unknown capability is refused', async () => {
     const { usecases, admin, store } = stack();
     await expect(
