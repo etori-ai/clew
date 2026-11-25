@@ -5,6 +5,7 @@
   "source": "Tidrapporteringen",
   "uses": [],
   "scan": false,
+  "assignments": true,
   "areas": [
     {
       "id": "staffing",

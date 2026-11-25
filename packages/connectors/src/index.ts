@@ -970,6 +970,14 @@ export class Registry implements HoldingsReader {
     return g.state === 'enabled' && inAudience(g.audience, actor);
   }
   /**
+   * Whether the person is inside a connector's audience (D23), whatever its state: a connector switched off, or no
+   * longer registered, is one they may be told is unavailable, where `visible` says it is there for them now. A
+   * connector with no governance has the denied default's audience, everyone, as nothing narrows it.
+   */
+  inAudienceOf(actor: AudiencedActor, connectorId: string) {
+    return inAudience(this.governance(connectorId).audience, actor);
+  }
+  /**
    * Lookup by name for one person: the capability when it exists for them, its connector visible to them and the
    * capability not switched off. Anything else is undefined, as a name nobody registered is, so a hidden capability
    * answers exactly as an unknown one does (D23). The scope is not asked: a person in a connector's audience may learn
@@ -1602,12 +1610,20 @@ export class Registry implements HoldingsReader {
     };
   }
   /**
-   * Every registered `propose` that follows a fact kind (D55), whether or not this person may call it: the job assembler
-   * classifies an administrator's binding against it, so a follower that went away or out of scope is named, never silently skipped.
+   * Every registered `propose` that follows a fact kind (D55) on a connector whose audience the person is inside
+   * (`inAudienceOf`), whether or not they may call it now: the job assembler classifies an administrator's binding
+   * against it, so a follower out of scope, switched off or on a connector switched off is named as unavailable, never
+   * silently skipped. A follower of a connector whose audience leaves the person out is not answered, so its id, name
+   * and capability never reach them (D23).
    */
-  followers(actor: Actor, kind: string): FollowerRef[] {
+  followers(actor: AudiencedActor, kind: string): FollowerRef[] {
     return [...this.capabilities.values()]
-      .filter(c => c.capability.kind === 'propose' && c.capability.follows?.includes(kind))
+      .filter(
+        c =>
+          c.capability.kind === 'propose' &&
+          c.capability.follows?.includes(kind) &&
+          this.inAudienceOf(actor, c.connector.id),
+      )
       .map(c => ({
         name: c.capability.name,
         connectorId: c.connector.id,

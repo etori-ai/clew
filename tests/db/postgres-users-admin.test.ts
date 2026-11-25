@@ -29,6 +29,7 @@ afterAll(async () => {
   await db.delete(schema.audit).where(like(schema.audit.subject, 'group:' + prefix + '%'));
   await db.delete(schema.provisioners).where(like(schema.provisioners.id, prefix + '%'));
   await db.delete(schema.groupCapabilities).where(eq(schema.groupCapabilities.organisationId, org));
+  await db.delete(schema.groupRelations).where(eq(schema.groupRelations.organisationId, org));
   const groups = (
     await db
       .select({ id: schema.groups.id })
@@ -86,6 +87,10 @@ describe('Administration › Användare and Organisation on PostgreSQL', () => {
     app.post('/group-capabilities/remove', async c =>
       c.json(await usersAdmin.removeGroupCapability(admin, await c.req.json())),
     );
+    app.post('/group-relations', async c => c.json(await usersAdmin.addGroupRelation(admin, await c.req.json())));
+    app.post('/group-relations/remove', async c =>
+      c.json(await usersAdmin.removeGroupRelation(admin, await c.req.json())),
+    );
     const call = (path: string, body?: unknown) =>
       app.request(
         'http://internal.test' + path,
@@ -114,6 +119,14 @@ describe('Administration › Användare and Organisation on PostgreSQL', () => {
     });
     expect(await answered(await call('/group-capabilities/remove', nul), 200)).toMatchObject({
       groupCapabilities: [],
+    });
+    // The mapping to Kompetenssökning likewise (ID-7 of the review of 2026-11-23).
+    const nulRelation = { groupExternalId: 'unit:' + prefix + '-u1\u0000', relation: 'registrar' };
+    expect(await answered(await call('/group-relations', nulRelation), 400)).toEqual({
+      error: 'Gruppen finns inte bland de provisionerade grupperna.',
+    });
+    expect(await answered(await call('/group-relations/remove', nulRelation), 200)).toMatchObject({
+      groupRelations: [],
     });
     for (const action of ['rotate', 'revoke'])
       expect(await answered(await call(`/${prefix}-key%00/${action}`, { graceHours: 0 }), 400)).toEqual({

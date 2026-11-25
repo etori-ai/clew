@@ -81,10 +81,13 @@ export function readerUnits(reach: Reach): DirectoryUnit[] {
 }
 /**
  * The units below the reader that they follow up (D117): the units led by the managers who report to a unit the reader
- * manages (D99's reporting line), each once, with the reader's unit it reports to; never one the reader belongs to.
+ * manages (D99's reporting line), each once, with the reader's unit it reports to; never one of `own`, by default every
+ * unit the reader manages or belongs to, as the entity list groups them.
  */
-export function unitsBelow(reach: Reach): Array<DirectoryUnit & { under: string }> {
-  const own = new Set(readerUnits(reach).map(u => u.unitId));
+export function unitsBelow(
+  reach: Reach,
+  own: ReadonlySet<string> = new Set(readerUnits(reach).map(u => u.unitId)),
+): Array<DirectoryUnit & { under: string }> {
   const found = new Map<string, DirectoryUnit & { under: string }>();
   for (const unit of reach.managed)
     for (const person of unit.people)
@@ -95,11 +98,24 @@ export function unitsBelow(reach: Reach): Array<DirectoryUnit & { under: string 
     (a, b) => a.unitLabel.localeCompare(b.unitLabel, 'sv') || a.unitId.localeCompare(b.unitId),
   );
 }
-/** Every unit the reader follows up (D117): their own, then the ones below, each once. */
-export const followedUnits = (reach: Reach): DirectoryUnit[] => [
-  ...readerUnits(reach),
-  ...unitsBelow(reach).map(({ unitId, unitLabel }) => ({ unitId, unitLabel })),
-];
+/** Whether the reader manages this unit of theirs: it is on their cards, or they hold a manager's role on it. */
+const manages = (reach: Reach, unitId: string) =>
+  reach.managed.some(u => u.unitId === unitId) || reach.units.some(u => u.unitId === unitId && u.role === 'manager');
+const below = (reach: Reach): DirectoryUnit[] =>
+  unitsBelow(reach).map(({ unitId, unitLabel }) => ({ unitId, unitLabel }));
+/** The units of the list (D117): the reader's own, managed or placed on, then the ones below, each once. */
+const listedUnits = (reach: Reach): DirectoryUnit[] => [...readerUnits(reach), ...below(reach)];
+/**
+ * Every unit the reader follows up (D117), the `units` a source is told: the ones they manage, then the ones below,
+ * each once. Never a unit they are only placed on (D135 item 5): a source reads `units` as the units a manager may see
+ * figures for, and an employee's unit is not one of them. A unit below one they manage is followed up even where they
+ * are placed on it as well: the units below are found against the managed ones alone.
+ */
+export function followedUnits(reach: Reach): DirectoryUnit[] {
+  const managed = readerUnits(reach).filter(u => manages(reach, u.unitId));
+  const under = unitsBelow(reach, new Set(managed.map(u => u.unitId)));
+  return [...managed, ...under.map(({ unitId, unitLabel }) => ({ unitId, unitLabel }))];
+}
 /** The groups of `GET /api/entities/:kind`: for a person one per unit the reader manages (none for an employee), for a unit the reader's own and the ones below. */
 export function groupsOf(kind: EntityKind, reach: Reach): EntityList['groups'] {
   if (kind === 'unit') {
@@ -154,12 +170,11 @@ export interface Listed {
 }
 /**
  * Every entity the reader may ask a source about over the whole list, each once, in the list's order: for a unit every
- * one the reader follows up (D117).
+ * one of the list, their own and the ones below (D117); the registry keeps from each read the units it admits.
  */
 export function listedKeys(kind: EntityKind, reach: Reach): Listed[] {
   const listed = new Map<string, Listed>();
-  if (kind === 'unit')
-    for (const u of followedUnits(reach)) listed.set(u.unitId, { key: u.unitId, sourceKey: u.unitId });
+  if (kind === 'unit') for (const u of listedUnits(reach)) listed.set(u.unitId, { key: u.unitId, sourceKey: u.unitId });
   else
     for (const unit of reach.managed)
       for (const p of unit.people)
@@ -259,9 +274,7 @@ export const belowUnit = (reach: Reach, key: string) => unitsBelow(reach).find(u
  */
 export function unitRelation(reach: Reach, key: string): UnitRelation | undefined {
   if (!memberUnit(reach, key)) return belowUnit(reach, key) ? 'below' : undefined;
-  return reach.managed.some(u => u.unitId === key) || reach.units.some(u => u.unitId === key && u.role === 'manager')
-    ? 'manages'
-    : 'member';
+  return manages(reach, key) ? 'manages' : 'member';
 }
 /**
  * How the reader stands to a person of the directory (D97 item 8, D117), by Clew's key, the person's id (D122): the
