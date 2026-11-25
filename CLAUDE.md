@@ -8,9 +8,9 @@ Decision numbers D37–D39, D44–D46, D85, D96, D99–D101 and D116–D124 each
 
 ## Open source, always
 
-Clew is an open source system that will be shared with other municipalities and governments to use as they will.
+Clew is an open source system that will be shared with other municipalities and governments to use as they will. Its own code is licensed under the AGPL v3, as Eneo is (`LICENSE`, D146).
 
-- Never add a closed-source dependency: no proprietary npm packages, SDKs, fonts, icon sets, container images or hosted services that the code cannot run without. Every dependency must carry an OSI-approved licence (MIT, Apache-2.0, BSD, ISC, MPL-2.0, AGPL/GPL for infrastructure components that stay separate processes).
+- Never add a closed-source dependency: no proprietary npm packages, SDKs, fonts, icon sets, container images or hosted services that the code cannot run without. Every dependency must carry an OSI-approved licence (MIT, Apache-2.0, BSD, ISC, MPL-2.0, AGPL/GPL for infrastructure components that stay separate processes), and one that may be combined with the AGPL v3 Clew is licensed under (D146): not EPL-2.0 without a secondary licence, the CDDL or GPL-2.0-only. A browser build's dependencies travel with their notices (`scripts/third-party-notices.ts`): a package that ships no licence file gets its upstream text in `licences/`, as does a typeface a package ships beside its code, or the build fails.
 - Check the licence before pinning anything: `npm view <package>@<version> license`, and the image or project licence for Docker services. Record the result at the top of `docs/reference/licences.md`.
 - The AI model behind the question box must be reachable through an open protocol (the OpenAI-compatible provider is fine) and the system must work with an open-weight, self-hostable model. A closed model may be configured by an operator, but nothing in the repository may depend on one.
 - No telemetry, licence keys, phone-home calls or vendor accounts required to build, run or test.

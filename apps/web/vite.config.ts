@@ -1,12 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { siteHeaderDemo } from '../../packages/site-header/demo/plugin';
+import { thirdPartyNotices } from '../../scripts/third-party-notices';
 
 // Shared by the application and its isolated browser-test build. The intranet stand-in (`/intranat/…`, D87) is served
 // by the dev server only (`apply: 'serve'`); nothing of it is in a build.
 export function webConfig() {
+  // The notices of everything the build passes on, the workbook worker's bundle included (D146 item 3).
+  const notices = thirdPartyNotices();
   return {
-    plugins: [react(), siteHeaderDemo({ startHref: '/' })],
+    plugins: [react(), siteHeaderDemo({ startHref: '/' }), notices.plugin],
+    worker: { plugins: () => [notices.worker] },
     server: {
       host: '0.0.0.0',
       port: 5173,

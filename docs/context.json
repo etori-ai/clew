@@ -1575,7 +1575,7 @@
       "number": 131,
       "path": "docs/decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
       "title": "D131 · Clew builds a server image and a web image from the repository root",
-      "status": "provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them)",
+      "status": "provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them; the note that the repository has no licence file replaced by [D146](D146-clew-is-licensed-under-the-agpl-as-eneo-is.md) on 2026-11-23, which licenses Clew under the AGPL v3)",
       "date": "2026-11-17",
       "area": "platform"
     },
@@ -1686,6 +1686,15 @@
       "status": "proposed (2026-11-24; the connector is built on made-up records and has met neither BillingPreprocessor nor the gateway; provisional once the product owner and Lön och pension have chosen the rule in item 3, accepted once one attest has gone through the test gateway and been read back)",
       "date": "2026-11-24",
       "area": "integrations, identity"
+    },
+    {
+      "key": "D146-clew-is-licensed-under-the-agpl-as-eneo-is",
+      "number": 146,
+      "path": "docs/decisions/D146-clew-is-licensed-under-the-agpl-as-eneo-is.md",
+      "title": "D146 · Clew is licensed under the AGPL, as Eneo is",
+      "status": "accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question)",
+      "date": "2026-11-23",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -1707,7 +1716,8 @@
         "How it fits together",
         "Understand the platform",
         "Build a custom connector",
-        "Run and contribute"
+        "Run and contribute",
+        "Licence"
       ]
     },
     {
@@ -2606,6 +2616,12 @@
     {
       "path": "docs/decisions/D143-lop-invoices-are-attested-in-billingpreprocessor-and-clews-audience-holds-who-may.md",
       "title": "D143 · Lön och pension's invoices are attested in BillingPreprocessor through a connector of their own, and Clew's audience holds who may",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D146-clew-is-licensed-under-the-agpl-as-eneo-is.md",
+      "title": "D146 · Clew is licensed under the AGPL, as Eneo is",
       "category": "decision-history",
       "headings": []
     },
