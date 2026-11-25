@@ -336,6 +336,12 @@ test.describe("a booking of one's own", () => {
     page,
     api: _,
   }) => {
+    // The initial availability can arrive while the person is still holding the block.
+    const availability = Promise.withResolvers<void>();
+    await page.route('**/api/calendar/availability', async route => {
+      await availability.promise;
+      await route.fallback();
+    });
     await page.setViewportSize(WIDE);
     await open(page, '/calendar');
     // The pane takes its width from the grid when it opens, so a day's column is found again after it has.
@@ -355,6 +361,8 @@ test.describe("a booking of one's own", () => {
     await page.mouse.move(x, (await row('10:00')) + 8);
     await page.mouse.down();
     await page.mouse.move(x, (await row('13:00')) + 8, { steps: 8 });
+    availability.resolve();
+    await expect(pane.getByRole('list', { name: 'Tillgänglighet' })).toContainText('Anna Lindqvist');
     await page.mouse.up();
     // The drop lands on the quarter under the pointer: the hour moved to, and the booking keeps its length.
     await expect(field('Börjar')).toHaveValue(/^13:(00|15)$/);
