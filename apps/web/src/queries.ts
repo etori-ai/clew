@@ -1,4 +1,5 @@
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
+import { cardDecisionVersion, type Thread } from '@clew/contracts';
 import type {
   AskValues,
   AssistantReachInput,
@@ -49,13 +50,13 @@ export const itemEventsQuery = (id: string, version: string) =>
  * read again whenever they change. Not retried: a refusal is the person's to read, and Försök igen asks again.
  */
 export const actionEffectQuery = (
-  thread: { id: string; updatedAt: string },
+  thread: Pick<Thread, 'id' | 'updatedAt' | 'decisionRevision'>,
   actionId: string,
   refs: readonly string[] | undefined,
   values: AskValues,
 ) =>
   queryOptions({
-    queryKey: keys.actionEffect(thread.id, actionId, thread.updatedAt, refs ?? [], values),
+    queryKey: keys.actionEffect(thread.id, actionId, cardDecisionVersion(thread), refs ?? [], values),
     queryFn: () => api.effect(thread.id, actionId, refs ? [...refs] : undefined, values),
     retry: false,
     staleTime: 0,
