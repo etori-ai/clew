@@ -29,6 +29,11 @@ export interface Statistics {
   hme?(units?: string[]): Promise<{ reloadedAt: string | null; rows: HmeRow[] }>;
 }
 export declare const manifest: unknown;
+/**
+ * The adapter `QLIK_ADAPTER` names. Throws when none is named, the name is unknown, or `fixture` is named beside
+ * `QLIK_URL`, `QLIK_APP_ID` or `QLIK_TOKEN`.
+ */
+export declare function adapterOf(env: Record<string, string | undefined>): 'engine' | 'fixture';
 export declare function createConnector(options?: {
   jwks?: object | (() => Promise<object>);
   secret?: string;

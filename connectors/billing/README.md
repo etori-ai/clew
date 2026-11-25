@@ -7,7 +7,7 @@ to BillingPreprocessor the way Draken writes it, then read back. Raindance gets 
 date. [D143](../../docs/decisions/D143-lop-invoices-are-attested-in-billingpreprocessor-and-clews-audience-holds-who-may.md)
 says why the connector talks to BillingPreprocessor and not to SupportManagement or Raindance.
 
-By default it serves made-up records (`records.mjs`). The adapter for BillingPreprocessor's API (`billingpreprocessor.mjs`,
+The development profile selects `BILLING_ADAPTER=fixture` and serves made-up records (`records.mjs`). The adapter for BillingPreprocessor's API (`billingpreprocessor.mjs`,
 API 4.5 through the gateway) is written against Draken's contract and has met no real installation.
 
 An independent Node service behind the connector protocol, importing nothing from the rest of the repository (D21).
@@ -90,7 +90,7 @@ curl -X POST localhost:4056/fixture/transfer   # the attested ones leave for the
 | `BILLING_CUSTOMERS` | Optional, JSON: customer number to name per type (above) |
 | `CLEW_CONNECTOR_SECRET`, `CLEW_URL`, `PORT` | As for every connector. `PORT` defaults to 4056. |
 
-`compose.yaml` runs it on its own. The calls are: `GET /{municipalityId}/billingrecords?filter=category:'…' and
+`compose.yaml` runs it on its own. Set `BILLING_ADAPTER=api` for BillingPreprocessor, or `fixture` for made-up records in development. The service refuses to start with API settings in fixture mode. The calls are: `GET /{municipalityId}/billingrecords?filter=category:'…' and
 status:'NEW'` (at most five pages of 100), `GET /{municipalityId}/billingrecords/{id}` and
 `PUT /{municipalityId}/billingrecords/{id}` with the record shaped as Draken shapes it: the fields a person may set,
 without the id, dates, totals and an internal record's recipient, which the API refuses. A record of another category is

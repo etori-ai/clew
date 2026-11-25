@@ -245,18 +245,16 @@ describe('the appraisals connector answers the talks profile (D96)', () => {
     expect((await call({ 'x-clew-connector-key': secret, authorization: 'Bearer x.y.z' })).status).toBe(401);
     const foreign = await assertionFor('appraisals', 'another-secret-entirely')(hillevi);
     expect((await call({ 'x-clew-connector-key': secret, authorization: 'Bearer ' + foreign })).status).toBe(401);
-    // The assertion is bound to the request it was issued for (D117): this body, this capability.
+    // The assertion is bound to the request it was issued for (D117): this body, this route and its capability.
     const body = JSON.stringify({ input: {} });
-    const valid = await assertionFor('appraisals', secret)(hillevi, [], { body, capability: 'appraisals.talks' });
+    const talks = '/clew/capabilities/appraisals.talks';
+    const valid = await assertionFor('appraisals', secret)(hillevi, [], { path: talks, body });
     expect((await call({ 'x-clew-connector-key': secret, authorization: 'Bearer ' + valid })).status).toBe(200);
     for (const other of [
       await assertionFor('appraisals', secret)(hillevi),
-      await assertionFor('appraisals', secret)(hillevi, [], {
-        body: JSON.stringify({ input: { x: 1 } }),
-        capability: 'appraisals.talks',
-      }),
-      await assertionFor('appraisals', secret)(hillevi, [], { body, capability: 'appraisals.round' }),
-      await assertionFor('appraisals', secret)(hillevi, [], { body }),
+      await assertionFor('appraisals', secret)(hillevi, [], { path: talks, body: JSON.stringify({ input: { x: 1 } }) }),
+      await assertionFor('appraisals', secret)(hillevi, [], { path: '/clew/capabilities/appraisals.round', body }),
+      await assertionFor('appraisals', secret)(hillevi, [], { path: '/clew/scan', body }),
     ])
       expect((await call({ 'x-clew-connector-key': secret, authorization: 'Bearer ' + other })).status).toBe(401);
   });

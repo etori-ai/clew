@@ -1,6 +1,6 @@
 // Serves connector.mjs over HTTP. Environment (README.md has the full table):
 //   PORT (default 4056), CLEW_CONNECTOR_SECRET (shared with Clew), CLEW_URL (where Clew's keys are fetched)
-//   BILLING_ADAPTER          "fixture" (default: the made-up records in records.mjs) or "api" (BillingPreprocessor)
+//   BILLING_ADAPTER          "api" (BillingPreprocessor) or "fixture" (made-up records for development)
 //   BILLING_SOURCE_LABEL     the system's name as a person reads it (default "Lön och pension")
 //   BILLING_CATEGORY         the billing records shown and changed (default "SALARY_AND_PENSION")
 //   BILLING_ERRAND_LINK      optional: an https address with {errandNumber} in it, the errand a record comes from
@@ -17,11 +17,34 @@ import { FIXTURE_CUSTOMERS, createFixtureRecords } from './records.mjs';
 import { customersFrom } from './customers.mjs';
 import { createBillingPreprocessor } from './billingpreprocessor.mjs';
 import { listener } from './http.mjs';
+import { keysAddress } from './verification.mjs';
+
+// CLEW_URL is where Clew's public keys are fetched on the first call: one they cannot be fetched from is refused here.
+if (!keysAddress(process.env.CLEW_URL))
+  throw new Error(
+    "CLEW_URL must be Clew's base URL, where its public keys are fetched: https, or plain http only on a host of the " +
+      'development stack.',
+  );
 
 const env = process.env;
-const adapter = env.BILLING_ADAPTER || 'fixture';
+const adapter = (env.BILLING_ADAPTER || '').trim();
+if (!adapter) throw new Error('Set BILLING_ADAPTER to "api" for BillingPreprocessor or "fixture" for development.');
 if (adapter !== 'fixture' && adapter !== 'api')
   throw new Error(`Unknown BILLING_ADAPTER "${adapter}". Known: fixture, api.`);
+if (adapter === 'fixture') {
+  const apiSettings = [
+    'BILLING_URL',
+    'BILLING_TOKEN_URL',
+    'BILLING_CLIENT_ID',
+    'BILLING_CLIENT_SECRET',
+    'BILLING_MUNICIPALITY_ID',
+  ];
+  const configured = apiSettings.filter(name => env[name]?.trim());
+  if (configured.length)
+    throw new Error('BILLING_ADAPTER is "fixture" but API settings are present: ' + configured.join(', '));
+}
+if (adapter === 'api' && env.BILLING_FIXTURE_FAULT)
+  throw new Error('BILLING_FIXTURE_FAULT is only available with BILLING_ADAPTER=fixture.');
 const category = env.BILLING_CATEGORY || 'SALARY_AND_PENSION';
 const fault = env.BILLING_FIXTURE_FAULT || '';
 if (!['', 'unavailable'].includes(fault)) throw new Error('BILLING_FIXTURE_FAULT must be empty or "unavailable".');

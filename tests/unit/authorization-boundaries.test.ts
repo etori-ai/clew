@@ -12,7 +12,7 @@ import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory
 import { testAuthority } from '../connector-authority';
 import { decodeJwt, generateKeyPair, exportPKCS8 } from 'jose';
 import { connectorAuthority } from '../../apps/server/src/connectors/authority';
-import { verifyAssertion } from '../../connectors/hello/verification.mjs';
+import { bodyDigest, verifyAssertion } from '../../connectors/hello/verification.mjs';
 import { sessionEntryPoints } from '../../apps/server/src/session-entry-points';
 
 const actor: Actor & { authorizationVersion: string } = {
@@ -23,6 +23,9 @@ const actor: Actor & { authorizationVersion: string } = {
   unitId: 'unit',
   unitLabel: 'Unit',
 };
+/** A request as Clew binds its assertion to it (D117): its route and body, signed and as the verifier reads them. */
+const bound = { path: '/clew/scan', body: '{}' };
+const received = { path: bound.path, body: bodyDigest(bound.body) };
 const shape = (properties: Record<string, object>) =>
   ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false }) as never;
 const connector = (id = 'source', run: () => Promise<unknown> = async () => ({ count: 1 })): Connector => ({
@@ -60,9 +63,9 @@ describe('authorization and invocation boundaries', () => {
     const next = await connectorAuthority(await exportPKCS8(keys.privateKey), 'rotated', old.jwks.keys);
     const previousRequest = await old.assert('hello', actor, ['source.count']);
     expect(await next.verify(decodeJwt(previousRequest).callback as string)).toMatchObject({ actor: actorOf(actor) });
-    const request = await next.assert('hello', actor);
-    expect(verifyAssertion(request, next.jwks, 'hello')).toEqual(actorOf(actor));
-    expect(verifyAssertion(request, old.jwks, 'hello')).toBeNull();
+    const assertion = await next.assert('hello', actor, [], [], bound);
+    expect(verifyAssertion(assertion, next.jwks, 'hello', Date.now(), received)).toEqual(actorOf(actor));
+    expect(verifyAssertion(assertion, old.jwks, 'hello', Date.now(), received)).toBeNull();
     expect(JSON.stringify(next.jwks)).not.toContain('"d":');
   });
   test('registration without governance is denied on reads, tools and scans', async () => {
@@ -296,12 +299,12 @@ describe('authorization and invocation boundaries', () => {
   });
   test('public keys verify requests but cannot turn request tokens into callback grants', async () => {
     const authority = await testAuthority();
-    const request = await authority.assert('hello', actor, ['source.count']);
-    expect(verifyAssertion(request, authority.jwks, 'hello')).toEqual(actorOf(actor));
-    expect(verifyAssertion(request, authority.jwks, 'other')).toBeNull();
-    expect(verifyAssertion(request, authority.jwks, 'hello', Date.now() + 121_000)).toBeNull();
-    await expect(authority.verify(request)).rejects.toThrow();
-    const grant = await authority.verify(decodeJwt(request).callback as string);
+    const assertion = await authority.assert('hello', actor, ['source.count'], [], bound);
+    expect(verifyAssertion(assertion, authority.jwks, 'hello', Date.now(), received)).toEqual(actorOf(actor));
+    expect(verifyAssertion(assertion, authority.jwks, 'other', Date.now(), received)).toBeNull();
+    expect(verifyAssertion(assertion, authority.jwks, 'hello', Date.now() + 121_000, received)).toBeNull();
+    await expect(authority.verify(assertion)).rejects.toThrow();
+    const grant = await authority.verify(decodeJwt(assertion).callback as string);
     expect(grant.uses).toEqual(['source.count']);
     expect(JSON.stringify(authority.jwks)).not.toContain('"d":');
     const withSessionFields = {
@@ -315,10 +318,10 @@ describe('authorization and invocation boundaries', () => {
     const authority = await testAuthority();
     const named = { ...actor, userName: 'person.one' };
     expect(actorOf(named)).toEqual({ ...actorOf(actor), userName: 'person.one' });
-    const request = await authority.assert('hello', named, ['source.count']);
-    expect(decodeJwt(request).actor).toEqual(actorOf(named));
-    expect(verifyAssertion(request, authority.jwks, 'hello')).toEqual(actorOf(named));
-    expect((await authority.verify(decodeJwt(request).callback as string)).actor).toEqual(actorOf(named));
+    const assertion = await authority.assert('hello', named, ['source.count'], [], bound);
+    expect(decodeJwt(assertion).actor).toEqual(actorOf(named));
+    expect(verifyAssertion(assertion, authority.jwks, 'hello', Date.now(), received)).toEqual(actorOf(named));
+    expect((await authority.verify(decodeJwt(assertion).callback as string)).actor).toEqual(actorOf(named));
     const plain = await authority.assert('hello', actor, ['source.count']);
     expect(decodeJwt(plain).actor).not.toHaveProperty('userName');
     expect((await authority.verify(decodeJwt(plain).callback as string)).actor).toEqual(actorOf(actor));
