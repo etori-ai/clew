@@ -9,8 +9,11 @@ import {
   type PeopleReads,
   readInput,
   readPageHref,
+  searchKeyOf,
+  viewInputChange,
   viewOpenHref,
   viewPageHref,
+  withSearchWords,
   withViewInput,
 } from '../src/view-address';
 
@@ -41,6 +44,54 @@ describe('every view has an address: its own page (D116)', () => {
       withViewInput('/tools/talks.talks', '?title=Samtal&from=%2F&open=a.b&open-title=A&input=%7B%7D', { q: 'anna' }),
     ).toBe('/tools/talks.talks?input=%7B%22q%22%3A%22anna%22%7D&title=Samtal&from=%2F');
     expect(withViewInput('/tools/talks.talks', '?input=%7B%22q%22%3A%22x%22%7D', {})).toBe('/tools/talks.talks');
+  });
+});
+
+/**
+ * What a person types into a view's search field is a name as often as not, and an address is kept by every access log
+ * on the way and by the browser's history (WD-M4 of the web review of 2026-11-23; D100 item 5): the words go to the read
+ * and never into the address, while a choice is still written there.
+ */
+describe('what is typed into a view never enters its address', () => {
+  const table = { kind: 'table', input: { query: { key: 'query' } } };
+  test("the search field's key is a table's or a list's declared one, and nothing else's", () => {
+    expect(searchKeyOf(table)).toBe('query');
+    expect(searchKeyOf({ kind: 'list', input: { query: { key: 'q' } } })).toBe('q');
+    expect(searchKeyOf({ kind: 'table' })).toBeNull();
+    expect(searchKeyOf({ kind: 'detail', input: { query: { key: 'query' } } })).toBeNull();
+    expect(searchKeyOf(undefined)).toBeNull();
+  });
+  test('the words are kept apart and the choices are written, with the name and the way back', () => {
+    const search = '?input=%7B%22scope%22%3A%22all%22%7D&title=Telefonbok&from=%2F';
+    const change = viewInputChange('/tools/phonebook.directory', search, { scope: 'unit', query: 'Anna' }, 'query');
+    expect(change).toEqual({
+      href: '/tools/phonebook.directory?input=%7B%22scope%22%3A%22unit%22%7D&title=Telefonbok&from=%2F',
+      at: '{"scope":"unit"}',
+      words: 'Anna',
+    });
+    expect(change.href).not.toContain('Anna');
+    // Words a link put in the address go as soon as the person types; with nothing chosen there is no input at all.
+    expect(
+      viewInputChange(
+        '/tools/phonebook.directory',
+        '?input=%7B%22query%22%3A%22Bo%22%7D',
+        { query: 'Bertil' },
+        'query',
+      ),
+    ).toEqual({ href: '/tools/phonebook.directory', at: null, words: 'Bertil' });
+    // A view without a search field writes its whole input, as before.
+    expect(viewInputChange('/tools/a.b', '', { scope: 'unit' }, null)).toEqual({
+      href: '/tools/a.b?input=%7B%22scope%22%3A%22unit%22%7D',
+      at: '{"scope":"unit"}',
+      words: '',
+    });
+  });
+  test("the read takes the address's input with the words typed in place of the address's own", () => {
+    expect(withSearchWords('{"scope":"unit"}', 'query', 'Anna')).toBe('{"scope":"unit","query":"Anna"}');
+    expect(withSearchWords('{"scope":"unit","query":"Bo"}', 'query', 'Anna')).toBe('{"scope":"unit","query":"Anna"}');
+    expect(withSearchWords('{"query":"Bo"}', 'query', '')).toBeNull();
+    expect(withSearchWords(null, 'query', 'Anna')).toBe('{"query":"Anna"}');
+    expect(withSearchWords('{broken', 'query', '')).toBeNull();
   });
 });
 

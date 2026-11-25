@@ -268,9 +268,15 @@ async function file(path: string, body: unknown): Promise<{ blob: Blob; filename
 const patch = <T>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const put = <T>(path: string, body: unknown) => call<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 const del = <T>(path: string) => call<T>(path, { method: 'DELETE' });
-/** A read capability's output alone, through the same route the panel's views use (`/api/cap/<name>?input=`). */
-const read = <T>(name: string, input: unknown) =>
-  call<{ output: T }>(`/api/cap/${name}?input=${encodeURIComponent(JSON.stringify(input))}`).then(r => r.output);
+/**
+ * A read capability as a view reads it (`POST /api/cap/<name>`): its output, its source and its declared view. The input
+ * is the body, never the address: it can name a person or hold what was searched for, and an address lands in every
+ * access log on the way (the web review of 2026-11-23, M4). A read all the same: it writes nothing.
+ */
+const readCapability = (name: string, input?: unknown) =>
+  post<{ output: unknown; source?: string; view?: PanelViewSpec }>(`/api/cap/${encodeURIComponent(name)}`, input ?? {});
+/** A read capability's output alone, through the same route the views use. */
+const read = <T>(name: string, input: unknown) => readCapability(name, input).then(r => r.output as T);
 const talkPath = (personId: string) => `/api/talks/${encodeURIComponent(personId)}`;
 const commitmentPath = (id: string) => `/api/talks/commitments/${encodeURIComponent(id)}`;
 const dialogueUnitPath = (unitId: string) => `/api/dialogue/units/${encodeURIComponent(unitId)}`;
@@ -564,10 +570,8 @@ export const api = {
    * then on it is among Ny fråga's latest. Answers the conversation as it stands; another person's is a 404.
    */
   conversationOpened: (id: string) => post<Thread>(`/api/conversations/${encodeURIComponent(id)}/opened`),
-  objects: (q: string, near: string[] = []) =>
-    call<{ objects: ClewObject[] }>(
-      '/api/objects?q=' + encodeURIComponent(q) + (near.length ? '&near=' + encodeURIComponent(near.join(',')) : ''),
-    ),
+  /** What `@` can point at: the words typed after it and the refs in view, in the body (what is typed is often a name). */
+  objects: (q: string, near: string[] = []) => post<{ objects: ClewObject[] }>('/api/objects', { q, near }),
   verbs: (id: string) => call<{ verbs: Verb[] }>(`/api/threads/${id}/verbs`),
   reopen: (id: string) => post<Thread>(`/api/threads/${id}/reopen`),
   assistantStatus: () => call<AssistantStatus>('/api/assistant/status'),
@@ -651,10 +655,7 @@ export const api = {
   remind: (id: string, seconds: number) =>
     post<{ id: string; fireAt: string; thread: Thread }>(`/api/threads/${id}/remind`, { seconds }),
   cancelReminder: (id: string, workflowId: string) => post<Thread>(`/api/threads/${id}/remind/cancel`, { workflowId }),
-  capability: (name: string, input?: unknown) =>
-    call<{ output: unknown; source?: string; view?: PanelViewSpec }>(
-      `/api/cap/${name}` + (input ? `?input=${encodeURIComponent(JSON.stringify(input))}` : ''),
-    ),
+  capability: readCapability,
   runCapability: (name: string, input?: unknown) => post<{ output: unknown }>(`/api/cap/${name}`, input ?? {}),
   // Administration (D23). Every call is checked again on the server; no secret ever comes back.
   /** The shared header (D88): what the person's header connector lists for them, else Clew's default. */
@@ -751,10 +752,7 @@ export const api = {
       '/api/calendar' + (from ? `?from=${from}` : ''),
     ),
   // A person's own bookings and proposal moves (D28). The day view is a read capability, so the side panel reaches it the same way as any view.
-  calendarDay: (date: string) =>
-    call<{ output: DayView }>(`/api/cap/calendar.day?input=${encodeURIComponent(JSON.stringify({ date }))}`).then(
-      r => r.output,
-    ),
+  calendarDay: (date: string) => read<DayView>('calendar.day', { date }),
   members: () => call<{ members: CalendarMember[] }>('/api/calendar/members'),
   rooms: () => call<{ rooms: CalendarRoom[] }>('/api/calendar/rooms'),
   availability: (input: AvailabilityInput) => post<AvailabilityResult>('/api/calendar/availability', input),
