@@ -318,7 +318,7 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
     test('approveOffer puts the reviewed offer live only while it is still the stored one, and bumps the version (D144)', async () => {
       const { store, fresh } = await make();
       const id = fresh();
-      await store.transaction(tx => tx.insert(remoteRow(id)));
+      await store.transaction(tx => tx.insert(remoteRow(id, { state: 'enabled' })));
       const approved = (await store.read(id))!.manifest as object;
       const first = { ...approved, source: 'Hello 2' };
       await store.recordCheck(id, { url: ADDRESS, served: first, at: T1 });
@@ -341,6 +341,12 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       expect(
         await store.transaction(tx =>
           tx.approveOffer(id, { at: T2, manifest: second, version: 0 }, second, 'person:mikael', T2),
+        ),
+      ).toBe(false);
+      // A wizard cannot approve a live connector, even with the current version and matching offer.
+      expect(
+        await store.transaction(tx =>
+          tx.approveOffer(id, { at: T2, manifest: second, version: 1, draftOnly: true }, second, 'person:mikael', T2),
         ),
       ).toBe(false);
       // The stored offer, named by its instant and its content (keys in any order), goes live.
