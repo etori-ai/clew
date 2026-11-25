@@ -46,7 +46,8 @@ Each is an exception a decision records. A new one needs its own line in a decis
 
 ## Adding one
 
-1. Run `bunx astryx search <words>` and `bunx astryx template --list` first. If Astryx has it, use that.
+1. Run `bun run astryx search <words>` and `bun run astryx template --list` first (the script runs Astryx's CLI in this
+   package, where it finds the components). If Astryx has it, use that.
 2. Compose it from Astryx components imported from their own modules (`@astryxdesign/core/Card`), never from this
    package's index, which would import itself.
 3. Give it props for what varies. A measure a page would otherwise set goes in `measures.tsx`.

@@ -152,11 +152,16 @@ the fixture fails a spec on any violation of the content security policy that th
 
 ## Rules the tools enforce
 
-- `dependency-cruiser` (`bun run deps`): `usecases-reach-stores-through-ports` (a use case never imports `@clew/db`,
+- `dependency-cruiser` (`bun run deps`, over the whole of `apps`, `packages`, `connectors`, `scripts` and `tests`, an
+  app's or a package's built `dist` aside, so a configuration beside an app's source or a new folder under an app is
+  judged too): `usecases-reach-stores-through-ports` (a use case never imports `@clew/db`,
   Drizzle, Postgres, the durable engine, an adapter or the composition root; an error for every `usecases` folder),
   `unit-tests-stay-fast` (`tests/unit` never imports a live adapter, the composition root,
   `@clew/db` or the durable engine; a type needed from the schema comes from `packages/db/src/schema.ts`, because TypeScript 7
-  has no compiler API and the cruiser cannot tell `import type` apart), `domain-is-pure`, `routes-stay-thin`.
+  has no compiler API and the cruiser cannot tell `import type` apart), `domain-is-pure`, `routes-stay-thin`, and
+  `clew-does-not-import-connectors` (nothing under `apps/` or `packages/` imports a connector, tests included, the
+  served protocol's two examples in `apps/server/src/routes/protocol.ts` aside, D60; a web test that needs a fixture's
+  manifest is a `tests/unit/web-*.test.ts`).
 - `scripts/purity-check.ts` (`bun run purity`): no `Date.now()`, `new Date()`, `process.env`, `randomUUID()` or
   `Math.random()` in domain files and use cases. The clock and the id source are `deps.clock` and
   `deps.ids`; the composition root reads configuration.

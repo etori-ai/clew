@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { thirdPartyNotices } from '../../scripts/third-party-notices';
+import { thirdPartyNotices } from '@clew/notices';
 
 /**
  * The embed (D87) as one ES module with React and Astryx inside, for a page Clew does not build: the intranet loads

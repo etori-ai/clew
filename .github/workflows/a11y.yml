@@ -25,11 +25,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Installs inside the image so node_modules lands in the volume scripts/a11y.sh mounts.
+      # The dev image's Bun, pinned by digest, fills the node_modules volume that scripts/a11y.sh mounts in the
+      # Playwright image, as it does on a workstation.
       - name: Install dependencies
-        run: |
-          sh scripts/compose.sh --profile a11y run --rm a11y \
-            sh -c "npm install --global $(jq -r .packageManager package.json) && bun install --frozen-lockfile"
+        run: sh scripts/compose.sh run --rm --no-deps --build app bun install --frozen-lockfile
       - name: Run the suite
         run: sh scripts/a11y.sh --shard=${{ matrix.shard }}/3
       - name: Check other municipal profiles sequentially
