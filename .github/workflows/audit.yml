@@ -1,0 +1,37 @@
+name: Audit
+
+# Known advisories against what the lockfiles pin: the workspace's and the documentation site's. On a change to either
+# lockfile or a manifest, and every Monday, since an advisory can be published against a version nobody changed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bun.lock'
+      - 'site/bun.lock'
+      - '**/package.json'
+      - '.github/workflows/audit.yml'
+  pull_request:
+    paths:
+      - 'bun.lock'
+      - 'site/bun.lock'
+      - '**/package.json'
+      - '.github/workflows/audit.yml'
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: bun audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The dev image pins Bun. bun audit reads a lockfile and asks the registry's advisory database; it installs nothing.
+      - name: The workspace and the documentation site
+        run: sh scripts/compose.sh run --rm --no-deps --build app sh -c "bun audit && cd site && bun audit"

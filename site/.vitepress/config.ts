@@ -4,7 +4,7 @@ import { asWritten } from './as-written';
 import { mermaidBlocks } from './mermaid';
 import { outsideLinks } from './outside-links';
 import { navigation } from './sidebar';
-import { thirdPartyNotices } from '../../scripts/third-party-notices';
+import { thirdPartyNotices } from '../../packages/notices/src/index';
 
 /**
  * The documentation site: `docs/` as it is, built to static pages for GitHub Pages. Nothing is copied and no
