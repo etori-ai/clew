@@ -2656,7 +2656,6 @@ export const hemLine = (page: Page) => page.getByRole('textbox', { name: 'Fråga
  */
 export const composer = (page: Page) =>
   page.getByRole('combobox', { name: /^(Vad vill du göra|Svara i samtalet)$/ }).or(hemLine(page));
-/** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
 /** "Inte nu" on the first work item, the way a person does it (D29): open the picker, choose "I morgon". */
 export async function snoozeFirst(page: Page) {
   // A card keeps Inte nu in view; a row has one link to its work item (D112), so the first row's item is opened first:
@@ -2717,8 +2716,9 @@ export const silentSaidIn = (page: Page) =>
         );
       }),
   );
-export const heading = (page: Page, level: number, name: string) =>
-  page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
+/** Finds headings by their accessible level, including Astryx headings with a separate visual level. */
+export const heading = (scope: Page | Locator, level: number, name = '') =>
+  scope.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
 export const announcements = (page: Page) =>
   page.evaluate(() => (window as unknown as { announcements: string[] }).announcements);
 /**

@@ -4,6 +4,7 @@ import {
   desktop,
   expect,
   expectNoAxeViolations,
+  heading,
   narrow,
   open,
   phone,
@@ -258,7 +259,9 @@ test.describe("the calendar's own reads on their page", () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const panel = page.getByRole('main');
     await expect(panel.getByRole('heading', { level: 1, name: 'Hela veckan' })).toBeVisible();
-    await expect(panel.getByRole('group', { name: 'Vecka 45, 2–6 november' })).toBeVisible();
+    const week = panel.getByRole('group', { name: 'Vecka 45, 2–6 november' });
+    await expect(week).toBeVisible();
+    await expect(heading(week, 2)).toHaveCount(5);
     await expect(panel.getByText('Morgonmöte ledningsgrupp')).toHaveCount(5);
     await expect(panel.getByText('events', { exact: true })).toHaveCount(0);
     await expectNoAxeViolations(page);
