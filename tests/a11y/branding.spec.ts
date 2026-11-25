@@ -46,7 +46,7 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
         const heading = page.getByRole('banner');
         const home = heading.getByRole('link', { name: SITE });
         await expect(home).toBeVisible();
-        await expect(home).toHaveAccessibleName(SITE);
+        await expect(home).toHaveAccessibleName(expectedLogo ? `${expectedLogo.alt} ${SITE}` : SITE);
         // The page's own tokens, read on the page.
         const brand = await page.getByRole('main').evaluate(element => {
           const style = getComputedStyle(element);
