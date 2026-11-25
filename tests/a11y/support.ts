@@ -173,6 +173,17 @@ const SOURCES: Record<string, string> = {
 const CATALOGUED = new Set(fixtureViews().map(v => v.capability));
 /** The routes' answer to a failure that is nobody's input (`apps/server/src/context.ts`). */
 export const FAILED = 'Något gick fel. Försök igen.';
+/** A cursor's parts as the server's `cursorOf` takes them (WD-L1): the time in UTC to the microsecond, an id's characters. */
+const CURSOR_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
+const CURSOR_ID = /^[A-Za-z0-9-]{1,80}$/;
+/**
+ * A turn as the server reads it back under its key (`written`, WD-L3): what the answer offered for the moment (Clew's
+ * actions, the verbs, a proposal's choice) is not offered again.
+ */
+const asWritten = (turn: unknown) => {
+  const { forslag: _offered, verbs: _verbs, ...rest } = turn as Record<string, unknown>;
+  return { ...rest, clewActions: [] };
+};
 /** The end of a decision's ten-minute way back, from the suite's now. */
 const UNDO_UNTIL = '2026-11-04T08:10:00.000Z';
 import type { ConnectorSummary } from '@clew/contracts';
@@ -297,6 +308,24 @@ export class MockApi {
   opened: string[] = [];
   /** The work items the next answers name (`MessageMeta.cards`); none unless a test sets them. */
   answerCards: string[] | undefined;
+  /** The key each question went with (WD-L3), in the order asked; `asked` holds the rest of what was sent. */
+  turnKeys: string[] = [];
+  /** What was written under a question's key, as the server keeps it on the question (WD-L3). */
+  written = new Map<string, unknown>();
+  /**
+   * The next turn is written and its stream then breaks before `done` (WD-L3), as a connection lost after the server's
+   * commit leaves it: the page has to read back what was written. It resets itself after that turn.
+   */
+  breakAfterWrite = false;
+  /** How many conversations Alla samtal reads at a time (WD-L1); the server's page is 50, a spec makes it small. */
+  conversationPage = 50;
+  /** Every read of Alla samtal, as the cursor it was read after (null for the first page). */
+  conversationReads: (string | null)[] = [];
+  /** A read of a later page of Alla samtal waits for this (`holdConversations`), and fails while `conversationsFail`. */
+  private conversationsHeld?: Promise<void>;
+  conversationsFail = false;
+  /** How long one thread's read takes, by its id: a conversation asked for first can be read last (WD-L6). */
+  threadDelay: Record<string, number> = {};
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   /** How long the areas take, so a test can see Läget's tiles in their shape (D54). */
@@ -633,6 +662,14 @@ export class MockApi {
   recordEffects: RecordActed[] = [];
   recordDecides: RecordActed[] = [];
   recordStarts: RecordActed[] = [];
+  /** Keeps every read of a later page of Alla samtal pending until the returned function is called. */
+  holdConversations() {
+    let release = () => {};
+    this.conversationsHeld = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    return release;
+  }
   /** Keeps every turn pending until the returned function is called, for a test that works while the answer is on its way: `answerDelay` can run out first on a slow machine. */
   holdAnswer() {
     let release = () => {};
@@ -2046,11 +2083,41 @@ export class MockApi {
       this.unmocked.push(`${request.method()} ${path}`);
       return route.fulfill({ status: 404, json: { error: 'Okänd förmåga.' } });
     }
+    // Alla samtal (WD-L1) as the server reads it: the conversations alone, the latest activity first, a page at a time
+    // from where the last one ended. A cursor the server did not write is refused, as `cursorOf` refuses it; one it
+    // could have written is read from, whether a conversation still ends there or not.
+    if (path === '/conversations' && !post) {
+      const after = url.searchParams.get('after');
+      this.conversationReads.push(after);
+      const at = after?.split('~')[0] ?? '',
+        last = after?.slice(at.length + 1) ?? '';
+      if (after !== null && (!CURSOR_AT.test(at) || Number.isNaN(Date.parse(at)) || !CURSOR_ID.test(last)))
+        return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
+      if (after !== null) {
+        await this.conversationsHeld;
+        if (this.conversationsFail) return route.fulfill({ status: 503, json: { error: FAILED } });
+      }
+      const all = this.threads
+        .filter(t => t.kind === 'question')
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
+      const cursor = (t: Thread) => `${t.updatedAt}~${t.id}`;
+      const rest = after === null ? all : all.filter(t => t.updatedAt < at || (t.updatedAt === at && t.id < last));
+      const page = rest.slice(0, this.conversationPage);
+      const more = rest.length > this.conversationPage;
+      return json({ conversations: page, next: more ? cursor(page.at(-1)!) : null });
+    }
+    // What was written under a question's key (WD-L3): the page reads it back after a turn it stopped or lost, as the
+    // server's `written` answers it.
+    if (path.startsWith('/conversation/turns/') && !post) {
+      const turn = this.written.get(decodeURIComponent(path.slice('/conversation/turns/'.length)));
+      return json({ written: turn ? asWritten(turn) : null });
+    }
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
     // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {
-      const body = request.postDataJSON() as {
+      const { turn, ...body } = request.postDataJSON() as {
         text: string;
+        turn?: string;
         conversationId?: string;
         chips?: { ref: string }[];
         beside?: string;
@@ -2063,6 +2130,15 @@ export class MockApi {
         thing?: { kind: string; id?: string; capability?: string; input?: Record<string, unknown> };
       };
       this.asked.push(body);
+      if (turn) this.turnKeys.push(turn);
+      // A question sent again under a key the server has written is answered with what was written, and not asked.
+      const answered = turn ? this.written.get(turn) : undefined;
+      if (answered)
+        return route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'done', response: asWritten(answered) })}\n\n`,
+        });
       await this.answerHeld;
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
       // Clew's assistant suggests the listed assistant for a question that matches, and the person is asked first
@@ -2156,6 +2232,21 @@ export class MockApi {
         { type: 'text', delta: response.answer.body.slice(half) },
         { type: 'done', response },
       ];
+      // The turn is committed before its last event is sent; a connection lost in between loses only `done`.
+      if (this.breakAfterWrite) {
+        this.breakAfterWrite = false;
+        this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
+        if (turn) this.written.set(turn, response);
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: events
+            .slice(0, -1)
+            .map(e => `data: ${JSON.stringify(e)}\n\n`)
+            .join(''),
+        });
+        return;
+      }
       try {
         await route.fulfill({
           status: 200,
@@ -2166,6 +2257,7 @@ export class MockApi {
         return;
       }
       this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
+      if (turn) this.written.set(turn, response);
       return;
     }
     // The conversation's page marks a conversation asked beside a page as opened, once (D141 rule 6).
@@ -2499,6 +2591,8 @@ export class MockApi {
       return json({ events: this.itemEvents[id] ?? eventsOf(t) });
     }
     if (path.startsWith('/threads/') && !post) {
+      const delay = this.threadDelay[id];
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
       const t = this.threads.find(t => t.id === id);
       return t ? json(t) : route.fulfill({ status: 404, json: { error: 'Ärendet finns inte.' } });
     }

@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
 import type {
   Chip,
   ConversationInput,
@@ -10,12 +19,13 @@ import type {
   TurnStep,
   Thread,
 } from '@clew/contracts';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAnnounce, type ChatComposerInputHandle } from '@clew/ui';
 import { api } from '../../api';
 import { errorMessage } from '../../query-policy';
 import { threadQuery } from '../../queries';
 import { keys } from '../../query-keys';
+import { applyThread } from '../../thread-cache';
 import { useThreadAction } from '../../mutations';
 
 /**
@@ -78,7 +88,7 @@ export interface Send {
   /** The one of the chips that stands open beside the transcript; never with a question to another system's assistant. */
   beside?: string | undefined;
   /** The conversation the question continues; null starts a new one. */
-  current: Conversation | null;
+  current: string | null;
   /** The assistant of another system the question goes to; absent, Clew's own answers. */
   handed?: Handed | undefined;
   /** The person said yes to Clew's suggestion of that assistant. */
@@ -129,7 +139,7 @@ export function turnInput({
     text,
     chips,
     ...(beside && !handed ? { beside } : {}),
-    ...(current ? { conversationId: current.id } : {}),
+    ...(current ? { conversationId: current } : {}),
     ...(handed ? { assistant: handed.id } : {}),
     ...(handed && suggested ? { suggested: true as const } : {}),
     ...(own ? { own: true as const } : {}),
@@ -142,7 +152,8 @@ export function turnInput({
 /** The turn machinery a box and its transcript share: one conversation, its turn on its way, and what an answer offers. */
 export interface Turns {
   conversation: Conversation | null;
-  setConversation: Dispatch<SetStateAction<Conversation | null>>;
+  openId: string | null;
+  setOpenId: Dispatch<SetStateAction<string | null>>;
   latest: ConversationResponse | null;
   setLatest: Dispatch<SetStateAction<ConversationResponse | null>>;
   pending: PendingTurn | null;
@@ -167,12 +178,68 @@ export interface Turns {
   makeCard(messageId: string): Promise<void>;
 }
 
+/** A question's key (WD-L3): the server writes it on the question, so the same question sent again is not asked twice. */
+const turnKey = () => crypto.randomUUID();
+/** A question as its key is held to: its words, where it was asked, whom it was to and what went with it. */
+interface Asked {
+  text: string;
+  /** The conversation it was asked in; null for one that would have started a conversation. */
+  at: string | null;
+  /** Another system's assistant it went to, by its id ("Till:", the panel); null for Clew's own. */
+  to: string | null;
+  /** The refs of what went with it, in one order. */
+  chips: string;
+}
+export const askedOf = (
+  text: string,
+  at: string | null,
+  to: string | null,
+  chips: readonly { ref: string }[],
+): Asked => ({
+  text,
+  at,
+  to,
+  chips: chips
+    .map(c => c.ref)
+    .sort()
+    .join('\n'),
+});
+/** A question that did not come back, kept with its key while the same question is sent again from the same place. */
+export interface Unanswered extends Asked {
+  turn: string;
+}
+/**
+ * The key for a question: the kept one when the same words go again from the same place to the same recipient with the
+ * same things attached, else a new one. A changed question is another question: the server refuses a key that comes
+ * back with anything else, and never answers one question with another's turn.
+ */
+export const keyFor = (kept: Unanswered | null, now: Asked) =>
+  kept && kept.text === now.text && kept.at === now.at && kept.to === now.to && kept.chips === now.chips
+    ? kept.turn
+    : turnKey();
+/** What the server wrote under a question's key, or null when it wrote nothing or could not be asked. */
+export const writtenUnder = (turn: string) =>
+  api.writtenTurn(turn).then(
+    r => r.written,
+    () => null,
+  );
+
 /**
  * One conversation's turns (D31, D36): the question is drawn at once with its answer pending under it, the box is
  * cleared and rests with Stoppa, and the answer streams in, the capabilities it reads as steps and the model's text as
- * it is written. The written turn replaces the pending one when it is done. Stopped or failed, nothing was saved and the
- * question goes back in the box; a turn left behind (another conversation) is stopped and nothing goes back. Every
- * thread an answer carries goes into the cache (D33), the same path as a card's own action.
+ * it is written. The written turn replaces the pending one when it is done. A turn left behind (another conversation)
+ * is stopped and nothing goes back.
+ *
+ * Stopped or failed, the turn may still have been written (WD-L3): a proposal the model made into an item before
+ * Stoppa, or an answer committed before the connection broke. Every question carries a key the server writes on it, and
+ * before the page says anything it asks for what was written under the key: a written turn is drawn as answered, and
+ * otherwise the question goes back in the box with its key, so sending the same words again from the same place is
+ * answered with what was written meanwhile, never asked twice.
+ *
+ * The conversation on the page is the query cache's (D33, WD-L6): its id is kept here and its thread read from the
+ * cache, so a change notice (D46) draws a turn written in another tab or by another system's assistant. A turn runs as a
+ * mutation of the cache, so a notice waits until its thread is written (`changeNotices`), and every thread an answer
+ * carries goes into the cache, the same path as a card's own action.
  */
 export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   const announce = useAnnounce();
@@ -184,13 +251,20 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   const busyRef = useRef(false);
   busyRef.current = busy;
   const [error, setError] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const opened = useQuery({ ...threadQuery(openId ?? ''), enabled: !!openId });
+  const conversation = useMemo(
+    () => (openId && opened.data?.id === openId ? conversationOf(opened.data) : null),
+    [openId, opened.data],
+  );
   const [latest, setLatest] = useState<ConversationResponse | null>(null);
   const [pending, setPending] = useState<PendingTurn | null>(null);
   const [done, setDone] = useState<Done>(null);
   // The turn in flight and why it would be aborted: Stoppa and closing put the question back in the box, leaving does not.
   const inflight = useRef<AbortController | null>(null);
   const abortReason = useRef<'stop' | 'leave'>('stop');
+  const unanswered = useRef<Unanswered | null>(null);
+  const { mutateAsync: tracked } = useMutation<void, unknown, () => Promise<void>>({ mutationFn: turn => turn() });
   const abortTurn = useCallback((reason: 'stop' | 'leave') => {
     // A suggestion waiting for the person's answer is not a turn in flight: leaving it behind just takes it away.
     setPending(p => (p?.offer ? null : p));
@@ -201,7 +275,8 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   const reset = useCallback(() => {
     abortTurn('leave');
     setPending(null);
-    setConversation(null);
+    setOpenId(null);
+    unanswered.current = null;
     setLatest(null);
     setDone(null);
     setError(null);
@@ -214,11 +289,15 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
       const { raw, text, chips, current, handed, suggested, onOffer, onStart, onAnswered, refocus } = request;
       if (!text || busyRef.current) return;
       if (!current) {
-        setConversation(null);
+        setOpenId(null);
         setLatest(null);
       }
-      const controller = new AbortController();
+      const at = current;
+      const question = askedOf(text, at, handed?.id ?? null, chips);
+      const turn = keyFor(unanswered.current, question);
+      unanswered.current = null;
       let offered = false;
+      const controller = new AbortController();
       inflight.current = controller;
       abortReason.current = 'stop';
       busyRef.current = true;
@@ -237,51 +316,22 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
       setValue('');
       onStart?.();
       announce(handed ? `Frågar ${handed.name} …` : 'Söker svar …');
-      try {
-        const response = await api.converseStream(
-          turnInput(request),
-          event => {
-            // The turn went to another system's assistant: what follows is drawn as that assistant's from its first word.
-            if (event.type === 'handed') setPending(p => p && { ...p, handed: event.assistant, answer: '' });
-            else if (event.type === 'step')
-              setPending(
-                p =>
-                  p && {
-                    ...p,
-                    steps: p.steps.some(s => s.id === event.step.id)
-                      ? p.steps.map(s => (s.id === event.step.id ? event.step : s))
-                      : [...p.steps, event.step],
-                  },
-              );
-            else setPending(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
-          },
-          controller.signal,
-        );
-        if ('offer' in response) {
-          // Nothing was sent or saved: the question stays on the page with the choice under it, and the box rests.
-          const { offer, held } = response;
-          setPending(p => {
-            if (!p) return p;
-            const { handed: _sentTo, held: _before, ...rest } = p;
-            return { ...rest, steps: [], answer: '', offer, ...(held ? { held } : {}) };
-          });
-          announce(
-            held
-              ? `Frågan är inte skickad. Den ser ut att gälla ${held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Välj i samtalet.`
-              : `${offer.name} i ${offer.source} kan svara på det här. Välj i samtalet.`,
-          );
-          onOffer?.(offer, held);
-          // The offer's first button takes the focus (`HandoverOffer`); the box does not take it back.
-          offered = true;
+      const left = () => controller.signal.aborted && abortReason.current === 'leave';
+      // The written turn: its thread goes into the cache before the pending turn gives way to it, so the transcript is
+      // never without it, and the page that asked hears of it only while the person is still there.
+      const land = async (response: ConversationResponse) => {
+        onThreadChange(response.thread);
+        await applyThread(client, response.thread);
+        if (left()) {
+          setPending(null);
           return;
         }
         // The message list was on the page while the answer was written, so the log speaks it once it is done (4.1.3).
-        setConversation(conversationOf(response.thread));
+        setOpenId(response.thread.id);
         setLatest(response);
         setPending(null);
         onAnswered?.(response);
-        // The answer's thread is the truth for the log (Frågor); a draft's or a proposal's thread for its card; the verbs about a chip may have changed.
-        apply(response.thread);
+        // A draft's or a proposal's thread for its card; the verbs about a chip may have changed.
         if (response.draft) apply(response.draft.thread);
         else if (response.forslag)
           void client
@@ -289,12 +339,64 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
             .then(apply)
             .catch(() => undefined);
         void client.invalidateQueries({ queryKey: keys.verbsAll });
-      } catch (e) {
-        setPending(null);
-        const stopped = controller.signal.aborted;
-        if (!stopped || abortReason.current === 'stop') setValue(v => v || raw);
-        if (!stopped) setError(errorMessage(e, 'Frågan kunde inte ställas.'));
-        else if (abortReason.current === 'stop') announce('Frågan avbröts. Den ligger kvar i rutan.');
+      };
+      try {
+        await tracked(async () => {
+          try {
+            const response = await api.converseStream(
+              { ...turnInput(request), turn },
+              event => {
+                // The turn went to another system's assistant: what follows is drawn as that assistant's from its first word.
+                if (event.type === 'handed') setPending(p => p && { ...p, handed: event.assistant, answer: '' });
+                else if (event.type === 'step')
+                  setPending(
+                    p =>
+                      p && {
+                        ...p,
+                        steps: p.steps.some(s => s.id === event.step.id)
+                          ? p.steps.map(s => (s.id === event.step.id ? event.step : s))
+                          : [...p.steps, event.step],
+                      },
+                  );
+                else setPending(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
+              },
+              controller.signal,
+            );
+            if ('offer' in response) {
+              // Nothing was sent or saved: the question stays on the page with the choice under it, and the box rests.
+              const { offer, held } = response;
+              setPending(p => {
+                if (!p) return p;
+                const { handed: _sentTo, held: _before, ...rest } = p;
+                return { ...rest, steps: [], answer: '', offer, ...(held ? { held } : {}) };
+              });
+              announce(
+                held
+                  ? `Frågan är inte skickad. Den ser ut att gälla ${held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Välj i samtalet.`
+                  : `${offer.name} i ${offer.source} kan svara på det här. Välj i samtalet.`,
+              );
+              offered = true;
+              onOffer?.(offer, held);
+              return;
+            }
+            await land(response);
+          } catch (e) {
+            const stopped = controller.signal.aborted;
+            // A turn left behind is not read back: nothing pulls the person to a conversation they left.
+            const written = left() ? null : await writtenUnder(turn);
+            if (written) {
+              await land(written);
+              if (stopped) announce('Svaret hann skrivas innan frågan stoppades. Det står i samtalet.');
+              return;
+            }
+            setPending(null);
+            if (left()) return;
+            unanswered.current = { ...question, turn };
+            setValue(v => v || raw);
+            if (!stopped) setError(errorMessage(e, 'Frågan kunde inte ställas.'));
+            else announce('Frågan avbröts. Den ligger kvar i rutan.');
+          }
+        });
       } finally {
         if (inflight.current === controller) inflight.current = null;
         busyRef.current = false;
@@ -302,7 +404,7 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
         if (!offered && (refocus?.() ?? true)) input.current?.focus();
       }
     },
-    [announce, apply, client],
+    [announce, apply, client, onThreadChange, tracked],
   );
   const performActions = useCallback(
     async (actions: ClewAction[]) => {
@@ -360,14 +462,18 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   );
   return {
     conversation,
-    setConversation,
+    openId,
+    setOpenId,
     latest,
     setLatest,
     pending,
     done,
     setDone,
     busy,
-    error,
+    // A conversation that can no longer be read (gone, or no longer the person's to see) says so, as opening it did.
+    error:
+      error ??
+      (openId && opened.isError && !opened.data ? errorMessage(opened.error, 'Samtalet kunde inte öppnas.') : null),
     setError,
     value,
     setValue,
