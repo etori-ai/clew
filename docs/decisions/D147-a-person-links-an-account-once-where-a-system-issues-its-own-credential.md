@@ -261,6 +261,15 @@ branch is not ready for `main`.
   check's own driver of Keycloak's pages did, twice: it loads connectors through the server's composition, since the
   registry's governance is installed there, and it resolves a form's address against its page.
 
+- **In the running server**, the same day, on the development stack with the fixture as the compose service: the
+  flow was started from the signed-in app and reached the realm's sign-in page; with one persona linked, the
+  background scan raised the card "Inköp att godkänna" on Hem with that person's two requests, and approving one from
+  the card went through the human decision endpoint and the ledger and was read back, its dispatch row saying
+  `credential: linked`. This found what neither the scripts nor the unit suite could: the composition read
+  `PUBLIC_URL` and the local-http setting when its module was loaded, before the server has read its settings file,
+  so every link was refused there. Both are now read at each use, and a refusal's reason is logged. Nothing in the
+  web app starts linking yet: the start was a call from the browser's console.
+
 Where it differs from the items above:
 
 - **Item 4.** The approval is kept in the module's own table and made by an operator with
