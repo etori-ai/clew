@@ -11,8 +11,13 @@ boardingDirectoryContract('memory', async () => {
     async seedUnit(unit) {
       directory.setUnit(unit);
     },
-    async seedPerson({ name: _name, ...person }) {
-      directory.setPerson(person);
+    async seedPerson({ name: _name, employments, ...person }) {
+      // The memory directory holds the managers apart from what the layers match on (`managerIds`, D147).
+      directory.setPerson({
+        ...person,
+        employments: employments.map(({ managerId: _managerId, ...job }) => job),
+        managerIds: employments.flatMap(job => (job.managerId ? [job.managerId] : [])),
+      });
     },
   };
 });

@@ -103,11 +103,12 @@ async function world() {
     });
   }
   const people = [
-    { key: 'ada', unit: 'admin', role: 'manager' as const },
-    { key: 'karin', unit: 'team', role: 'manager' as const },
-    { key: 'olle', unit: 'school', role: 'manager' as const },
-    { key: 'hanna', unit: 'team', role: 'employee' as const },
-    { key: 'bo', unit: 'team', role: 'employee' as const },
+    // D147: whom each of them reports to is said on their employment, as a directory says it.
+    { key: 'ada', unit: 'admin', role: 'manager' as const, manager: null },
+    { key: 'karin', unit: 'team', role: 'manager' as const, manager: 'ada' },
+    { key: 'olle', unit: 'school', role: 'manager' as const, manager: 'ada' },
+    { key: 'hanna', unit: 'team', role: 'employee' as const, manager: 'karin' },
+    { key: 'bo', unit: 'team', role: 'employee' as const, manager: 'karin' },
   ];
   for (const p of people)
     await db.insert(schema.people).values({
@@ -121,6 +122,7 @@ async function world() {
       personId: id(p.key),
       position: 0,
       unitId: id(p.unit),
+      managerId: p.manager ? id(p.manager) : null,
       employmentType: 'Tillsvidare',
       startDate: '2026-12-04',
     });
@@ -230,6 +232,11 @@ describe('introduction and leaving on what composition builds (D124)', () => {
     await w.db.delete(schema.assignments).where(eq(schema.assignments.personId, w.id('karin')));
     await w.db.insert(schema.assignments).values({ personId: w.id('karin'), unitId: w.id('school'), role: 'employee' });
     await w.db.insert(schema.assignments).values({ personId: w.id('olle'), unitId: w.id('team'), role: 'manager' });
+    // D147: and the directory names him on the employments of the team, which is what says whom they report to.
+    await w.db
+      .update(schema.employments)
+      .set({ managerId: w.id('olle') })
+      .where(inArray(schema.employments.personId, [w.id('hanna'), w.id('bo')]));
     // The directory deactivates Hanna, and the leavers port tells boarding in that transaction, reading the line there.
     await w.db.transaction(async tx => {
       await tx

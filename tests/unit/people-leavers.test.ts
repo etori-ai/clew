@@ -43,6 +43,8 @@ function world() {
         assignments: [{ unitId: 'u-team', role: 'employee' }],
         positionCodes: [],
         employments: [],
+        // D147: his employment names Olle. That Olle leads the team Bo is placed on would say nothing of it.
+        managerIds: ['olle'],
       },
     ],
   });
@@ -80,7 +82,7 @@ function world() {
     )(null);
   return { competence, boarding, failed, bindings, leaversOf };
 }
-/** Bo's leaving plan, which Karin started; the directory says Olle leads Bo's team now. */
+/** Bo's leaving plan, which Karin started; the directory names Olle as Bo's manager now (D147). */
 async function withPlan(w: ReturnType<typeof world>) {
   await w.boarding.transaction(tx =>
     tx.insertPlan({

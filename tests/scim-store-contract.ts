@@ -450,6 +450,42 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           [p + '-u1']: [{ ...person, role: 'manager' }],
         });
         expect(await tx.unitPeople([p + '-u1'], p + '-elsewhere')).toEqual({});
+        // D147: who reports to a manager is asked by the manager's id, within one organisation. Each report once and by
+        // id, with the units of the employments that name the manager in the list's order, each once, and the units the
+        // report leads themselves. A deactivated report is there with `enabled` false, for the use case to decide.
+        const boss = p + '-boss',
+          off = p + '-off',
+          other = p + '-other';
+        await tx.insertUser(userRow(boss, p + '-org'));
+        await tx.insertUser(
+          userRow(off, p + '-org', { enabled: false, employments: [{ unitId: 'office', managerId: boss }] }),
+        );
+        await tx.insertUser(userRow(other, p + '-elsewhere', { employments: [{ unitId: 'office', managerId: boss }] }));
+        await tx.updateUser(a, {
+          employments: [
+            { unitId: 'school', managerId: boss },
+            { unitId: 'office' },
+            { unitId: 'depot', title: 'Vaktmästare', managerId: boss },
+            { unitId: 'school', title: 'Samordnare', managerId: boss },
+          ],
+          updatedAt: T,
+        });
+        expect(await tx.reportsTo(p + '-org', boss)).toEqual([
+          { ...person, unitIds: ['school', 'depot'], leads: [p + '-u1'] },
+          {
+            id: off,
+            name: 'Name ' + off,
+            userName: 'u:' + off,
+            email: off + '@example.test',
+            enabled: false,
+            unitIds: ['office'],
+            leads: [],
+          },
+        ]);
+        expect((await tx.reportsTo(p + '-elsewhere', boss)).map(r => r.id)).toEqual([other]);
+        // Nobody's employment names these two, and the manager is never their own report.
+        expect(await tx.reportsTo(p + '-org', a)).toEqual([]);
+        expect(await tx.reportsTo(p + '-org', p + '-nobody')).toEqual([]);
         expect(await tx.bound(a)).toBe(false);
       });
       await h.bind(a);

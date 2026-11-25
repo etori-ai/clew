@@ -318,7 +318,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
               <EmptyState
                 headingLevel={2}
                 title="Inga medarbetare att visa"
-                description="Här ser den som är chef för en enhet medarbetarna på den. Katalogen avgör vem som är chef; be systemförvaltaren om det inte stämmer."
+                description="Här ser den som är chef sina medarbetare. Katalogen avgör vem som rapporterar till vem; be systemförvaltaren om det inte stämmer."
                 actions={<Button label="Till startsidan" href="/" />}
               />
             ) : ctx && !found && !inCard ? (

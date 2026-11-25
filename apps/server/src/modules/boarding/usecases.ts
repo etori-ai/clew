@@ -167,7 +167,7 @@ export type BoardingLeavers = ReturnType<typeof boardingLeavers>;
 
 /**
  * The boarding module's use cases (D124): introduction and leaving plans. A manager's reach is computed from the
- * directory when asked (`deps.staff`: their reports, D99 and D117's `managed`), never stored, so a former manager
+ * directory when asked (`deps.staff`: their reports, D147 and D117's `managed`), never stored, so a former manager
  * reaches nothing the day the line changes; once a person is deactivated their plans are held by the managers they had
  * then (`boardingLeavers`). Every change is one `deps.store` transaction with its audit row and, for an item, its
  * owner's card. Audit rows carry ids, dates, counts and roles: never a title a manager typed, never a name.

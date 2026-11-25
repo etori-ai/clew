@@ -70,6 +70,11 @@ function stack() {
 /** Clew's id for the person the directory knows by `externalId`. */
 const ekonomiId = (store: ReturnType<typeof stack>['store'], externalId: string) =>
   [...store.state.users.values()].find(u => u.externalId === externalId)!.id;
+/** A person's employments as Clew holds them after a push: each manager by the id Clew gave them (D147). */
+const heldJobs = (store: ReturnType<typeof stack>['store'], person: DirectoryPerson) =>
+  (person.employments ?? []).map(({ manager, ...job }) =>
+    manager ? { ...job, managerId: ekonomiId(store, manager) } : job,
+  );
 describe('the synthetic provisioner', () => {
   test('pushes Mikael with two titles and three phone numbers, and withdraws just one work number', async () => {
     const { store, client } = stack();
@@ -318,10 +323,15 @@ describe('the synthetic provisioner', () => {
     });
     expect(store.state.assignments.get(ekonomiId(store, ekonomi.members[0]!))).toHaveLength(2);
     expect(grantOf(twoUnits.userName)).toMatchObject({ unitId: 'unit-bibliotek', role: 'employee' });
-    expect(store.state.users.get(ekonomiId(store, twoUnits.externalId))?.employments).toEqual([
+    const twoJobs = store.state.users.get(ekonomiId(store, twoUnits.externalId))!.employments;
+    expect(twoJobs).toMatchObject([
       { unitId: 'unit-bibliotek', title: 'Bibliotekarie' },
       { unitId: 'unit-kommunikation', title: 'Webbredaktör' },
     ]);
+    // D147: each employment names whom it reports to, by the id Clew gave that person, though the first push created
+    // some of them after the people who report to them.
+    expect(twoJobs).toEqual(heldJobs(store, twoUnits));
+    expect(twoJobs.every(job => job.managerId && job.managerId !== ekonomiId(store, twoUnits.externalId))).toBe(true);
     // A unit row is for a unit somebody is assigned to: every node but the department nobody is placed on.
     expect(store.state.units.size).toBe(47);
     expect([...store.state.groups.values()].find(g => g.externalId === 'unit:unit-skola')?.parentUnitId).toBe(
@@ -366,7 +376,7 @@ describe('the synthetic provisioner', () => {
       'bo.ek',
     ]);
     for (const person of developmentDirectory.people)
-      expect(held(person.userName).employments).toEqual(person.employments ?? []);
+      expect(held(person.userName).employments).toEqual(heldJobs(store, person));
     expect(held('bo.ek').title).toBeNull();
     expect(held('mikael').title).toBeNull();
     // What a person is called and what they are to Clew are two facts: a rektor and a byggchef are both managers,
@@ -2693,12 +2703,12 @@ test('the profile guide changes one of two work numbers and one of two employmen
   ]);
 });
 
-test('the published SCIM object examples place an employee and assign their manager', async () => {
-  const { client, grantOf } = stack();
+test('the published SCIM object examples place an employee, assign the manager of the unit and say whom the employee reports to', async () => {
+  const { client, grantOf, store } = stack();
   const guide = await Bun.file(new URL('../../docs/guides/provisioning-for-operations.md', import.meta.url)).text();
   const examples = [...guide.matchAll(/```json\n([\s\S]*?)\n```/g)].map(match => match[1]!);
-  expect(examples).toHaveLength(5);
-  const [root, child, person, placement, managerGroup] = examples;
+  expect(examples).toHaveLength(6);
+  const [root, child, person, placement, managerGroup, reportsTo] = examples;
   await client.request('POST', '/Groups', JSON.parse(root!));
   const unit = await client.request('POST', '/Groups', JSON.parse(child!));
   const anna = await client.request('POST', '/Users', JSON.parse(person!));
@@ -2715,6 +2725,13 @@ test('the published SCIM object examples place an employee and assign their mana
   await client.request('POST', '/Groups', JSON.parse(managers));
   expect(grantOf('lena.holm')).toMatchObject({ unitId: '110', role: 'employee' });
   expect(grantOf('anna.berg')).toMatchObject({ unitId: '110', role: 'manager' });
+  // D147: leading the unit names nobody's manager. The last example says it on Lena's employment.
+  expect(store.state.users.get(employee.body.id)?.employments).toEqual([]);
+  const named = reportsTo!.replace("<Anna's Clew user ID>", anna.body.id);
+  await client.request('PATCH', '/Users/' + employee.body.id, JSON.parse(named));
+  expect(store.state.users.get(employee.body.id)?.employments).toEqual([
+    { unitId: '110', title: 'Lärare', managerId: anna.body.id },
+  ]);
 });
 
 test('the published school walkthrough produces the printed output and the promised organisation', async () => {
@@ -2770,8 +2787,15 @@ test('the published school walkthrough produces the printed output and the promi
     const sent = (sourceId: string) => store.state.users.get(ekonomiId(store, sourceId))!;
     expect(['e-1001', 'e-1002', 'e-1003'].map(id => [sent(id).employments, sent(id).phoneNumbers])).toEqual([
       [[{ unitId: '110', title: 'Skolchef' }], [{ type: 'work', value: '070-174 06 01' }]],
-      [[{ unitId: '111', title: 'Rektor' }], [{ type: 'work', value: '070-174 06 02' }]],
-      [[{ unitId: '111', title: 'Lärare' }], [{ type: 'work', value: '070-174 06 03' }]],
+      // D147: each employment names its manager by the id Clew gave them when they were created.
+      [
+        [{ unitId: '111', title: 'Rektor', managerId: ekonomiId(store, 'e-1001') }],
+        [{ type: 'work', value: '070-174 06 02' }],
+      ],
+      [
+        [{ unitId: '111', title: 'Lärare', managerId: ekonomiId(store, 'e-1002') }],
+        [{ type: 'work', value: '070-174 06 03' }],
+      ],
     ]);
     const staff = staffUsecases({ store });
     for (const [sourceId, expected] of [
@@ -2796,7 +2820,10 @@ test('the published school walkthrough produces the printed output and the promi
     }
     expect(await run([commands[0], commands[3]].join('\n'))).toBe(output[1] + '\n');
     expect(grantOf('lena.holm')?.unitId).toBe('112');
-    expect(sent('e-1003').employments).toEqual([{ unitId: '112', title: 'Bibliotekarie' }]);
+    // Before her manager left, her employment was sent again with the manager above as hers.
+    expect(sent('e-1003').employments).toEqual([
+      { unitId: '112', title: 'Bibliotekarie', managerId: ekonomiId(store, 'e-1001') },
+    ]);
     expect(store.state.users.get(ekonomiId(store, 'e-1002'))?.enabled).toBe(false);
   } finally {
     await server.stop(true);

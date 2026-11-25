@@ -51,7 +51,7 @@ A read that declares `about` ([D97](../decisions/D97-a-source-says-what-its-rows
 | Kind | The acting person may be asked about | Relation |
 |---|---|---|
 | Person | Themselves | `self` |
-| Person | Their direct reports under D99: people placed on a unit they manage without a manager's role there, and those who report to it from below. A co-manager only when their line runs to a unit above it that they lead too; never their own manager | `managed` |
+| Person | Their direct reports: the people whose current employments name them as manager ([D147](../decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md)). Never their own manager, and a co-manager of their unit only when that person's employment names them | `managed` |
 | Person | Any other active person in their organisation, only where the capability admits it | `colleague` |
 | Unit | A unit they hold a manager's role on | `manages` |
 | Unit | A unit they are placed on otherwise, only where the capability admits it | `member` |

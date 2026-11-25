@@ -1416,14 +1416,10 @@ export function usersAdminUsecases(deps: {
 export type UsersAdminUsecases = ReturnType<typeof usersAdminUsecases>;
 
 /**
- * Personal (D94, D99): a manager's reports, read only. The scope is the server's: the actor must manage at least one
- * unit, and the units come from the actor's own assignments, never from the request. Under each unit they manage: the
- * people assigned to it, with their role on it and never the reader; then, down the tree, the managers of the nearest
- * units that have one, and the people placed on a unit nobody leads, since the line passes through such a unit. Who
- * leads is `leadsUnit`: a deactivated manager does not, so the line passes through their unit too. The walk stops at a
- * unit with a manager, so the people that manager leads are not listed, and at a unit the reader manages too, which
- * has its own card. The tree is read once and the people a level at a time, so a wide layer is one read. Nothing is
- * written, so there is no audit row.
+ * Personal (D94, D147): a manager's reports, read only. The scope is the server's: who reports to the actor is read
+ * from the employments that name them, and the units they lead from their own assignments, never from the request.
+ * Nothing is written, so there is no audit row. The walk down the tree below (`addReportsFromBelow`) is Administration
+ * › Organisation's alone since D147: it shows a unit as D99 read it.
  */
 const byName = (a: StaffPerson, b: StaffPerson) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id);
 /** The tree as the units directly below each unit. */
@@ -1478,79 +1474,82 @@ async function addReportsFromBelow(
   }
 }
 /**
- * The reader's place on D99's line (D117), walked once per unit they are placed on, up to the nearest unit somebody
- * leads: from a unit they are placed on without managing it, that unit itself; from a unit they manage, the unit above
- * it. `above` is whoever else leads that unit: the reader's managers, never their reports. `lineReports` are the other
- * managers of a unit the reader manages when the reader also leads that nearest unit above it: by D99 item 4 they report
- * to the reader, co-managers of the lower unit though the two are. A co-manager whose line runs to someone else is not.
+ * D147: whom a person reports to. The managers their current employments name, each once and never the person
+ * themselves, who are active people of the organisation. A deactivated manager is nobody's manager, and an employment
+ * that names none gives none: nothing is read from the tree.
  */
-async function lineOf(
-  tx: ProvisionTx,
-  persona: AuthenticatedContext,
-  units: ReadonlyArray<{ unitId: string; role: Role }>,
-  tree: readonly TreeUnit[],
-): Promise<{ above: string[]; lineReports: string[] }> {
-  const parents = new Map(tree.map(u => [u.id, u.parentId]));
-  const above = new Set<string>(),
-    lineReports = new Set<string>();
-  const leadersOf = async (unitId: string) =>
-    ((await tx.unitPeople([unitId], persona.organisationId))[unitId] ?? []).filter(leadsUnit);
-  for (const a of units) {
-    const seen = new Set<string>();
-    for (let at = a.role === 'manager' ? parents.get(a.unitId) : a.unitId; at && !seen.has(at); at = parents.get(at)) {
-      seen.add(at);
-      const leads = await leadersOf(at);
-      if (!leads.length) continue;
-      for (const p of leads) if (p.id !== persona.id) above.add(p.id);
-      if (a.role === 'manager' && leads.some(p => p.id === persona.id))
-        for (const p of await leadersOf(a.unitId)) if (p.id !== persona.id) lineReports.add(p.id);
-      break;
-    }
-  }
-  return { above: [...above], lineReports: [...lineReports].filter(id => !above.has(id)) };
+async function managersOf(tx: ProvisionTx, organisationId: string, personId: string): Promise<string[]> {
+  const person = await tx.readUser(organisationId, personId);
+  if (!person) return [];
+  const named = [...new Set(person.employments.flatMap(job => (job.managerId ? [job.managerId] : [])))].filter(
+    id => id !== personId && !id.includes('\u0000'),
+  );
+  const active: string[] = [];
+  for (const id of named) if ((await tx.readUser(organisationId, id))?.enabled) active.push(id);
+  return active;
 }
 export function staffUsecases(deps: { store: ProvisionStore }) {
   /**
-   * The people on each of these units except the reader, with those who report to the unit from below (D99), by
-   * name; the units by label.
+   * The reader's reports (D147): the people whose current employments name the reader as manager, under the unit of
+   * each such employment, by name; the units by label. A unit the reader leads has its card whether or not anybody on
+   * it reports to them, and a unit they do not lead has one when somebody employed there does. Someone who leads units
+   * of their own has the manager's role on the one they are listed under, where they lead it, and carries the others
+   * as `below`. The reader is never listed.
    */
-  async function peopleOn(
+  async function reportsBy(
     tx: ProvisionTx,
     persona: AuthenticatedContext,
-    managed: Array<{ unitId: string; unitLabel: string }>,
-    tree?: readonly TreeUnit[],
+    led: Array<{ unitId: string; unitLabel: string }>,
   ): Promise<StaffUnit[]> {
-    const below = unitsUnder(tree ?? (await tx.unitTree(persona.organisationId))),
-      own = new Set(managed.map(u => u.unitId)),
-      // Within the reader's organisation, as the tree is: a unit id names nobody elsewhere (D101, a unit belongs to
-      // one organisation).
-      placed = await tx.unitPeople([...own], persona.organisationId),
-      units: StaffUnit[] = [];
-    for (const unit of managed) {
-      const people = new Map<string, StaffPerson>();
-      for (const p of placed[unit.unitId] ?? []) if (p.id !== persona.id) people.set(p.id, p);
-      // A unit the reader manages too has its own card, so the walk leaves it alone.
-      await addReportsFromBelow(tx, below, unit.unitId, people, {
-        skip: own,
-        reader: persona.id,
-        organisationId: persona.organisationId,
-      });
-      units.push({ unitId: unit.unitId, unitLabel: unit.unitLabel, people: [...people.values()].sort(byName) });
+    // Within the reader's organisation, as the tree is: a unit id names nobody elsewhere (D101, a unit belongs to one
+    // organisation).
+    const rows = (await tx.reportsTo(persona.organisationId, persona.id)).filter(p => p.id !== persona.id),
+      labels = new Map(led.map(u => [u.unitId, u.unitLabel]));
+    // A unit's name is its `unit:` group's. An employment is kept when its unit's group is removed (D114), so one the
+    // tree no longer names is called what the unit table still calls it, and by its id only when that knows no name.
+    const named = [...new Set(rows.flatMap(p => [...p.unitIds, ...p.leads]))].filter(id => !labels.has(id));
+    if (named.length) {
+      for (const u of await tx.unitTree(persona.organisationId, named)) labels.set(u.id, u.label);
+      const rest = named.filter(id => !labels.has(id));
+      if (rest.length)
+        for (const [id, label] of Object.entries(await tx.unitLabels(rest, persona.organisationId)))
+          labels.set(id, label);
     }
-    return units.sort((a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId));
+    const labelOf = (unitId: string) => labels.get(unitId) ?? unitId,
+      byLabel = (a: { unitId: string; unitLabel: string }, b: { unitId: string; unitLabel: string }) =>
+        bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId),
+      units = new Map<string, StaffUnit>(
+        led.map(u => [u.unitId, { unitId: u.unitId, unitLabel: u.unitLabel, people: [] }]),
+      );
+    for (const { unitIds, leads, ...person } of rows)
+      for (const unitId of unitIds) {
+        const unit = units.get(unitId) ?? { unitId, unitLabel: labelOf(unitId), people: [] },
+          others = leads
+            .filter(id => id !== unitId)
+            .map(id => ({ unitId: id, unitLabel: labelOf(id), role: 'manager' as const }))
+            .sort(byLabel);
+        units.set(unitId, unit);
+        unit.people.push({
+          ...person,
+          role: leads.includes(unitId) ? 'manager' : 'employee',
+          ...(others.length ? { below: others } : {}),
+        });
+      }
+    return [...units.values()].map(unit => ({ ...unit, people: unit.people.sort(byName) })).sort(byLabel);
   }
   return {
     overview: (persona: AuthenticatedContext): Promise<StaffOverview> =>
       deps.store.transaction(async tx => {
-        const managed = (await tx.assignmentsOf(persona.id)).filter(a => a.role === 'manager');
-        if (!managed.length) throw new ForbiddenError('Sidan Personal är för den som är chef för en enhet.');
-        return { units: await peopleOn(tx, persona, managed) };
+        const led = (await tx.assignmentsOf(persona.id)).filter(a => a.role === 'manager'),
+          units = await reportsBy(tx, persona, led);
+        // Someone who leads no unit and whom nobody reports to has no card at all.
+        if (!units.length) throw new ForbiddenError('Sidan Personal är för den som är chef.');
+        return { units };
       }),
     /**
-     * Where the reader stands (D97, who may be asked about): every unit they are assigned to with their role there, the
-     * units they manage with the people on them as `overview` lists them, and their place on the line (`lineOf`, D99,
-     * D117): who manages them (`above`) and which co-managers of their units report to them (`lineReports`). It refuses
-     * nobody: someone who manages no unit has nothing under `managed`.
+     * Where the reader stands (D97, who may be asked about): every unit they are assigned to with their role there,
+     * their reports under the units `overview` lists them on, and who manages them (`above`, `managersOf`, D147). It
+     * refuses nobody: someone with no report and no unit to lead has nothing under `managed`.
      */
     reach: (
       persona: AuthenticatedContext,
@@ -1558,21 +1557,17 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
       units: Array<{ unitId: string; unitLabel: string; role: Role }>;
       managed: StaffUnit[];
       above: string[];
-      lineReports: string[];
     }> =>
       deps.store.transaction(async tx => {
         const units = await tx.assignmentsOf(persona.id);
-        // The tree is read once for both walks: down for Personal's people, up for the reader's line (D117).
-        const tree = await tx.unitTree(persona.organisationId);
         return {
           units,
-          managed: await peopleOn(
+          managed: await reportsBy(
             tx,
             persona,
             units.filter(a => a.role === 'manager'),
-            tree,
           ),
-          ...(await lineOf(tx, persona, units, tree)),
+          above: await managersOf(tx, persona.organisationId, persona.id),
         };
       }),
     /**

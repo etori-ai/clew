@@ -73,11 +73,11 @@ function group(key, label, members = [], parent) {
     ...(parent && { [unit]: { parent } }),
   });
 }
-function person(externalId, userName, displayName, unitId, title, phone) {
+function person(externalId, userName, displayName, unitId, title, phone, managerId) {
   return create('/Users', { schemas: [core + 'User', employment], externalId, userName, displayName,
     emails: [{ type: 'work', value: userName + '@example.org' }],
     phoneNumbers: [{ type: 'work', value: phone }],
-    [employment]: { employments: [{ unitId, title }] }, active: true });
+    [employment]: { employments: [{ unitId, title, ...(managerId && { managerId }) }] }, active: true });
 }
 function place(groupId, ...users) {
   return client.request('PATCH', '/Groups/' + groupId, { schemas: [patchSchema],
@@ -89,8 +89,8 @@ const education = await group('unit:110', 'Utbildning', [], 'unit:100');
 const school = await group('unit:111', 'Centralskolan', [], 'unit:110');
 await group('unit:112', 'Skolbiblioteket', [], 'unit:110');
 const anna = await person('e-1001', 'anna.berg', 'Anna Berg', '110', 'Skolchef', '070-174 06 01');
-const omar = await person('e-1002', 'omar.ali', 'Omar Ali', '111', 'Rektor', '070-174 06 02');
-const lena = await person('e-1003', 'lena.holm', 'Lena Holm', '111', 'Lärare', '070-174 06 03');
+const omar = await person('e-1002', 'omar.ali', 'Omar Ali', '111', 'Rektor', '070-174 06 02', anna);
+const lena = await person('e-1003', 'lena.holm', 'Lena Holm', '111', 'Lärare', '070-174 06 03', omar);
 await place(education, anna);
 await place(school, omar, lena);
 await group('unit-manager:110', 'Chefer Utbildning', [anna]);
@@ -119,17 +119,18 @@ bun scripts/provisioner-check.ts "$CLEW" --roots 1 | sed '1d'
 No failures, 1 warning(s).
 ```
 
-The library is deliberately empty. In Personal, the page in Clew where a manager sees their staff, Anna sees Omar and Omar sees Lena. A level without an active manager passes the reporting line upward. Managers on the same unit share its staff. An acting manager joins the incumbent unless the source also removes the incumbent's membership. Verify the three parent links and those staff lists against the source. The checker can count a tree whose people report to the wrong managers.
+The library is deliberately empty. In Personal, the page in Clew where a manager sees their staff, Anna sees Omar and Omar sees Lena, because each employment names its manager: `managerId` is the `id` Clew returned when the manager was created, so a manager is created before the people who report to them. Clew reads none of this from the tree. An employment that names no manager gives the person none, and two managers of one unit each see only the people whose employments name them. When a manager leaves or somebody acts for them, send the employments of the people concerned again with the new manager. Verify the three parent links and those staff lists against the source. The checker can count a tree whose people report to the wrong managers.
 
 ## Move an employee and deactivate a leaver
 
-In the same Bash session, move Lena to the library, then move the library under Centralskolan. Each membership change targets the group; her employment is an attribute of her own and is sent to her. A unit move changes only the fully qualified parent path. Read the unit back to verify its parent and members. A full group `PUT` replaces its members, and a unit `PUT` without its extension makes it a root.
+In the same Bash session, move Lena to the library, then move the library under Centralskolan. Each membership change targets the group; her employment is an attribute of her own and is sent to her, and it still names Omar as her manager. Before Omar is deactivated her employment is sent once more with Anna as her manager: Clew does not pass the reporting line on by itself. A unit move changes only the fully qualified parent path. Read the unit back to verify its parent and members. A full group `PUT` replaces its members, and a unit `PUT` without its extension makes it a root.
 
 ```bash
 library=$(id_of Groups unit:112)
 school=$(id_of Groups unit:111)
 lena=$(id_of Users e-1003)
 omar=$(id_of Users e-1002)
+anna=$(id_of Users e-1001)
 extension=urn:clew:params:scim:schemas:extension:unit:2.0:Group
 employment=urn:clew:params:scim:schemas:extension:employment:2.0:User
 patch() {
@@ -137,7 +138,7 @@ patch() {
 }
 patch "Groups/$library" "{\"op\":\"add\",\"path\":\"members\",\"value\":[{\"value\":\"$lena\"}]}"
 patch "Groups/$school" "{\"op\":\"remove\",\"path\":\"members[value eq \\\"$lena\\\"]\"}"
-patch "Users/$lena" "{\"op\":\"replace\",\"path\":\"$employment:employments\",\"value\":[{\"unitId\":\"112\",\"title\":\"Bibliotekarie\"}]}"
+patch "Users/$lena" "{\"op\":\"replace\",\"path\":\"$employment:employments\",\"value\":[{\"unitId\":\"112\",\"title\":\"Bibliotekarie\",\"managerId\":\"$omar\"}]}"
 patch "Groups/$library" "{\"op\":\"replace\",\"path\":\"$extension:parent\",\"value\":\"unit:111\"}"
 scim "$CLEW/Groups/$library" | python3 -c '
 import json, sys
@@ -146,6 +147,7 @@ assert group[sys.argv[1]]["parent"] == "unit:111"
 assert [m["value"] for m in group["members"]] == [sys.argv[2]]
 print("Library moved with Lena still assigned.")
 ' "$extension" "$lena"
+patch "Users/$lena" "{\"op\":\"replace\",\"path\":\"$employment:employments\",\"value\":[{\"unitId\":\"112\",\"title\":\"Bibliotekarie\",\"managerId\":\"$anna\"}]}"
 patch "Users/$omar" '{"op":"replace","path":"active","value":false}'
 scim "$CLEW/Users/$omar" | python3 -c 'import json,sys; assert json.load(sys.stdin)["active"] is False; print("Omar deactivated.")'
 ```

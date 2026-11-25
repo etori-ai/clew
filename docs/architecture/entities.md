@@ -46,7 +46,7 @@ Personal lists on the units they manage, who manages them (`above`) and which co
 | Kind | Relation | Reached through |
 |---|---|---|
 | `person` | `self`: the reader | The opened person, and any capability that admits it |
-| `person` | `managed`: a direct report under D99 item 4: placed without a manager's role on a unit the reader manages, reporting to it from below (the managers of the nearest led units below it and the people of units nobody leads in between), or leading it beside the reader while their line runs to a unit above it that the reader leads (`lineReports`). Never a co-manager whose line runs elsewhere, never someone who manages the reader (`reportsTo`) | The list's sources, the opened person, and any capability that admits it |
+| `person` | `managed`: a direct report under [D147](../decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md): an active person with a current employment that names the reader as manager. Never someone who also manages the reader (`reportsTo`), and never a co-manager of the reader's unit unless their own employment names the reader | The list's sources, the opened person, and any capability that admits it |
 | `person` | `colleague`: any other active person in the reader's organisation, opened by Clew's id and asked about by user name; a co-manager and the reader's own manager among them | The opened person; a source only when it admits `colleague` |
 | `unit` | `manages`: a unit the reader holds a manager's role on | The list, the opened unit, and every read about a unit that admits it (all do by default) |
 | `unit` | `member`: a unit the reader is placed on otherwise | The list, the opened unit, and a read about a unit that admits `member` |

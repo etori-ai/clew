@@ -317,9 +317,28 @@ export interface ProvisionTx {
   searchUsers(organisationId: string, search: UserSearch, page: Page): Promise<Listed<UserRecord>>;
   assignmentsOf(personId: string): Promise<Array<{ unitId: string; unitLabel: string; role: Assignment['role'] }>>;
   /**
-   * Personal (D94, D99): everyone assigned to each of the units, under the unit's id, with their role on it and by
-   * person id; a unit nobody is assigned to is absent. With `organisationId`, that organisation's people only. The use
-   * case sorts and excludes the reader.
+   * D147: the people of the organisation with a current employment that names `managerId`, by person id, each once:
+   * with the units of those employments in the employments' order, each once, and the units they lead themselves, by
+   * unit id. A deactivated person is among them with `enabled` false, as `unitPeople` gives them; the use case decides.
+   */
+  reportsTo(
+    organisationId: string,
+    managerId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      userName: string | null;
+      email: string | null;
+      enabled: boolean;
+      unitIds: string[];
+      leads: string[];
+    }>
+  >;
+  /**
+   * Administration › Organisation (D99): everyone assigned to each of the units, under the unit's id, with their role
+   * on it and by person id; a unit nobody is assigned to is absent. With `organisationId`, that organisation's people
+   * only. The use case sorts.
    */
   unitPeople(
     unitIds: readonly string[],

@@ -7,7 +7,7 @@ import {
   reservedScimGroupKey,
 } from '../../packages/contracts/src/scim-group-key';
 import { ScimClientError, type ScimClient } from './client';
-import { fullName, type Directory, type DirectoryPerson } from './directory';
+import { fullName, type Directory, type DirectoryPerson, type Employment } from './directory';
 
 /**
  * The synthetic provisioner (D68 item 7): reads a directory and pushes it to Clew's SCIM server, mapping the source's
@@ -68,6 +68,12 @@ export interface PlannedGroup {
 export interface PlannedUser {
   externalId: string;
   body: ReturnType<typeof userBody>;
+  /**
+   * D147: for each employment of the body, in its order, the source's id of the person it reports to. The body itself
+   * carries no manager: Clew takes one by the `id` it gave that person, which the push knows once it has read or
+   * created them.
+   */
+  managers: Array<string | undefined>;
 }
 export interface Plan {
   users: PlannedUser[];
@@ -119,7 +125,11 @@ export function planPeople(directory: Directory): PlannedUser[] {
     directory.people.filter(p => p.active).map(p => nameKey(p.userName)),
     'an account name is one active person',
   );
-  return directory.people.map(p => ({ externalId: p.externalId, body: userBody(p) }));
+  return directory.people.map(p => ({
+    externalId: p.externalId,
+    body: userBody(p),
+    managers: (p.employments ?? []).map(job => job.manager),
+  }));
 }
 /**
  * The organisation and who is placed where (D68, D99): every unit as a node of the tree, from the root down, then the
@@ -273,7 +283,8 @@ export function plan(directory: Directory): Plan {
 const levelOf = (g: PlannedGroup, depth: ReadonlyMap<string, number>) =>
   g.externalId.startsWith(UNIT_KEY) ? (depth.get(g.externalId.slice(UNIT_KEY.length)) ?? 0) : Number.MAX_SAFE_INTEGER;
 function userBody(p: DirectoryPerson) {
-  const employments = p.employments ?? [];
+  // The manager travels beside the body (`PlannedUser.managers`), by the source's id for them.
+  const employments: Employment[] = (p.employments ?? []).map(({ manager: _manager, ...job }) => job);
   // Every employment travels in the extension with its own title, and Clew shows those. The core `title` is what a
   // source without employments sends; here a person with one employment carries the same title there too.
   const title = employments.length === 1 ? employments[0]!.title : undefined;
@@ -706,6 +717,26 @@ async function reconcile(
   };
   const rehires: Array<{ id: string; user: PlannedUser }> = [];
   /**
+   * D147: what a person is sent, with each employment's manager as the `id` Clew gave them. A manager Clew does not
+   * hold yet (somebody this run creates further on, or refuses) is left out for now; `namedManagers` remembers how
+   * many were named, so the pass after the people sends the employments again once more of them can be.
+   */
+  const namedManagers = new Map<string, number>();
+  const bodyOf = (user: PlannedUser): PlannedUser['body'] => {
+    const sent = user.body[SCIM_EMPLOYMENT_SCHEMA]?.employments;
+    if (!sent || !user.managers.some(Boolean)) return user.body;
+    let named = 0;
+    const employments = sent.map((job, n) => {
+      const source = user.managers[n],
+        managerId = source === undefined ? undefined : ids.get(source);
+      if (!managerId) return job;
+      named++;
+      return { ...job, managerId };
+    });
+    namedManagers.set(user.externalId, named);
+    return { ...user.body, [SCIM_EMPLOYMENT_SCHEMA]: { employments } };
+  };
+  /**
    * A person the read did not show, whom Clew holds after all, found by the source's id: sent to as to a row that was
    * read, and one who returns waits for the returners' step as they would have. Whether the request was sent now.
    */
@@ -716,7 +747,7 @@ async function reconcile(
       rehires.push({ id: found.id, user });
       return false;
     }
-    await client.request('PUT', '/Users/' + found.id, user.body);
+    await client.request('PUT', '/Users/' + found.id, bodyOf(user));
     return true;
   };
   /**
@@ -726,7 +757,7 @@ async function reconcile(
   const sendPerson = async (user: PlannedUser, id: string | undefined) => {
     try {
       if (id) {
-        await client.request('PUT', '/Users/' + id, user.body);
+        await client.request('PUT', '/Users/' + id, bodyOf(user));
       } else if (!user.body.active) {
         return;
       } else if (nowhere(user.externalId)) {
@@ -745,7 +776,7 @@ async function reconcile(
         const postedBefore = run.postedUsers.has(user.externalId);
         run.postedUsers.add(user.externalId);
         try {
-          const { body } = await client.request('POST', '/Users', user.body);
+          const { body } = await client.request('POST', '/Users', bodyOf(user));
           ids.set(user.externalId, body.id);
           options.log?.(`created ${user.body.userName}`);
         } catch (error) {
@@ -769,6 +800,25 @@ async function reconcile(
     const id = ids.get(user.externalId);
     if (id && disabled.has(id) && user.body.active) rehires.push({ id, user });
     else await sendPerson(user, id);
+  }
+  // The managers the step above could not name (D147): somebody this run created after the people who report to them.
+  // Now that everybody is written, those people's employments are sent again with the manager's id. A manager Clew
+  // still does not hold was refused above and is named there; the person stays without one until a later run.
+  for (const user of users) {
+    const before = namedManagers.get(user.externalId),
+      id = ids.get(user.externalId);
+    // Nobody is sent here who was not sent above, and somebody who waits to return is sent whole in the last step.
+    if (before === undefined || !id || rehires.some(r => r.id === id)) continue;
+    const employments = bodyOf(user)[SCIM_EMPLOYMENT_SCHEMA]?.employments;
+    if (!employments || (namedManagers.get(user.externalId) ?? 0) <= before) continue;
+    try {
+      await patch(client, '/Users/' + id, [
+        { op: 'replace', path: SCIM_EMPLOYMENT_SCHEMA + ':employments', value: employments },
+      ]);
+    } catch (error) {
+      if (!refusal(error)) throw error;
+      refusePerson(user, error.message);
+    }
   }
   // 4. Who is in which group, in two rounds. First everybody a group gains, in every group; then everybody a group
   // loses. A person who moves from one unit to another is in both for a moment and never in neither, so their grant

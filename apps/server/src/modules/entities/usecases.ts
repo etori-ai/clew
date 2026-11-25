@@ -129,8 +129,8 @@ export function entityUsecases(deps: EntityDeps) {
 
   /**
    * The entity behind Clew's key (D122: a person's id, a unit's id), and how the reader stands to it; undefined outside
-   * the rule. A person: the reader (`self`), someone who reports to the reader on a unit they manage (`managed`, also
-   * from below, D99, `reportsTo`), or another active person of the directory (`colleague`). A unit: one the reader
+   * the rule. A person: the reader (`self`), someone whose employment names the reader as manager (`managed`, D147,
+   * `reportsTo`), or another active person of the directory (`colleague`). A unit: one the reader
    * manages (`manages`), is placed on otherwise (`member`), or one whose manager reports to the reader (`below`, D117);
    * with the units under it that the reader follows up, and for a unit below the way up. A key that cannot name an
    * entity of the kind (a NUL in it, or too long) names nobody, before anything is read.
@@ -154,7 +154,7 @@ export function entityUsecases(deps: EntityDeps) {
         .filter(u => u.under === unit.unitId)
         .map(u => ({ key: u.unitId, name: u.unitLabel }));
       // The way up from a unit below: the reader's own unit its manager reports to.
-      const up = below && memberUnit(reach, below.under);
+      const up = below?.under === undefined ? undefined : memberUnit(reach, below.under);
       return {
         entity: { ...unitRef(unit) },
         relation,
@@ -169,14 +169,12 @@ export function entityUsecases(deps: EntityDeps) {
     // The rule the registry applies to every call (D117): this page and a source's answer never disagree on it.
     const relation = personRelation(persona, reach ?? NOBODY, person);
     const managed = reach && managedPerson(reach, person.id);
-    // Where the person is: the reader's own unit for the reader, the unit the reader manages that they are placed on,
-    // else their own unit, also for someone who reports to the reader from below (D99), whom that card does not place.
+    // Where the person is: the reader's own unit for the reader, the unit of the employment that names the reader for
+    // someone who reports to them (D147), else the unit the person acts in.
     const unit =
       self && persona.unitId
         ? { unitId: persona.unitId, unitLabel: persona.unitLabel }
-        : managed?.placed
-          ? managed.unit
-          : person.unit;
+        : (managed?.unit ?? person.unit);
     // Its page opens, as `/units/<id>` answers, only for a unit the reader manages, belongs to or follows up from above
     // (D117): the reader's own always.
     const opens = !!unit && (!reach || !!memberUnit(reach, unit.unitId) || !!belowUnit(reach, unit.unitId));
@@ -324,8 +322,8 @@ export function entityUsecases(deps: EntityDeps) {
 }
 /**
  * `people.reports` (D141 rule 4): the people Personal lists for the reader, the list `GET /api/entities/person` draws
- * (`groupsOf`), each once with the units that list them and their title. For whoever manages a unit; someone who
- * manages none has nobody on the list. Nothing else of a person is read: no HR data, no source is asked. Reads, so no
+ * (`groupsOf`), each once with the units that list them and their title. For whoever people report to (D147); someone
+ * nobody reports to has nobody on the list. Nothing else of a person is read: no HR data, no source is asked. Reads, so no
  * audit row.
  */
 export function reportUsecases(deps: { directory: ReportDirectory }) {
@@ -342,5 +340,5 @@ export type ReportUsecases = ReturnType<typeof reportUsecases>;
 const TIMEOUT = Symbol('timeout');
 const FAILED = Symbol('failed');
 /** Where a reader stands who is asked about themself: their own record is enough, nobody else is read. */
-const NOBODY = { units: [], managed: [], above: [], lineReports: [] };
+const NOBODY = { units: [], managed: [], above: [] };
 export type EntityUsecases = ReturnType<typeof entityUsecases>;

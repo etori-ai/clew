@@ -21,6 +21,7 @@ import { manifestProblems } from '../../packages/connectors/src/remote';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { connectorProblems } from '../../packages/connectors/src/validation';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { nameManagers } from '../named-managers';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
@@ -157,6 +158,8 @@ function directory() {
     reader: async actor => (s.users.get(actor.id)?.enabled ? persona(actor.id) : undefined),
     holders: memoryPersonKeys(s).holders,
   });
+  // D147: who reports to whom is said on the employments, as a directory says it.
+  nameManagers(store.state);
   return { persona, staff, relations, state: s };
 }
 
@@ -420,7 +423,9 @@ describe('the rule, resolved from the directory', () => {
       { asked: 'boss', key: 'boss', relation: 'colleague' },
     ]);
     expect(await people.relations.relate(hillevi, 'person', ['cohead', 'director', 'boss'], ['managed'])).toEqual([]);
-    // Personal is unchanged: it lists everyone placed on the unit she manages.
+    // Personal lists those whose employments name her (D147), so no co-manager of the unit is on it. Boss is: his
+    // employment on the school names her. He is a colleague all the same, since he also manages her, and a reader of
+    // the line stops where it comes round.
     const entities = entityUsecases({
       directory: people.staff,
       sources: { reads: async () => [], actions: async () => [] },
@@ -430,7 +435,9 @@ describe('the rule, resolved from the directory', () => {
     const listed = (await entities.list(people.persona('hillevi'), 'person')).groups.flatMap(g =>
       g.entities.map(e => e.key),
     );
-    expect(listed).toEqual(expect.arrayContaining(['cohead', 'director', 'boss', 'anna', 'olle']));
+    expect(listed).toEqual(expect.arrayContaining(['boss', 'anna', 'olle']));
+    expect(listed).not.toContain('cohead');
+    expect(listed).not.toContain('director');
     // And the opened page says how she stands to each, by the same rule.
     expect((await entities.detail(people.persona('hillevi'), 'person', 'cohead'))?.relation).toBe('colleague');
     expect((await entities.detail(people.persona('hillevi'), 'person', 'director'))?.relation).toBe('colleague');
@@ -488,7 +495,9 @@ describe('the rule, resolved from the directory', () => {
   });
   test('a unit led by a manager who reports to the caller is below: one level down, never upward, and only where admitted', async () => {
     const { people } = world();
-    // Olle leads Fritids directly below the school Hillevi leads, so he reports to her (D99) and Fritids is below her.
+    // Olle leads Fritids and reports to Hillevi, so Fritids is below her. So is Ekonomi, which Petra leads: her
+    // employment on the school names Hillevi, and where in the tree the unit stands says nothing (D147). Förvaltningen
+    // is not, though Boss is on her list: he also manages her, so he is not her report.
     const hillevi = actorOf(people.persona('hillevi'));
     expect(
       await people.relations.relate(
@@ -500,6 +509,7 @@ describe('the rule, resolved from the directory', () => {
     ).toEqual([
       { asked: 'unit-skola', key: 'unit-skola', relation: 'manages' },
       { asked: 'unit-fritids', key: 'unit-fritids', relation: 'below' },
+      { asked: 'unit-ekonomi', key: 'unit-ekonomi', relation: 'below' },
     ]);
     // A read that does not admit `below` (the default admits `manages` alone) is not asked about it.
     expect(await people.relations.relate(hillevi, 'unit', ['unit-fritids'], ['manages'])).toEqual([]);
@@ -1507,6 +1517,8 @@ describe('an approved write about a person (executions, D45 and D117)', () => {
     });
     const hillevi = people.persona('hillevi');
     const move = (id: string) => {
+      // The directory moves the employment too, and with it whom the person reports to (D147).
+      people.state.users.set(id, { ...people.state.users.get(id)!, employments: [{ unitId: 'unit-omsorg' }] });
       people.state.assignments.set(id, [{ unitId: 'unit-omsorg', role: 'employee' }]);
       people.state.grants.set(id, {
         unitId: 'unit-omsorg',
