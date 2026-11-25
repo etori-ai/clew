@@ -124,8 +124,8 @@ export function WorkRow({
   href: string;
   isSelected?: boolean;
 }) {
-  const silent = useSilentSources().of(thread.connector);
-  const stale = thread.state === 'open' && !!silent;
+  const silent = useSilentSources();
+  const stale = thread.state === 'open' && silent.stale(thread.connector);
   return (
     <LinkRow
       id={`work-${thread.id}`}

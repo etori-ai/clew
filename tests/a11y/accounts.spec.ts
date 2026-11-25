@@ -94,7 +94,7 @@ for (const [layout, viewport] of [
       const card = needs(page);
       await expect(card.getByText('Inköpssystemet godtar inte längre ditt konto', { exact: true })).toBeVisible();
       await expect(
-        card.getByText('Sedan 3 november. Det som är ditt där visas inte här.', { exact: true }),
+        card.getByText('Sedan 3 november kan Clew inte läsa det som är ditt där.', { exact: true }),
       ).toBeVisible();
       await expect(card.getByText('Behöver kopplas igen', { exact: true })).toBeVisible();
       await expect(card.getByRole('button', { name: 'Koppla igen: Inköpssystemet', exact: true })).toBeVisible();
@@ -249,18 +249,27 @@ test.describe('linked accounts beside the rest of the page', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('a system that needs the account is not said to be silent', async ({ page, api }) => {
-    api.accounts = [buy('needs-link')];
+  test('a system that no longer accepts the account is not said to be silent, and its kept cards say they may be old', async ({
+    page,
+    api,
+  }) => {
+    api.threads = api.threads.filter(t => t.id === 'fakturor');
+    api.accounts = [entry('finance', 'Ekonomisystemet', 'needs-link')];
     api.sources = [
       {
-        connector: 'purchasing',
+        connector: 'finance',
         state: 'blocked',
         lastSuccess: '2026-11-03T07:00:00.000Z',
         error: 'authorization-required',
       },
     ];
     await open(page, '/');
-    await expect(needs(page).getByText('Inköpssystemet godtar inte längre ditt konto', { exact: true })).toBeVisible();
+    await expect(needs(page).getByText('Ekonomisystemet godtar inte längre ditt konto', { exact: true })).toBeVisible();
+    await expect(
+      needs(page).getByText('Sedan 3 november kan Clew inte läsa det som är ditt där.', { exact: true }),
+    ).toBeVisible();
+    // The card Clew kept from the system stands as it was when the account last worked, and says so.
+    await expect(page.locator('#work-fakturor')).toContainText('kan vara gammal');
     await expect(page.getByText(/svarar inte/)).toHaveCount(0);
     expect((await announcements(page)).filter(said => said.includes('svarar inte'))).toEqual([]);
   });

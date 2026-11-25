@@ -256,7 +256,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     const facts = rowFacts(t, now, todayDate);
     const mark = marks.ofThread(t);
     const own = !!marks.system(mark.connector) && mark.ordinal === null;
-    const stale = t.state === 'open' && !!silent.of(t.connector);
+    const stale = t.state === 'open' && silent.stale(t.connector);
     // "Behöver dig" is the card's own heading: the state of an item with nothing to decide is not said again under it.
     const plain = facts.state.label.startsWith('Ska göras') || facts.state.label === STATUS['needs-you'].word;
     const state = plain && !unresolvedExecution(t) ? null : facts.state.label;

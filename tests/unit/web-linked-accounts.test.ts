@@ -63,13 +63,15 @@ describe('the lines under Behöver dig', () => {
       [
         'lost',
         'Inköpssystemet godtar inte längre ditt konto',
-        'Sedan 24 november. Det som är ditt där visas inte här.',
+        'Sedan 24 november kan Clew inte läsa det som är ditt där.',
         'Koppla igen',
         'purchasing',
         [],
       ],
     ]);
-    expect(accountLines([buy('needs-link', { lostAt: null })])[0]!.line).toBe('Det som är ditt där visas inte här.');
+    expect(accountLines([buy('needs-link', { lostAt: null })])[0]!.line).toBe(
+      'Clew kan inte läsa det som är ditt där.',
+    );
   });
 
   test('one of each is two lines, the lost one first', () => {

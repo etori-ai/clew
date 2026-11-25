@@ -481,7 +481,7 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
           // A system of Clew's own is not named (the page is Clew's); an open item whose system does not answer says
           // that it may be old, as Hem's rows do.
           const own = !!marks.system(mark.connector) && mark.ordinal === null;
-          const stale = thread.state === 'open' && !!silent.of(thread.connector);
+          const stale = thread.state === 'open' && silent.stale(thread.connector);
           return (
             <LinkRow
               key={c.threadId}

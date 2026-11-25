@@ -64,7 +64,18 @@ export function useSilentSources() {
     }));
   }, [named, sources, marks, threads?.threads, accounts]);
   const of = useCallback((connector: string) => list.find(s => s.connector === connector), [list]);
-  return { list, of, named };
+  // What a row of an open item asks: whether what it shows may be old. That holds for a system that does not answer,
+  // and for one whose scan is blocked because it no longer accepts the person's account (D147): its kept cards are
+  // as they were when it last did.
+  const blocked = useMemo(
+    () => (sources ?? []).filter(s => s.error === 'authorization-required').map(s => s.connector),
+    [sources],
+  );
+  const stale = useCallback(
+    (connector: string) => list.some(s => s.connector === connector) || blocked.includes(connector),
+    [list, blocked],
+  );
+  return { list, of, stale, named };
 }
 
 /** Who has been told in this session (one query client per signed-in session, D33): a system is said once. */

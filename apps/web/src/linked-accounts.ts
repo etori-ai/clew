@@ -45,8 +45,15 @@ export const needsTitle = (source: string) => `${source} behöver ditt konto`;
 export const lostTitle = (source: string) => `${source} godtar inte längre ditt konto`;
 /** What the first sign-in is, since the button leaves Clew. */
 export const firstLine = (source: string) => `Du loggar in hos ${source} en gång och kommer sedan tillbaka hit.`;
+/**
+ * What a lost link means here. Clew keeps the cards it had (a blocked scan closes none), so the line does not say
+ * that nothing of the system is shown: it says that Clew can no longer read it, which holds for what is missing and
+ * for what stands as it was.
+ */
 export const lostLine = (entry: Pick<LinkedAccountEntry, 'lostAt'>) =>
-  `${entry.lostAt ? `Sedan ${dayMonth.format(new Date(entry.lostAt))}. ` : ''}Det som är ditt där visas inte här.`;
+  entry.lostAt
+    ? `Sedan ${dayMonth.format(new Date(entry.lostAt))} kan Clew inte läsa det som är ditt där.`
+    : 'Clew kan inte läsa det som är ditt där.';
 
 /**
  * One system's line, where its content is missing: on Hem, and in the system's own list, where it cannot be put off
