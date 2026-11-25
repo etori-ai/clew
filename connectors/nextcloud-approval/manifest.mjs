@@ -173,8 +173,13 @@ function capabilities(source) {
 /**
  * `audience` is what the person's token is issued for: the identity provider and Nextcloud's user_oidc provider agree on
  * it, so it is configuration. `source` is the system's name as a person reads it.
+ *
+ * `linkedAccount` is the other way to act as the person (D147), for a Nextcloud that does not take the identity
+ * provider's token: its own OAuth 2 server issues the token, the person links their account once, and the manifest
+ * declares `linkedAccount` where it otherwise declares `delegation`. `{ resource }` is Nextcloud's address. Nothing else
+ * in the connector differs: the token arrives in the same header and is forwarded to the same API.
  */
-export function createManifest({ audience = DEFAULT_AUDIENCE, source = DEFAULT_SOURCE } = {}) {
+export function createManifest({ audience = DEFAULT_AUDIENCE, source = DEFAULT_SOURCE, linkedAccount } = {}) {
   return {
     protocol: 1,
     id: CONNECTOR,
@@ -187,13 +192,19 @@ export function createManifest({ audience = DEFAULT_AUDIENCE, source = DEFAULT_S
         icon: 'document',
         roles: ['manager', 'employee'],
         standing: [`${CONNECTOR}.pending`],
-        // The scan needs the person's token, so it runs when their session asks, never at night.
-        schedules: [{ label: 'Filer som väntar på ditt godkännande', when: 'När du öppnar Clew' }],
+        // With delegation the scan needs the person's session, so it runs when they open Clew, never at night. A linked
+        // account needs none, so the nightly scan carries it.
+        schedules: [
+          {
+            label: 'Filer som väntar på ditt godkännande',
+            when: linkedAccount ? 'Varje natt och när du öppnar Clew' : 'När du öppnar Clew',
+          },
+        ],
       },
     ],
     capabilities: capabilities(source),
     scan: true,
-    delegation: { audience },
+    ...(linkedAccount ? { linkedAccount } : { delegation: { audience } }),
   };
 }
 

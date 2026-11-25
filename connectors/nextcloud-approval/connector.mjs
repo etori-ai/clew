@@ -100,23 +100,42 @@ export function createConnector({
   secret,
   source = createFixtureApproval(),
   audience = DEFAULT_AUDIENCE,
+  linkedAccount,
   sourceLabel = DEFAULT_SOURCE,
   publicUrl,
   clewUrl = process.env.CLEW_URL ?? '',
   now = () => Date.now(),
 } = {}) {
-  const manifest = createManifest({ audience, source: sourceLabel });
+  const manifest = createManifest({ audience, source: sourceLabel, linkedAccount });
   const verify = createVerifier({ secret, jwks, clewUrl }, CONNECTOR);
   const linkBase = publicUrl ? new URL(publicUrl).toString().replace(/\/+$/, '') : undefined;
   if (linkBase && !/^https?:\/\//.test(linkBase)) throw new Error('The public Nextcloud address must be http(s).');
   const linkOf = id => (linkBase ? `${linkBase}/index.php/f/${id}` : undefined);
 
   const refusals = {
-    missing: `Din inloggning kan inte styrkas mot ${sourceLabel} i den här sessionen.`,
+    missing: linkedAccount
+      ? `${sourceLabel} behöver ditt konto. Koppla ditt konto och försök igen.`
+      : `Din inloggning kan inte styrkas mot ${sourceLabel} i den här sessionen.`,
     'no-user-name': `Ditt konto i Clew saknar användarnamn, så din inloggning kan inte styrkas mot ${sourceLabel}.`,
-    refused: `${sourceLabel} godtar inte din inloggning.`,
+    refused: linkedAccount
+      ? `${sourceLabel} godtar inte längre ditt kopplade konto. Koppla ditt konto igen.`
+      : `${sourceLabel} godtar inte din inloggning.`,
     mismatch: `Kontot i ${sourceLabel} har ett annat användarnamn än ditt konto i Clew.`,
   };
+  /**
+   * With a linked account (D147), a token that is missing or that Nextcloud refuses is `authorization-required`, which
+   * tells Clew that the link is lost and the person links again. An account under another name than the person's is
+   * still `denied`: the person linked somebody else's account, and Clew keeps the link for them to take away.
+   */
+  const lostLink = error =>
+    !!linkedAccount &&
+    (error instanceof SourceDenied || (error instanceof Refusal && ['missing', 'refused'].includes(error.kind)));
+  const refusalOf = error =>
+    fail(
+      lostLink(error) ? 'authorization-required' : 'denied',
+      refusals[error instanceof Refusal ? error.kind : 'refused'],
+      403,
+    );
 
   /**
    * The Nextcloud account behind the token, whose id must equal the user name Clew signed for, without regard to case: a
@@ -426,6 +445,8 @@ export function createConnector({
       // A waiting file whose version could not be read gets no card, and the snapshot does not claim to be whole.
       return drafts.length === files.length ? observed('complete', drafts, true) : observed('partial', drafts);
     } catch (error) {
+      // A lost link is answered as the protocol's error, so Clew learns of it from a scan too.
+      if (lostLink(error)) throw error;
       if (error instanceof Refusal || error instanceof SourceDenied) return observed('authorization-required');
       if (!(error instanceof SourceUnavailable)) console.error(`${CONNECTOR} connector: unexpected`, error?.name);
       return observed('unavailable');
@@ -452,7 +473,13 @@ export function createConnector({
     // write no live session of theirs stands behind, or a session without identity provider tokens.
     const token = request.headers.get('x-clew-delegated-token') || undefined;
 
-    if (url.pathname === '/clew/scan') return json(await scan(actor, token));
+    if (url.pathname === '/clew/scan')
+      try {
+        return json(await scan(actor, token));
+      } catch (error) {
+        if (lostLink(error)) return refusalOf(error);
+        throw error;
+      }
     if (url.pathname === '/clew/figure') return json({ figure: null });
 
     const name = decodeURIComponent(url.pathname.slice('/clew/capabilities/'.length));
@@ -460,7 +487,7 @@ export function createConnector({
     if (!capability) return fail('not-found', 'Okänd förmåga.', 404);
     const declared = manifest.capabilities.find(c => c.name === name);
     // A read refuses without the token; a decision answers what happened, which is that nothing was sent.
-    if (!token && declared.kind !== 'execute') return fail('denied', refusals.missing, 403);
+    if (!token && declared.kind !== 'execute') return refusalOf(new Refusal('missing'));
 
     try {
       const input = body && typeof body.input === 'object' && body.input ? body.input : {};
@@ -469,8 +496,7 @@ export function createConnector({
       if (error instanceof Invalid) return fail('invalid', error.message, 400);
       if (error instanceof NotFound)
         return fail('not-found', error.message || 'Filen finns inte, eller så kommer du inte åt den.', 404);
-      if (error instanceof Refusal) return fail('denied', refusals[error.kind], 403);
-      if (error instanceof SourceDenied) return fail('denied', refusals.refused, 403);
+      if (error instanceof Refusal || error instanceof SourceDenied) return refusalOf(error);
       // Nextcloud's error text stays here, and so does anything an unexpected error might carry: only its name is logged.
       if (!(error instanceof SourceUnavailable) && !(error instanceof SourceLost))
         console.error(`${CONNECTOR} connector: unexpected`, error?.name);
