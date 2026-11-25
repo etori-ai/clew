@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**147 in force**: 99 accepted and 48 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
+**148 in force**: 99 accepted and 49 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -115,7 +115,8 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D102 · A decision is provisional until something outside the repository has tested it, and small adjustments are not numbered](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md) | 2026-11-10 | accepted |  |
 | [D105 · The repository explains itself without a handover file](D105-the-repository-explains-itself-without-a-handover-file.md) | 2026-11-11 | accepted |  |
 | [D106 · The documentation site is VitePress over `docs/` as it is, published to GitHub Pages](D106-the-documentation-site-is-vitepress-over-docs-as-it-is.md) | 2026-11-11 | provisional |  |
-| [D131 · Clew builds a server image and a web image from the repository root](D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md) | 2026-11-17 | provisional | [D146](D146-clew-is-licensed-under-the-agpl-as-eneo-is.md) |
+| [D131 · Clew builds a server image and a web image from the repository root](D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md) | 2026-11-17 | provisional | [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md), [D146](D146-clew-is-licensed-under-the-agpl-as-eneo-is.md) |
+| [D145 · The web app is served under a content security policy and keeps its cookies to its own host](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) | 2026-11-23 | provisional |  |
 | [D146 · Clew is licensed under the AGPL, as Eneo is](D146-clew-is-licensed-under-the-agpl-as-eneo-is.md) | 2026-11-23 | accepted |  |
 
 ## Interface
@@ -161,7 +162,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) | 2026-11-09 | accepted | [D116](README.md) |
 | [D90 · Mina ärenden is a section on Hem, after the day's work](D90-mina-arenden-is-a-section-on-hem.md) | 2026-11-09 | accepted |  |
 | [D92 · What goes into the box enters on Astryx's entry motion](D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md) | 2026-11-09 | accepted |  |
-| [D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) | 2026-11-10 | accepted |  |
+| [D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) | 2026-11-10 | accepted | [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) |
 | [D100 · The people list is read a page at a time and narrowed on the server](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) | 2026-11-11 | provisional | [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) |
 | [D111 · Where something opens is decided by what it is, never by the page it was clicked on](D111-where-something-opens-is-decided-by-what-it-is.md) | 2026-11-11 | provisional | [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D116](README.md) |
 | [D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | 2026-11-11 | provisional | [D116](README.md), [D124](README.md), [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) |

@@ -252,11 +252,13 @@ describe('clew.errands', () => {
       ]),
       caseSystem('social', 'Verksamhetssystemet', [{ ...row('social', 1), state: 'urgent' }]),
       caseSystem('school', 'Elevsystemet', [{ ...row('school', 1), ref: 'not-an-errand-ref' }]),
+      // A link that is not an http(s) address (D145 item 5).
+      caseSystem('archive', 'Arkivet', [{ ...row('archive', 1), link: 'file:///arkiv/1' }]),
     ]);
     const result = await list(registry, mikael);
     expect(JSON.stringify(result)).not.toContain('Anna');
     expect(result.rows.map(r => r.ref)).toEqual(['errand:permits:1']);
-    expect(result.unanswered).toEqual(['Kundtjänsten', 'Verksamhetssystemet', 'Elevsystemet']);
+    expect(result.unanswered).toEqual(['Kundtjänsten', 'Verksamhetssystemet', 'Elevsystemet', 'Arkivet']);
   });
 
   test('a person is only asked about the systems in their scope, and has no list without one', async () => {

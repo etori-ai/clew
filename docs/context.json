@@ -1170,7 +1170,7 @@
       "number": 98,
       "path": "docs/decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
       "title": "D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
-      "status": "accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet",
+      "status": "accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet; item 5's check of an SVG amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the file is read as XML, held to what a drawing needs and to UTF-8, so a namespace prefix, a character reference, a CSS escape or another encoding hides nothing)",
       "date": "2026-11-10",
       "area": "ui"
     },
@@ -1575,7 +1575,7 @@
       "number": 131,
       "path": "docs/decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
       "title": "D131 · Clew builds a server image and a web image from the repository root",
-      "status": "provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them; the note that the repository has no licence file replaced by [D146](D146-clew-is-licensed-under-the-agpl-as-eneo-is.md) on 2026-11-23, which licenses Clew under the AGPL v3)",
+      "status": "provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them; the note that the repository has no licence file replaced by [D146](D146-clew-is-licensed-under-the-agpl-as-eneo-is.md) on 2026-11-23, which licenses Clew under the AGPL v3; item 4 amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the web image serves every page and file with the security headers of `apps/web/security-headers.conf`))",
       "date": "2026-11-17",
       "area": "platform"
     },
@@ -1695,6 +1695,15 @@
       "status": "provisional (the product owner, 2026-11-23, set the order of work that fixes the review of 2026-11-23 and left this choice to the team: a municipality reviews what another system may read through Clew and whose token it is handed before it happens; tested by nothing outside the repository yet)",
       "date": "2026-11-23",
       "area": "integrations"
+    },
+    {
+      "key": "D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host",
+      "number": 145,
+      "path": "docs/decisions/D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md",
+      "title": "D145 · The web app is served under a content security policy and keeps its cookies to its own host",
+      "status": "provisional (the product owner, 2026-11-23, set the order of work that fixes the review of 2026-11-23 and named the content security policy as what its fourth batch decides first, leaving the policy itself to the team; tested by nothing outside the repository yet: the headers were read from the web image's nginx on a workstation, and no installation's proxy has served them)",
+      "date": "2026-11-23",
+      "area": "platform, identity"
     },
     {
       "key": "D146-clew-is-licensed-under-the-agpl-as-eneo-is",
@@ -2631,6 +2640,12 @@
     {
       "path": "docs/decisions/D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md",
       "title": "D144 · A connector's manifest goes live only when an administrator approves it",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md",
+      "title": "D145 · The web app is served under a content security policy and keeps its cookies to its own host",
       "category": "decision-history",
       "headings": []
     },

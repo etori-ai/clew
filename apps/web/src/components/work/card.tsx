@@ -68,6 +68,7 @@ import {
   useReviewDraft,
 } from '../../review-session';
 import { entityHref } from '../../person-address';
+import { isWebAddress } from '../../web-address';
 
 /**
  * What a work item can do (D112 item 4), shared by every place one is drawn (`work-item.tsx`) and by its review's page
@@ -484,8 +485,10 @@ export function useCardAction({
       if (action.target === 'link') {
         await run(async () => {
           const result = await api.act(thread.id, action.id, chosen);
-          if (result.kind === 'read' && typeof (result.output as { url?: string }).url === 'string')
-            window.open((result.output as { url: string }).url, '_blank', 'noopener');
+          const url = result.kind === 'read' ? (result.output as { url?: unknown }).url : undefined;
+          // The server holds a link read's address to http(s); one that is not is the source's fault, and said.
+          if (typeof url !== 'string' || !isWebAddress(url)) throw new Error('Källans länk är ogiltig.');
+          window.open(url, '_blank', 'noopener');
         });
         return true;
       }
