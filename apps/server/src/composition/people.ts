@@ -119,9 +119,10 @@ export const staff = staffUsecases({ store: postgresProvisionStore() });
 
 const followed = new WeakMap<AuthenticatedContext, Promise<AuthenticatedContext>>();
 /**
- * The person with the units they follow up (D117), for a read a source may answer for those units: a manager's own and
- * the units of the managers who report to them (D99), from the same reach as Personal and the unit's page. Read once per
- * request (the context is the request's); an employee follows up nothing below and is passed on as they are.
+ * The person with the units they follow up (D117), for a read a source may answer for those units: the ones a manager
+ * manages and the units of the managers who report to them (D99), from the same reach as Personal and the unit's page,
+ * never a unit they are only placed on (D135 item 5). Read once per request (the context is the request's); an employee
+ * follows up nothing below and is passed on as they are.
  */
 export function withFollowedUnits(persona: AuthenticatedContext): Promise<AuthenticatedContext> {
   if (persona.role !== 'manager') return Promise.resolve(persona);

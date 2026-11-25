@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
 import { manifest, CONNECTOR } from './manifest.mjs';
-import { dateIn, seed, shortDate, substitutesOf } from './fixture.mjs';
+import { dateIn, seed, shortDate, staffOf, substitutesOf } from './fixture.mjs';
 import { memoryState } from './state.mjs';
 
 export { manifest };
@@ -42,8 +42,23 @@ export function createConnector({
   const personKey = actor => unitOf(actor) + ':' + personOf(actor);
   /** The days marked as absence through Clew, keyed by the operation that marked them. */
   const marked = () => state.get('absences', {});
-  const shiftOf = (person, date) => {
-    const s = shifts().find(s => s.employee === person && s.date === date);
+  // A person with several assignments (D135): Clew sends every one, each unit with the role the person has there, and
+  // `unitId` and `role` are the primary one. The roster, the figure and the unit rule of the writes cover every unit
+  // they manage, as the HR fixture's do, and never one where they are an employee. Without the list, the primary unit
+  // alone, as before.
+  const several = actor => Array.isArray(actor.assignments) && actor.assignments.length > 1;
+  const managedUnits = actor =>
+    several(actor)
+      ? actor.assignments.filter(a => a.role === 'manager').map(a => unitMap[a.unitId] ?? a.unitId)
+      : actor.role === 'manager'
+        ? [unitOf(actor)]
+        : [];
+  /** Whether the person is on the staff of a unit the actor manages, as the time system registers it. */
+  const inUnit = (actor, person) => managedUnits(actor).some(unit => (staffOf[unit] ?? []).includes(person));
+  /** The person's shift on a day in a unit the actor manages; a shift in another unit is not theirs to see. */
+  const shiftOf = (actor, person, date) => {
+    const units = managedUnits(actor);
+    const s = shifts().find(s => s.employee === person && s.date === date && units.includes(s.unitId));
     return s ? `${s.start}–${s.end} på ${s.ward}` : null;
   };
   const receipt = row => ({
@@ -64,10 +79,11 @@ export function createConnector({
     'timesheet.today': actor => {
       const date = today();
       const away = Object.values(marked());
+      const units = managedUnits(actor);
       return {
         date,
         rows: shifts()
-          .filter(s => s.date === date && s.unitId === unitOf(actor))
+          .filter(s => s.date === date && units.includes(s.unitId))
           .map(s => ({
             ref: `timesheet:shift:${s.employee.split(':').pop()}:${s.date}`,
             person: s.employee,
@@ -85,10 +101,10 @@ export function createConnector({
   };
 
   const proposals = {
-    'timesheet.followAbsence': (_actor, input) => {
+    'timesheet.followAbsence': (actor, input) => {
       const a = input.fact.attributes;
       if (typeof a.person !== 'string' || typeof a.from !== 'string') return { steps: [] };
-      const shift = shiftOf(a.person, a.from);
+      const shift = shiftOf(actor, a.person, a.from);
       return {
         steps: [
           {
@@ -104,19 +120,25 @@ export function createConnector({
   };
 
   const writes = {
-    'timesheet.markAbsence': (_actor, input, operationId) => {
+    // A write answers for the units the actor manages: someone outside them is a failed row, no shift told.
+    'timesheet.markAbsence': (actor, input, operationId) => {
+      const failed = (headline, detail) => ({
+        headline,
+        rows: [
+          {
+            ref: `timesheet:shift:${input.person.split(':').pop()}:${input.date}`,
+            label: 'Frånvaro',
+            outcome: 'failed',
+            detail,
+          },
+        ],
+      });
       if (fault === 'conflict')
-        return {
-          headline: 'Schemaraden har ändrats i tidrapporteringen.',
-          rows: [
-            {
-              ref: `timesheet:shift:${input.person.split(':').pop()}:${input.date}`,
-              label: 'Frånvaro',
-              outcome: 'failed',
-              detail: 'ändrad av någon annan, läs tillbaka och försök igen',
-            },
-          ],
-        };
+        return failed(
+          'Schemaraden har ändrats i tidrapporteringen.',
+          'ändrad av någon annan, läs tillbaka och försök igen',
+        );
+      if (!inUnit(actor, input.person)) return failed('Passet kunde inte markeras som frånvaro.', 'inte i din enhet');
       const rows = marked();
       const key = operationId ?? `${input.person}:${input.date}`;
       if (rows[key]) return receipt(rows[key]);
@@ -124,26 +146,26 @@ export function createConnector({
         ref: `timesheet:absence:${input.person.split(':').pop()}:${input.date}`,
         person: input.person,
         date: input.date,
-        shift: shiftOf(input.person, input.date),
+        shift: shiftOf(actor, input.person, input.date),
         at: now(),
       };
       rows[key] = row;
       state.set('absences', rows);
       return receipt(row);
     },
-    'timesheet.unmarkAbsence': (_actor, input) => {
+    'timesheet.unmarkAbsence': (actor, input) => {
       const rows = marked();
-      for (const [key, row] of Object.entries(rows)) if (input.refs.includes(row.ref)) delete rows[key];
+      const answered = input.refs.map(ref => {
+        const keys = Object.keys(rows).filter(key => rows[key].ref === ref && inUnit(actor, rows[key].person));
+        // A mark outside the unit answers as one that does not exist, so whether it does is not told.
+        if (keys.length === 0)
+          return { ref, label: 'Frånvaro', outcome: 'failed', detail: 'finns inte i tidrapporteringen' };
+        for (const key of keys) delete rows[key];
+        return { ref, label: 'Frånvaro', outcome: 'done', detail: 'borttagen i tidrapporteringen' };
+      });
       state.set('absences', rows);
-      return {
-        headline: 'Markeringen är borttagen.',
-        rows: input.refs.map(ref => ({
-          ref,
-          label: 'Frånvaro',
-          outcome: 'done',
-          detail: 'borttagen i tidrapporteringen',
-        })),
-      };
+      const any = answered.some(r => r.outcome === 'done');
+      return { headline: any ? 'Markeringen är borttagen.' : 'Markeringen kunde inte tas bort.', rows: answered };
     },
   };
 
@@ -166,14 +188,15 @@ export function createConnector({
 
   // The figure (D54): today's booked substitutes, and whether a shift marked absent is still without a person.
   function figure(actor, area) {
-    if (area !== 'staffing' || actor.role !== 'manager') return null;
+    const units = managedUnits(actor);
+    if (area !== 'staffing' || !units.length) return null;
     const date = today();
-    const mine = shifts().filter(s => s.date === date && s.unitId === unitOf(actor));
+    const mine = shifts().filter(s => s.date === date && units.includes(s.unitId));
     if (!mine.length) return { label: 'Inga pass i dag.', tone: 'none' };
     const open = Object.values(marked()).filter(a => a.date === date && mine.some(s => s.employee === a.person)).length;
     return {
       label: 'Vikarier i dag',
-      value: String(substitutesOf[unitOf(actor)] ?? 0),
+      value: String(units.reduce((sum, unit) => sum + (substitutesOf[unit] ?? 0), 0)),
       comparison: open ? (open === 1 ? '1 pass obemannat' : `${open} pass obemannade`) : 'alla pass bemannade',
       tone: open ? 'warn' : 'ok',
     };

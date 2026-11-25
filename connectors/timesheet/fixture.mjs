@@ -4,6 +4,9 @@
 
 export const UNIT = 'unit-skola';
 export const WARD = 'Björken';
+// The unit's staff as the time system registers them: the same people the HR system has at the school, of whom the
+// ward's four are on the roster. A write answers for these alone.
+export const staffOf = { [UNIT]: Array.from({ length: 19 }, (_, n) => `hr:emp:${1001 + n}`) };
 // The substitutes the staffing pool has booked for the ward on a weekday (D52: synthetic), for the figure on Hem (D54).
 export const substitutesOf = { [UNIT]: 2 };
 

@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 9 | Who may see and change what | `ID-3`, `ID-7`, `CO-M1`, `CO-L1`, `CB-7`, `BD-L2`, `CS-M2` | |
 | 10 | The assistant's prompt, tools, provider and record | `AM-2`, `AM-3`, `AM-5`, `AM-6`, `AM-7`, `AM-8`, `AM-9`, `AM-10` | |
 | 11 | Connector administration and its scripts | `DE-M5`, `CB-9`, `CB-10`, `CB-11`, `CB-12`, `CB-13` | |
 | 12 | The session and the change stream in the browser | `WD-M1`, `WD-M2`, `WD-M3`, `WD-M4`, `WD-L2`, `WD-L4`, `WD-L9` | |
@@ -37,17 +36,17 @@ no batch.
 
 | Area | Review | High | Medium | Low | Total |
 |---|---|---|---|---|---|
-| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 1 | 2 | 3 |
-| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 1 | 5 | 6 |
+| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 0 | 1 | 1 |
+| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 0 | 5 | 5 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 5 | 5 | 10 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 4 | 11 | 15 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
-| CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 1 | 1 | 2 |
-| BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 3 | 3 |
+| CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
+| BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 2 | 2 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
-| CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 1 | 7 | 8 |
-| | **Total** | **0** | **22** | **61** | **83** |
+| CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 7 | 7 |
+| | **Total** | **0** | **18** | **58** | **76** |
 
 ## High
 
@@ -60,8 +59,6 @@ points, and it carries a section on the earlier SCIM reviews.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| ID-3 | Medium | `followedUnits` builds the signed `units` from every assignment, so a unit a manager is only placed on is told to a source as one they follow up. | `apps/server/src/composition/people.ts:116` |
-| ID-7 | Low | The mapping to Kompetenssökning is not held as a capability mapping is: decided before the group is held, a NUL answers 503, and some stale rows cannot be removed. | `apps/server/src/modules/people/usecases.ts:1126` |
 | ID-9 | Low | No test covers a sign-in that succeeds, a second sign-in replacing the first, the mutation guard, `access-revoked`, sign-out or `localReturnTo`. | `tests/unit/auth-*.test.ts` |
 
 ## The connector boundary in the core
@@ -71,7 +68,6 @@ It carries no tables of its own.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| CB-7 | Medium | A job proposal names a connector, with its id, name and capability, to a person outside its audience. | `packages/connectors/src/index.ts:1517-1527` |
 | CB-9 | Low | Adding or testing a connector whose service does not answer ends in "Något gick fel", and `unreachable` is never recorded. | `apps/server/src/composition/index.ts:403-405` |
 | CB-10 | Low | Several connector administration audit rows and the signing key's rows have no scenario test that asserts them. | `apps/server/src/connectors/usecases/admin.ts:609-618` |
 | CB-11 | Low | The registration script sets a re-registered connector to draft under one `connector.secret` row and writes state and removal rows for changes that did not happen. | `scripts/connector-registry.ts:48-77` |
@@ -143,10 +139,7 @@ and it carries the baseline table of every suite, the failing-test table under f
 [The review](../reviews/2026-11-23-review-competence.md); its "Not established" holds five points, and it carries a
 table of verdicts per question and a table of what erasure and export reach per competence table.
 
-| Id | Severity | Finding | Where |
-|---|---|---|---|
-| CO-M1 | Medium | The share-target guard compares targets on one unit only, so a manager of two nested units can compare their figures to learn one person's holding. | `apps/server/src/modules/competence/usecases.ts:803` |
-| CO-L1 | Low | The validity preview gives an administrator exact counts for any rule, deactivated people included, which can reveal one holder's issue month. | `apps/server/src/modules/competence/usecases.ts:1761-1781` |
+No finding of this area is open.
 
 ## Introduction and leaving, the follow-up dialogue and talks
 
@@ -156,7 +149,6 @@ of the audit rows added to the decisions review's table B, and of test gaps unde
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| BD-L2 | Low | `activityFor` admits a dialogue activity's former owner to every write, so they can rewrite and remove it, not only mark it done. | `apps/server/src/modules/dialogue/usecases.ts:102-112` |
 | BD-L4 | Low | `currentRound` takes a write lock on the organisation's one open round on every talks read, so every reader queues on one row. | `apps/server/src/modules/talks/adapters/postgres.ts:79-86` |
 | BD-L6 | Low | Several boarding and dialogue work-item audit rows, `DialogueTx.lockPersonForErasure` and boarding's erasure refusals have no test or contract case. | `apps/server/src/composition/boarding-work-items.ts:153-289` |
 
@@ -213,7 +205,6 @@ fields an administrator never sees, writes and their deduplication, and error me
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| CS-M2 | Medium | Five undo writes and `timesheet.markAbsence` in the HR, finance and time fixtures act on records outside the caller's unit. | `connectors/hr/connector.mjs:438` |
 | CS-L1 | Low | The verifier never records `jti` and the operation id is outside the binding, so a captured write sent under a new operation id runs again in five connectors. | `connectors/*/verification.mjs:62` |
 | CS-L2 | Low | Fifteen connectors run a capability on a path the verifier does not bind to a capability, so D117's capability binding does not hold. | `connectors/*/verification.mjs:12-34` |
 | CS-L4 | Low | The supportmanagement and pob compose files give a `CLEW_URL` over `http:` that the verifier refuses to fetch keys from. | `connectors/supportmanagement/compose.yaml:4` |

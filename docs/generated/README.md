@@ -89,7 +89,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `unitLabel` | yes | string |  |
 | `role` | yes | "manager" / "employee" |  |
 | `userName` | no | string | The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one. |
-| `units` | no | array of object | The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone. |
+| `units` | no | array of object | The units a manager follows up (D117): the ones they manage and those of the managers who report to them (D99), never one they are only placed on (D135). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone. |
 | `assignments` | no | array of object | Every assignment of a person who holds more than one (D135): each unit they are placed on or manage, with the role they have there. `unitId` and `role` above are the primary one and it is among them. Sent only to a connector whose manifest sets `assignments: true`, on every call for such a person; answer for each with its own role. Not `units`, which is whom a manager follows up. Absent means `unitId` and `role` alone. |
 
 ## CallRequest

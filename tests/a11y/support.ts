@@ -469,8 +469,8 @@ export class MockApi {
   competenceTypes: CompetenceType[] | null = null;
   /** Every write to the catalogue, in order: the method, the path and the body. */
   catalogueWrites: Array<{ method: string; path: string; body?: unknown }> = [];
-  /** What the server answers a new validity would do. */
-  validityImpact: CompetenceValidityImpact = { holdings: 3, expiredBefore: 0, expiredAfter: 2 };
+  /** What the server answers a new validity would do: a count of what changes is rounded down to five. */
+  validityImpact: CompetenceValidityImpact = { holdings: 12, turnExpired: 5, turnValid: 0 };
   /** The next write to the catalogue answers 400 with this sentence; it resets itself after that one. */
   catalogueFail: string | null = null;
   /** The catalogue cannot be read (a 503), while the rest of the module answers. */
