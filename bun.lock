@@ -40,6 +40,7 @@
         "@clew/connectors": "workspace:*",
         "@clew/contracts": "workspace:*",
         "@clew/db": "workspace:*",
+        "@clew/notices": "workspace:*",
         "@dbos-inc/dbos-sdk": "5.5.0",
         "@hono/node-server": "2.1.7",
         "@hono/otel": "1.3.0",
@@ -84,6 +85,7 @@
         "react-router": "8.5.1",
       },
       "devDependencies": {
+        "@clew/notices": "workspace:*",
         "@tanstack/react-query-devtools": "5.107.1",
         "@vitejs/plugin-react": "6.3.0",
         "vite": "8.3.8",
@@ -125,6 +127,10 @@
         "postgres": "4.1.1",
       },
     },
+    "packages/notices": {
+      "name": "@clew/notices",
+      "version": "0.0.1",
+    },
     "packages/site-header": {
       "name": "@clew/site-header",
       "version": "0.0.1",
@@ -137,6 +143,7 @@
         "react-dom": "19.3.1",
       },
       "devDependencies": {
+        "@clew/notices": "workspace:*",
         "@vitejs/plugin-react": "6.3.0",
         "vite": "8.3.8",
       },
@@ -267,6 +274,8 @@
     "@clew/contracts": ["@clew/contracts@workspace:packages/contracts"],
 
     "@clew/db": ["@clew/db@workspace:packages/db"],
+
+    "@clew/notices": ["@clew/notices@workspace:packages/notices"],
 
     "@clew/server": ["@clew/server@workspace:apps/server"],
 

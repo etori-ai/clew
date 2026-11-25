@@ -30,7 +30,7 @@ describe("Clew's licence (D146)", () => {
       .filter(existsSync)
       .map(file => ({ file, json: JSON.parse(readFileSync(file, 'utf8')) as { name?: string; license?: string } }))
       .filter(m => m.json.name);
-    expect(manifests.length).toBe(10);
+    expect(manifests.length).toBe(11);
     for (const m of manifests)
       expect({ file: m.file, license: m.json.license }).toEqual({ file: m.file, license: 'AGPL-3.0-only' });
   });
