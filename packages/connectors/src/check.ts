@@ -207,8 +207,22 @@ export async function checkConnector(options: CheckOptions): Promise<
   const ok = (text: string) => findings.push({ level: 'ok', text });
   const warn = (text: string) => findings.push({ level: 'warn', text });
   const fail = (text: string) => findings.push({ level: 'fail', text });
-  const item = (level: CheckLevel, group: CheckGroup, label: string, description?: string, capability?: string) =>
-    items.push({ level, group, label, ...(description ? { description } : {}), ...(capability ? { capability } : {}) });
+  const item = (
+    level: CheckLevel,
+    group: CheckGroup,
+    label: string,
+    description?: string,
+    capability?: string,
+    cause?: string,
+  ) =>
+    items.push({
+      level,
+      group,
+      label,
+      ...(description ? { description } : {}),
+      ...(capability ? { capability } : {}),
+      ...(cause ? { cause } : {}),
+    });
   const fetchImpl = options.fetch ?? fetch;
   const url = options.url.replace(/\/+$/, '');
   let manifest: ConnectorManifest;
@@ -221,7 +235,14 @@ export async function checkConnector(options: CheckOptions): Promise<
       code = failureCode(error);
     const message = code && !said.includes(code) ? `${said} (${code})` : said;
     fail('manifest: ' + message);
-    item('fail', 'connection', 'Systemets beskrivning kunde inte hämtas', message);
+    item(
+      'fail',
+      'connection',
+      'Systemets beskrivning kunde inte hämtas',
+      'Adressen svarade inte, eller inte med en beskrivning i protokollets form.',
+      undefined,
+      message,
+    );
     return { ok: false, items, findings, failure: manifestFailure(error) };
   }
   ok(
@@ -261,11 +282,18 @@ export async function checkConnector(options: CheckOptions): Promise<
       }
       if (topic.startsWith('figure:')) {
         fail(`${topic}: ${problem}`);
-        item('fail', 'surfaces', 'Nyckeltal', `Nyckeltalet för ${topic.slice(7)} kan inte vara en länk: ${problem}`);
+        item(
+          'fail',
+          'surfaces',
+          'Nyckeltal',
+          `Nyckeltalet för ${topic.slice(7)} kan inte vara en länk.`,
+          undefined,
+          problem,
+        );
         return;
       }
       fail(`draft ${topic} refused: ${problem}`);
-      item('fail', 'surfaces', 'Ärenden', `Ärendet ${topic} avvisades: ${problem}`);
+      item('fail', 'surfaces', 'Ärenden', `Ärendet ${topic} avvisades.`, undefined, problem);
     },
     relations:
       options.about?.relations ??
@@ -810,7 +838,14 @@ export async function checkConnector(options: CheckOptions): Promise<
       }
     } catch (error) {
       fail('wrong-secret probe: ' + (error as Error).message);
-      item('fail', 'connection', 'Fel nyckel kunde inte prövas', (error as Error).message);
+      item(
+        'fail',
+        'connection',
+        'Fel nyckel kunde inte prövas',
+        'Anropet med en annan nyckel fick inget svar.',
+        undefined,
+        (error as Error).message,
+      );
     }
   }
   if (manifest.scan) {
@@ -844,7 +879,9 @@ export async function checkConnector(options: CheckOptions): Promise<
           'fail',
           'surfaces',
           'Ärenden',
-          `Genomgången misslyckades för ${ROLE[actor.role]}: ${(error as Error).message}`,
+          `Genomgången misslyckades för ${ROLE[actor.role]}.`,
+          undefined,
+          (error as Error).message,
         );
       }
     }
@@ -884,7 +921,9 @@ export async function checkConnector(options: CheckOptions): Promise<
           'fail',
           'surfaces',
           'Ärenden',
-          `Genomgången misslyckades för en person med två placeringar: ${(error as Error).message}`,
+          'Genomgången misslyckades för en person med två placeringar.',
+          undefined,
+          (error as Error).message,
         );
       }
   }

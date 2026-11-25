@@ -684,7 +684,7 @@ describe('a cited answer becomes a card (D26)', () => {
         actions: [],
         waitingOn: null,
         deadline: null,
-        trigger: { reason: 'Du ställde en fråga', source: 'Startsidan', at },
+        trigger: { reason: 'Du ställde en fråga', source: 'Clew', at },
         createdAt: at,
         updatedAt: at,
       });
@@ -717,7 +717,7 @@ describe('a cited answer becomes a card (D26)', () => {
       topic: 'answer:' + answerId,
       title: 'Följ upp: Brukaren har ramlat, vad gör jag?',
       summary: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].',
-      trigger: { source: 'Startsidan', reason: 'Du frågade 08:00 och gjorde svaret till ett ärende' },
+      trigger: { source: 'Clew', reason: 'Du frågade 08:00 och gjorde svaret till ett ärende' },
     });
     expect(card.items).toEqual([
       {

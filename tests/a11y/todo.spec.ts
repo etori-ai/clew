@@ -1,4 +1,5 @@
 import {
+  SITE,
   announcements,
   answer,
   composer,
@@ -52,7 +53,7 @@ test.describe('the panes beside the queue and the conversation', () => {
     await expectNoAxeViolations(page);
     const back = page
       .getByRole('main')
-      .getByRole('link', { name: /Hem|Startsidan/ })
+      .getByRole('link', { name: new RegExp(`Hem|${SITE}`) })
       .first();
     await expect(back).toHaveAttribute('href', '/');
     await back.focus();

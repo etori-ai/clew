@@ -15,7 +15,7 @@ const area = (id: string, capability: string, label: string): Area => ({
   id,
   title: label,
   connector: 'clew',
-  source: 'Startsidan',
+  source: 'Clew',
   icon: 'clock',
   figure: null,
   needsYou: 0,
@@ -40,7 +40,7 @@ describe('toolsOf', () => {
     expect(tools.map(t => t.label)).toEqual(['Mina beställningar', 'Mina ärenden', 'Telefonbok']);
     expect(tools.find(t => t.capability === 'clew.requests')).toEqual({
       connector: 'clew',
-      source: 'Startsidan',
+      source: 'Clew',
       capability: 'clew.requests',
       title: 'Beställningar och felanmälningar',
       label: 'Mina beställningar',
@@ -49,7 +49,7 @@ describe('toolsOf', () => {
   });
 
   test('a list an administrator placed is listed once, as the menu has it', () => {
-    const placed = entry('clew.errands', 'Mina ärenden', 'clew', 'Startsidan');
+    const placed = entry('clew.errands', 'Mina ärenden', 'clew', 'Clew');
     expect(toolsOf([placed], [errands]).filter(t => t.capability === 'clew.errands')).toEqual([placed]);
   });
 
@@ -63,13 +63,13 @@ describe('toolGroups', () => {
   const systems: SystemMark[] = [
     { connector: 'qlik', source: 'Qlik', ordinal: 2 },
     { connector: 'phonebook', source: 'Telefonboken', ordinal: 1 },
-    { connector: 'clew', source: 'Startsidan', ordinal: null },
+    { connector: 'clew', source: 'Clew', ordinal: null },
   ];
 
   test("by system: Clew's own first, then the order the systems were registered in, the tools' order kept", () => {
     const tools = toolsOf([phonebook, team, sick], [requests]);
     const groups = toolGroups(tools, systems);
-    expect(groups.map(g => g.source)).toEqual(['Startsidan', 'Telefonboken', 'Qlik']);
+    expect(groups.map(g => g.source)).toEqual(['Clew', 'Telefonboken', 'Qlik']);
     expect(groups[1]!.tools.map(t => t.label)).toEqual(['Mitt team', 'Telefonbok']);
   });
 
@@ -104,7 +104,7 @@ describe('whatItIs', () => {
 
 describe('toolboxPage', () => {
   const header = (items: SiteHeaderView['menu']['items']): SiteHeaderView => ({
-    menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items },
+    menu: { version: 1, site: { name: 'Clew', href: '/' }, items },
     logo: null,
     source: { id: 'intranet', label: 'Intranätet' },
   });

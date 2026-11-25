@@ -1,7 +1,7 @@
 import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { SessionUser, SiteHeaderView } from '@clew/contracts';
+import { SITE_NAME_DEFAULT, type SessionUser, type SiteHeaderView } from '@clew/contracts';
 import { AppShell, Button, signOut, useAppearance, useMediaQuery, useToast, HStack } from '@clew/ui';
 import type { HeaderLogo } from '@clew/ui/branding';
 import { createHeaderBandTheme, logoPlate } from '@clew/ui/theme';
@@ -15,6 +15,7 @@ import {
   type SiteMenu,
 } from '@clew/site-header';
 import { useBranding } from '../../branding';
+import { errorMessage } from '../../query-policy';
 import { headerQuery, threadsQuery } from '../../queries';
 import { useAnnounceSilentSources } from './silent-sources';
 import { api } from '../../api';
@@ -29,19 +30,17 @@ import { useFocusOnTheWayBack } from '../../way-back';
 import { unitsLine, unitsList } from '../../user-units';
 
 export { mobileQuery, shortQuery } from '../../media';
-/** The installation's name in the header until the header's own answer has said it. */
-export const SITE_NAME = 'Startsidan';
-/** Until the installation's header has arrived: the site's name, so the bar keeps its heading. */
-export const PENDING_MENU: SiteMenu = {
-  version: 1,
-  site: { name: SITE_NAME, href: '/' },
-  items: [],
-};
 /**
- * The site's name as the header says it, for what a page draws with it (its trail, its closing line). A context and not
- * a query: a page frame is also drawn before the session is known (`FirstLoad`), outside the query client.
+ * The band where no header connector gives it (D88, D130): the installation's name as it is saved (D98), read from the
+ * appearance the browser holds, so a name an administrator saves is on the band at once, and no places of its own.
  */
-export const SiteName = createContext<string>(SITE_NAME);
+export const ownMenu = (name: string): SiteMenu => ({ version: 1, site: { name, href: '/' }, items: [] });
+/**
+ * The site's name as the header says it, for what a page draws with it (its trail, its closing line): a header
+ * connector's site, else the installation's name. A context and not a query: a page frame is also drawn before the
+ * session is known (`FirstLoad`), outside the query client.
+ */
+export const SiteName = createContext<string>(SITE_NAME_DEFAULT);
 /**
  * The page the row "Mina sidor" marks as the current one: its name there ("Att göra") and whether the address is that
  * page's own (`/calendar` for Kalender, whose title is the week). Null where the row marks none or a tool of the
@@ -137,10 +136,12 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const headerQ = useQuery(headerQuery);
   // A header connector's answer is the band's places (D88); without one the band holds Start alone (D130).
   const shared = headerQ.data?.source ? headerQ.data : null;
+  // The band's theme (D88) is the installation's (D98), built once per saved theme.
+  const branding = useBranding();
   // Without a header connector the band has no places of its own to list, so it is the heading row alone and Start
   // stands first among Clew's pages in the row under it (D130, Oliver Borgström 2026-11-18). With a connector the band
   // lists the connector's places, Start among them, as the intranet draws its header.
-  const menu = shared ? shared.menu : { ...(headerQ.data?.menu ?? PENDING_MENU), items: [] };
+  const menu = shared ? shared.menu : ownMenu(branding.name);
   const pages = shared ? nav.pages : [START_PAGE, ...nav.pages];
   // With a connector Start is a place of the band, not a page of the row, so nothing of the row is marked on Hem.
   const currentPage = nav.current;
@@ -151,8 +152,6 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   );
   const here = window.location.origin + location.pathname + location.search;
   const selected = selectedItem(menu, here);
-  // The band's theme (D88) is the installation's (D98), built once per saved theme.
-  const branding = useBranding();
   const bandTheme = useMemo(() => createHeaderBandTheme(branding), [branding]);
   const logo = headerLogo(shared?.logo, branding.logo);
   // A system that does not answer is said where its content is missing, never at the top of the page (D116, amended
@@ -231,7 +230,8 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
     try {
       await signOut();
     } catch (error) {
-      toast({ type: 'error', body: error instanceof Error ? error.message : 'Kunde inte logga ut. Försök igen.' });
+      // A refused reply and a dropped connection alike: Clew's words, never the browser's (L12 of the web review).
+      toast({ type: 'error', body: errorMessage(error, 'Utloggningen kunde inte bekräftas. Försök igen.') });
     }
   };
   return (

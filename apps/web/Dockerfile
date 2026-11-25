@@ -4,8 +4,8 @@
 #
 #   docker build -f apps/web/Dockerfile -t clew-web .
 #
-# The build carries no setting and no branding (D98), so one image serves every environment. Where the server is, is
-# read when the container starts: CLEW_SERVER_URL.
+# The build carries no setting, no name and no logo (D98: an installation saves its own), so one image serves every
+# environment. Where the server is, is read when the container starts: CLEW_SERVER_URL.
 # Node's official image is MIT and Bun is MIT. nginx is BSD-2-Clause and its unprivileged image Apache-2.0.
 # The images are named with their registry (buildah and podman refuse a short name) and pinned by digest. Bun is the
 # binary of Oven's own image of the release, copied in: the digest pins its content, which an install from npm does not.

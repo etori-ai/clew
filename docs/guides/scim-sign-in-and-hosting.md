@@ -90,7 +90,7 @@ While a person works, Clew renews the identity provider's tokens with the person
 
 ### When a sign-in is refused
 
-A person who is refused comes back to Clew's sign-in page with one line. "Kontot saknar behörighet till Startsidan." means that Clew refused the person, and Clew's database says why: the authentication log (`auth_audit`) and the audit table (`audit`).
+A person who is refused comes back to Clew's sign-in page with one line. "Kontot saknar behörighet till Clew." (with the installation's own name, D98) means that Clew refused the person, and Clew's database says why: the authentication log (`auth_audit`) and the audit table (`audit`).
 
 | What happened | In `auth_audit` | In `audit` | What to do |
 |---|---|---|---|

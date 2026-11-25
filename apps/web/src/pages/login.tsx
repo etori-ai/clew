@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { usePageTitle } from '../page-title';
+import { useBranding } from '../branding';
 import {
   Avatar,
   Button,
@@ -15,11 +16,12 @@ import {
   signInHref,
   signInTarget,
 } from '@clew/ui';
-const reasons: Record<string, string> = {
-  expired: 'Din inloggning har gått ut.',
-  denied: 'Kontot saknar behörighet till Startsidan.',
-  unavailable: 'Inloggningstjänsten går inte att nå just nu.',
-  invalid: 'Inloggningen kunde inte slutföras. Försök igen.',
+/** Why the sign-in came back here, in the installation's name (D98) where the sentence names it. */
+const reasons: Record<string, (site: string) => string> = {
+  expired: () => 'Din inloggning har gått ut.',
+  denied: site => `Kontot saknar behörighet till ${site}.`,
+  unavailable: () => 'Inloggningstjänsten går inte att nå just nu.',
+  invalid: () => 'Inloggningen kunde inte slutföras. Försök igen.',
 };
 type DevAccount = { userName: string; name: string };
 /** The development sign-in (D6): the server answers 404 unless it is switched on, on the local stack only. */
@@ -47,6 +49,8 @@ export function LoginPage({ returnTo }: { returnTo: string }) {
   const reason = new URLSearchParams(window.location.search).get('reason');
   const target = signInTarget(returnTo);
   const accounts = useDevAccounts();
+  // The page is headed by the installation's name (D98), read before anyone has signed in.
+  const site = useBranding().name;
   // The tab is named for this page, never for the page a session that has ended was on (2.4.2).
   usePageTitle('Logga in', false);
   return (
@@ -58,11 +62,11 @@ export function LoginPage({ returnTo }: { returnTo: string }) {
           <VStack height="100%" vAlign="center" hAlign="center">
             <Card padding={8} width="100%" maxWidth={420}>
               <VStack gap={4}>
-                <Heading level={1}>Startsidan</Heading>
+                <Heading level={1}>{site}</Heading>
                 <Text as="p">Logga in med ditt kommunkonto för att se vad som behöver dig i dag.</Text>
-                {reason && reasons[reason] && (
+                {reason && Object.hasOwn(reasons, reason) && (
                   <Text as="p" color="secondary" role="status">
-                    {reasons[reason]}
+                    {reasons[reason]!(site)}
                   </Text>
                 )}
                 <Button variant="primary" label="Logga in" href={signInHref(target)} />

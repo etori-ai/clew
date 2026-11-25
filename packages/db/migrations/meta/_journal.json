@@ -631,6 +631,13 @@
       "when": 1795491909477,
       "tag": "0089_conversations_and_turns",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1795491910477,
+      "tag": "0090_installation_name",
+      "breakpoints": true
     }
   ]
 }

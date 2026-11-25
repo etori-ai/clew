@@ -23,7 +23,7 @@ import {
 
 const menu = (items: SiteMenu['items']): SiteMenu => ({
   version: 1,
-  site: { name: 'Startsidan', href: '/portal/' },
+  site: { name: 'Clew', href: '/portal/' },
   items,
 });
 
@@ -146,7 +146,7 @@ describe('menu sources are adapters behind one port (D87)', () => {
       ]),
       [{ id: 'n', label: 'New', href: `${base}/new` }],
     );
-    expect(framed.site.name).toBe('Startsidan');
+    expect(framed.site.name).toBe('Clew');
     expect(framed.items.map(item => item.id)).toEqual(['start', 'n']);
   });
 });

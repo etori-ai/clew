@@ -158,7 +158,7 @@ function world(connectors: Connector[], budget = { perSourceMs: 40, totalMs: 80 
   registry.register({
     id: SEARCH_CONNECTOR,
     kind: 'core',
-    source: 'Startsidan',
+    source: 'Clew',
     ...errandCapabilities(errands, a => registry.errandSources(a).length > 0),
     uses: ['*'],
   });

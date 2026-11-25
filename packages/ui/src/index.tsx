@@ -248,6 +248,7 @@ export { TimeInput } from '@astryxdesign/core/TimeInput';
 export { DateInput } from '@astryxdesign/core/DateInput';
 export { Calendar } from '@astryxdesign/core/Calendar';
 export { Selector } from '@astryxdesign/core/Selector';
+export { SelectorOption } from '@astryxdesign/core/Selector';
 export { Outline, type OutlineItem } from '@astryxdesign/core/Outline';
 export { CodeBlock } from '@astryxdesign/core/CodeBlock';
 export { Field, FieldStatus } from '@astryxdesign/core/Field';
@@ -266,6 +267,26 @@ export function Providers({ branding, children }: { branding: Branding; children
       <AppearanceProvider branding={branding}>
         <LayerProvider>{children}</LayerProvider>
       </AppearanceProvider>
+    </InternationalizationProvider>
+  );
+}
+/**
+ * Astryx's own words in English, for the pages Clew writes in English (D60's protocol pages), which set `lang="en"`
+ * while shown: a copy button, a tab list, a clear button and a file field then speak the page's language (3.1.2,
+ * WA-L13). Astryx's English catalogue is its default, so the provider needs no catalogue.
+ */
+export function EnglishWords({ children }: { children: ReactNode }) {
+  return <InternationalizationProvider locale="en">{children}</InternationalizationProvider>;
+}
+/**
+ * A part in Swedish inside an English page (a sample of what Clew draws, a word of the product's interface named in a
+ * sentence): marked `lang="sv"` so it is read as Swedish (3.1.2, WA-L13), with Astryx's own words in it in Swedish as
+ * Clew draws them. The element only carries the language: `span` inside a line, `div` around a block.
+ */
+export function SwedishPart({ children, inline = false }: { children: ReactNode; inline?: boolean }) {
+  return (
+    <InternationalizationProvider locale="sv-SE" messages={{ 'sv-SE': swedish }}>
+      {inline ? <span lang="sv">{children}</span> : <div lang="sv">{children}</div>}
     </InternationalizationProvider>
   );
 }

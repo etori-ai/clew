@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { ESCO_SKILL_COLUMNS } from '../../packages/contracts/src/competence-import';
 import { competenceCatalogue } from './competence';
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -110,7 +111,7 @@ test.describe('Administration › Kompetens › Importera', () => {
       await open(page, '/admin/competence');
       await page.getByRole('link', { name: 'Importera' }).click();
       await expect(page).toHaveURL(IMPORT);
-      await expect(page).toHaveTitle('Importera kompetenser · Startsidan');
+      await expect(page).toHaveTitle(`Importera kompetenser · ${SITE}`);
       await expect(page.getByRole('link', { name: 'Kompetens' }).first()).toBeVisible();
       api.competenceTypes = null;
       await open(page, IMPORT);

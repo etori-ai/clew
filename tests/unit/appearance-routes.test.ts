@@ -29,12 +29,15 @@ describe('public appearance routes', () => {
     const { usecases, get } = stack();
     const empty = await get('/');
     expect(empty.status).toBe(200);
-    expect(await empty.json()).toEqual({ revision: 0, theme: null, logo: null });
+    expect(await empty.json()).toEqual({ revision: 0, name: 'Clew', theme: null, logo: null });
     expect(empty.headers.get('access-control-allow-origin')).toBe('*');
     expect(empty.headers.get('cache-control')).toBe('no-cache');
     const theme = themeFromAccent('#005595', '#daeff1', 'Exempelkommunen');
     await usecases.setTheme(admin, themeFileOf(theme));
-    expect(await (await get('/')).json()).toEqual({ revision: 1, theme, logo: null });
+    expect(await (await get('/')).json()).toEqual({ revision: 1, name: 'Clew', theme, logo: null });
+    // The installation's name is public too: the sign-in page and every tab's title are drawn with it.
+    await usecases.setName(admin, 'Medarbetarwebben');
+    expect(await (await get('/')).json()).toEqual({ revision: 2, name: 'Medarbetarwebben', theme, logo: null });
   });
 
   test('the theme file is a download: a template that is itself a valid theme, then the saved theme', async () => {

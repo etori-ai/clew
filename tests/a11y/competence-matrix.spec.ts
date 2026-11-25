@@ -11,6 +11,7 @@ import {
   withSkills,
 } from './competence';
 import {
+  SITE,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -188,7 +189,7 @@ test.describe('Personal › Kompetens, the matrix', () => {
     }) => {
       switchedOn(api);
       await open(page, MATRIX);
-      await expect(page).toHaveTitle('Kompetens · Personal · Startsidan');
+      await expect(page).toHaveTitle(`Kompetens · Personal · ${SITE}`);
       // The matrix is Personal's Kompetens tab (D126 rule 8).
       await expect(
         page.getByRole('navigation', { name: 'Personal' }).getByRole('link', { name: 'Kompetens', exact: true }),

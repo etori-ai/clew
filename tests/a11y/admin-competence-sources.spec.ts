@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { competenceCatalogue, competenceSources } from './competence';
 import { NOW } from './data';
 import {
+  SITE,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -71,7 +72,7 @@ test.describe('Administration › Kompetens › Källor', () => {
       await open(page, '/admin/competence');
       await page.getByRole('main').getByRole('link', { name: 'Källor', exact: true }).click();
       await expect(page).toHaveURL(SOURCES);
-      await expect(page).toHaveTitle('Källor för kompetens · Startsidan');
+      await expect(page).toHaveTitle(`Källor för kompetens · ${SITE}`);
       // The administration's panel keeps Kompetens as the section, and the way back leads to the catalogue (D126). The
       // place Kompetens in the rail is the reader's own (D120 item 8), another link.
       const sections = page.getByRole('navigation', { name: 'Administration', exact: true });

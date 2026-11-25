@@ -1,4 +1,5 @@
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -376,7 +377,7 @@ test.describe('Att göra where the pane does not fit', () => {
     await expect(page.getByRole('complementary')).toHaveCount(0);
     await expect(queue(page)).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Ledighetsansökan från Johan Byström' })).toBeFocused();
-    await expect(page).toHaveTitle('Ledighetsansökan från Johan Byström · Startsidan');
+    await expect(page).toHaveTitle(`Ledighetsansökan från Johan Byström · ${SITE}`);
     await expect(page.getByRole('main').getByRole('heading', { name: 'Uppgifter' })).toBeVisible();
     await expectNoAxeViolations(page);
     await page.getByRole('main').getByRole('link', { name: 'Att göra', exact: true }).click();

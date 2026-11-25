@@ -11,6 +11,7 @@ import { systemContext } from '../system-context';
 import { talkWorkItems } from './talk-work-items';
 import { staff as staffUsecases, userReads } from './people';
 import { clock, ids } from './ambient';
+import { appearance } from './appearance';
 import { ledger } from './durable';
 
 /**
@@ -60,7 +61,7 @@ export const talkReports: Reports = async managerId => {
     overview.units.flatMap(unit => unit.people.filter(p => p.id !== managerId && p.enabled !== false).map(p => p.id)),
   );
 };
-const talkDeps: Omit<TalkDeps, 'store'> = { staff, reports: talkReports, clock, ids };
+const talkDeps: Omit<TalkDeps, 'store'> = { staff, reports: talkReports, siteName: appearance.name, clock, ids };
 export const talks = talkUsecases({ store: talkStore, ...talkDeps });
 /**
  * The talks module as the operator's erasure runs it (`scripts/talks-erase.ts`): the same use cases and tables over a

@@ -1,6 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { competenceCatalogue } from './competence';
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -101,7 +102,7 @@ test.describe('Administration › Kompetens', () => {
       const row = sections.getByRole('link', { name: 'Kompetens', exact: true });
       await row.click();
       await expect(page).toHaveURL(/\/admin\/competence$/);
-      await expect(page).toHaveTitle('Kompetens · Startsidan');
+      await expect(page).toHaveTitle(`Kompetens · ${SITE}`);
       // Astryx marks the row, not its link, as the current one.
       await expect(
         sections.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'Kompetens', exact: true }) }),
