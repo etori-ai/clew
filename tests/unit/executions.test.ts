@@ -309,6 +309,33 @@ test('execution evidence cannot be read, replayed, reconciled or undone under a 
   expect((await w.uc.read(persona, approved.id))?.result).toMatchObject(result);
 });
 
+test('one confirmed effect is undone once: an undo is the decision undo:<original>, so a second is the first replayed (DE-L5)', async () => {
+  const w = world();
+  const approved = await w.approve();
+  await w.uc.progress(approved.id);
+  await w.store.transaction(async tx => {
+    const e = (await tx.lock(approved.id))!;
+    await tx.update({ ...e, result: { ...result, undoCapability: 'test.undo', undoMinutes: 10 } });
+  });
+  const { undoInputOf } = await import('../../apps/server/src/modules/executions/domain');
+  const payload = undoInputOf((await w.store.read(approved.id))!);
+  const undo = (decisionId: string) =>
+    w.uc.approve(persona, { decisionId, operation: 'test.undo', payload, compensates: approved.id });
+  // Any other name for an undo is refused before anything is read or written, so the approval endpoint cannot make a
+  // second compensation of the same effect under a new decision.
+  for (const other of ['undo-again', 'undo:' + approved.id + '-2', 'undo:other'])
+    await expect(undo(other)).rejects.toThrow('Ogiltigt beslut.');
+  // Nor may a decision that undoes nothing take an undo's name ahead of it.
+  await expect(
+    w.uc.approve(persona, { decisionId: 'undo:' + approved.id, operation: 'test.do', payload: { revision: 'r1' } }),
+  ).rejects.toThrow('Ogiltigt beslut.');
+  const first = await undo('undo:' + approved.id);
+  const again = await undo('undo:' + approved.id);
+  expect(again.id).toBe(first.id);
+  expect(w.store.dump().filter(e => e.compensates === approved.id)).toHaveLength(1);
+  expect(w.store.audit().filter(row => row.action === 'execution.approved')).toHaveLength(2);
+});
+
 describe('an approved action about a person (D122)', () => {
   const failed = (attempt = 1) => ({
     action: 'execution.failed',

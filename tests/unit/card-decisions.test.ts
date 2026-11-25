@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { ActInput, checkContract } from '../../packages/contracts/src';
 import type { AuthenticatedContext, PanelViewSpec, Thread } from '../../packages/contracts/src';
 import { cardDecisions } from '../../apps/server/src/threads/usecases/decisions';
 import type { PersonKeys } from '../../apps/server/src/threads/model';
@@ -68,6 +69,47 @@ test('a decision on a work item about one unit hands the approval that unit; non
   await w.uc.act(persona, 't-two', 'approve');
   await w.uc.act(persona, w.t.id, 'approve');
   expect(w.approvals.map(a => (a as { unit?: string }).unit)).toEqual(['u-a', undefined, undefined]);
+});
+test('a decision is on the item as the person was shown it: a changed item is refused, one already decided is replayed (AM-4)', async () => {
+  // The endpoint takes no decision without the version it was made on.
+  expect(checkContract(ActInput, { actionId: 'approve' })).toBe(false);
+  expect(checkContract(ActInput, { actionId: 'approve', version: '2026-11-04T06:00:00.000Z' })).toBe(true);
+  const w = await world();
+  const read = async () => (await w.store.readThread(persona.id, w.t.id))!;
+  const shown = (await read()).updatedAt;
+  const decide = (version: string) => w.uc.act(persona, w.t.id, 'approve', undefined, undefined, undefined, version);
+  // The source changed the item after it was drawn: the person decides on what it says now, not on what they saw.
+  await w.store.transaction(tx =>
+    tx.updateThread(w.t.id, {
+      summary: 'Fakturan har ett nytt belopp.',
+      updatedAt: '2026-11-04T06:05:00.000Z',
+    }),
+  );
+  await expect(decide(shown)).rejects.toThrow('Ärendet har ändrats sedan du öppnade det.');
+  expect(w.approvals).toEqual([]);
+  const now = (await read()).updatedAt;
+  expect(now).not.toBe(shown);
+  await decide(now);
+  expect(w.approvals).toHaveLength(1);
+  const decisionId = `card:${w.t.id}:approve:${Date.parse(now)}`;
+  expect(w.approvals[0]).toMatchObject({ decisionId, presentation: { threadId: w.t.id, version: now } });
+  // A decision's own progress changes its item; the same decision sent again is replayed, whatever version it names.
+  const decided = draft(persona.id, {
+    id: 't-decided',
+    updatedAt: '2026-11-04T06:06:00.000Z',
+    execution: {
+      id: 'e1',
+      decisionId: 'card:t-decided:approve:1',
+      operation: 'finance.approve',
+      state: 'pending',
+      reason: null,
+      compensates: null,
+    },
+  });
+  await w.store.transaction(tx => tx.insertThread(decided));
+  await w.uc.act(persona, decided.id, 'approve', undefined, undefined, undefined, shown);
+  expect(w.approvals).toHaveLength(2);
+  expect(w.approvals[1]).toMatchObject({ decisionId: 'card:t-decided:approve:1' });
 });
 test('foreign actions, stale selections and another owner cannot approve effects', async () => {
   const w = await world();

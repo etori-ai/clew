@@ -281,6 +281,34 @@ describe('another week', () => {
     await expect(w.replan(hillevi, t.id, '2026-11-17')).rejects.toThrow('Välj en kommande vecka.');
     await expect(w.replan(hassan, t.id, '2026-11-16')).rejects.toThrow('Ärendet är redan hanterat.');
   });
+  test('redraws the planning card only: another card of the calendar’s, handed by its id, is left as it was (DE-L6)', async () => {
+    const w = world();
+    await w.ensureProposalThread(hillevi);
+    // A follow-up card is the calendar's too, and the store reads it.
+    const followup = {
+      id: 'followup:p1:1',
+      personId: hillevi.id,
+      topic: 'followup:p1:1',
+      title: 'Påminn om utvecklingssamtalet',
+      week: '2026-11-09',
+      area: 'utvecklingssamtal',
+      summary: 'Inget svar än.',
+      trigger: { reason: 'Inget svar på två dagar', source: 'Kalendern', at: T0 },
+      createdAt: T0,
+      updatedAt: T0,
+    };
+    await w.store.transaction(tx => tx.insertThread(followup));
+    const audited = w.store.audit.length;
+    await expect(w.replan(hillevi, followup.id, '2026-11-16')).rejects.toThrow('Ärendet finns inte.');
+    const after = (await w.store.readThread(hillevi.id, followup.id))!;
+    expect(after.thread).toMatchObject({
+      topic: 'followup:p1:1',
+      week: '2026-11-09',
+      title: 'Påminn om utvecklingssamtalet',
+    });
+    expect(after.proposals).toEqual([]);
+    expect(w.store.audit).toHaveLength(audited);
+  });
   test('counts again who lacks a time, as the redrawn card shows', async () => {
     const w = world();
     const t = (await w.ensureProposalThread(hillevi))!;
@@ -1016,6 +1044,30 @@ describe('a person with two managers (M1, Q12)', () => {
     expect(await w.samtalStatus(hillevi)).toEqual({ held: 0, booked: 1, members: 4, deadline: '28 november' });
     w.clock.advance(MINUTE);
     expect(await w.ensureProposalThread(hillevi)).toEqual(sent);
+  });
+});
+
+describe('a confirmation on the card the person was shown (AM-4)', () => {
+  test('a card redrawn since it was shown is refused with nothing approved, and the redrawn card is sent', async () => {
+    const w = world(),
+      d = deciding(w);
+    const drawn = (await w.ensureProposalThread(hillevi))!;
+    const shown = drawn.updatedAt;
+    w.clock.advance(MINUTE);
+    const redrawn = await w.replan(hillevi, drawn.id, '2026-11-16');
+    expect(redrawn.updatedAt).not.toBe(shown);
+    const anna = redrawn.proposals.find(p => p.participant.name === 'Anna Lindqvist')!;
+    await expect(d.confirm(hillevi, drawn.id, [anna.id], shown)).rejects.toThrow(
+      'Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.',
+    );
+    expect(d.approved).toEqual([]);
+    await d.confirm(hillevi, drawn.id, [anna.id], redrawn.updatedAt);
+    expect(d.approved).toHaveLength(1);
+    expect(d.approved[0]?.presentation).toEqual({
+      threadId: drawn.id,
+      version: redrawn.updatedAt,
+      actionId: 'confirm',
+    });
   });
 });
 

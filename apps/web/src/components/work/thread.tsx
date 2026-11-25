@@ -413,7 +413,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
               variant="secondary"
               label={`Skicka ${count} ${plural}`}
               isDisabled={!count}
-              clickAction={() => run(() => api.confirm(thread.id, selected))}
+              clickAction={() => run(() => api.confirm(thread.id, selected, thread.updatedAt))}
             />
           )}
           {open && !compact && <Button label="Justera i kalendern" href={`/calendar?date=${thread.week}&view=week`} />}
