@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { database, type Transaction } from './index';
 import { nextOrdinal } from '@clew/contracts';
 import { connectors, type ConnectorAudience, type ConnectorHealth } from './schema';
@@ -68,6 +68,8 @@ export async function updateConnector(
       | 'capabilities'
       | 'manifest'
       | 'manifestAt'
+      | 'offered'
+      | 'offeredAt'
       | 'health'
     >
   >,
@@ -80,11 +82,69 @@ export async function updateConnector(
     .where(eq(connectors.id, id));
   return true;
 }
-/** Health and manifest refreshes are not administration: no actor, no version bump, no audit. */
-export async function recordHealth(id: string, health: ConnectorHealth, manifest?: unknown) {
+/**
+ * What a check or "Läs in igen" saw (D144). It is not administration: no actor, no version bump, no audit, and the
+ * approved manifest is never touched. `health`, when given, is recorded. `served`, when given, is the manifest the
+ * service serves, compared with the approved one in this same statement, so an approval made meanwhile is seen: the
+ * approved one clears the offer and any other is the offer. The same offer seen again keeps the instant it was first
+ * seen, so a review an administrator has open stays bound to it. jsonb compares by content, whatever the key order.
+ */
+export async function recordCheck(id: string, seen: { health?: ConnectorHealth; served?: unknown; at: Date }) {
+  const served = seen.served === undefined ? undefined : JSON.stringify(seen.served);
+  if (!seen.health && served === undefined) return;
+  const approved = sql`${connectors.manifest} = ${served}::jsonb`;
   await database()
     .update(connectors)
-    .set({ health, ...(manifest !== undefined ? { manifest, manifestAt: new Date() } : {}) })
+    .set({
+      ...(seen.health ? { health: seen.health } : {}),
+      ...(served === undefined
+        ? {}
+        : {
+            offered: sql`case when ${approved} then null else ${served}::jsonb end`,
+            offeredAt: sql`case when ${approved} then null when ${connectors.offered} is not distinct from ${served}::jsonb then ${connectors.offeredAt} else ${seen.at.toISOString()}::timestamptz end`,
+          }),
+    })
     .where(eq(connectors.id, id));
+}
+/**
+ * The offer an administrator reviewed becomes the approved manifest (D144), with the offer cleared and the version
+ * bumped, only while it is still the stored offer: the same instant it was first seen and the same content. False when
+ * another took its place or it was cleared, so nothing but what was reviewed goes live.
+ */
+export async function approveOffer(
+  tx: Transaction,
+  id: string,
+  offer: { at: Date; manifest: unknown },
+  manifest: unknown,
+  by: string,
+  at: Date,
+) {
+  const rows = await tx
+    .update(connectors)
+    .set({
+      manifest,
+      manifestAt: at,
+      offered: null,
+      offeredAt: null,
+      updatedBy: by,
+      updatedAt: at,
+      version: sql`${connectors.version} + 1`,
+    })
+    .where(
+      and(
+        eq(connectors.id, id),
+        eq(connectors.offeredAt, offer.at),
+        sql`${connectors.offered} = ${JSON.stringify(offer.manifest)}::jsonb`,
+      ),
+    )
+    .returning({ id: connectors.id });
+  return rows.length > 0;
+}
+/** A bundled connector's description is its code, reviewed with the code: it moves with the build (D144 item 1). */
+export async function recordDescription(id: string, manifest: unknown, at: Date = new Date()) {
+  await database()
+    .update(connectors)
+    .set({ manifest, manifestAt: at })
+    .where(and(eq(connectors.id, id), eq(connectors.bundled, true)));
 }
 export const deleteConnector = (tx: Transaction, id: string) => tx.delete(connectors).where(eq(connectors.id, id));

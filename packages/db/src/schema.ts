@@ -541,8 +541,12 @@ export const connectors = pgTable(
       .default({}),
     // Per area: `figure: false` when the administrator switched the area's figure off on Hem (D54).
     areas: jsonb('areas').$type<Record<string, { figure?: false }>>().notNull().default({}),
+    // The manifest an administrator approved: the only one the registry registers (D144).
     manifest: jsonb('manifest').$type<unknown>(),
     manifestAt: timestamp('manifest_at', { withTimezone: true }),
+    // What the service serves when it differs from the approved one, and since when: never live until approved (D144).
+    offered: jsonb('manifest_offered').$type<unknown>(),
+    offeredAt: timestamp('manifest_offered_at', { withTimezone: true }),
     health: jsonb('health')
       .$type<ConnectorHealth>()
       .notNull()

@@ -313,7 +313,9 @@ try {
     `Development directory pushed through SCIM: ${pushed.created} users created, ${pushed.replaced} replaced, ${pushed.deactivated} deactivated; ${pushed.groupsCreated} groups created, ${pushed.groupsReplaced} replaced, ${pushed.groupsRemoved} removed.`,
   );
   const master = existing.MASTER_KEY ?? randomBytes(32).toString('base64');
-  // The hello connector (connectors/hello) as a draft row (D23): enable it with `bun scripts/connector-add.ts hello --enable` once it runs on :4010.
+  // The hello connector (connectors/hello) as a draft row (D23) with no manifest. Once it runs on :4010, approve what it
+  // serves and switch it on with `bun scripts/connector-add.ts hello http://127.0.0.1:4010 --secret <HELLO_CONNECTOR_SECRET
+  // from .auth-test.env> --enable`, or read it in and approve it on Administration › Anslutna system (D144).
   process.env.MASTER_KEY = master;
   const helloSecret = previousTest.HELLO_CONNECTOR_SECRET ?? randomBytes(18).toString('base64url');
   testPasswords.HELLO_CONNECTOR_SECRET = helloSecret;

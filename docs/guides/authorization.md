@@ -20,7 +20,7 @@ Every POST must pass both checks:
 | `jti` | An assertion identifier. It is not a source-operation idempotency key. |
 | `body` | The SHA-256 of the exact request body, base64url ([D117](../decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)). Recompute it from the bytes you received; any other body was not sent by Clew. |
 | `capability` | On `/clew/capabilities/{name}`, that name; absent on every other route. An assertion for one capability is refused on another. |
-| `callback` | Optional separate signed grant, present when dependencies are declared. |
+| `callback` | Optional separate signed grant, present when the manifest declares `uses`, valid two minutes like the assertion. It is absent on `/clew/ask` and on the read that lists a source's assistants ([D144](../decisions/D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md) item 6), and it reaches only the `uses` an administrator approved. |
 
 On `/clew/installation/{name}` there is no person ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): the assertion is the installation's own. It has the same `alg`, `iss`, `aud`, lifetime, `jti`, `body` and `capability` (the name in the route), and `sub` is `clew:installation`, `caller` is `installation`, and there is no `actor` and no `callback`. Accept it there and nowhere else, and accept nothing else there: a person's assertion on that route is 401, however valid. The sample verifier's `verify.installation(token, key, request)` says whether a request is the installation's; its `verify(token, key, request)` refuses an assertion with a `caller` claim.
 
