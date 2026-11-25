@@ -85,6 +85,12 @@ Before anything is sent the token's account must be the person (below). A missin
 Nextcloud not answering, is answered as `failed` rows saying nothing was sent: a known outcome, so the card does not
 show an unknown one. There is no undo: Approval has none.
 
+Run the connector as a single process. The verifier takes each of Clew's assertions once, but it remembers them in its
+own process only: run as several replicas, or restarted, the connector would take a captured decision once more in each
+process within the assertion's two minutes, and nothing in Approval tells a repeat from a new decision on a file that
+asks for one again. To run more than one, share the record of taken `jti`s between the processes in storage that
+outlives a restart ([authorization](../../docs/guides/authorization.md)).
+
 ## Identity
 
 Every request is verified as every connector's is (the transport key and the installation-signed assertion,
@@ -143,7 +149,7 @@ so that a connector could find the person's account without relying on the user 
 | `CLEW_CONNECTOR_SECRET` | The secret shared with Clew, 16 characters or more. Required |
 | `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks`. Required; HTTPS outside the local development allowlist |
 | `PORT` | Default 4052 |
-| `NEXTCLOUD_ADAPTER` | `fixture` (default, the stand-in) or `nextcloud` (the real API) |
+| `NEXTCLOUD_ADAPTER` | `nextcloud` (the real API) or `fixture` (the stand-in, development and tests only). Required: without it the connector does not start, and `fixture` beside `NEXTCLOUD_URL` is refused |
 | `NEXTCLOUD_URL` | Nextcloud's base address as the connector reaches it. Required for `nextcloud`; HTTPS unless localhost |
 | `NEXTCLOUD_ALLOW_HTTP` | `true` lets `NEXTCLOUD_URL` be plain http on a private development network (`http://calendar`) |
 | `NEXTCLOUD_AUDIENCE` | The audience Clew exchanges the person's token for, the user_oidc client id. Default `nextcloud`. Part of the manifest |

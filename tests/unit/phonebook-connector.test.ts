@@ -4,7 +4,7 @@ import type { SearchResult } from '../../packages/contracts/src/index';
 import { type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
-import { createConnector, manifest as phonebookManifest } from '../../connectors/phonebook/connector.mjs';
+import { adapterOf, createConnector, manifest as phonebookManifest } from '../../connectors/phonebook/connector.mjs';
 import { DirectoryUnavailable, createHttpDirectory, toPerson } from '../../connectors/phonebook/directory.mjs';
 import { assertionFor, testJwks } from '../connector-authority';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
@@ -249,6 +249,23 @@ describe('the phone book connector', () => {
     );
     expect(report.items.find(i => i.label.startsWith('Området'))?.description).toBe(
       'Chef och medarbetare: 2 stående handlingar, inget nyckeltal.',
+    );
+  });
+});
+
+describe('the adapter (CS-L7)', () => {
+  test('is always named: no default, and the made-up organisation never starts beside the API', () => {
+    const api = { PHONEBOOK_URL: 'https://katalog.example', PHONEBOOK_API_KEY: 'k-123' };
+    expect(adapterOf({ PHONEBOOK_ADAPTER: 'http', ...api })).toBe('http');
+    expect(adapterOf({ PHONEBOOK_ADAPTER: 'fixture', PHONEBOOK_URL: '', PHONEBOOK_API_KEY: '' })).toBe('fixture');
+    expect(() => adapterOf(api)).toThrow('PHONEBOOK_ADAPTER is not set');
+    expect(() => adapterOf({})).toThrow('PHONEBOOK_ADAPTER is not set');
+    expect(() => adapterOf({ PHONEBOOK_ADAPTER: 'ldap' })).toThrow('Unknown PHONEBOOK_ADAPTER "ldap"');
+    expect(() => adapterOf({ PHONEBOOK_ADAPTER: 'fixture', ...api })).toThrow(
+      'PHONEBOOK_ADAPTER is "fixture" but PHONEBOOK_URL and PHONEBOOK_API_KEY are set',
+    );
+    expect(() => adapterOf({ PHONEBOOK_ADAPTER: 'fixture', PHONEBOOK_API_KEY: 'k-123' })).toThrow(
+      'but PHONEBOOK_API_KEY is set',
     );
   });
 });

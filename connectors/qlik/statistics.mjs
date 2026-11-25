@@ -1,5 +1,6 @@
 // The statistics behind a port: one read returns every unit's rates per month and when the source was last reloaded.
-// Adapters: the made-up statistics below (default) and Qlik's Engine API in engine.mjs. Both answer the same shape:
+// Adapters: the made-up statistics below (QLIK_ADAPTER=fixture, for development and tests only; never a default) and
+// Qlik's Engine API in engine.mjs (QLIK_ADAPTER=engine). Both answer the same shape:
 //   { reloadedAt: ISO string | null, rows: [{ unit, period: 'YYYY-MM', total, short, long, headcount }] }
 // where a rate is a percentage with one decimal or null, and headcount an integer or null. An adapter may also answer
 //   economy(units): { reloadedAt, rows: [{ unit, period: 'YYYY-MM', budget, forecast }] }   full-year net cost, mnkr
