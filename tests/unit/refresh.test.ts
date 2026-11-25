@@ -1,5 +1,6 @@
 import { Registry, openGovernance } from '../../packages/connectors/src';
 import { threadAccess } from '../../apps/server/src/threads/access';
+import { itemEvents } from '../../apps/server/src/threads/domain';
 import { draft as storedDraft } from '../store-contract';
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
@@ -367,6 +368,93 @@ test('a source that says itself whom the card waits on is believed over the pers
   await w.uc.tick();
   expect(card().waitingOn).toBe('lönekontoret');
   expect('handedOn' in card() || 'handOn' in card()).toBe(false);
+});
+test("a card the source changed is rewritten from it, the person's own selection of the rows that remain kept", async () => {
+  const w = world();
+  const item = (ref: string): ThreadItem => ({ ref, label: ref, detail: '', selectable: true, selected: true });
+  w.set([{ ...draft(), items: [item('r1'), item('r2')] }]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const card = w.store.threads.dump()[0]!.thread;
+  await w.store.threads.transaction(tx =>
+    tx.updateThread(card.id, { items: card.items.map(i => (i.ref === 'r1' ? { ...i, selected: false } : i)) }),
+  );
+  // r2 was done outside Clew and r3 came in: the card follows its source, and r1 stays as the person left it.
+  w.advance();
+  w.set([{ ...draft('2'), title: 'Uppgift, ändrad', items: [item('r1'), item('r3')] }]);
+  await w.uc.tick();
+  expect(w.store.threads.dump()[0]!.thread).toMatchObject({
+    id: card.id,
+    title: 'Uppgift, ändrad',
+    items: [
+      { ref: 'r1', selected: false },
+      { ref: 'r3', selected: true },
+    ],
+  });
+  expect(w.store.threads.audit.filter(a => a.subject === `thread:${card.id}`).map(a => a.action)).toEqual([
+    'thread.pushed',
+    'thread.refreshed',
+  ]);
+});
+test('a source that changes the work of a snoozed card brings it back: the snooze and its timer end, and the person is told again (D28)', async () => {
+  const w = world();
+  w.set([draft()]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const id = w.store.threads.dump()[0]!.thread.id,
+    until = '2026-11-07T07:00:00.000Z';
+  await w.store.threads.transaction(async tx => {
+    await tx.updateThread(id, { snoozedUntil: until });
+    await tx.scheduleTimer({
+      id: `snooze:${id}`,
+      personId: 'a',
+      threadId: id,
+      kind: 'snooze',
+      unitId: 'unit',
+      authorizationVersion: 'v1',
+      dueAt: until,
+      requestedAt: w.clock().toISOString(),
+    });
+  });
+  w.advance();
+  w.set([draft('2')]);
+  await w.uc.tick();
+  expect(w.store.threads.dump()[0]!.thread).toMatchObject({
+    state: 'open',
+    snoozedUntil: null,
+    trigger: { reason: 'Källan har ändrat uppgiften. Aktuell' },
+  });
+  expect(await w.store.threads.readTimer(`snooze:${id}`)).toMatchObject({ state: 'cancelled' });
+  expect(w.store.threads.cancelled).toEqual([`snooze:${id}:v2:1`]);
+  expect(w.store.threads.audit.filter(a => a.action === 'thread.refreshed').map(a => a.details)).toEqual([
+    { materialChange: true, connector: 'source' },
+  ]);
+  // The snooze ended because the source changed the work, in the scan's own transaction, after what it read in.
+  const rows = w.store.threads.audit.filter(a => a.subject === `thread:${id}`);
+  expect(rows.map(a => [a.actor, a.action])).toEqual([
+    ['assistant:scan', 'thread.pushed'],
+    ['assistant:scan', 'thread.refreshed'],
+    ['assistant:scan', 'thread.woken'],
+  ]);
+  expect(rows.at(-1)!.details).toEqual({ reason: 'changed', snoozedUntil: until });
+  // So the card's history can say it: "tog upp ärendet igen när … ändrade det".
+  expect(itemEvents(rows, { actions: [] }, 'person:a')[0]).toMatchObject({
+    by: 'clew',
+    kind: 'woken',
+    reason: 'changed',
+  });
+  // One word when it was pushed and one now it is back.
+  expect(w.store.threads.deliveries).toHaveLength(2);
+});
+test('a change the source makes to a card that is not snoozed says nothing of waking', async () => {
+  const w = world();
+  w.set([draft()]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  w.advance();
+  w.set([draft('2')]);
+  await w.uc.tick();
+  expect(w.store.threads.audit.map(a => a.action)).not.toContain('thread.woken');
 });
 test('only an exhausted complete snapshot or an explicit tombstone resolves missing work', async () => {
   const w = world();

@@ -20,7 +20,7 @@ what Clew's talks module records, never what a calendar happens to contain.
    `talkInvitations` in the talks module's `usecases.ts` (`apps/server/src/composition/talk-invitations.ts`), the way
    the people module tells of a leaver. `established` is told where the execution's projection marks a proposal
    confirmed, that is when the invitation has been sent and read back from the calendar by its own id
-   (`composition/execution-projection.ts`). `ended` is told where the projection marks a proposal undone or
+   (`threads/usecases/projection.ts`). `ended` is told where the projection marks a proposal undone or
    replaced, and where the reply check records the invitee's no (`readReplies`). The talk and the invitation that
    carries its booking commit or roll back as one. The booking is recorded in the open round of the manager's
    organisation; with no open round, for a talk already held, or for people the directory does not hold in one

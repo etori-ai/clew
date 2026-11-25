@@ -66,10 +66,13 @@ export function memoryRefreshStore(threads = memoryThreadStore()) {
             r.set(value.id, copy(value));
           },
           async occurrences(job) {
+            // By id, as Postgres reads them (`tests/refresh-store-contract.ts`).
             return copy(
-              [...o.values()].filter(
-                x => x.personId === job.personId && x.connector === job.connector && x.assignment === job.assignment,
-              ),
+              [...o.values()]
+                .filter(
+                  x => x.personId === job.personId && x.connector === job.connector && x.assignment === job.assignment,
+                )
+                .sort((a, b) => a.id.localeCompare(b.id)),
             );
           },
           async openOccurrences(connector) {

@@ -297,6 +297,17 @@ describe('the action point card (D96 items 5 and 6)', () => {
     ]);
     expect(r.timer).toMatchObject({ state: 'fired', generation: 1 });
     expect(JSON.stringify(r)).not.toContain('Du bad');
+    // The fire wrote the timer's row and the card's, saying the person had dismissed it; the refused ones wrote none.
+    expect(r.audit.map(a => [a.actor, a.action, a.subject, a.details])).toEqual([
+      ['talks:commitment', 'thread.pushed', `thread:${id}`, expect.anything()],
+      ['talks:commitment', 'timer.fired', `timer:${dueTimerId(id)}`, { generation: 1, owner }],
+      [
+        'talks:commitment',
+        'thread.reminded',
+        `thread:${id}`,
+        { reason: 'due', generation: 1, wasState: 'dismissed', owner },
+      ],
+    ]);
     // A retried workflow finds the timer fired: nothing more.
     before = r;
     expect(await run(items => items.fire(id, 1, at))).toBe(false);

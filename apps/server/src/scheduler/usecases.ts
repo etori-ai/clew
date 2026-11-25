@@ -1,6 +1,7 @@
 import { Temporal } from 'temporal-polyfill';
 import { timeZone } from '@clew/calendar/dates';
 import type { CalendarUsecases } from '../modules/calendar/usecases/samtal';
+import type { AuthenticatedContext } from '@clew/contracts';
 import type { ThreadUsecases } from '../threads/usecases/cards';
 import {
   JOB_LEASE_MS,
@@ -21,7 +22,10 @@ import {
 export interface SchedulerDeps {
   jobs: JobQueue;
   people: People;
-  threads: Pick<ThreadUsecases, 'ensureThreads' | 'closeReceiptWindow'>;
+  /** `ensureThreads`: the person's scan as the server runs it, a refresh request per source (D47). */
+  threads: Pick<ThreadUsecases, 'closeReceiptWindow'> & {
+    ensureThreads(persona: AuthenticatedContext): Promise<void>;
+  };
   calendar: Pick<CalendarUsecases, 'closeUndoWindow'>;
   signIns: SignInData;
   clock: () => Date;

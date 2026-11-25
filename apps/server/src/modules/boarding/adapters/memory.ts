@@ -1,3 +1,4 @@
+import { dueTimerFires } from '@clew/contracts';
 import { dueTimerAt, lineUpwards } from '../domain';
 import {
   PlanTaken,
@@ -22,8 +23,10 @@ import {
  * Transactions run one at a time, as row locks would make them.
  *
  * The owners' cards (`WorkItemTx`) are recorded here instead of written to a stream: every call in `state.calls`, each
- * card's state in `state.cards`. A test makes the card sink throw with `sink.throwOn` and decides what `fire` answers
- * with `sink.fires`.
+ * card's state in `state.cards` and its timer in `state.timers`, scheduled, cancelled and fenced as composition does it
+ * over the thread store (`dueTimerAt`, `dueTimerFires`): none when the morning after the due day has passed, a
+ * generation counted up across close and reopen, and `fire` true only for the active generation, due by its time. A test
+ * makes the card sink throw with `sink.throwOn`.
  */
 export type WorkItemCall =
   | ({ op: 'open' } & Parameters<WorkItemTx['open']>[0])
@@ -39,8 +42,15 @@ export interface MemoryCard {
   dueOn: string;
   subject?: { entity: 'person' | 'unit'; key: string };
   state: 'open' | 'handled';
-  /** Whether the card has a timer: none for a due day whose next morning has passed (`dueTimerAt`). */
+  /** Whether the card's timer is active: none for a due day whose next morning has passed (`dueTimerAt`). */
   timer: boolean;
+}
+/** A card's timer, as the thread store's row has it (D47): one per card, its generation counted across replacements. */
+export interface MemoryTimer {
+  kind: 'boarding';
+  generation: number;
+  dueAt: string;
+  state: 'active' | 'cancelled' | 'fired';
 }
 export interface MemoryBoardingState {
   layers: Map<string, LayerRecord>;
@@ -50,13 +60,13 @@ export interface MemoryBoardingState {
   persons: Map<string, PersonRef>;
   audit: BoardingAudit[];
   cards: Map<string, MemoryCard>;
+  /** Each card's timer by the card's id; it goes with the card. */
+  timers: Map<string, MemoryTimer>;
   calls: WorkItemCall[];
 }
 export interface MemoryCardSink {
   /** The card call that throws, as a failing thread store would. */
   throwOn?: WorkItemCall['op'];
-  /** What `fire` answers: true when the timer is still active at that generation. Default true for an existing card. */
-  fires?: boolean | ((threadId: string, generation: number) => boolean);
 }
 const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
 const newestFirst = (rows: PlanRecord[]) =>
@@ -71,6 +81,7 @@ export function memoryBoardingStore(seed: { persons?: PersonRef[] } = {}) {
     persons: new Map((seed.persons ?? []).map(p => [p.id, { ...p }])),
     audit: [],
     cards: new Map(),
+    timers: new Map(),
     calls: [],
   };
   const sink: MemoryCardSink = {};
@@ -91,6 +102,25 @@ export function memoryBoardingStore(seed: { persons?: PersonRef[] } = {}) {
   const fail = (op: WorkItemCall['op']) => {
     if (sink.throwOn === op) throw new Error(`card sink failed on ${op}`);
   };
+  /**
+   * The card's next timer generation, due the morning after `dueOn`, as composition schedules it; none when that morning
+   * has passed, and then the timer the card had stays as it was. Whether one is active is the card's `timer`.
+   */
+  const schedule = (threadId: string, dueOn: string, at: string) => {
+    const dueAt = dueTimerAt(dueOn, at);
+    if (dueAt)
+      state.timers.set(threadId, {
+        kind: 'boarding',
+        generation: (state.timers.get(threadId)?.generation ?? 0) + 1,
+        dueAt,
+        state: 'active',
+      });
+    return state.timers.get(threadId)?.state === 'active';
+  };
+  const cancel = (threadId: string) => {
+    const timer = state.timers.get(threadId);
+    if (timer?.state === 'active') timer.state = 'cancelled';
+  };
   const workItems: WorkItemTx = {
     async open(input) {
       fail('open');
@@ -104,34 +134,44 @@ export function memoryBoardingStore(seed: { persons?: PersonRef[] } = {}) {
         dueOn: input.dueOn,
         ...(input.subject ? { subject: { ...input.subject } } : {}),
         state: 'open',
-        timer: dueTimerAt(input.dueOn, input.at) !== undefined,
+        timer: false,
       });
+      state.cards.get(input.threadId)!.timer = schedule(input.threadId, input.dueOn, input.at);
     },
     async close(threadId, at, why) {
       fail('close');
       state.calls.push({ op: 'close', threadId, at, why });
       const card = state.cards.get(threadId);
-      if (card) Object.assign(card, { state: 'handled', timer: false });
+      if (!card) return;
+      cancel(threadId);
+      Object.assign(card, { state: 'handled', timer: false });
     },
     async reopen(threadId, dueOn, at) {
       fail('reopen');
       state.calls.push({ op: 'reopen', threadId, dueOn, at });
       const card = state.cards.get(threadId);
-      if (card) Object.assign(card, { state: 'open', dueOn, timer: dueTimerAt(dueOn, at) !== undefined });
+      if (!card) return;
+      Object.assign(card, { state: 'open', dueOn, timer: schedule(threadId, dueOn, at) });
     },
     async fire(threadId, generation, at) {
       fail('fire');
       const card = state.cards.get(threadId);
-      const answer = typeof sink.fires === 'function' ? sink.fires(threadId, generation) : (sink.fires ?? true);
-      const fired = !!card && answer;
-      if (fired) card!.state = 'open';
+      const timer = state.timers.get(threadId);
+      const fired = !!card && dueTimerFires(timer, 'boarding', generation, at);
+      if (fired) {
+        timer!.state = 'fired';
+        Object.assign(card!, { state: 'open', timer: false });
+      }
       state.calls.push({ op: 'fire', threadId, generation, at, fired });
       return fired;
     },
     async remove(threadIds) {
       fail('remove');
       state.calls.push({ op: 'remove', threadIds: [...threadIds] });
-      for (const id of threadIds) state.cards.delete(id);
+      for (const id of threadIds) {
+        state.cards.delete(id);
+        state.timers.delete(id);
+      }
       // The thread's foreign key nulls the pointer, as `ON DELETE SET NULL` does in Postgres.
       for (const i of state.items.values()) if (i.threadId && threadIds.includes(i.threadId)) i.threadId = null;
     },

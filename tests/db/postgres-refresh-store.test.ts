@@ -63,5 +63,7 @@ afterAll(async () => {
           requests.map(r => 'refresh:' + r.id),
         ),
       );
+  await database().delete(schema.workOccurrences).where(inArray(schema.workOccurrences.personId, people));
+  await database().delete(schema.threads).where(inArray(schema.threads.personId, people));
   await database().delete(schema.people).where(inArray(schema.people.id, people));
 });

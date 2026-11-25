@@ -50,6 +50,12 @@ export interface ScimStoreHarness {
     leavers: () => LeaversTx,
     failed: (error: unknown, change: LeaverChange, kind: keyof LeaversTx) => void,
   ): ProvisionStore;
+  /**
+   * The same adapter built with a leavers binding that writes, as the competence module's does: on Postgres a row on
+   * the transaction the store hands it, in memory a record of its own that commits on its own. `written` is what of it
+   * is kept about a person, oldest first (DE-M7).
+   */
+  withWritingLeavers(): { store: ProvisionStore; written(personId: string): Promise<string[]> };
 }
 const T = '2026-11-09T06:00:00.000Z';
 export const userRow = (id: string, organisationId: string, extra: Partial<UserRecord> = {}): UserRecord => ({
@@ -1020,21 +1026,36 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       await store.transaction(async tx => {
         expect(await tx.readUser(org, p + '-a')).toMatchObject({ enabled: false, name: 'After the port' });
       });
-      // A rollback of the change takes it all back, whatever the binding did.
-      failing = false;
+      expect(told).toEqual([
+        `deactivated:${p}-a:${org}:provisioner:x:${T}`,
+        `deactivated:${p}-a:${org}:provisioner:x:${T}`,
+      ]);
+      // A store built without a binding tells nobody, and is no error.
+      await h.store.transaction(tx => tx.leavers.deactivated(change(p + '-c')));
+    });
+    test('what the leavers binding writes commits with the change and is gone with a change that rolls back after it was told (DE-M7)', async () => {
+      const h = await make();
+      const p = h.prefix,
+        org = p + '-org',
+        { store, written } = h.withWritingLeavers();
+      const change = (personId: string) => ({ actor: 'provisioner:x', personId, organisationId: org, at: T });
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(p + '-a', org));
+        await tx.updateUser(p + '-a', { enabled: false, updatedAt: T });
+        await tx.leavers.deactivated(change(p + '-a'));
+      });
+      expect(await written(p + '-a')).toEqual(['deactivated']);
       await expect(
         store.transaction(async tx => {
+          await tx.updateUser(p + '-a', { enabled: true, updatedAt: T });
           await tx.leavers.reactivated(change(p + '-a'));
           throw new Error('after the port');
         }),
       ).rejects.toThrow('after the port');
-      expect(told).toEqual([
-        `deactivated:${p}-a:${org}:provisioner:x:${T}`,
-        `deactivated:${p}-a:${org}:provisioner:x:${T}`,
-        'reactivated:' + p + '-a',
-      ]);
-      // A store built without a binding tells nobody, and is no error.
-      await h.store.transaction(tx => tx.leavers.deactivated(change(p + '-c')));
+      expect(await written(p + '-a')).toEqual(['deactivated']);
+      await store.transaction(async tx => {
+        expect(await tx.readUser(org, p + '-a')).toMatchObject({ enabled: false });
+      });
     });
     test("an organisation's capability rows are held for a read or for a change until the transaction ends, and holding them changes nothing (B1)", async () => {
       const { store, prefix: p } = await make();

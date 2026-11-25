@@ -35,6 +35,8 @@ const hasBody = (spec: PanelViewSpec) =>
   spec.kind === 'record' && !!(spec.document || spec.items || spec.metrics || spec.series || spec.activity);
 /** The heading the page sends the focus to when the person arrives from a link on another page. */
 const TITLE_ID = 'vy-rubrik';
+/** The page's heading when it fails before it is named: the areas that name it could not be read. */
+const FAILED_TITLE = 'Sidan kunde inte läsas';
 /** The one person a view's input names by `person`, or null. */
 function personOf(inputJson: string | null): string | null {
   try {
@@ -128,7 +130,8 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   // directory, as their page names them (D121, the review of 2026-11-13): a person's name never rides in the address.
   // The directory is asked by Clew's key, the person's id (D122): the address's `of` where the opener knew it, else the
   // input's own key, which is the id of a person without a user name. Until both have answered the heading waits; a
-  // person the directory does not answer for keeps the read's own name.
+  // person the directory does not answer for keeps the read's own name. A read that fails is still named for the person
+  // once the directory has answered, by the read's own name, so the tab and the heading say whose view could not be read.
   const whose = !entry && search.get('title') === null ? (search.get('of') ?? personOf(inputJson)) : null;
   const person = useQuery({ ...entityDetailQuery('person', whose ?? ''), enabled: whose !== null });
   const noun = main.shown?.capability === capability ? nounOf(main.shown.spec) : undefined;
@@ -137,9 +140,11 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
       ? named
       : person.data && noun
         ? `${noun} för ${person.data.entity.name}`
-        : person.isError || (person.data && main.shown)
-          ? named
-          : '';
+        : person.data && main.failed && named
+          ? `${named} för ${person.data.entity.name}`
+          : person.isError || (person.data && main.shown)
+            ? named
+            : '';
   const missing = unlisted || (!!main.failed && refused(main.failed));
   const ready = areasQ.data !== undefined && !missing;
   const from = insideClew(search.get('from'));
@@ -167,8 +172,6 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
           opensAsPage(views, capability) || answersWithRowsOf(tool?.spec, tool?.output),
         )
       : null;
-  const heading = missing ? 'Verktyget finns inte' : title || null;
-  usePageTitle(heading, heading ?? false);
   // Arrived from a link on another page, the person starts at the heading (2.4.3): the page they left took the focus
   // with it. From the rail, or with the focus somewhere already, it stays where it is.
   useEffect(() => {
@@ -188,6 +191,9 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
       : main.failed && !missing
         ? { message: errorMessage(main.failed, 'Kunde inte hämta.'), retry: main.retry }
         : null;
+  // A page whose read failed before it could be named keeps a level-1 heading, and the browser's tab says the same.
+  const heading = missing ? 'Verktyget finns inte' : title || (failed ? FAILED_TITLE : null);
+  usePageTitle(heading, heading ?? false);
   /** Where a row's own read leads (D116, D126): its own page, with this one as the way back. */
   const hrefFor = (v: ViewRef) => viewOpenHref(views, location.pathname, location.search, v);
   // The way back (a person's page names it the same way): the page the view was opened from, by its name.
@@ -313,9 +319,13 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
             <>
               {trail}
               {/* The one page header (D74): with a declared view the view draws it, with its controls at the end of the title's line and its mark row under it; before the view has arrived the title stands alone in the same place. The skeleton is the heading's line, 32 px. */}
-              {title
-                ? !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} />
-                : !failed && <Skeleton height={32} width={200} />}
+              {title ? (
+                !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} />
+              ) : failed ? (
+                <Heading level={1}>{FAILED_TITLE}</Heading>
+              ) : (
+                <Skeleton height={32} width={200} />
+              )}
               {banner}
               {tool ? (
                 <ContentArrival>
@@ -347,7 +357,8 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                   )}
                 </ContentArrival>
               ) : (
-                !failed && <ContentSkeleton heading={false} />
+                // While the view of one person waits for their name, the page is named by the read's own name.
+                !failed && <ContentSkeleton heading={false} name={title ? undefined : named || 'Vy'} />
               )}
             </>
           )}

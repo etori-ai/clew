@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { localReturnTo } from '../../apps/server/src/auth-crypto';
-import { authSettings } from '../../apps/server/src/auth';
+import { AuthError, authSettings, verifyMutation } from '../../apps/server/src/auth';
 import { frontendOrigins } from '../../apps/server/src/auth-origin';
 
 test('sign-in returns the normalized local page and its query or falls back to the home page', () => {
@@ -9,6 +9,77 @@ test('sign-in returns the normalized local page and its query or falls back to t
   for (const address of [null, '//', '/work/..//', '/%2e//', '/\t/', '/work/../api/session', '/login']) {
     expect(localReturnTo(address)).toBe('/');
   }
+});
+test('the return address keeps the whole local address but its fragment, and never leaves the installation (ID-9)', () => {
+  // A deep link keeps its query through sign-in (WD-M3); the fragment never reaches the server, so none is returned.
+  expect(localReturnTo('/items/abc?step=2#rows')).toBe('/items/abc?step=2');
+  expect(localReturnTo('/tools?filter=a&b=c')).toBe('/tools?filter=a&b=c');
+  expect(localReturnTo('/./calendar')).toBe('/calendar');
+  // Encoded slashes stay encoded: a path on this host, never another host.
+  expect(localReturnTo('/%2F%2Fevil.example')).toBe('/%2F%2Fevil.example');
+  for (const address of [
+    '',
+    'calendar',
+    'https://evil.example/x',
+    'http:/evil.example',
+    'javascript:alert(1)',
+    '//evil.example/x',
+    '/\\evil.example',
+    '\\\\evil.example',
+    ' /calendar',
+    '/x\ny',
+    '/login?reason=expired',
+  ])
+    expect(localReturnTo(address)).toBe('/');
+});
+
+describe('the mutation guard (verifyMutation, ID-9)', () => {
+  const settings = {
+    OIDC_ISSUER: 'https://idp.example.test/realms/guard',
+    OIDC_CLIENT_ID: 'clew-guard-test',
+    OIDC_CLIENT_SECRET: 'synthetic-secret',
+    PUBLIC_URL: 'https://clew.example.test',
+    FRONTEND_ORIGINS: 'https://portal.example.test',
+  };
+  const before = Object.fromEntries(Object.keys(settings).map(key => [key, process.env[key]]));
+  afterEach(() => {
+    for (const [key, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const csrf = 'the-sessions-own-token';
+  const post = (headers: Record<string, string>) =>
+    new Request('https://clew.example.test/api/threads/t-1/act', { method: 'POST', headers });
+  const refusal = (request: Request) => {
+    try {
+      verifyMutation(request, csrf);
+    } catch (error) {
+      return error instanceof AuthError ? { status: error.status, code: error.code } : error;
+    }
+    return 'passed';
+  };
+  test('a mutation from the public origin or a listed front end with the session’s token passes', () => {
+    Object.assign(process.env, settings);
+    expect(refusal(post({ origin: settings.PUBLIC_URL, 'x-csrf-token': csrf }))).toBe('passed');
+    expect(refusal(post({ origin: 'https://portal.example.test', 'x-csrf-token': csrf }))).toBe('passed');
+  });
+  test('another origin, no origin, no token or another token is refused as 403 invalid', () => {
+    Object.assign(process.env, settings);
+    const refused = { status: 403, code: 'invalid' };
+    const sent: Array<Record<string, string>> = [
+      { origin: 'https://evil.example', 'x-csrf-token': csrf },
+      { origin: 'null', 'x-csrf-token': csrf },
+      { 'x-csrf-token': csrf },
+      // The public host over another scheme is another origin.
+      { origin: 'http://clew.example.test', 'x-csrf-token': csrf },
+      { origin: settings.PUBLIC_URL },
+      { origin: settings.PUBLIC_URL, 'x-csrf-token': '' },
+      { origin: settings.PUBLIC_URL, 'x-csrf-token': csrf + 'x' },
+      { origin: settings.PUBLIC_URL, 'x-csrf-token': 'another-sessions-token' },
+    ];
+    for (const headers of sent) expect(refusal(post(headers))).toEqual(refused);
+  });
 });
 
 describe('frontendOrigins (D67 item 6)', () => {

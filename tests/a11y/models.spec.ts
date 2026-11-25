@@ -250,8 +250,11 @@ test.describe('model administration', () => {
       const address = page.getByRole('textbox', { name: /^Adress/ });
       await address.fill('https://mikael:hemligt@llm.kommunen.se/v1');
       await expect(address).toHaveAttribute('aria-invalid', 'true');
+      // The field's own words, not their copy in Astryx's assertive region, which holds them for a while.
       await expect(
-        page.getByText('Adressen får inte innehålla användarnamn eller lösenord.', { exact: false }),
+        page
+          .getByText('Adressen får inte innehålla användarnamn eller lösenord.', { exact: false })
+          .and(page.locator(':not([aria-live])')),
       ).toBeVisible();
       await expect(page.getByRole('button', { name: 'Spara', exact: true })).toBeDisabled();
       await expectNoAxeViolations(page);

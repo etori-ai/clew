@@ -40,9 +40,10 @@ afterAll(async () => {
   await forgetTestWorkflows();
   await closeDatabase();
 });
-followupContract('postgres follow-up', async () => {
+followupContract('postgres follow-up', async ({ answered = false } = {}) => {
   const id = 'followup-test-' + crypto.randomUUID(),
     fixture = followupFixture(id);
+  if (answered) fixture.proposals = fixture.proposals.map(p => ({ ...p, status: 'accepted' }));
   created.push(id);
   await database()
     .insert(schema.people)
@@ -77,6 +78,24 @@ followupContract('postgres follow-up', async () => {
           .from(schema.threads)
           .where(eq(schema.threads.personId, id + ':invitee'))
       ).length,
+    delivered: async () =>
+      (
+        await database()
+          .select()
+          .from(schema.threads)
+          .where(eq(schema.threads.personId, id + ':invitee'))
+          .orderBy(schema.threads.id)
+      ).map(t => ({ id: t.id, personId: t.personId, title: t.title, summary: t.summary, trigger: t.trigger })),
+    async card() {
+      const [t] = await database().select().from(schema.threads).where(eq(schema.threads.id, id));
+      return {
+        state: t!.state,
+        handledAt: t!.handledAt?.toISOString() ?? null,
+        waitingOn: t!.waitingOn,
+        summary: t!.summary,
+        updatedAt: t!.updatedAt.toISOString(),
+      };
+    },
     audits: async () =>
       (
         await database()
@@ -84,12 +103,12 @@ followupContract('postgres follow-up', async () => {
           .from(schema.audit)
           .where(eq(schema.audit.subject, 'thread:' + id))
       ).map(a => a.action),
-    details: async action =>
+    details: async (action, subject = 'thread:' + id) =>
       (
         await database()
           .select()
           .from(schema.audit)
-          .where(and(eq(schema.audit.subject, 'thread:' + id), eq(schema.audit.action, action)))
+          .where(and(eq(schema.audit.subject, subject), eq(schema.audit.action, action)))
           .orderBy(schema.audit.createdAt)
       ).map(a => a.details),
   };

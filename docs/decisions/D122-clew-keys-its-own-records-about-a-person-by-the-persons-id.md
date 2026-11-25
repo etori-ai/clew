@@ -47,8 +47,7 @@ user name, so a rename separated a person from the cards about them and a reuse 
    snooze or delivering it again, and a card that was dismissed or has a receipt stays as it is. A deactivation alone
    rewrites nothing, since a deactivated person still holds their name (item 2). A source that changes the user name a
    row carries has changed the work, and the card comes back. A draft with occurrences carries the source's own
-   revision. The scan that the unit suites run in process (`scanInto`) rewrites such rows too, and wakes a snoozed card
-   only when something other than the people its rows name has moved.
+   revision.
 4. **An action started about a person.** A card started from a person's menu keeps the person's id in the input property
    the capability names (`about.param`). Its topic, `started:<capability>:<digest>`, is made from that input, with the
    id in it and never the user name, so a reused name gives another card. Starting is refused with
