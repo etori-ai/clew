@@ -19,7 +19,8 @@ adapter, their tables have no rows and their areas no figure.
 | `connector.mjs` | The reads, the minimum group size, the organisation's thresholds, the figures, the assertion check and HTTP error handling |
 | `statistics.mjs` | The port, the mapping `toStatRow`, and made-up sick leave, economy and HME for any unit |
 | `engine.mjs` | Qlik's Engine API behind the port: one session hypercube over one WebSocket per read |
-| `server.mjs` | Serves it over HTTP and reads the configuration |
+| `http.mjs` | The HTTP listener: reads a request within a size limit and answers whatever it holds, so nothing sent to the port ends the process |
+| `server.mjs` | Reads the configuration and serves the connector with that listener |
 
 ## What a manager gets
 

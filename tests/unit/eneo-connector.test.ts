@@ -1,6 +1,7 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { type Actor } from '../../packages/connectors/src/index';
+import type { AssistantAskEvent } from '../../packages/contracts/src/index';
+import { CapabilityError, type Actor } from '../../packages/connectors/src/index';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, decodeClaims, manifest as eneoManifest } from '../../connectors/eneo/connector.mjs';
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
@@ -89,10 +90,76 @@ const eneoFixtures: Record<string, unknown> = {
     source_metadata: [],
   },
 };
-function stack(options: { token?: string | undefined; fixtures?: Record<string, unknown>; status?: number } = {}) {
+const HR = '3f2b8c1e-5a47-4e0b-9a51-0c6d2f7e8a10';
+const SESSION = '9d1c2b3a-4e5f-4a6b-8c7d-0e1f2a3b4c5d';
+const ASK = 'POST /api/v1/conversations/?version=3';
+/** The assistant an owner in Eneo made available to other systems, so that a question to it is sent. */
+const withAssistant = {
+  ...eneoFixtures,
+  'GET /api/v1/assistants/external/': { items: [{ id: HR, name: 'HR-assistenten' }], count: 1 },
+};
+/** An answer stream as Eneo writes it: the session, one piece of text and the end. */
+const answered = () =>
+  new Response(
+    [
+      { type: 'data-session', data: { session_id: SESSION } },
+      { type: 'text-delta', id: 'text-0', delta: 'Svar.' },
+      { type: 'finish' },
+    ]
+      .map(event => `data: ${JSON.stringify(event)}\n\n`)
+      .join(''),
+    { status: 200, headers: { 'content-type': 'text/event-stream' } },
+  );
+/**
+ * A body that never ends: what `first` holds, then `piece` again and again. How much of it was pulled, and whether the
+ * reader gave it up.
+ */
+function endless(piece: Uint8Array, init: { headers?: Record<string, string>; first?: string[] } = {}) {
+  const seen = { pulled: 0, cancelled: false };
+  const response = new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const text of init.first ?? []) controller.enqueue(new TextEncoder().encode(text));
+      },
+      pull(controller) {
+        // A bound on the test itself, far past any limit: a reader without one stops here.
+        if (++seen.pulled > 1000) controller.close();
+        else controller.enqueue(piece);
+      },
+      cancel() {
+        seen.cancelled = true;
+      },
+    }),
+    { status: 200, headers: init.headers ?? {} },
+  );
+  return { seen, response };
+}
+async function askOf(registry: Registry, context: { delegate: () => Promise<string | undefined> }) {
+  const events: AssistantAskEvent[] = [];
+  for await (const event of registry.ask(
+    hassan,
+    'eneo:' + HR,
+    { question: 'Hur många semesterdagar har jag?' },
+    context,
+  ))
+    events.push(event);
+  return events;
+}
+function stack(
+  options: {
+    token?: string | undefined;
+    fixtures?: Record<string, unknown>;
+    status?: number;
+    /** An answer of its own for a call, in place of the fixtures. */
+    respond?: (key: string) => Response | undefined;
+  } = {},
+) {
   const calls: Array<{ key: string; headers: Record<string, string>; body?: unknown }> = [];
+  /** How each call to Eneo treats a redirect. */
+  const redirects: Array<RequestRedirect | undefined> = [];
   const fixtures = options.fixtures ?? eneoFixtures;
   const eneoFetch: FetchLike = async (input, init) => {
+    redirects.push(init?.redirect);
     const url = new URL(String(input));
     const key = `${init?.method ?? 'GET'} ${url.pathname}${url.search}`;
     calls.push({
@@ -101,6 +168,8 @@ function stack(options: { token?: string | undefined; fixtures?: Record<string, 
       ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
     });
     if (options.status) return new Response('', { status: options.status });
+    const own = options.respond?.(key);
+    if (own) return own;
     const hit = fixtures[key];
     return hit ? Response.json(hit) : new Response('', { status: 404 });
   };
@@ -125,6 +194,7 @@ function stack(options: { token?: string | undefined; fixtures?: Record<string, 
   return {
     registry,
     calls,
+    redirects,
     context,
   };
 }
@@ -188,6 +258,123 @@ describe('the Eneo connector', () => {
         c.body ? ['accept', 'authorization', 'content-type'] : ['accept', 'authorization'],
       );
     }
+  });
+  test('every call to Eneo follows no redirect, the question stream included (CS-L3)', async () => {
+    const { registry, calls, redirects, context } = stack({
+      fixtures: withAssistant,
+      respond: key => (key === ASK ? answered() : undefined),
+    });
+    await registry.run(hassan, 'eneo.search', { query: 'fall' }, context);
+    await registry.run(hassan, 'eneo.fetch', { ref: 'blob-fall' }, context);
+    expect((await askOf(registry, context)).at(-1)).toMatchObject({ type: 'done', session: SESSION });
+    expect(calls.map(c => c.key)).toContain(ASK);
+    expect(redirects).toHaveLength(calls.length);
+    expect(new Set(redirects)).toEqual(new Set(['error']));
+  });
+  test('ENEO_URL is https, or plain http towards this host or with ENEO_ALLOW_HTTP, and never another scheme (CS-L3)', () => {
+    const make = (eneoUrl: string) => () => createConnector({ jwks: testJwks, secret, eneoUrl });
+    const refused = 'ENEO_URL must be https outside local development (ENEO_ALLOW_HTTP=true allows http).';
+    const before = process.env.ENEO_ALLOW_HTTP;
+    try {
+      delete process.env.ENEO_ALLOW_HTTP;
+      for (const url of [
+        'https://eneo.example',
+        'HTTPS://eneo.example',
+        'http://localhost:8123',
+        'http://127.0.0.1:8123',
+      ])
+        expect(make(url)).not.toThrow();
+      for (const url of [
+        'http://eneo.example',
+        'HTTP://eneo.example',
+        // A compose service name is not this host without the variable.
+        'http://eneo:8000',
+        // Look-alikes of a local host: another host's name, a user name, a fragment.
+        'http://localhost.evil.example',
+        'http://localhost:80@evil.example',
+        'http://evil.example#@localhost',
+        // Another scheme towards this host is not http.
+        'ftp://localhost/api',
+        'ws://127.0.0.1:8123',
+        'file://localhost/etc/passwd',
+      ])
+        expect(make(url)).toThrow(refused);
+      // Read when the connector is made: a development stack on a private network names Eneo's service.
+      process.env.ENEO_ALLOW_HTTP = 'true';
+      expect(make('http://eneo:8000')).not.toThrow();
+      for (const url of ['ftp://eneo/api', 'ws://eneo:8000']) expect(make(url)).toThrow(refused);
+    } finally {
+      if (before === undefined) delete process.env.ENEO_ALLOW_HTTP;
+      else process.env.ENEO_ALLOW_HTTP = before;
+    }
+  });
+  test('an answer that declares more than 4 MiB is unavailable without being read, and one that passes it is given up there', async () => {
+    const piece = new Uint8Array(64 * 1024).fill(32);
+    const declared = endless(piece, { headers: { 'content-length': String(4 * 1024 * 1024 + 1) } });
+    const big = stack({
+      respond: key => (key === 'GET /api/v1/info-blobs/blob-fall/' ? declared.response : undefined),
+    });
+    await expect(big.registry.run(hassan, 'eneo.fetch', { ref: 'blob-fall' }, big.context)).rejects.toThrow(
+      'Eneo svarar inte just nu.',
+    );
+    expect(declared.seen.pulled).toBeLessThanOrEqual(1);
+    expect(declared.seen.cancelled).toBe(true);
+    // No length declared: read a piece at a time, and given up as the piece that passes 4 MiB arrives.
+    const streamed = endless(piece);
+    const long = stack({
+      respond: key => (key === 'GET /api/v1/info-blobs/blob-fall/' ? streamed.response : undefined),
+    });
+    await expect(long.registry.run(hassan, 'eneo.fetch', { ref: 'blob-fall' }, long.context)).rejects.toThrow(
+      'Eneo svarar inte just nu.',
+    );
+    expect(streamed.seen.cancelled).toBe(true);
+    expect(streamed.seen.pulled).toBeLessThan(70);
+  });
+  test('an event of the answer stream that passes a million characters without its end gives the question up as unavailable', async () => {
+    const upstream = endless(new Uint8Array(64 * 1024).fill(120), {
+      headers: { 'content-type': 'text/event-stream' },
+      first: [
+        `data: ${JSON.stringify({ type: 'data-session', data: { session_id: SESSION } })}\n\n`,
+        'data: {"type":"text-delta","id":"text-0","delta":"',
+      ],
+    });
+    const { registry, context } = stack({
+      fixtures: withAssistant,
+      respond: key => (key === ASK ? upstream.response : undefined),
+    });
+    const failed = await askOf(registry, context).catch((error: unknown) => error);
+    expect(failed).toBeInstanceOf(CapabilityError);
+    expect((failed as CapabilityError).code).toBe('unavailable');
+    // Given up as the piece that passes the limit arrives, sixteen pieces of 64 KiB in.
+    expect(upstream.seen.cancelled).toBe(true);
+    expect(upstream.seen.pulled).toBeLessThan(20);
+  });
+  test('an answer stream longer than that in all, in events that each end, is answered whole', async () => {
+    const delta = 'x'.repeat(32 * 1024);
+    const { registry, context } = stack({
+      fixtures: withAssistant,
+      respond: key =>
+        key === ASK
+          ? new Response(
+              [
+                { type: 'data-session', data: { session_id: SESSION } },
+                ...Array.from({ length: 40 }, () => ({ type: 'text-delta', id: 'text-0', delta })),
+                { type: 'finish' },
+              ]
+                .map(event => `data: ${JSON.stringify(event)}\n\n`)
+                .join(''),
+              { status: 200, headers: { 'content-type': 'text/event-stream' } },
+            )
+          : undefined,
+    });
+    const events = await askOf(registry, context);
+    expect(
+      events
+        .filter(e => e.type === 'text')
+        .map(e => (e.type === 'text' ? e.delta : ''))
+        .join('').length,
+    ).toBe(40 * delta.length);
+    expect(events.at(-1)).toMatchObject({ type: 'done', session: SESSION });
   });
   test('a document whose address is no https address, or too long a one, is still a hit, without the link', async () => {
     for (const url of [

@@ -11,6 +11,7 @@
 //   QLIK_CACHE_SECONDS          how long aggregates are kept in memory (default 300)
 //   QLIK_URL, QLIK_APP_ID, QLIK_TOKEN, QLIK_SICK_LEAVE_CUBE, QLIK_RATES_AS  the engine adapter (engine.mjs)
 import { createServer } from 'node:http';
+import { listener } from './http.mjs';
 import { createConnector } from './connector.mjs';
 import { createFixtureStatistics } from './statistics.mjs';
 import { createQlikStatistics } from './engine.mjs';
@@ -88,17 +89,6 @@ const { handle } = createConnector({
   cacheSeconds: positive('QLIK_CACHE_SECONDS', 300),
 });
 const port = Number(process.env.PORT ?? 4048);
-createServer(async (req, res) => {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const request = new Request(`http://${req.headers.host ?? 'connector'}${req.url}`, {
-    method: req.method,
-    headers: req.headers,
-    body: chunks.length ? Buffer.concat(chunks) : undefined,
-  });
-  const response = await handle(request);
-  res.writeHead(response.status, Object.fromEntries(response.headers));
-  res.end(Buffer.from(await response.arrayBuffer()));
-}).listen(port, () =>
+createServer(listener(handle)).listen(port, () =>
   console.log(`qlik connector listening on :${port} (${adapter} adapter${unitMap === null ? ', open mode' : ''})`),
 );

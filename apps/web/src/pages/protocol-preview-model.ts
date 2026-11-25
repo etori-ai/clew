@@ -57,8 +57,11 @@ export interface ManifestPreview {
   };
 }
 
-/** The most the page sends, as the route takes it. */
+/** The most bytes the page sends, as the route takes it: `MAX_MANIFEST_BYTES`, the loader's own limit. */
 export const MANIFEST_MAX = 500_000;
+/** Whether a manifest's text is over `MANIFEST_MAX`, counted in bytes as the route counts it. */
+export const overManifestMax = (text: string) =>
+  text.length > MANIFEST_MAX || new TextEncoder().encode(text).byteLength > MANIFEST_MAX;
 /** The document as the person gave it: parsed here, so a document that is not JSON is said with the parser's own words. */
 export type Parsed = { ok: true; document: unknown } | { ok: false; message: string };
 export function parseDocument(text: string): Parsed {

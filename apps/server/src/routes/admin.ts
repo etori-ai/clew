@@ -41,6 +41,7 @@ import { operations } from '../composition/operations';
 import { appearance } from '../composition/appearance';
 import { ThemeFileError } from '../modules/appearance/usecases';
 import { provisionerKeyRoutes } from './provisioner-keys';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * Administration (D23, D24): thin routes over `connectorAdmin` and `models`. The use cases check the grant capability
@@ -68,8 +69,8 @@ const validators = {
   appearanceLogo: ajv.compile(AppearanceLogoInput),
 };
 async function body<T>(request: Request, validate: (value: unknown) => boolean, limit = 16000): Promise<T> {
-  const text = await request.text();
-  if (text.length > limit) throw new InputError('För stor förfrågan.');
+  const text = await textOfAtMost(request, limit);
+  if (text === undefined) throw new InputError('För stor förfrågan.');
   let value: unknown;
   try {
     value = text ? JSON.parse(text) : {};

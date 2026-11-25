@@ -1,3 +1,4 @@
+import { textOfAtMost } from '../bounded-body';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { Value } from 'typebox/value';
 import {
@@ -43,10 +44,10 @@ function inputOf(value: unknown): Record<string, unknown> {
  * or a decision (`sends`), the assistant's draft it was sent from in `draft`; nothing else.
  */
 async function actionInput(request: Request, sends = false): Promise<RecordActionInput> {
-  const text = await request.text();
+  const text = await textOfAtMost(request, 32_000);
   let value: unknown;
   try {
-    value = text.length <= 32_000 ? JSON.parse(text) : undefined;
+    value = text === undefined ? undefined : JSON.parse(text);
   } catch {
     value = undefined;
   }

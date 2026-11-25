@@ -2,7 +2,9 @@ import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import { SignJWT } from 'jose';
 import { type Actor, type CapabilityError } from '../../packages/connectors/src/index';
-import { protocolSchema } from '../../packages/connectors/src/protocol';
+import { MAX_ANSWER_BYTES, MAX_MANIFEST_BYTES, protocolSchema } from '../../packages/connectors/src/protocol';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import {
   ManifestError,
   fetchManifest,
@@ -306,6 +308,208 @@ describe('a remote connector in the registry', () => {
       tone: 'warn',
       unavailable: true,
     });
+  });
+});
+
+describe('what a connector answers is read at its registered address and no further than the limit (CB-4, CB-5)', () => {
+  /** Two local services: the registered one answers with a redirect to the other, which counts what reaches it. */
+  async function redirecting() {
+    const reached: string[] = [];
+    const other = createServer((req, res) => {
+      reached.push(`${req.method} ${req.url} key=${req.headers['x-clew-connector-key'] ? 'sent' : 'absent'}`);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { code: 'invalid', message: 'text from the other host' } }));
+    });
+    await new Promise<void>(resolve => other.listen(0, '127.0.0.1', resolve));
+    const otherPort = (other.address() as AddressInfo).port;
+    const registered = createServer((req, res) => {
+      res.writeHead(req.method === 'GET' ? 302 : 307, { location: `http://127.0.0.1:${otherPort}/internal` });
+      res.end();
+    });
+    await new Promise<void>(resolve => registered.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(registered.address() as AddressInfo).port}`;
+    const close = () =>
+      Promise.all([other, registered].map(s => new Promise(resolve => s.close(resolve)))).then(() => undefined);
+    return { url, reached, close };
+  }
+  test('a redirect is the connector failing: nothing reaches the other host, and none of its words reach the person', async () => {
+    const { url, reached, close } = await redirecting();
+    try {
+      // Said as what it is, once, so the administrator registers the address the service answers on (CB-4).
+      const refused = await fetchManifest(url, 'hello').catch(error => error);
+      expect(refused).toBeInstanceOf(ManifestError);
+      expect(refused.message).toContain('answered with a redirect (302), which Clew does not follow');
+      const registry = new Registry().register(
+        remoteConnector(parseManifest(helloManifest), { url, key: secret, assert: assertionFor('hello', secret) }),
+      );
+      await expect(registry.run(hassan, 'hello.greeting', {})).rejects.toThrow('Hello svarar inte just nu.');
+      expect((await registry.areas(hillevi))[0]?.figure).toMatchObject({ unavailable: true });
+      expect(reached).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+  test('every request the transport sends refuses a redirect', async () => {
+    const { connectorFetch } = stack();
+    const seen: Array<[string, RequestRedirect | undefined]> = [];
+    const recording: FetchLike = (input, init) => {
+      seen.push([new URL(input).pathname, init?.redirect]);
+      return connectorFetch(input, init);
+    };
+    const registry = new Registry().register(
+      remoteConnector(await fetchManifest('http://hello', 'hello', recording), {
+        url: 'http://hello',
+        key: secret,
+        assert: assertionFor('hello', secret),
+        fetch: recording,
+      }),
+    );
+    await registry.run(hassan, 'hello.greeting', {});
+    await registry.areas(hillevi);
+    await registry.scan(hillevi);
+    expect(seen.map(([path]) => path)).toEqual(
+      expect.arrayContaining(['/clew/manifest', '/clew/capabilities/hello.greeting', '/clew/figure', '/clew/scan']),
+    );
+    // The manifest's redirect is read as one, to be said by name; every other request fails on one.
+    expect(seen.filter(([path, redirect]) => redirect !== (path === '/clew/manifest' ? 'manual' : 'error'))).toEqual(
+      [],
+    );
+  });
+  /** An answer that never ends, counting how many pieces were asked of it. */
+  const endless = (headers: Record<string, string> = {}, status = 200) => {
+    const counted = { pieces: 0, cancelled: false };
+    const piece = new TextEncoder().encode('[' + '0,'.repeat(32 * 1024));
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          counted.pieces++;
+          controller.enqueue(piece);
+        },
+        cancel() {
+          counted.cancelled = true;
+        },
+      }),
+      { status, headers: { 'content-type': 'application/json', ...headers } },
+    );
+    return { counted, response };
+  };
+  test('an answer over the limit is the connector failing, and is not read past the limit', async () => {
+    const { counted, response } = endless();
+    const registry = new Registry().register(
+      remoteConnector(parseManifest(helloManifest), {
+        url: 'http://hello',
+        key: secret,
+        assert: assertionFor('hello', secret),
+        fetch: async () => response,
+      }),
+    );
+    await expect(registry.run(hassan, 'hello.greeting', {})).rejects.toThrow('Hello svarar inte just nu.');
+    expect(counted.cancelled).toBe(true);
+    // 64 kB a piece: the limit and one piece more, never the whole of an endless answer.
+    expect(counted.pieces).toBeLessThanOrEqual(Math.ceil(MAX_ANSWER_BYTES / (64 * 1024)) + 2);
+  });
+  test('an answer that declares a length over the limit is refused before it is read', async () => {
+    const { counted, response } = endless({ 'content-length': String(MAX_ANSWER_BYTES + 1) });
+    const registry = new Registry().register(
+      remoteConnector(parseManifest(helloManifest), {
+        url: 'http://hello',
+        key: secret,
+        assert: assertionFor('hello', secret),
+        fetch: async () => response,
+      }),
+    );
+    await expect(registry.run(hassan, 'hello.greeting', {})).rejects.toThrow('Hello svarar inte just nu.');
+    expect(counted.cancelled).toBe(true);
+    expect(counted.pieces).toBeLessThanOrEqual(1);
+  });
+  /** JSON text padded with spaces to exactly `bytes` bytes, which JSON reads as nothing. */
+  const padded = (text: string, bytes: number) => text + ' '.repeat(bytes - new TextEncoder().encode(text).byteLength);
+  test('a manifest over its limit is refused by name; one at the limit is read, and one byte more is not', async () => {
+    const { response } = endless();
+    await expect(fetchManifest('http://hello', 'hello', async () => response)).rejects.toThrow(
+      `answered more than ${MAX_MANIFEST_BYTES} bytes`,
+    );
+    const text = JSON.stringify(helloManifest);
+    const answering = (body: string) => async () => new Response(body);
+    expect((await fetchManifest('http://hello', 'hello', answering(padded(text, MAX_MANIFEST_BYTES)))).id).toBe(
+      'hello',
+    );
+    await expect(
+      fetchManifest('http://hello', 'hello', answering(padded(text, MAX_MANIFEST_BYTES + 1))),
+    ).rejects.toThrow(`answered more than ${MAX_MANIFEST_BYTES} bytes`);
+  });
+  test("a capability's answer at the limit is read, and one byte more is the connector failing", async () => {
+    const { connectorFetch } = stack();
+    const answering = (bytes: number) => {
+      const fetch: FetchLike = (input, init) =>
+        new URL(input).pathname.startsWith('/clew/capabilities/')
+          ? connectorFetch(input, init).then(
+              async real =>
+                new Response(padded(await real.text(), bytes), {
+                  status: real.status,
+                  headers: { 'content-type': 'application/json' },
+                }),
+            )
+          : connectorFetch(input, init);
+      return new Registry().register(
+        remoteConnector(parseManifest(helloManifest), {
+          url: 'http://hello',
+          key: secret,
+          assert: assertionFor('hello', secret),
+          fetch,
+        }),
+      );
+    };
+    expect(await answering(MAX_ANSWER_BYTES).run(hillevi, 'hello.openItems', {})).toBeDefined();
+    await expect(answering(MAX_ANSWER_BYTES + 1).run(hillevi, 'hello.openItems', {})).rejects.toThrow(
+      'Hello svarar inte just nu.',
+    );
+  });
+  test('a refusal of a question whose body never ends is the connector failing, read no further than the limit', async () => {
+    const { connectorFetch } = stack();
+    const { counted, response } = endless({}, 403);
+    const refusing: FetchLike = (input, init) =>
+      new URL(input).pathname === '/clew/ask' ? Promise.resolve(response) : connectorFetch(input, init);
+    const registry = new Registry().register(
+      remoteConnector(parseManifest(helloManifest), {
+        url: 'http://hello',
+        key: secret,
+        assert: assertionFor('hello', secret),
+        fetch: refusing,
+      }),
+    );
+    const asking = async () => {
+      for await (const _ of registry.ask(hillevi, 'hello:guide', { question: 'Hej' })) void _;
+    };
+    await expect(asking()).rejects.toThrow('Hello svarar inte just nu.');
+    expect(counted.cancelled).toBe(true);
+    expect(counted.pieces).toBeLessThanOrEqual(Math.ceil(MAX_ANSWER_BYTES / (64 * 1024)) + 2);
+  });
+  test("the conformance check's own probes refuse a redirect, give up after the transport's limit, and leave the answer unread", async () => {
+    const { connectorFetch } = stack();
+    const sent: Array<{ path: string; redirect?: RequestRedirect; signal: boolean }> = [];
+    const refusals: Array<ReturnType<typeof endless>['counted']> = [];
+    const recording: FetchLike = async (input, init) => {
+      sent.push({ path: new URL(input).pathname, redirect: init?.redirect, signal: !!init?.signal });
+      const real = await connectorFetch(input, init);
+      if (real.status !== 401) return real;
+      // A refusal whose body never ends: the probe reads its status and nothing more.
+      const { counted, response } = endless({}, 401);
+      refusals.push(counted);
+      return response;
+    };
+    const report = await checkConnector({
+      key: secret,
+      url: 'http://hello',
+      id: 'hello',
+      assert: assertionFor('hello', secret),
+      assertForeign: assertionFor('hello', 'another-secret-another'),
+      fetch: recording,
+    });
+    expect(report.findings.map(f => f.text)).toContain('a call signed with another secret is refused (401)');
+    expect(sent.filter(r => r.path !== '/clew/manifest' && (r.redirect !== 'error' || !r.signal))).toEqual([]);
+    expect(refusals.length).toBeGreaterThan(0);
+    for (const counted of refusals) expect([counted.cancelled, counted.pieces <= 1]).toEqual([true, true]);
   });
 });
 
