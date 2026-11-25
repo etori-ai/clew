@@ -153,7 +153,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
       : null;
   const [tab, setTab] = useState<TabId>('oversikt');
   const [report, setReport] = useState<CheckReport | null>(null);
-  // The change under review and when the service first offered it, which approving names so nothing else goes live (D144).
+  // The change under review and its revision, which approving names so nothing else goes live (D144).
   const [review, setReview] = useState<{ diff: ManifestDiff; offered: string } | null>(null);
   const [secretOpen, setSecretOpen] = useState(false);
   const [secret, setSecret] = useState('');
@@ -329,10 +329,10 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
             isDisabled={busy}
             clickAction={() =>
               run(async () => {
-                // The review is the stored offer, its diff and its instant from one read, so approving names what was shown.
+                // The review is the stored offer, its diff and its revision from one read, so approving names what was shown.
                 const offer = (await api.admin.refresh(id, false)).connector.offered;
                 if (!offer) return 'Inget har ändrats i systemet.';
-                setReview({ diff: offer.diff, offered: offer.at });
+                setReview({ diff: offer.diff, offered: offer.revision });
               })
             }
           />
@@ -405,7 +405,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
               variant="secondary"
               size="sm"
               label="Granska ändringen"
-              onClick={() => setReview({ diff: c.offered!.diff, offered: c.offered!.at })}
+              onClick={() => setReview({ diff: c.offered!.diff, offered: c.offered!.revision })}
             />
           }
         />
