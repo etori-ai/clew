@@ -165,15 +165,16 @@ test.describe('Att göra: the piles', () => {
     await expect(tabs.getByRole('link', { name: /^Väntar på andra/ })).toHaveAttribute('aria-current', 'true');
   });
 
-  test('the filter and the system narrow the rows, stay in the address and say how many are left', async ({
+  test('the filter and the system narrow the rows and say how many are left; the system is in the address, the typed words never are', async ({
     page,
     api: _,
   }) => {
     await open(page, '/todo');
     const filter = page.getByRole('searchbox', { name: 'Filtrera' });
     await filter.fill('fakt');
-    await expect(page).toHaveURL(/\/todo\?filter=fakt$/);
     await expect(rows(page)).toHaveCount(2);
+    // What is typed is a person's name as often as not: it stays with the page (D100 item 5).
+    await expect(page).toHaveURL(/\/todo$/);
     const card = page.locator('section[aria-labelledby="todo-pile"]');
     await expect(card.getByText(/^· 2\b/)).toBeVisible();
     await expect.poll(() => announcements(page)).toContainEqual('2 ärenden');
@@ -594,8 +595,8 @@ test.describe('Att göra on a phone: the queue is a list', () => {
       await system.evaluate(el => [...el.querySelectorAll('*')].every(e => e.scrollWidth <= e.clientWidth + 1)),
     ).toBe(true);
     await filter.fill('fakt');
-    await expect(page).toHaveURL(/\/todo\?filter=fakt$/);
     await expect(phoneRows(page)).toHaveCount(2);
+    await expect(page).toHaveURL(/\/todo$/);
     await expect.poll(() => announcements(page)).toContainEqual('2 ärenden');
     // The count the filter left stays with the pile's name for a screen reader.
     await expect(page.getByRole('region', { name: 'Behöver dig' })).toContainText('· 2 ärenden');

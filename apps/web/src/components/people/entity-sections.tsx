@@ -162,7 +162,7 @@ export function openOf(source: EntitySource, row: Row | undefined) {
 
 /**
  * The fuller read under a section (artboard C: the action points under the talk), or in full on the person's page:
- * fetched through the one view path (`/api/cap/<name>?input=`) and drawn by the one renderer (D38).
+ * fetched through the one view path (`POST /api/cap/<name>`, the input as its body) and drawn by the one renderer (D38).
  */
 export function OpenRead({
   source,

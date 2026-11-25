@@ -49,10 +49,12 @@ export function withShown(shown: Shown, search: URLSearchParams | string): Shown
   return { ...shown, views: [...shown.views.filter(v => viewKey(v) !== key), at.view].slice(-KEPT) };
 }
 
-const storageKey = (conversationId: string) => `clew:conversation-shown:${conversationId}`;
+const PREFIX = 'clew:conversation-shown:';
+const storageKey = (conversationId: string) => PREFIX + conversationId;
 /**
  * Kept in the tab's own storage: a convenience of this browser, so a reload keeps the menu, and nothing the server or
- * another person sees. A browser that refuses storage keeps nothing, and the menu lists what the messages name.
+ * another person sees. A browser that refuses storage keeps nothing, and the menu lists what the messages name. The
+ * session's end takes all of it (`forgetShown`), as it takes a review's draft (D33 keeps nothing else in storage).
  */
 export function readShown(conversationId: string | null | undefined): Shown {
   if (!conversationId) return NOTHING_SHOWN;
@@ -76,5 +78,21 @@ export function rememberShown(conversationId: string | null | undefined, search:
     sessionStorage.setItem(storageKey(conversationId), JSON.stringify(withShown(readShown(conversationId), search)));
   } catch {
     // Without storage the menu still lists what the messages name.
+  }
+}
+/**
+ * The session has ended (signed out, ended, or nobody is signed in): what every conversation showed goes from the tab,
+ * a view's input with it, which can name a person or hold what they searched for. Nothing else in the tab is touched.
+ */
+export function forgetShown(): void {
+  try {
+    const kept: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(PREFIX)) kept.push(key);
+    }
+    kept.forEach(key => sessionStorage.removeItem(key));
+  } catch {
+    // A browser that refuses storage kept nothing.
   }
 }

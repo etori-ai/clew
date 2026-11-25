@@ -40,7 +40,7 @@ test.describe('D33 the browser cache', () => {
     const reads: string[] = [];
     page.on('request', r => {
       if (r.method() === 'POST' && r.url().includes('/act')) posts.push(r.url());
-      if (r.method() === 'GET' && r.url().includes('/api/cap/hr.absencePattern')) reads.push(r.url());
+      if (r.method() === 'POST' && r.url().includes('/api/cap/hr.absencePattern')) reads.push(r.url());
     });
     await page.goto('/todo?item=omtanke&open-card=omtanke&open-action=pattern');
     await expect(page).toHaveURL(/\/tools\/hr\.absencePattern\?/);
