@@ -3631,6 +3631,10 @@ export const MessageMetaSchema = object({
   refs: Type.Optional(Type.Array(Type.String())),
   /** On a question: the key the page sent it with (`ConversationInput.turn`), so the same question sent again is not asked again. */
   turn: Type.Optional(Type.String()),
+  /** Which attached object was open when this keyed question was sent. Null records that none was open. */
+  /** Digest of the keyed question's page subject and open thing, when either was supplied. */
+  turnPageHash: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
+  turnBeside: Type.Optional(Type.Union([ChipSchema.properties.ref, Type.Null()])),
   shape: Type.Optional(AnswerShape),
   view: Type.Optional(ViewRefSchema),
   /**
@@ -5262,6 +5266,74 @@ export const AssistantReachSchema = object({
   prepares: Type.Array(object({ title: Type.String() })),
 });
 export type AssistantReach = Static<typeof AssistantReachSchema>;
+
+/**
+ * A value as JSON with every object's keys in order, so one input is one text however its address wrote it: the same
+ * record is the same subject whether its input said `{ "a", "b" }` or `{ "b", "a" }`. Arrays keep their order.
+ */
+export function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(v => (v === undefined ? 'null' : stableJson(v))).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+type TurnPage = Pick<ConversationInput, 'page' | 'thing'>;
+function turnPageKey({ page, thing }: TurnPage): string | null {
+  if (!page && !thing) return null;
+  return stableJson([page?.subject ?? null, thing ?? null]);
+}
+/** Bind a written question to the open page without keeping another copy of a record's input in the transcript. */
+export async function turnPageHash(request: TurnPage): Promise<string | null> {
+  const key = turnPageKey(request);
+  if (key === null) return null;
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+  return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+/**
+ * The identity of a question for retries (WD-L3). Attachment labels and order are presentation.
+ * The attachment open beside the question, its conversation and its recipient affect the answer.
+ */
+export function turnRequestKey(request: ConversationInput): string {
+  const chips = request.chips ?? [];
+  return JSON.stringify([
+    request.text,
+    request.conversationId ?? null,
+    request.assistant ?? null,
+    request.side === true,
+    chips.map(c => `${c.kind}:${c.ref}`).sort(),
+    chips.some(c => c.ref === request.beside) ? request.beside : null,
+    turnPageKey(request),
+  ]);
+}
+
+/** Shared by a server replay and the browser recovering a broken response. */
+export async function matchesWrittenTurn(
+  thread: Thread | undefined,
+  index: number,
+  request: ConversationInput,
+): Promise<boolean> {
+  const question = thread?.messages[index];
+  if (!thread || question?.role !== 'user') return false;
+  const meta = question.meta;
+  // A pre-existing question with attachments did not record which one was open. Its history is still readable.
+  if (meta?.chips?.length && meta.turnBeside === undefined) return false;
+  return (
+    (meta?.turnPageHash ?? null) === (await turnPageHash(request)) &&
+    turnRequestKey({ ...request, page: undefined, thing: undefined }) ===
+      turnRequestKey({
+        text: question.body,
+        conversationId: index === 0 ? undefined : thread.id,
+        assistant: meta?.handed?.assistant,
+        side: meta?.handed?.side,
+        chips: meta?.chips,
+        beside: meta?.turnBeside ?? undefined,
+      })
+  );
+}
 /** Alla samtal (WD-L1): one page of the person's conversations, the latest activity first, and where the next begins. */
 export const ConversationPageSchema = object({
   conversations: Type.Array(ThreadSchema),

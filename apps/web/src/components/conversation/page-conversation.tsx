@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   OPEN_THING_INPUT_MAX,
+  stableJson,
   type Chip,
   type ConversationResponse,
   type EntityDetail,
@@ -289,20 +290,6 @@ export const paneBoxName = (asks: string) =>
 
 /** The longest subject a conversation keeps (`AskedBeside.subject`). */
 export const SUBJECT_MAX = 1200;
-/**
- * A value as JSON with every object's keys in order, so one input is one text however its address wrote it: the same
- * record is the same subject whether its input said `{ "a", "b" }` or `{ "b", "a" }`. Arrays keep their order.
- */
-export function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(v => (v === undefined ? 'null' : stableJson(v))).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
 /** A 64-bit digest of a text, as 16 hex digits: the same text gives the same digest in every browser. */
 function digest(text: string): string {
   let h1 = 0xdeadbeef,
