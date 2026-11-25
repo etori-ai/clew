@@ -2437,7 +2437,8 @@ export const EmploymentSchema = object({
   unitId: Type.String(),
   title: Type.Optional(Type.String()),
   employmentType: Type.Optional(Type.String()),
-  startDate: Type.Optional(Type.String({ format: 'date', maxLength: 10 })),
+  // PostgreSQL's date starts the common era at year 0001.
+  startDate: Type.Optional(Type.String({ format: 'date', pattern: '^(?!0000-)', maxLength: 10 })),
   employmentPercentage: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
   /** The id of the person this employment reports to: a user of the same organisation, never the person themselves. */
   managerId: Type.Optional(Type.String()),

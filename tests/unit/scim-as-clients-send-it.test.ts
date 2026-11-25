@@ -464,6 +464,31 @@ describe('current employments on a SCIM user', () => {
       base,
     ]);
   });
+  test('year zero is omitted on create, replacement and a patch that deactivates the person', async () => {
+    const { json, group, patch, person } = app();
+    await units(group);
+    const job = { unitId: 'school', title: 'Lärare' };
+    const sent = [
+      { ...job, startDate: '0000-01-01' },
+      { unitId: 'office', startDate: '0001-01-01' },
+    ];
+    const kept = [job, { unitId: 'office', startDate: '0001-01-01' }];
+    const body = person(1, { [urn]: { employments: sent } });
+    const created = await json('POST', '/Users', body);
+    expect(created.status).toBe(201);
+    const path = '/Users/' + created.body.id;
+    const replaced = await json('PUT', path, body);
+    const deactivated = await patch(
+      path,
+      { op: 'replace', path: field, value: sent },
+      { op: 'replace', path: 'active', value: false },
+    );
+    expect(replaced.status).toBe(200);
+    expect(deactivated).toMatchObject({ status: 200, body: { active: false } });
+    for (const result of [created, replaced, deactivated, await json('GET', path)]) {
+      expect(result.body[urn].employments).toEqual(kept);
+    }
+  });
   test('each employment carries its own optional percentage of full time', async () => {
     const { create, group, json, patch, person } = app();
     await units(group);
