@@ -35,7 +35,8 @@ administrator does, after seeing the change.
    left. The session is checked again before the write, as for every administration change.
 5. **A draft without a manifest is not enabled.** Enabling approves nothing, on the page or from
    `connector-add.ts --enable`: an administrator reads the manifest in from the system and approves it first. Adding
-   approves what the service serves then, and so does checking again while adding, since the draft is not live; the
+   approves what the service serves then. Checking again in the add dialog can approve only the same draft version,
+   verified in the write. A connector already activated is reviewed on its own page. The
    wizard's summary names what it reads and whose token it gets before it is switched on.
 6. **A question gives a source's assistant nothing to read back with.** A question handed to another system's
    assistant

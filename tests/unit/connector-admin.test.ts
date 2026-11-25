@@ -792,6 +792,28 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
       },
     });
   });
+  test('a wizard retry approves only its original draft; an enabled connector keeps its offer for review', async () => {
+    const { admin, store, transport } = world();
+    const { connector: draft } = await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    serving(transport, widened);
+    const first = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!;
+    const { connector: reviewed } = await admin.refreshManifest(mikael, 'hello', {
+      apply: true,
+      offered: first.revision,
+      draftVersion: draft.version,
+    });
+    expect(reviewed.state).toBe('draft');
+    const active = await admin.update(mikael, 'hello', { state: 'enabled' });
+    serving(transport, m => ({ ...m, source: 'Next' }));
+    const next = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!;
+    for (const draftVersion of [reviewed.version, active.version]) {
+      await expect(
+        admin.refreshManifest(mikael, 'hello', { apply: true, offered: next.revision, draftVersion }),
+      ).rejects.toThrow(CHANGED_SINCE);
+    }
+    expect((await admin.read(mikael, 'hello')).offered?.revision).toBe(next.revision);
+    expect(actions(store, 'hello')).toEqual(['connector.added', 'connector.manifest', 'connector.enabled']);
+  });
   test('a refresh refuses to pair a replaced preview with the next offer’s revision', async () => {
     const { admin, store, transport } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
