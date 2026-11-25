@@ -179,6 +179,44 @@ describe('the stream cache (D33)', () => {
     expect(list(c)[0]?.state).toBe('handled');
     expect((c.getQueryData(keys.thread('a')) as Thread).state).toBe('handled');
   });
+  test('a refused prediction is taken back from the list though another card’s answer landed on it meanwhile (WD-L7)', async () => {
+    const c = client();
+    const a = thread({ id: 'a' }),
+      b = thread({ id: 'b' }),
+      d = thread({ id: 'd' });
+    c.setQueryData(keys.threads, { threads: [a, b, d], sources: [{ connector: 'finance' }] });
+    // Avfärda on a, then on b; b is answered first, then a is refused.
+    const restoreA = await previewThread(c, { ...a, state: 'dismissed' });
+    const restoreB = await previewThread(c, { ...b, state: 'dismissed' });
+    await tick();
+    await applyThread(c, { ...b, state: 'dismissed', updatedAt: '2026-11-04T08:00:01.000Z' });
+    restoreA();
+    expect(list(c).map(t => [t.id, t.state])).toEqual([
+      ['a', 'open'],
+      ['b', 'dismissed'],
+      ['d', 'open'],
+    ]);
+    expect(c.getQueryData(keys.thread('a'))).toBeUndefined();
+    // b's answer stands: taking back its preview now changes nothing.
+    restoreB();
+    expect(list(c)[1]?.updatedAt).toBe('2026-11-04T08:00:01.000Z');
+    // What else the list carries is the list's as it is now.
+    expect((c.getQueryData(keys.threads) as { sources: unknown[] }).sources).toEqual([{ connector: 'finance' }]);
+  });
+  test('a refused prediction of a thread the list did not hold leaves it again, and a refetch that replaced it stays', async () => {
+    const c = client();
+    const a = thread({ id: 'a' });
+    c.setQueryData(keys.threads, { threads: [a] });
+    const restore = await previewThread(c, thread({ id: 'new', state: 'dismissed' }));
+    expect(list(c).map(t => t.id)).toEqual(['new', 'a']);
+    restore();
+    expect(list(c).map(t => t.id)).toEqual(['a']);
+    const again = await previewThread(c, { ...a, state: 'dismissed' });
+    // A notice's refetch draws what the server says now: that is newer than the prediction, and stays.
+    c.setQueryData(keys.threads, { threads: [{ ...a, state: 'open', updatedAt: '2026-11-04T08:00:02.000Z' }] });
+    again();
+    expect(list(c)[0]?.updatedAt).toBe('2026-11-04T08:00:02.000Z');
+  });
   test('a change notice waits for the mutation in flight and invalidates once it has settled', async () => {
     const c = client();
     c.setQueryData(keys.threads, { threads: [] });

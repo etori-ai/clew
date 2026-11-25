@@ -82,6 +82,7 @@ export {
   ChatComposerInput,
   ChatComposerDrawer,
   ChatDictationButton,
+  ChatSendButton,
   useChatDictation,
   ChatLayout,
   ChatMessageList,
