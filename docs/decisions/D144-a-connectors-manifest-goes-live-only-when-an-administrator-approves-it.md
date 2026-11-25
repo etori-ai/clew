@@ -51,7 +51,7 @@ administrator does, after seeing the change.
 **Why.** The review of 2026-11-23 found that a connector's own service decided what it may read through Clew and
 whose token it gets: a manifest served at boot, on "Testa anslutning" or when a draft was enabled was stored and live
 within seconds, with no audit row and nobody's decision, and the reviewed refresh showed none of it (findings `CB-1`,
-`CB-3`, `DE-H1` and `AM-11` in [the register](../maintainers/open-findings.md) of that day). For a municipality the
+`CB-3`, `DE-H1` and `AM-11` in [the original review register](https://github.com/etori-ai/clew/blob/0d24b14faca255b6a0ac80e3cc7e00f5fe3335a0/docs/maintainers/open-findings.md)). For a municipality the
 question "may the vendor's service now read the HR rows of the people this manager manages, as the manager?" is a
 decision someone must be able to point to. Holding only widening changes back was weighed and left: it needs a
 classification of every field that is easy to get wrong, and an administrator who approves every change knows what

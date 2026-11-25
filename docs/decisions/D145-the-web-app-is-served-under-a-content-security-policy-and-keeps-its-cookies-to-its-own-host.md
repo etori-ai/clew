@@ -50,7 +50,7 @@ or a CSS escape no longer hides script, embedded content or a resource outside t
 
 **Why.** The review of 2026-11-23 found the web image serving the page with no content security policy, no framing
 rule, no `Strict-Transport-Security` and no `Referrer-Policy`, and the hosting guide's proxy example the same
-(findings `ID-4` and `BL-10` in [the register](../maintainers/open-findings.md) of that day). A page on a sibling host
+(findings `ID-4` and `BL-10` in [the original review register](https://github.com/etori-ai/clew/blob/0d24b14faca255b6a0ac80e3cc7e00f5fe3335a0/docs/maintainers/open-findings.md)). A page on a sibling host
 of the municipality's domain is the same site, so the `SameSite=Lax` session is sent to it in a frame, and a covered
 frame can get "Godkänn" pressed: the human decision that assistant proposals and source writes rest on. Without a
 policy, a script injected by any later fault runs with nothing to hold it. The same sibling could also set a

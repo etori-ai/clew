@@ -17,7 +17,7 @@ period is set nothing is erased. That build and D123's answer were merged on 202
 erasure above works as D123 says, and the sweep stays dormant unless an operator sets a period. Whether a period may
 be set at all, or the sweep goes, is for the product owner ([open questions](../maintainers/open-questions.md)).
 
-**Amended 2026-11-24.** In the fixes of the [review of 2026-11-23](../reviews/2026-11-23-review-competence.md)
+**Amended 2026-11-24.** In the fixes of the [review of 2026-11-23](https://github.com/etori-ai/clew/blob/0d24b14faca255b6a0ac80e3cc7e00f5fe3335a0/docs/reviews/2026-11-23-review-competence.md)
 (`CO-M1`, `CO-L1`) and the review of those fixes, the build is narrower than items 3 and 8 and than "As built" says.
 
 - *Item 3, a change of validity.* A validity rule is whole years: a number of months that is a multiple of 12, from 12

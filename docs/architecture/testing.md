@@ -187,9 +187,10 @@ script name goes to `playwright test`. The full suite runs on one worker and tak
 - During the lab phase the whole suite runs by hand: `gh workflow run a11y.yml`, or `sh scripts/a11y.sh`
   ([D59](../decisions/D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release.md)). Nothing waits for it before
   landing on `main`. In the run-up to a release the `push` and `pull_request` triggers in
-  `.github/workflows/a11y.yml` come back, and with them D51's gate: the GitHub plan cannot block a merge on a red run,
-  so read the WCAG check of the previous landing before landing on `main` again, and fix a red check before new work
-  lands.
+  `.github/workflows/a11y.yml` come back. Until GitHub enforces the checks, follow D51 and read the previous landing's
+  WCAG result before merging again. Fix a failed run first.
+- Before the first release, enable branch protection on `main` and require passing CI checks for merges.
+  [Deferred finding BL-3](https://github.com/etori-ai/clew/blob/0d24b14faca255b6a0ac80e3cc7e00f5fe3335a0/docs/maintainers/open-findings.md#L145)
 - A test that passes alone and fails on a slower runner is holding a timer it should hold a promise for (see
   `api.holdAnswer()` and session 41 in `docs/history/session-log.md`).
 - Two runs in the same checkout empty each other's `test-results`; give the second `--output=test-results/<name>`.

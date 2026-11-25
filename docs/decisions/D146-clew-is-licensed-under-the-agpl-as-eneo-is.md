@@ -36,7 +36,7 @@
    (CC-BY-4.0) in the server image, through the Astryx CLI.
 
 **Why.** The repository is public and had no licence, so nothing granted another municipality the right to run, change
-or pass on the code (the baseline review's finding `BL-2`, `docs/reviews/2026-11-23-review-baseline-build-and-supply-chain.md`).
+or pass on the code ([finding BL-2 in the baseline review](https://github.com/etori-ai/clew/blob/0d24b14faca255b6a0ac80e3cc7e00f5fe3335a0/docs/reviews/2026-11-23-review-baseline-build-and-supply-chain.md)).
 Clew is shared with other municipalities and governments, and Eneo, whose line to Clew `docs/vision.md` draws, is
 licensed under the AGPL v3. The AGPL suits that sharing: a municipality that runs a changed Clew as a service for its
 staff must offer them the source. The product owner chose Eneo's licence as the start on 2026-11-23. "Only" follows
