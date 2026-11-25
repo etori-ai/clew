@@ -1,5 +1,5 @@
 import { Registry } from '../registry';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { SignJWT } from 'jose';
 import { assertionFor, testJwks } from '../connector-authority';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
@@ -161,6 +161,7 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     admin,
     clock,
     live,
+    transport: deps.transport,
     reconcile,
     advance: (ms: number) => {
       now += ms;
@@ -171,6 +172,48 @@ const actions = (store: ReturnType<typeof memoryConnectorStore>, id: string) =>
   store.audit.filter(a => a.subject === 'connector:' + id).map(a => a.action);
 
 describe('who may administer', () => {
+  test('a refused manifest preview or update never looks up the connector or calls its service', async () => {
+    const { admin, store, transport } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const read = spyOn(store, 'read');
+    const fetchManifest = spyOn(transport, 'fetchManifest');
+    for (const id of ['hello', 'missing']) {
+      for (const apply of [false, true])
+        await expect(admin.refreshManifest(hassan, id, { apply })).rejects.toThrow(/behörighet/);
+    }
+    const stale = {
+      ...mikael,
+      authorize: async () => {
+        throw new Error('Session expired');
+      },
+    };
+    await expect(admin.refreshManifest(stale, 'hello', { apply: true })).rejects.toThrow('Session expired');
+    expect(read).not.toHaveBeenCalled();
+    expect(fetchManifest).not.toHaveBeenCalled();
+    expect(actions(store, 'hello')).toEqual(['connector.added']);
+  });
+  test('a session ending during a manifest refresh prevents the update and its audit row', async () => {
+    const { admin, store, transport } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const before = await store.read('hello');
+    let active = true;
+    const fetch = transport.fetchManifest;
+    transport.fetchManifest = async (...args) => {
+      const result = await fetch(...args);
+      active = false;
+      return result;
+    };
+    const session = {
+      ...mikael,
+      authorize: async () => {
+        if (!active) throw new Error('Session expired');
+        return { version: 'v1' };
+      },
+    };
+    await expect(admin.refreshManifest(session, 'hello', { apply: true })).rejects.toThrow('Session expired');
+    expect(await store.read('hello')).toEqual(before);
+    expect(actions(store, 'hello')).toEqual(['connector.added']);
+  });
   test('without the grant capability every call is forbidden, reads included', async () => {
     const { admin } = world();
     await expect(admin.list(hillevi)).rejects.toThrow(/behörighet/);
