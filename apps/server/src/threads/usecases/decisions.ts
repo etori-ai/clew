@@ -104,6 +104,14 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     };
     return { t, action, found, selected, payload, asked: answered.answers, subject };
   }
+  /**
+   * The human decision on a work item's action (D45, D47). `version` is the item's `updatedAt` as the person was shown
+   * it (AM-4): an execute is decided on that version, so an item that has changed since is refused and the person
+   * decides on what it says now. The route always gives it (`ActInput`). Only the entity menu decides without one (D126
+   * item 7): the card `startCard` made or found for the dialog the person decided in, which is the card of that action,
+   * that input and those answers (its topic is their digest), so what is sent is what the dialog showed whatever version
+   * the card has. A decision already made on the item is replayed whatever the version: it was bound when it was made.
+   */
   async function act(
     persona: AuthenticatedContext,
     id: string,
@@ -111,6 +119,7 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     refs?: string[],
     reviews?: ReviewEvidence[],
     values?: AskValues,
+    version?: string,
   ) {
     const { t, action, found, selected, payload, asked, subject } = await decided(
       persona,
@@ -144,6 +153,8 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     )
       throw new InputError('Underlaget och ärendet gäller olika versioner. Läs in ärendet igen.');
     if (!previous && t.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
+    if (!previous && version !== undefined && version !== t.updatedAt)
+      throw new InputError('Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.');
     if (previous && previous.operation !== action.capability)
       throw new InputError('Ett tidigare beslut väntar redan på besked.');
     const unit = cardUnit(t);

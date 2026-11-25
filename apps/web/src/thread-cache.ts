@@ -109,6 +109,15 @@ export function invalidateStream(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: keys.attention });
 }
 
+/**
+ * A decision the server refused may be one on an item that has changed since it was drawn (AM-4): the stream and every
+ * item open on the page are read again, so the person sees what the item says now beside the reason.
+ */
+export function readItemsAgain(client: QueryClient): void {
+  invalidateStream(client);
+  void client.invalidateQueries({ queryKey: keys.anyThread });
+}
+
 /** The proposal thread the calendar page sits beside: the open one, else the latest one on the topic. */
 export const pickProposalThread = (list: Thread[]): Thread | null =>
   list.find(t => t.state === 'open' && t.topic === 'utvecklingssamtal') ??

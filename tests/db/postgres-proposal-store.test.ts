@@ -95,5 +95,37 @@ proposalStoreContract('postgres', async () => {
     hasJob: async id =>
       (await database().select({ id: schema.jobs.id }).from(schema.jobs).where(eq(schema.jobs.id, id))).length > 0,
     told: async id => (await readAudit('invitation:' + id)).map(r => r.action),
+    // A service desk's open card in the same table, cleaned up with the person's threads.
+    foreignThread: async (personId, topic) => {
+      const id = `foreign-${run}-${Math.random().toString(36).slice(2, 8)}`;
+      await database()
+        .insert(schema.threads)
+        .values({
+          id,
+          personId,
+          kind: 'pushed',
+          topic,
+          title: 'Beställning väntar',
+          state: 'open',
+          connector: 'sm',
+          area: 'arenden',
+          summary: 'En beställning väntar på beslut.',
+          trigger: { reason: 'Ny beställning', source: 'Servicedesk', at: new Date().toISOString() },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      return id;
+    },
+    foreignState: async id => ({
+      thread: (
+        await database()
+          .select({ title: schema.threads.title, state: schema.threads.state, updatedAt: schema.threads.updatedAt })
+          .from(schema.threads)
+          .where(eq(schema.threads.id, id))
+      )[0],
+      messages: (await database().select().from(schema.threadMessages).where(eq(schema.threadMessages.threadId, id)))
+        .length,
+      proposals: (await database().select().from(schema.proposals).where(eq(schema.proposals.threadId, id))).length,
+    }),
   };
 });
