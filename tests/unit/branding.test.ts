@@ -11,11 +11,17 @@ import {
   resolveClewTokens,
 } from '../../packages/ui/src/theme';
 
-const custom: Branding = { revision: 3, theme: themeFromAccent('#5b1f78', '#d7dbf2', 'Exempelkommunen'), logo: null };
+const custom: Branding = {
+  revision: 3,
+  name: 'Medarbetarwebben',
+  theme: themeFromAccent('#5b1f78', '#d7dbf2', 'Exempelkommunen'),
+  logo: null,
+};
 
 describe('the appearance the browser draws (D98)', () => {
   test('what the server answers is read as it is, and nothing saved is Neutral without a logo (D46)', () => {
     expect(readBranding({ revision: 0, theme: null, logo: null })).toEqual(NEUTRAL_BRANDING);
+    expect(NEUTRAL_BRANDING.name).toBe('Clew');
     expect(
       readBranding({
         ...custom,
@@ -47,6 +53,7 @@ describe('the appearance the browser draws (D98)', () => {
     });
     expect(read).toEqual({
       revision: 0,
+      name: 'Clew',
       theme: { name: null, colors: { accent: ['#005595', '#daeff1'] } },
       logo: { src: '/logo.svg', alt: 'Kommun' },
     });
@@ -60,6 +67,13 @@ describe('the appearance the browser draws (D98)', () => {
         alt: 'Kommun',
       },
     );
+  });
+
+  test("the installation's name is read trimmed, and one that is not a single line of at most 60 characters is Clew", () => {
+    expect(readBranding({ name: '  Medarbetarwebben ' }).name).toBe('Medarbetarwebben');
+    for (const name of ['', '   ', 'Två\nrader', 'x'.repeat(61), 7, null, undefined])
+      expect(readBranding({ name }).name).toBe('Clew');
+    expect(readBranding({ name: 'å'.repeat(60) }).name).toBe('å'.repeat(60));
   });
 
   test("the shared header on another site reads the logo from the installation's own origin", () => {
@@ -258,7 +272,7 @@ describe('the appearance the browser draws (D98)', () => {
         JSON.parse(readFileSync(new URL(`../../themes/${name}/theme.tokens.json`, import.meta.url), 'utf8')),
       );
       if (!file.ok) throw new Error(`${name}: ${file.problems.map(p => p.message).join(' ')}`);
-      examples.push({ revision: 1, theme: file.theme, logo: null });
+      examples.push({ revision: 1, name: 'Clew', theme: file.theme, logo: null });
     }
     // The hue each status variant is drawn in (`theme.ts`): its text on its ground, at text contrast (1.4.3).
     const hues = { error: 'red', warning: 'yellow', success: 'green', info: 'blue' };

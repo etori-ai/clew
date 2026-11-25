@@ -16,7 +16,7 @@ export type SiteMenuItem = Readonly<{
 
 export type SiteMenu = Readonly<{
   version: 1;
-  /** The name beside the logo and where it leads ("Startsidan"). */
+  /** The name beside the logo and where it leads ("Clew", or the installation's own name). */
   site: Readonly<{ name: string; href: string }>;
   items: readonly SiteMenuItem[];
 }>;

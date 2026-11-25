@@ -35,6 +35,7 @@ import { keys } from '../../query-keys';
 import { registerOf, registerTypeOf, withoutRegister } from '../../register-address';
 import { DialogFrame } from '../shell/dialog-frame';
 import { mobileQuery } from '../shell/shell';
+import { useBranding } from '../../branding';
 
 /**
  * Registering a holding (D108 item 7, D120): by the manager a person reports to, for them (`RegisterHolding`), or by the
@@ -441,6 +442,7 @@ export function AddOwnHolding({
   onClose: () => void;
 }) {
   const mobile = useMediaQuery(mobileQuery);
+  const site = useBranding().name;
   const typesQ = useQuery({ ...competenceOwnTypesQuery, enabled: isOpen });
   const open = (typesQ.data?.rows ?? []).filter(t => !t.archived && !(isSkillType(t) && held.includes(t.id)));
   const noApprover = approver === false;
@@ -506,7 +508,9 @@ export function AddOwnHolding({
         }
       >
         {blocked ? (
-          <Text as="p">{NO_APPROVER} Den som administrerar Startsidan kan rätta det.</Text>
+          <Text as="p">
+            {NO_APPROVER} Den som administrerar {site} kan rätta det.
+          </Text>
         ) : (
           <VStack gap={3}>
             {form.notice}

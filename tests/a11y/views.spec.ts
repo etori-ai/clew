@@ -1,5 +1,6 @@
 import type { Proposal } from '@clew/contracts';
 import {
+  SITE,
   announcements,
   composer,
   desktop,
@@ -38,7 +39,7 @@ const team = `/tools/phonebook.team?title=${title('Mitt teams kontaktlista')}&fr
 const card = `/?open=phonebook.person&open-title=Kontaktkort&open-input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1003' }))}`;
 
 /**
- * Declared views (D38): a connector says what its output holds and Startsidan draws it. The phone book is the example:
+ * Declared views (D38): a connector says what its output holds and Clew draws it. The phone book is the example:
  * the mocked API is answered by the connector itself, so what is tested is its real manifest drawn by the one renderer.
  * A table or a list is the view's own page (D116), and since D126 so is one record. Everything here works without a
  * model.
@@ -88,7 +89,7 @@ test.describe('a declared table or list on its page', () => {
     // way back stay as they were.
     await expect(page).toHaveURL(directory);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 kontakter'));
-    // The choice is the capability's own input too: "Min enhet" narrows to the unit Startsidan knows the person by.
+    // The choice is the capability's own input too: "Min enhet" narrows to the unit Clew knows the person by.
     await field.fill('');
     await panel.getByRole('combobox', { name: 'Sök i', exact: true }).click();
     await page.getByRole('option', { name: 'Min enhet' }).click();
@@ -865,7 +866,7 @@ test.describe('a view row that names a person', () => {
       /^\/tools\/hr\.absencePattern\?input=.*&from=%2Ftools%2Fhr\.absenceOverview/,
     );
     // A connector outside Clew: what it shows is not stored in Clew, and the page says so.
-    await expect(main.getByText(/Inget av det sparas på Startsidan\./)).toBeVisible();
+    await expect(main.getByText(`Inget av det sparas på ${SITE}.`)).toBeVisible();
     await expectNoAxeViolations(page);
   });
 

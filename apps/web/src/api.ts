@@ -715,8 +715,11 @@ export const api = {
     organisation: () => call<OrganisationOverview>('/api/admin/organisation'),
     organisationUnit: (unitId: string) =>
       call<OrganisationUnitPeople>(`/api/admin/organisation/units/${encodeURIComponent(unitId)}`),
-    // Utseende (D98): the installation's theme file and logo.
+    // Utseende (D98): the installation's name, theme file and logo.
     appearance: () => call<AppearanceAdminView>('/api/admin/appearance'),
+    setName: (name: string) =>
+      call<AppearanceAdminView>('/api/admin/appearance/name', { method: 'PUT', body: JSON.stringify({ name }) }),
+    clearName: () => del<AppearanceAdminView>('/api/admin/appearance/name'),
     setTheme: (file: unknown) =>
       call<AppearanceAdminView>('/api/admin/appearance/theme', { method: 'PUT', body: JSON.stringify({ file }) }),
     clearTheme: () => del<AppearanceAdminView>('/api/admin/appearance/theme'),

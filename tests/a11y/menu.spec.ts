@@ -1,5 +1,6 @@
 import type { MenuEntry, Thread } from '@clew/contracts';
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -116,7 +117,7 @@ test.describe('Verktyg in the menu', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
     await expect(page.getByRole('searchbox', { name: 'Sök i telefonboken' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page).toHaveTitle('Telefonbok · Startsidan');
+    await expect(page).toHaveTitle(`Telefonbok · ${SITE}`);
     // No page of the row is the open one; the menu's button says which tool is.
     await expect(nav.locator('a[aria-current="page"]')).toHaveCount(0);
     await expect(nav.getByRole('button', { name: 'Telefonbok', exact: true })).toBeVisible();
@@ -212,7 +213,7 @@ test.describe('Samtal among the pages and the register', () => {
     await all.click();
     await expect(page).toHaveURL('/conversations');
     await expect(page.getByRole('heading', { level: 1, name: 'Samtal' })).toBeVisible();
-    await expect(page).toHaveTitle('Samtal · Startsidan');
+    await expect(page).toHaveTitle(`Samtal · ${SITE}`);
     await expect(all).toHaveAttribute('aria-current', 'page');
     const main = page.getByRole('main');
     await expect(main.getByRole('row')).toHaveCount(5);

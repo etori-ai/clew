@@ -602,6 +602,7 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     store: talkStoreWithCards(options, { clock }),
     staff: async () => ({ units: [] }),
     reports: async () => new Set(),
+    siteName: async () => 'Medarbetarwebben',
     clock,
     ids,
   });

@@ -263,7 +263,7 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
         {
           id: SEARCH_CONNECTOR,
           kind: 'core',
-          source: 'Startsidan',
+          source: 'Clew',
           areas: [],
           // As composition binds it: the systems the model may have, asked of the registry on every call.
           ...workCapabilities({

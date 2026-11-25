@@ -36,7 +36,7 @@ Solid arrows change what holds. Dotted arrows only tell: what the calendar holds
 
 ## How a talk comes to be booked
 
-There are two ways, and the talk's row says which (`invitation_id` is set or null; the page says "Bokat genom en inbjudan från Clew" or "Tiden är angiven här").
+There are two ways, and the talk's row says which (`invitation_id` is set or null; the page says "Bokat genom en inbjudan från <the installation>" or "Tiden är angiven här", the installation by its saved name, D98).
 
 1. **An invitation from Clew.** The planner draws times, the manager confirms, and the invitation goes out through the execution ledger. When the calendar has been read back and holds the event Clew created, by the id Clew gave it, the execution's projection marks the proposal confirmed and tells the talks module in the same transaction. The talk is then booked by that invitation.
 2. **A time set by hand.** The manager and the employee agreed on a time some other way. The manager registers it on the talk's tab. Nothing is sent and no calendar is written.

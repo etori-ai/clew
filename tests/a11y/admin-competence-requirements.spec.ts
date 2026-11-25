@@ -7,6 +7,7 @@ import {
   skillTypes,
 } from './competence';
 import {
+  SITE,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -82,7 +83,7 @@ test.describe('Administration › Kompetens › Krav', () => {
       await open(page, '/admin/competence');
       await page.getByRole('main').getByRole('link', { name: 'Krav', exact: true }).click();
       await expect(page).toHaveURL(REQUIREMENTS);
-      await expect(page).toHaveTitle('Krav på kompetens · Startsidan');
+      await expect(page).toHaveTitle(`Krav på kompetens · ${SITE}`);
       // The administration's panel keeps Kompetens as the section, and the way back leads to the catalogue (D126). The
       // place Kompetens in the rail is the reader's own (D120 item 8), another link.
       const sections = page.getByRole('navigation', { name: 'Administration', exact: true });

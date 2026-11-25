@@ -9,7 +9,7 @@ A **module** is a bounded responsibility inside the server. A **connector** is a
 ```text
 apps/
   server/src/       Node/Hono backend with the durable engine (DBOS) in-process
-  web/src/          Startsidan React frontend
+  web/src/          React frontend
 packages/
   contracts/src/   shared TypeBox schemas and types
   connectors/src/  capability registry, protocol, transport and validation

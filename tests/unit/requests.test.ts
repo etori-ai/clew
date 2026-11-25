@@ -182,7 +182,7 @@ function world(connectors: Connector[], budget = { perSourceMs: 40, totalMs: 80 
   registry.register({
     id: SEARCH_CONNECTOR,
     kind: 'core',
-    source: 'Startsidan',
+    source: 'Clew',
     ...requestCapabilities(requests, a => registry.requestSources(a).length > 0),
     uses: ['*'],
   });
@@ -536,7 +536,7 @@ describe('clew.requests', () => {
     registry.register({
       id: SEARCH_CONNECTOR,
       kind: 'core',
-      source: 'Startsidan',
+      source: 'Clew',
       areas: [...errandPart.areas, ...requestPart.areas],
       capabilities: [...errandPart.capabilities, ...requestPart.capabilities],
       uses: ['*'],

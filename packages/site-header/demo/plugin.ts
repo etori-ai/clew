@@ -5,12 +5,14 @@ import type { Plugin } from 'vite';
 /**
  * A stand-in for the intranet in the web app's dev server (D87, D88): `/intranat/…` answers with a page Clew does not render,
  * carrying the `<site-header>` embed from source, and `/site-menu.json` answers with the fixture menu. Production has
- * the two sites behind one domain (Startsidan and `/intranat`); here both are the web app's origin, so the header can be
+ * the two sites behind one domain (Clew and `/intranat`); here both are the web app's origin, so the header can be
  * compared by clicking between them. `/rest-api/1/1/<id>/headless` answers as Sitevision's Model REST API would, from
  * the demo tree: the public pages to anyone, and the rest to a signed-in visitor. Signed in means signed in to Clew,
  * read from the BFF with the visitor's cookie, as an intranet with single sign-on would know the same person; without
  * a Clew server (the WCAG suite) `/intranat/logga-in` sets a demo cookie for an invented person instead. `/wp-json/wp/v2/pages` answers the same pages as WordPress
- * would, and `/intranat/?source=wordpress` makes the element read them through the WordPress source. Development only (`apply: 'serve'`); nothing of it is in a build. No imports from
+ * would, and `/intranat/?source=wordpress` makes the element read them through the WordPress source. The page names
+ * a logo of its own, Clew's example one from `themes/clew/` at `/intranat/logo.svg` and `/intranat/logo-dark.svg`, so no
+ * organisation's mark is in the package or the web app (D98). Development only (`apply: 'serve'`); nothing of it is in a build. No imports from
  * the package's TypeScript: this file is loaded by the Vite configuration, outside the app's bundler.
  */
 export function siteHeaderDemo(options: { startHref?: string; bff?: string } = {}): Plugin {
@@ -19,6 +21,10 @@ export function siteHeaderDemo(options: { startHref?: string; bff?: string } = {
   const fixture = resolve(import.meta.dirname, '../fixtures/site-menu.json');
   const tree = resolve(import.meta.dirname, '../fixtures/sitevision-tree.json');
   const dist = resolve(import.meta.dirname, '../dist');
+  const logos: Record<string, string> = {
+    '/intranat/logo.svg': resolve(import.meta.dirname, '../../../themes/clew/logo.svg'),
+    '/intranat/logo-dark.svg': resolve(import.meta.dirname, '../../../themes/clew/logo-dark.svg'),
+  };
   const demoCookie = (cookie: string | undefined) => /(?:^|;\s*)site-header-demo=signed-in(?:;|$)/.test(cookie ?? '');
   /**
    * Who the stand-in's visitor is, the way an intranet with single sign-on would know: the person signed in to Clew
@@ -122,6 +128,11 @@ export function siteHeaderDemo(options: { startHref?: string; bff?: string } = {
                   })),
               ),
             );
+            return;
+          }
+          if (logos[path]) {
+            res.setHeader('Content-Type', 'image/svg+xml');
+            res.end(await readFile(logos[path]!, 'utf8'));
             return;
           }
           if (path === '/intranat/logga-in') {

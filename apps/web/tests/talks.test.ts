@@ -113,16 +113,17 @@ describe('the words of a talk (D96 item 2)', () => {
     expect(talkSpanText({ at })).toBe('ons 11 nov. kl. 09:00');
     expect(talkSpanText({ at: '2026-11-03', until })).toBe('tis 3 nov.');
     expect(talkSpanText({})).toBeNull();
-    expect(bookingNote({ state: 'booked', invited: true })).toBe(
-      'Bokat genom en inbjudan från Clew. Flytta eller ställ in mötet i kalendern för att ändra tiden.',
+    // Who sent an invitation is the installation, by the name it is saved with (D98).
+    expect(bookingNote({ state: 'booked', invited: true }, 'Medarbetarwebben')).toBe(
+      'Bokat genom en inbjudan från Medarbetarwebben. Flytta eller ställ in mötet i kalendern för att ändra tiden.',
     );
-    expect(bookingNote({ state: 'booked', invited: false })).toBe(
-      'Tiden är angiven här. Ingen inbjudan har skickats från Clew.',
+    expect(bookingNote({ state: 'booked', invited: false }, 'Medarbetarwebben')).toBe(
+      'Tiden är angiven här. Ingen inbjudan har skickats från Medarbetarwebben.',
     );
     // A system that does not say, and a talk that is not booked, say nothing.
-    expect(bookingNote({ state: 'booked' })).toBeNull();
-    expect(bookingNote({ state: 'missing', invited: false })).toBeNull();
-    expect(bookingNote({ state: 'held', invited: true })).toBeNull();
+    expect(bookingNote({ state: 'booked' }, 'Medarbetarwebben')).toBeNull();
+    expect(bookingNote({ state: 'missing', invited: false }, 'Medarbetarwebben')).toBeNull();
+    expect(bookingNote({ state: 'held', invited: true }, 'Medarbetarwebben')).toBeNull();
   });
   test('what the calendar holds against a booked talk is said in two words kept apart: the meeting and the talk (D133)', () => {
     const talk = { at: '2026-11-11T08:00:00.000Z', until: '2026-11-11T09:00:00.000Z' };
