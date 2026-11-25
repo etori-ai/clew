@@ -130,7 +130,7 @@ export async function recordCheck(
 export async function approveOffer(
   tx: Transaction,
   id: string,
-  offer: { at: Date; manifest: unknown },
+  offer: { at: Date; manifest: unknown; version: number },
   manifest: unknown,
   by: string,
   at: Date,
@@ -149,6 +149,7 @@ export async function approveOffer(
     .where(
       and(
         eq(connectors.id, id),
+        eq(connectors.version, offer.version),
         eq(connectors.offeredAt, offer.at),
         sql`${connectors.offered} = ${JSON.stringify(offer.manifest)}::jsonb`,
       ),

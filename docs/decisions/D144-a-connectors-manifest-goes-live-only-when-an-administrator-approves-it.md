@@ -29,8 +29,8 @@ administrator does, after seeing the change.
    be handed before and after, and every other field of the manifest that changed, by name. The page's Översikt shows
    what the approved manifest reads through Clew and whose token it is handed today. The audit row of an approval,
    `connector.manifest`, records the same; the row of an addition records what was approved with it.
-4. **Approving is bound to what was shown.** "Använd det nya" names the offer it showed by the instant it was first
-   seen. Clew applies the stored offer, never a new fetch, in one write that holds only while that offer, the same
+4. **Approving is bound to what was shown.** "Använd det nya" names the revision it showed, derived from the connector version, the
+   instant the offer was first seen and its content. Clew applies the stored offer, never a new fetch, in one write that holds only while that offer, the same
    instant and the same content, is still the stored one, and refuses when another has taken its place or none is
    left. The session is checked again before the write, as for every administration change.
 5. **A draft without a manifest is not enabled.** Enabling approves nothing, on the page or from
