@@ -25,9 +25,16 @@ import type {
   ViewRef,
   WrittenTurn,
 } from '@clew/contracts';
-import { OPEN_THING_INPUT_MAX, viewRows } from '@clew/contracts';
+import { matchesWrittenTurn, OPEN_THING_INPUT_MAX, turnPageHash, viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
-import { audiencedActorOf, answersOf, CLEW_SOURCE, modelReading, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
+import {
+  audiencedActorOf,
+  answersOf,
+  CLEW_SOURCE,
+  modelReading,
+  readsSummary,
+  SEARCH_CONNECTOR,
+} from '@clew/connectors';
 import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import { cardRows, namedItems, type CardRows } from './card';
@@ -1343,17 +1350,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (!held) return undefined;
     const conversation = held.personId === persona.id ? await access.read(persona, held.threadId) : undefined;
     const asked = conversation ? conversation.messages.findIndex(m => m.role === 'user' && m.meta?.turn === key) : -1;
-    const question = conversation?.messages[asked];
-    if (request) {
-      // The same request: the same words to the same assistant (or to Clew), in the conversation it continued, or as
-      // the first question of the one it started.
-      const same =
-        !!question &&
-        question.body === request.text &&
-        (question.meta?.handed?.assistant ?? null) === (request.assistant ?? null) &&
-        (request.conversationId ? request.conversationId === conversation!.id : asked === 0);
-      if (!same) throw new InputError(KEY_REFUSED);
-    }
+    if (request && !(await matchesWrittenTurn(conversation, asked, request))) throw new InputError(KEY_REFUSED);
     if (!conversation) return undefined;
     const answer = asked < 0 ? undefined : conversation.messages.slice(asked + 1).find(m => m.role === 'assistant');
     if (!answer) return undefined;
@@ -1632,9 +1629,11 @@ export function assistantUsecases(deps: AssistantDeps) {
       ...(fallbackReason ? { fallbackReason } : {}),
       ...(produced.basis && Object.keys(produced.basis).length ? { basis: produced.basis } : {}),
     };
+    const pageHash = input.turn ? await turnPageHash(input) : null;
     const askedMeta: MessageMeta = {
+      ...(pageHash ? { turnPageHash: pageHash } : {}),
       ...(chips.length ? { chips, refs } : {}),
-      ...(input.turn ? { turn: input.turn } : {}),
+      ...(input.turn ? { turn: input.turn, turnBeside: resolved.beside ?? null } : {}),
     };
     // Only a conversation this question starts is kept as asked beside the page; on one that exists `page` says nothing
     // (D141). It keeps the thing the page showed (D136 item 1): which thing, never what the browser said about it.

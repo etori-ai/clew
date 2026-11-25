@@ -10,7 +10,8 @@ import {
 } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type {
-  Chip,
+  ConversationInput,
+  ConversationResponse,
   EffectPreview,
   ExecutionSummary,
   ItemEvent,
@@ -47,7 +48,7 @@ import {
 import { newsItemOutput, newsItemSpec, newsSpec } from './data';
 import { SITE } from './branding-fixtures';
 export { SITE } from './branding-fixtures';
-import { ENTITY_NAMES_MAX, providerAddressProblem } from '@clew/contracts';
+import { ENTITY_NAMES_MAX, providerAddressProblem, turnPageHash } from '@clew/contracts';
 import type { AssistantReach, NewsResult, RecordAction } from '@clew/contracts';
 import {
   assistantStatus,
@@ -321,7 +322,23 @@ export class MockApi {
   /** The key each question went with (WD-L3), in the order asked; `asked` holds the rest of what was sent. */
   turnKeys: string[] = [];
   /** What was written under a question's key, as the server keeps it on the question (WD-L3). */
-  written = new Map<string, unknown>();
+  written = new Map<string, ConversationResponse>();
+  async recordTurn(
+    turn: string,
+    response: ConversationResponse,
+    input: Pick<ConversationInput, 'chips' | 'beside' | 'page' | 'thing'> = {},
+  ) {
+    const question = response.thread.messages.filter(m => m.role === 'user').at(-1)!;
+    const pageHash = await turnPageHash(input);
+    question.meta = {
+      ...(pageHash ? { turnPageHash: pageHash } : {}),
+      ...question.meta,
+      turn,
+      turnBeside: input.beside ?? null,
+      ...(input.chips?.length ? { chips: input.chips } : {}),
+    };
+    this.written.set(turn, response);
+  }
   /**
    * The next turn is written and its stream then breaks before `done` (WD-L3), as a connection lost after the server's
    * commit leaves it: the page has to read back what was written. It resets itself after that turn.
@@ -2146,20 +2163,7 @@ export class MockApi {
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
     // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {
-      const { turn, ...body } = request.postDataJSON() as {
-        text: string;
-        turn?: string;
-        conversationId?: string;
-        chips?: { ref: string }[];
-        beside?: string;
-        assistant?: string;
-        suggested?: boolean;
-        own?: boolean;
-        confirmed?: boolean;
-        side?: boolean;
-        page?: { subject: string; label: string };
-        thing?: { kind: string; id?: string; capability?: string; input?: Record<string, unknown> };
-      };
+      const { turn, ...body } = request.postDataJSON() as ConversationInput;
       this.asked.push(body);
       if (turn) this.turnKeys.push(turn);
       // A question sent again under a key the server has written is answered with what was written, and not asked.
@@ -2207,7 +2211,11 @@ export class MockApi {
               (body.own && (body.thing || body.beside)
                 ? 'om-' +
                   (body.thing
-                    ? [body.thing.kind, body.thing.id ?? body.thing.capability, JSON.stringify(body.thing.input ?? '')]
+                    ? [
+                        body.thing.kind,
+                        body.thing.kind === 'record' ? body.thing.capability : body.thing.id,
+                        JSON.stringify(body.thing.kind === 'record' ? body.thing.input : ''),
+                      ]
                         .join('-')
                         .replace(/[^A-Za-z0-9]+/g, '-')
                         .replace(/-+$/, '')
@@ -2217,11 +2225,12 @@ export class MockApi {
           );
       // Asked for a comment beside a record that offers one, the assistant fills the action in and sends nothing
       // (D137 item 4): the draft is kept on the answer, and the turn's response carries it with its action.
-      const offered = body.thing?.kind === 'record' ? this.recordActions[body.thing.capability ?? '']?.[0] : undefined;
-      if (!handed && offered && /kommentar/i.test(body.text)) {
+      const record = body.thing?.kind === 'record' ? body.thing : undefined;
+      const offered = record && this.recordActions[record.capability]?.[0];
+      if (!handed && record && offered && /kommentar/i.test(body.text)) {
         const drafted = {
           capability: offered.capability,
-          record: { capability: body.thing!.capability!, input: body.thing!.input ?? {} },
+          record: { capability: record.capability, input: record.input },
           values: { text: 'Behörigheten gäller Skönsmons skola.' },
         };
         const written = response.thread.messages.at(-1)!;
@@ -2239,7 +2248,7 @@ export class MockApi {
       // conversation about its thing again. Kept here for a question asked in place.
       const question = [...response.thread.messages].reverse().find(m => m.role === 'user');
       if (!handed && body.own && body.beside && body.chips?.length && question)
-        question.meta = { ...question.meta, chips: body.chips as Chip[] };
+        question.meta = { ...question.meta, chips: body.chips };
       // A conversation keeps the assistants it has an exchange with whoever answers the turn.
       const earlier = this.threads.find(t => t.id === response.conversationId);
       const before = earlier?.handover;
@@ -2267,7 +2276,7 @@ export class MockApi {
       if (this.breakAfterWrite) {
         this.breakAfterWrite = false;
         this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
-        if (turn) this.written.set(turn, response);
+        if (turn) await this.recordTurn(turn, response, body);
         await route.fulfill({
           status: 200,
           contentType: 'text/event-stream',
@@ -2288,7 +2297,7 @@ export class MockApi {
         return;
       }
       this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
-      if (turn) this.written.set(turn, response);
+      if (turn) await this.recordTurn(turn, response, body);
       return;
     }
     // The conversation's page marks a conversation asked beside a page as opened, once (D141 rule 6).
