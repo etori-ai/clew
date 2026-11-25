@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test';
+import { localReturnTo } from '../../apps/server/src/auth-crypto';
 import { authSettings } from '../../apps/server/src/auth';
 import { frontendOrigins } from '../../apps/server/src/auth-origin';
+
+test('sign-in returns the normalized local page and its query or falls back to the home page', () => {
+  expect(localReturnTo('/work/../calendar?week=48')).toBe('/calendar?week=48');
+  expect(localReturnTo('/search?q=two%20words')).toBe('/search?q=two%20words');
+  for (const address of [null, '//', '/work/..//', '/%2e//', '/\t/', '/work/../api/session', '/login']) {
+    expect(localReturnTo(address)).toBe('/');
+  }
+});
 
 describe('frontendOrigins (D67 item 6)', () => {
   const publicOrigin = 'https://clew.example.se';

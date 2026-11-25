@@ -157,7 +157,7 @@ export async function completeLogin(currentUrl: URL, cookie: string | undefined)
   callback.search = currentUrl.search;
   // The ID token's `auth_time` is not required (auth-login.ts, Q9).
   const tokens = await redeemCode(config, callback, transaction);
-  return { ...(await openSession(tokens, 'login')), returnTo: transaction.returnTo };
+  return { ...(await openSession(tokens, 'login')), returnTo: localReturnTo(transaction.returnTo) };
 }
 /**
  * The session for tokens the provider has just issued: the subject resolves or binds to its person, and the session row
