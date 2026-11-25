@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 2 | An administrator approves what a manifest may read and whose token it gets | `CB-1`, `CB-3`, `DE-H1`, `AM-11` | How a manifest change is approved |
 | 3 | The accessibility suite is green and its mock answers as the server does | `BL-1`, `WA-M4`, `WA-L1`, `WA-L2`, `WA-L3` | |
 | 4 | What a page may load and keep | `ID-4`, `BL-10`, `CB-8`, `ID-5`, `ID-6` | The content security policy |
 | 5 | A limit on what another party sends | `CB-4`, `CB-5`, `CB-6`, `CS-M1`, `CS-L3`, `ID-8`, `ID-10` | |
@@ -45,23 +44,21 @@ no batch.
 | Area | Review | High | Medium | Low | Total |
 |---|---|---|---|---|---|
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 2 | 6 | 8 |
-| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 1 | 5 | 6 | 12 |
-| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 6 | 6 | 12 |
-| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 1 | 9 | 16 | 26 |
+| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 4 | 6 | 10 |
+| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 6 | 5 | 11 |
+| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 9 | 16 | 25 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 1 | 2 | 8 | 11 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 1 | 1 | 2 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 6 | 8 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 4 | 13 | 17 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 2 | 8 | 10 |
-| | **Total** | **3** | **37** | **79** | **119** |
+| | **Total** | **1** | **36** | **78** | **115** |
 
 ## High
 
 | Id | Finding | Where |
 |---|---|---|
-| CB-1 | A connector's own manifest decides which reads it may call back as the person and which audience its token is exchanged for, and no administrator sees or decides either. Same as `DE-H1`. | `packages/connectors/src/protocol.ts:457-464` |
-| DE-H1 | A connector's manifest is replaced and goes live at every boot, at "Testa anslutning" and when a draft is enabled, with no audit row and no administrator's act. Same as `CB-1`. | `apps/server/src/connectors/remote.ts:98-117` |
 | BL-1 | The accessibility suite is red on `main`: seven tests left behind by interface changes fail, and two more fail by race under the load of a whole run, so the suite cannot tell a new fault from a stale test. | `tests/a11y/action-dialog.spec.ts:61` |
 
 ## Identity, sessions and authorization
@@ -87,8 +84,6 @@ It carries no tables of its own.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| CB-1 | High | A connector's manifest declares what it may read through Clew (`uses`) and whose token it is handed (`delegation.audience`), and no administrator sees or decides it. Same as `DE-H1`. | `packages/connectors/src/protocol.ts:457-464` |
-| CB-3 | Medium | "Testa anslutning" overwrites the stored manifest, which the reconciler puts live, with no audit row or step-up, and the reviewed refresh path shows none of what matters. Same as `DE-H1`. | `apps/server/src/connectors/usecases/admin.ts:557-573` |
 | CB-4 | Medium | The transport follows redirects on capability calls, scans, figures and manifest reads, sending the transport key and the person's token, and shows the other host's words. | `packages/connectors/src/remote.ts:218-230` |
 | CB-5 | Medium | A connector's answer to a capability call, scan, figure or manifest is read into memory whatever its size. | `packages/connectors/src/remote.ts:236` |
 | CB-6 | Medium | The public manifest dry run compiles every capability's schema into one module-wide `Ajv` that keeps them all, so memory grows without bound. | `apps/server/src/routes/protocol.ts:21` |
@@ -116,7 +111,6 @@ and it carries a table of what reaches the model and a table of the tools.
 | AM-8 | Low | A failed tool's error message, a connector's own or any other error's, is handed to the model as it is. | `apps/server/src/assistant/model.ts:54-56` |
 | AM-9 | Low | The administrator's "Assistent" switch closes tools only; chips, matched cards and the router's answers from a closed connector still reach the model. | `packages/connectors/src/index.ts:1891-1894` |
 | AM-10 | Low | Changing a provider's address keeps its sealed key, which is then sent to the new address. | `apps/server/src/assistant/usecases/models.ts:229-256` |
-| AM-11 | Low | What a source's assistant may read back through Clew while it answers is set by the manifest's `uses`, not by D125, and the profile does not refuse it. | `packages/connectors/src/remote.ts:452-470` |
 | AM-12 | Low | The system prompt tells the model it serves Sundsvalls kommun's Startsidan in every installation. | `apps/server/src/assistant/model.ts:137` |
 | AM-13 | Low | Several model administration audit rows have no test, the assistant's function ports have no contract case, and nothing tests what a stopped turn or a model-started item leaves. | `apps/server/src/assistant/usecases/models.ts` |
 
@@ -128,7 +122,6 @@ ports with no contract under M7.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| DE-H1 | High | Three paths store a manifest fetched from the connector's service through `recordHealth`, so it goes live with no audit row and no administrator's act. Same as `CB-1` and `CB-3`. | `apps/server/src/connectors/remote.ts:98-117` |
 | DE-M1 | Medium | A work item whose execution settled failed or partial reuses its decision id, so it can never be decided again. | `apps/server/src/threads/usecases/decisions.ts:135-152` |
 | DE-M2 | Medium | A calendar write whose read-back finds nothing stays unknown for good, and while it does the manager's planning card can be neither confirmed, redrawn nor dismissed. | `apps/server/src/modules/calendar/usecases/decisions.ts:464-491` |
 | DE-M3 | Medium | When recording a source's result fails inside `progress`, the catch meant for the source stores it as the source not answering, and nothing is logged. | `apps/server/src/modules/executions/usecases.ts:690-697` |

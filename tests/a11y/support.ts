@@ -927,22 +927,25 @@ export class MockApi {
         });
       }
       if (path === `/admin/connectors/${cid}/test`)
-        return json({ ...checkReport, health: { status: 'secret-rejected', at: NOW } });
+        return json({ ...checkReport, health: { status: 'secret-rejected', at: NOW }, offered: false });
       if (path === `/admin/connectors/${cid}/refresh`) {
         const c = found();
-        return c
-          ? json({
-              diff: {
-                added: ['hello.remind'],
-                removed: ['hello.openItems'],
-                changed: [],
-                areasAdded: [],
-                areasRemoved: [],
-                same: false,
-              },
-              connector: connectorDetail(c),
-            })
-          : route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } });
+        if (!c) return route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } });
+        const diff = {
+          added: ['hello.remind'],
+          removed: ['hello.openItems'],
+          changed: [],
+          areasAdded: [],
+          areasRemoved: [],
+          areasChanged: [],
+          usesAdded: [],
+          usesRemoved: [],
+          fields: [],
+          same: false,
+        };
+        // As the server answers (D144): reading in stores the offer the page reviews; approving it clears it.
+        const apply = !!(request.postDataJSON() as { apply?: boolean } | null)?.apply;
+        return json({ diff, connector: { ...connectorDetail(c), offered: apply ? null : { at: NOW, diff } } });
       }
       if (path === `/admin/connectors/${cid}/preview`)
         return json(connectorPreview(url.searchParams.get('role') === 'employee' ? 'employee' : 'manager'));

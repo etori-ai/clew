@@ -531,11 +531,15 @@ describe('the administrator chooses, view by view', () => {
     ]);
     // The service starts naming its rows: the refetched manifest lists the capabilities as changed, and the chosen view takes the name.
     served.manifest = base;
-    expect((await admin.refreshManifest(mikael, 'phonebook', {})).diff).toMatchObject({
+    const review = await admin.refreshManifest(mikael, 'phonebook', {});
+    expect(review.diff).toMatchObject({
       same: false,
-      changed: ['phonebook.directory', 'phonebook.team'],
+      changed: [
+        { name: 'phonebook.directory', fields: expect.any(Array) },
+        { name: 'phonebook.team', fields: expect.any(Array) },
+      ],
     });
-    await admin.refreshManifest(mikael, 'phonebook', { apply: true });
+    await admin.refreshManifest(mikael, 'phonebook', { apply: true, offered: review.connector.offered!.at });
     expect(registry.menu(audiencedActorOf(hassan))).toEqual([team as never]);
   });
   test('a view that stops being a tool in a new manifest drops out of the menu, though it was chosen', async () => {
@@ -546,7 +550,8 @@ describe('the administrator chooses, view by view', () => {
       menu: { 'phonebook.team': true, 'phonebook.directory': true },
     });
     served.manifest = withCapability('phonebook.team', ({ view: _view, menu: _menu, ...c }) => c);
-    const applied = await admin.refreshManifest(mikael, 'phonebook', { apply: true });
+    const offered = (await admin.refreshManifest(mikael, 'phonebook', {})).connector.offered!.at;
+    const applied = await admin.refreshManifest(mikael, 'phonebook', { apply: true, offered });
     expect(applied.connector.capabilities.find(c => c.name === 'phonebook.team')!.menu).toBeNull();
     expect(labels(registry, hassan)).toEqual(['Telefonbok']);
   });

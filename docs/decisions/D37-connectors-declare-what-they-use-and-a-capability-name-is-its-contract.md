@@ -1,6 +1,6 @@
 # D37 · Connectors declare the capabilities they use; a capability's name is its contract
 
-**Status:** proposed · **Date:** 2026-11-05 · **Area:** integrations
+**Status:** proposed; item 4's boot and "Not held back" bullets amended by [D144](D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md) (2026-11-23: a changed manifest waits for an administrator) · **Date:** 2026-11-05 · **Area:** integrations
 
 **Decision.** A connector may call another connector's `read` or `propose` through Clew (D20, D22,
 `docs/architecture/working-across-connectors.md`). This decision makes that dependency visible and says what B may

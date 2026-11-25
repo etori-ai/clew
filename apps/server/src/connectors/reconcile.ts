@@ -1,8 +1,8 @@
 import { deniedGovernance, openGovernance, type Connector, type Registry } from '@clew/connectors';
-import type { ConnectorManifest } from '@clew/connectors/protocol';
 import { parseManifest } from '@clew/connectors/remote';
 import { describeBundled } from './describe';
 import type { ConnectorRecord, ConnectorStore, LiveRegistration, Secrets } from './model';
+import { canonical, isManifest } from './manifests';
 import { governanceOf } from './usecases/admin';
 import { logPort } from '../logging';
 
@@ -37,23 +37,12 @@ function stateFor(deps: ReconcileDeps) {
   if (!state) states.set(deps, (state = { descriptors: new Map() }));
   return state;
 }
-const isManifest = (value: unknown): value is ConnectorManifest =>
-  !!value && typeof value === 'object' && Array.isArray((value as ConnectorManifest).capabilities);
 
-/** The same document whatever order its keys come back in from the store, so a jsonb round trip is not a change. */
-const canonical = (value: unknown): string =>
-  JSON.stringify(value, (_key, v) =>
-    v && typeof v === 'object' && !Array.isArray(v)
-      ? Object.fromEntries(
-          Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-        )
-      : v,
-  );
 /**
  * A row for every bundled connector: inserted when missing, enabled for everyone until an administrator says otherwise.
- * A bundled connector's description is its code, and the code moves with every build, so an existing row takes the
- * current description when it differs, the way a remote row takes a refetched manifest: no audit, no version bump,
- * and the administrator's governance of the row untouched.
+ * A bundled connector's description is its code, reviewed with the code, and the code moves with every build, so an
+ * existing row takes the current description when it differs: no audit, no version bump, and the administrator's
+ * governance of the row untouched. A remote row's manifest is never taken this way: it waits for an administrator (D144).
  */
 export async function syncBundledRows({
   registry,
@@ -84,7 +73,7 @@ export async function syncBundledRows({
     if (inserted) continue;
     const row = await store.read(id);
     if (row?.bundled && canonical(row.manifest) !== canonical(manifest))
-      await store.recordHealth(id, row.health, manifest, at);
+      await store.recordDescription(id, manifest, at);
   }
 }
 /**
@@ -116,7 +105,7 @@ export function applyRow(deps: ReconcileDeps, row: ConnectorRecord) {
     if (isManifest(row.manifest) && row.url && row.secret) {
       try {
         const cache = stateFor(deps).descriptors;
-        // Health/manifest updates need not bump the governance version. Compare the descriptor itself.
+        // The approved manifest, the address and the secret make the descriptor; governance changes bump the version too, so compare them.
         const fingerprint = canonical({ manifest: row.manifest, url: row.url, secret: row.secret });
         const previous = cache.get(row.id);
         if (previous?.fingerprint !== fingerprint || previous.connector !== registry.connector(row.id)) {
