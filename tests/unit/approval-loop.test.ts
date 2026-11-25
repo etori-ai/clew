@@ -175,6 +175,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
     done: executions.doneOn,
   });
   const cards = threadUsecases({
+    doneOnCards: executions.doneOnCards,
     store: threads,
     registry,
     run: run as never,
