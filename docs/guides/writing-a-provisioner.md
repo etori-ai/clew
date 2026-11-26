@@ -345,7 +345,8 @@ bun scripts/provisioner-check.ts https://clew.example/scim/v2 --roots 1
 The check reads users and groups through SCIM. Authentication can update the provisioner's last-seen time. It reports:
 
 - Endpoint and token status, the numbers of users and groups of each kind, and how many active people have a title, phone number or employment.
-- Active people without a placement, employments naming a missing unit, managed units missing their `unit:` group, and units whose people have no manager on the unit or above it.
+- Active people without a placement, employments naming a missing unit, managed units missing their `unit:` group, and units with people that nobody leads.
+- How many of the active people on a unit report to a manager their employment names, and who reports to nobody: no manager is named, only a deactivated one is, or the two name each other. It counts as Administration › Organisation does. Whoever leads a unit that no led unit stands above heads the organisation, or their part of it, and is named without a warning; anybody else who reports to nobody is a warning.
 - Tree depth and root count, plus unit and manager groups with no active members. A unit with children can serve as a heading and is excluded from the empty-unit warning.
 - Deactivated people still in manager, capability or plain groups, and stored groups with a malformed key or an unfamiliar capability name.
 

@@ -29,7 +29,7 @@ interface UserRow {
   active: boolean;
   title?: string;
   phoneNumbers?: Array<{ value: string }>;
-  [EMPLOYMENT_EXTENSION]?: { employments?: Array<{ unitId: string; title?: string }> };
+  [EMPLOYMENT_EXTENSION]?: { employments?: Array<{ unitId: string; title?: string; managerId?: string }> };
   groups?: Array<{ value: string }>;
 }
 /** D114: the extension a user's current employments travel in, written out here rather than read from Clew's contracts. */
@@ -194,6 +194,48 @@ export async function checkProvisioning(
       'warn',
       `${plural(adrift.length, 'employment names', 'employments name')} a unit that is no longer held. Send current employments for the affected users: ${some(adrift)}.`,
     );
+  // D147: whom a person reports to is the manager each employment names, by the id Clew gave them, and Clew works
+  // none out from the tree. Counted as Administration › Organisation counts it: of the active people placed on a unit,
+  // those who report to nobody, because no employment of theirs names a manager, the manager named is deactivated, or
+  // the two name each other. They are on nobody's list in Personal. Somebody heads the organisation, or each part of
+  // it, and reports to nobody by right: a person who leads a unit that no led unit stands above. They are named with
+  // the rest and are no warning.
+  const working = new Map(active.map(u => [u.id, u])),
+    namedBy = (u: UserRow) =>
+      new Set(jobsOf(u).flatMap(job => (job.managerId && job.managerId !== u.id ? [job.managerId] : []))),
+    reportsTo = (u: UserRow) =>
+      [...namedBy(u)].some(id => {
+        const manager = working.get(id);
+        return manager !== undefined && !namedBy(manager).has(u.id);
+      }),
+    placed = active.filter(u => !unassigned.includes(u)),
+    unmanaged = placed.filter(u => !reportsTo(u)),
+    unitAbove = new Map(
+      units.map(g => [g.externalId!.slice(UNIT_KEY.length), g[UNIT_EXTENSION]?.parent?.slice(UNIT_KEY.length)]),
+    ),
+    unitLed = new Map(managers.map(g => [g.id, g.externalId!.slice(MANAGER_KEY.length)])),
+    leads = (u: UserRow) => (u.groups ?? []).flatMap(g => unitLed.get(g.value) ?? []),
+    ledUnits = new Set(active.flatMap(leads)),
+    heads = (u: UserRow) =>
+      leads(u).some(unit => {
+        let hops = 0;
+        for (let at = unitAbove.get(unit); at !== undefined && hops <= unitAbove.size; at = unitAbove.get(at), hops++)
+          if (ledUnits.has(at)) return false;
+        return true;
+      }),
+    gaps = unmanaged.filter(u => !heads(u)).length,
+    managed = placed.length - unmanaged.length;
+  if (placed.length)
+    say(
+      gaps ? 'warn' : 'ok',
+      unmanaged.length === placed.length && gaps
+        ? 'No active user reports to anybody: no employment names an active manager, so Personal is empty for everyone. Send managerId on each employment.'
+        : `${managed} of ${plural(placed.length, 'active user', 'active users')} on a unit ${managed === 1 ? 'reports' : 'report'} to a manager their employment names.${
+            unmanaged.length
+              ? ` ${unmanaged.length === 1 ? 'One reports' : `${unmanaged.length} report`} to nobody, with no manager named, only a deactivated one, or one who names them back: ${some(unmanaged.map(u => u.userName))}.`
+              : ''
+          }`,
+    );
   const unnamed = managers.map(g => g.externalId!.slice(MANAGER_KEY.length)).filter(id => !named.has(id));
   if (unnamed.length)
     say(
@@ -236,19 +278,16 @@ export async function checkProvisioning(
       'warn',
       `${plural(empty.length, 'unit or unit-manager group has', 'unit or unit-manager groups have')} no ${empty.some(g => heldByLeavers.has(g.id)) ? 'active ' : ''}members: ${some(empty.map(g => g.externalId!))}.`,
     );
-  // Who the people on a unit report to is the manager of that unit or of the nearest unit above with one (D99).
+  // That somebody leads a unit is a fact of its own (D147): its `unit-manager:` group has an active member, and the
+  // tree passes nothing on from the unit above. A unit with people that nobody leads is nobody's to read about or to
+  // follow up, as Administration › Organisation marks it. Whom its people report to is said on their employments and
+  // counted above.
   const led = new Set(managers.filter(g => activeIn.get(g.id)).map(g => g.externalId!.slice(MANAGER_KEY.length)));
-  const leaderless = units.filter(g => {
-    if (!activeIn.get(g.id)) return false;
-    let at: string | undefined = g.externalId!.slice(UNIT_KEY.length);
-    for (let hops = 0; at !== undefined && hops <= above.size; at = above.get(at), hops++)
-      if (led.has(at)) return false;
-    return true;
-  });
+  const leaderless = units.filter(g => activeIn.get(g.id) && !led.has(g.externalId!.slice(UNIT_KEY.length)));
   if (leaderless.length)
     say(
       'warn',
-      `${plural(leaderless.length, 'unit has', 'units have')} people and no manager, on the unit or on any unit above it, so its people report to nobody: ${some(leaderless.map(g => g.externalId!))}.`,
+      `${plural(leaderless.length, 'unit has people and nobody who leads it', 'units have people and nobody who leads them')}, so nobody can read about the unit or follow it up: ${some(leaderless.map(g => g.externalId!))}.`,
     );
   // A deactivated person keeps every group a provisioner leaves them in (D68 item 1), and making them active again
   // gives back at once what those groups give. A provisioner that only deactivates leaves a leaver's duties waiting

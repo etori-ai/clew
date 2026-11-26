@@ -118,7 +118,8 @@ rejected, they are the source's vocabulary and differ between organisations.
 - Whether the line organisation is the only tree Clew holds. Proposed: yes; cost centres and the political
   organisation are other hierarchies and stay with their sources. Not yet confirmed by the product owner.
 - The source: what the manager flag in Sundsvall's records refers to and where a manager is placed (in the unit they
-  lead or the one above), whether unit ids survive a reorganisation, whether the units can be delivered as a list of
+  lead or the one above), whether unit ids survive a reorganisation (answered 2026-11-26 by Max Eriksson: a unit keeps its id; stated, not
+  read from the records), whether the units can be delivered as a list of
   their own with a parent id (answered 2026-11-11, D101: they can), and whether a second placement or an acting manager exists anywhere.
 - A photograph of a manager. Clew holds none; it would be new personal data with a source and an origin to decide.
 - Who besides an administrator sees the tree. A tree with names is a list of other people, and whether Clew may hold

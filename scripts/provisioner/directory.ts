@@ -16,8 +16,9 @@ import type { Capability } from '../../packages/contracts/src/scim-group-key';
  * own who reports to the administration's (the managers below the managers); an area between a department and its
  * units; the units people work in, each with its manager; and a group under a unit. The depth differs between
  * branches, as it does in an organisation: two administrations have their units directly under them. A unit names the
- * unit above it and nothing else. There is a department nobody leads, so the line passes through it, a unit that is
- * led from the one above it, a unit with two managers, and one unit pushed the flat way. Nothing in Clew reads this
+ * unit above it and nothing else. There is a department nobody leads, a unit with two managers, whose people are
+ * divided between them, and two units led by the manager of another unit, who is pushed as theirs too. Who reports to
+ * whom is said on each employment (D147, `withManagers`) and never follows from the tree. Nothing in Clew reads this
  * file; the provisioner does, and `scripts/auth-setup.ts` for the personas' accounts.
  */
 /**
@@ -125,8 +126,9 @@ interface UnitPlan extends DirectoryUnit {
   /** How many of the unit's own people manage it: one unless said. */
   managers?: number;
   /**
-   * The unit whose manager manages this one too, so nobody in it is a manager: the flat way, where the manager is
-   * pushed into both units' manager groups. The tree's way is a `parent` and no manager, as the fritidshem has.
+   * The unit whose manager manages this one too, so nobody in it is a manager: the manager is pushed into both
+   * units' manager groups. A unit nobody is pushed as the manager of is led by nobody, whatever stands above it in
+   * the tree (D147).
    */
   managedBy?: string;
 }
@@ -161,14 +163,15 @@ const UNITS: UnitPlan[] = [
     size: 6,
     parent: 'unit-forskolor',
   },
-  // Led from the school above it: nobody here is a manager, and the school's rektor is not pushed as one here either.
+  // Led by the rektor of the school above it, who is pushed as its manager too: nobody here is a manager. A unit
+  // nobody is pushed as the manager of is led by nobody, whatever stands above it in the tree (D147).
   {
     id: 'unit-fritidshem',
     label: 'Skönsmons fritidshem',
     area: 'utbildning',
     size: 4,
     parent: 'unit-skola-nacksta',
-    managers: 0,
+    managedBy: 'unit-skola-nacksta',
   },
   { id: 'unit-omsorg', label: 'Hemtjänst Centrum', area: 'omsorg', size: 14, parent: 'unit-hemtjanst' },
   { id: 'unit-omsorg-norr', label: 'Hemtjänst Norr', area: 'omsorg', size: 12, parent: 'unit-hemtjanst' },
