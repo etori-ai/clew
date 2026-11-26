@@ -4873,6 +4873,11 @@ export interface ConnectorDetail extends ConnectorSummary {
   uses: string[];
   /** The audience whose token the connector is handed (`delegation`), or null when it is handed none. */
   delegation: string | null;
+  /**
+   * Whether the connector's people link an account of their own at its system (`linkedAccount`, D147), by the approved
+   * manifest or by one that waits. What is approved for it is a read of its own (`LinkedAccountAdminView`).
+   */
+  linkedAccount: boolean;
   /** The manifest the service offers when it differs from the approved one: since when, and what it would change. Never live until approved. */
   offered: { at: string; revision: string; diff: ManifestDiff } | null;
   /** The read the manifest names as the header's source (D88), or null when the connector cannot give one. */
@@ -4907,6 +4912,14 @@ export interface ManifestDiff {
   usesRemoved: string[];
   /** The audience whose token the connector is handed (`delegation`), before and after; absent when unchanged. */
   delegation?: { from: string | null; to: string | null };
+  /**
+   * The system the connector's people link an account of their own at (`linkedAccount`, D147) and what Clew asks for
+   * there, before and after; absent when unchanged.
+   */
+  linkedAccount?: {
+    from: { resource: string; scopes: string[] } | null;
+    to: { resource: string; scopes: string[] } | null;
+  };
   /** Every other top-level field of the manifest that changed, by its name in the protocol. */
   fields: string[];
   same: boolean;
@@ -5634,6 +5647,89 @@ export interface SiteHeaderView {
   logo: { src: string; alt: string } | null;
   /** The connector the header came from, or null for the default. */
   source: { id: string; label: string } | null;
+}
+
+/**
+ * One system a person can link an account at (D147), as `GET /api/linked-accounts` lists it for them: never a token,
+ * an issuer or a scope. `not-linked` is a system the person has never linked or has taken their link away from;
+ * `needs-link` one whose link the system stopped accepting, with when Clew found out.
+ */
+export interface LinkedAccountEntry {
+  connectorId: string;
+  /** The system's word, as the person reads it on a card: "Inköpssystemet". */
+  source: string;
+  state: 'linked' | 'needs-link' | 'not-linked';
+  linkedAt: string | null;
+  lostAt: string | null;
+  /** The person put a first link off, or took their link away: the system is not said on Hem, only on the page. */
+  putOff: boolean;
+  /** Whether the system can be told when the link is taken away; where it cannot, the person ends it there themselves. */
+  revocable: boolean;
+}
+/** The authorization server a system names for itself today, as far as an administrator weighs it. */
+export interface LinkedAccountServerFound {
+  issuer: string;
+  /** Clew can register itself there as a client; where it cannot, an administrator enters one. */
+  registers: boolean;
+  /** The server can be told when a link is taken away. */
+  revocable: boolean;
+}
+/**
+ * A connector's linked account as an administrator sees it on Administration › Anslutna system (D147 items 3 and 4):
+ * where the system's people are sent, as approved and as the system names it now, how Clew is known there, and how
+ * many people have linked. Numbers only: never a person, a token or a client's secret.
+ */
+export interface LinkedAccountAdminView {
+  connectorId: string;
+  /**
+   * The system's address the approved manifest names, and what Clew asks for there. Null while only a manifest that
+   * waits for approval declares the account: nothing is approved to show yet, and `offered` says what would be.
+   */
+  resource: string | null;
+  scopes: string[];
+  /**
+   * `approved`: people can link. `waiting`: nothing is approved for the address the manifest names. `no-server`: the
+   * system names no server and none is entered, so nobody can link. `no-client`: the server is approved, but Clew is
+   * no client there and cannot become one by itself, so nobody can link until an administrator enters one.
+   * `changed`: the system names another server than the approved one, so nobody new is sent anywhere until an
+   * administrator decides.
+   */
+  state: 'approved' | 'waiting' | 'no-server' | 'no-client' | 'changed';
+  /** What is approved for the address the manifest names now. */
+  approved: {
+    issuer: string;
+    /** `discovered`: the system names it. `entered`: an administrator typed its addresses. */
+    origin: 'discovered' | 'entered';
+    /** How Clew is known there: a client an administrator entered, one Clew registered, or none yet. */
+    client: 'entered' | 'registered' | 'none';
+    /** The entered client's id, to change it; never its secret. */
+    clientId: string | null;
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+    revocationEndpoint: string | null;
+    by: string;
+    at: string;
+  } | null;
+  /** The server the system names now; null when it names none or did not answer (`answered` says which). */
+  found: LinkedAccountServerFound | null;
+  answered: boolean;
+  /** People whose link works, and people who must link again (a lost link, or one to a server no longer approved). */
+  people: { linked: number; again: number };
+  /** Clew's own address, which an administrator gives the system when registering Clew there. */
+  returnAddress: string;
+  /**
+   * What a manifest that waits for approval would change (D144): the address it names and the server found there, for
+   * the review to say where people would be sent. Null when no offer changes the account.
+   */
+  offered: { resource: string; scopes: string[]; found: LinkedAccountServerFound | null; answered: boolean } | null;
+}
+/** What an administrator enters for a connector's linked account: a client they registered, a server's addresses, or both. */
+export interface LinkedAccountApprovalInput {
+  client?: { id: string; secret?: string };
+  server?: { authorizationEndpoint: string; tokenEndpoint: string; revocationEndpoint?: string };
+}
+export interface LinkedAccountsView {
+  accounts: LinkedAccountEntry[];
 }
 
 // The assistants profile and the handover of a conversation, in a file of its own. Named one by one, as below.

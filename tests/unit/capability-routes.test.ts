@@ -99,6 +99,13 @@ function stack(options: { people?: boolean } = {}) {
     run: async (p, name, input) => {
       ran.push([p.id, name, input]);
       if ((input as { refuse?: boolean }).refuse) throw new InputError('Källan svarade inte.');
+      // As the server's runner raises a source's refusal: the person's words, with the protocol's error as its cause.
+      if ((input as { link?: boolean }).link)
+        throw new InputError('Systemet behöver ditt konto. Koppla ditt konto och försök igen.', {
+          cause: new CapabilityError('Systemet behöver ditt konto.', 'authorization-required'),
+        });
+      if ((input as { deny?: boolean }).deny)
+        throw new InputError('Du saknar behörighet för åtgärden.', { cause: new CapabilityError('Nej.', 'denied') });
       if (name === 'rooms.list') return { rows: [{ name: 'Rum 1', userName: 'anna.lindqvist' }] };
       return { rows: name === 'talks.strangers' ? strangers : rows };
     },
@@ -183,6 +190,19 @@ describe('the capability routes', () => {
     expect(await refused.json()).toEqual({ error: 'Källan svarade inte.' });
     expect((await request('/talks.book', { method: 'POST', body: '{nope' })).status).toBe(400);
     expect(asked).toEqual([]);
+  });
+
+  test('a system that needs the account the person links there says so with a code, and no other refusal has one (D147)', async () => {
+    const { read } = stack();
+    const link = await read('/talks.talks', { link: true });
+    expect(link.status).toBe(400);
+    expect(link.headers.get('cache-control')).toBe('no-store, private');
+    expect(await link.json()).toEqual({
+      error: 'Systemet behöver ditt konto. Koppla ditt konto och försök igen.',
+      code: 'authorization-required',
+    });
+    const denied = await read('/talks.talks', { deny: true });
+    expect([denied.status, await denied.json()]).toEqual([400, { error: 'Du saknar behörighet för åtgärden.' }]);
   });
 });
 

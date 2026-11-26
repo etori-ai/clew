@@ -16,6 +16,8 @@ import {
   type WatchSource,
 } from '../modules/executions/model';
 import { standingSession } from '../auth';
+import { LinkRequiredError } from '../modules/linked-accounts/contracts';
+import { linkedAccounts } from './linked-accounts';
 import { logPort } from '../logging';
 import { clock } from './ambient';
 import { ledger } from './durable';
@@ -74,8 +76,19 @@ const source: ExecutionSource = {
       connector: found.connector.id,
       safety,
       needsSession: !!found.connector.delegation,
+      needsLink: !!found.connector.linkedAccount,
       ...('resolution' in found ? { resolution: found.resolution } : {}),
     };
+  },
+  // The link's token is refreshed here when it is due, and the call that follows sends the one it left (D147 item 7).
+  async linked(persona, e) {
+    try {
+      await linkedAccounts.tokenFor(persona.id, e.connector);
+      return true;
+    } catch (error) {
+      if (error instanceof LinkRequiredError) return false;
+      throw error;
+    }
   },
   current: id => systemContext(id, 'system:execution'),
   // The persona carries a delegate only when the ledger found the person's own live session behind this execution (D26).

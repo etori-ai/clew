@@ -49,7 +49,14 @@ import { newsItemOutput, newsItemSpec, newsSpec } from './data';
 import { SITE } from './branding-fixtures';
 export { SITE } from './branding-fixtures';
 import { ENTITY_NAMES_MAX, providerAddressProblem, turnPageHash } from '@clew/contracts';
-import type { AssistantReach, NewsResult, RecordAction } from '@clew/contracts';
+import type {
+  AssistantReach,
+  LinkedAccountAdminView,
+  LinkedAccountApprovalInput,
+  LinkedAccountEntry,
+  NewsResult,
+  RecordAction,
+} from '@clew/contracts';
 import {
   assistantStatus,
   modelDetail,
@@ -299,6 +306,23 @@ export class MockApi {
   deliveries: Array<{ id: string; threadId: string; kind: 'automatic' | 'reminder' }> = [];
   deliveryClaims: string[] = [];
   sources: Array<{ connector: string; state: string; lastSuccess: string | null; error: string | null }> = [];
+  /**
+   * The systems the person can link an account at (D147): none unless a test adds its own. Linking is answered as the
+   * system's page would end it (`linkOutcome`): the page leaves, and comes back to where it was with the outcome in
+   * the address, the account linked when the person consented there.
+   */
+  accounts: LinkedAccountEntry[] = [];
+  linkOutcome: 'linked' | 'declined' | 'failed' | 'closed' = 'linked';
+  /**
+   * A connector's linked account as its administrator's page reads it (D147 items 3 and 4), by connector id: none
+   * unless a test gives one (and serves the connector with `linkedAccount: true`). An approval is answered as the
+   * server would change it: the server the system names or the one entered is approved, by Mikael Lund, now.
+   */
+  adminAccounts: Record<string, LinkedAccountAdminView> = {};
+  /** What the administrator's page saved, as it sent it. */
+  adminAccountCalls: Array<{ id: string; body: LinkedAccountApprovalInput }> = [];
+  /** What the page asked about linked accounts, as it asked: the method, the path after `/linked-accounts`, the body. */
+  accountCalls: Array<{ method: string; path: string; body: unknown }> = [];
 
   answerDelay = 0;
   private answerHeld?: Promise<void>;
@@ -1229,6 +1253,48 @@ export class MockApi {
           },
         });
       }
+      if (path === `/admin/connectors/${cid}/linked-account`) {
+        const account = this.adminAccounts[cid] ?? null;
+        if (method === 'GET') return json({ account });
+        const body = (request.postDataJSON() ?? {}) as LinkedAccountApprovalInput;
+        this.adminAccountCalls.push({ id: cid, body });
+        const issuer = body.server
+          ? new URL(body.server.authorizationEndpoint).origin
+          : (account?.found?.issuer ?? account?.approved?.issuer);
+        if (!account || !issuer)
+          return route.fulfill({
+            status: 400,
+            json: { error: 'Systemet uppger ingen inloggningsserver. Ange adresserna.' },
+          });
+        const moved = !!account.approved && account.approved.issuer !== issuer;
+        const next: LinkedAccountAdminView = {
+          ...account,
+          state: 'approved',
+          approved: {
+            issuer,
+            origin: body.server ? 'entered' : 'discovered',
+            client: body.client
+              ? 'entered'
+              : !moved && account.approved?.client === 'registered'
+                ? 'registered'
+                : 'none',
+            clientId: body.client?.id ?? null,
+            authorizationEndpoint: body.server?.authorizationEndpoint ?? issuer + '/authorize',
+            tokenEndpoint: body.server?.tokenEndpoint ?? issuer + '/token',
+            revocationEndpoint: body.server
+              ? (body.server.revocationEndpoint ?? null)
+              : account.found?.revocable
+                ? issuer + '/revoke'
+                : null,
+            by: 'Mikael Lund',
+            at: NOW,
+          },
+          // Links to another server than the one approved now are not used.
+          people: moved ? { linked: 0, again: account.people.linked + account.people.again } : account.people,
+        };
+        this.adminAccounts = { ...this.adminAccounts, [cid]: next };
+        return json({ account: next });
+      }
       if (path === `/admin/connectors/${cid}/test`)
         return json({ ...checkReport, health: { status: 'secret-rejected', at: NOW }, offered: false });
       if (path === `/admin/connectors/${cid}/refresh`) {
@@ -1327,6 +1393,36 @@ export class MockApi {
           return json(connectorDetail(next, this.menuOn, this.figuresOff));
         }
         return json(connectorDetail(c, this.menuOn, this.figuresOff));
+      }
+    }
+    if (path === '/linked-accounts' && request.method() === 'GET') return json({ accounts: this.accounts });
+    if (path.startsWith('/linked-accounts/')) {
+      const [, , target, verb] = path.split('/');
+      const body = request.method() === 'GET' ? null : (request.postDataJSON() ?? {});
+      this.accountCalls.push({ method: request.method(), path: path.slice('/linked-accounts'.length), body });
+      const set = (connectorId: string, patch: Partial<LinkedAccountEntry>) => {
+        this.accounts = this.accounts.map(a => (a.connectorId === connectorId ? { ...a, ...patch } : a));
+      };
+      if (target === 'later' && post) {
+        const connectors = (body as { connectors: string[] }).connectors;
+        for (const connectorId of connectors) set(connectorId, { putOff: true });
+        return json({ putOff: connectors });
+      }
+      if (verb === 'link' && post) {
+        const returnTo = new URL((body as { returnTo?: string }).returnTo ?? '/', url.origin);
+        if (this.linkOutcome === 'linked')
+          set(target!, { state: 'linked', linkedAt: NOW, lostAt: null, putOff: false });
+        // `closed`: the person closes the window without signing in, so the return says nothing.
+        if (this.linkOutcome !== 'closed') {
+          returnTo.searchParams.set('account', this.linkOutcome);
+          returnTo.searchParams.set('system', target!);
+        }
+        return json({ url: returnTo.pathname + returnTo.search });
+      }
+      if (request.method() === 'DELETE' && !verb) {
+        const account = this.accounts.find(a => a.connectorId === target);
+        set(target!, { state: 'not-linked', linkedAt: null, lostAt: null, putOff: true });
+        return json({ unlinked: !!account, revocation: account?.revocable ? 'revoked' : 'not-offered' });
       }
     }
     if (path === '/threads') {

@@ -10,6 +10,7 @@ import {
   Button,
   Card,
   CARD_GAP,
+  Divider,
   HStack,
   Icon,
   Link,
@@ -59,6 +60,7 @@ import { NoCalendar, TodayCard } from '../components/hem/today';
 import { hemLine } from '../components/shell/assistant-corner';
 import { silentLine, staleWhy, useSaySilent, useSilentSources } from '../components/shell/silent-sources';
 import { Lage } from '../components/hem/lage';
+import { AccountLines, useAccountLines } from '../components/accounts/account-lines';
 import { NewsBlock } from '../components/hem/news';
 import { FocusNews, focusOf } from '../components/hem/focus-news';
 import { HemAnswer } from '../components/hem/answer';
@@ -254,7 +256,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     const facts = rowFacts(t, now, todayDate);
     const mark = marks.ofThread(t);
     const own = !!marks.system(mark.connector) && mark.ordinal === null;
-    const stale = t.state === 'open' && !!silent.of(t.connector);
+    const stale = t.state === 'open' && silent.stale(t.connector);
     // "Behöver dig" is the card's own heading: the state of an item with nothing to decide is not said again under it.
     const plain = facts.state.label.startsWith('Ska göras') || facts.state.label === STATUS['needs-you'].word;
     const state = plain && !unresolvedExecution(t) ? null : facts.state.label;
@@ -287,6 +289,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    * heading and the way to all of them in Att göra. While the cards load the card keeps its shape; with nothing to draw
    * it says so in the card.
    */
+  // A system that needs the person's account (D147): said under the rows, where its work would have been, and not
+  // counted among them. It is why one system's work is missing, never a work item itself.
+  const accountLines = useAccountLines();
   const needsBlock = (
     <BoardCard
       id="behover-dig"
@@ -297,39 +302,47 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       pending={loadingThreads}
       pendingLabel="Hämtar det som behöver dig …"
     >
-      {(sourcesLine || first.length === 0) && (
-        <VStack gap={1}>
-          {sourcesLine && (
-            <Text as="p" role="status">
-              {sourcesLine}
-            </Text>
-          )}
-          {first.length === 0 && (
-            <Text as="p" color="secondary">
-              {sourcesLine || silent.list.length
-                ? 'Inväntar källornas besked.'
-                : focus
-                  ? 'Inget mer behöver dig just nu.'
-                  : 'Inget behöver dig just nu.'}
-            </Text>
-          )}
-          {/* With nothing to draw, the system that does not answer is named where its work items would be. */}
-          {first.length === 0 && silent.list.length > 0 && (
-            <Text as="p" type="supporting">
-              {`${silent.list.map(silentLine).join('. ')}.`}
-            </Text>
-          )}
-        </VStack>
-      )}
-      {first.length > 0 && (
-        <VStack gap={2} role="list" aria-label="Behöver dig">
-          {first.map(t => (
-            <VStack key={t.id} role="listitem">
-              {needRow(t, `work-${t.id}`)}
-            </VStack>
-          ))}
-        </VStack>
-      )}
+      <VStack gap={3}>
+        {(sourcesLine || first.length === 0) && (
+          <VStack gap={1}>
+            {sourcesLine && (
+              <Text as="p" role="status">
+                {sourcesLine}
+              </Text>
+            )}
+            {first.length === 0 && (
+              <Text as="p" color="secondary">
+                {sourcesLine || silent.list.length
+                  ? 'Inväntar källornas besked.'
+                  : focus
+                    ? 'Inget mer behöver dig just nu.'
+                    : 'Inget behöver dig just nu.'}
+              </Text>
+            )}
+            {/* With nothing to draw, the system that does not answer is named where its work items would be. */}
+            {first.length === 0 && silent.list.length > 0 && (
+              <Text as="p" type="supporting">
+                {`${silent.list.map(silentLine).join('. ')}.`}
+              </Text>
+            )}
+          </VStack>
+        )}
+        {first.length > 0 && (
+          <VStack gap={2} role="list" aria-label="Behöver dig">
+            {first.map(t => (
+              <VStack key={t.id} role="listitem">
+                {needRow(t, `work-${t.id}`)}
+              </VStack>
+            ))}
+          </VStack>
+        )}
+        {accountLines.length > 0 && (
+          <>
+            <Divider />
+            <AccountLines lines={accountLines} focusAfter="behover-dig" />
+          </>
+        )}
+      </VStack>
     </BoardCard>
   );
   /**

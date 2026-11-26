@@ -18,6 +18,8 @@ import { useBranding } from '../../branding';
 import { errorMessage } from '../../query-policy';
 import { headerQuery, threadsQuery } from '../../queries';
 import { useAnnounceSilentSources } from './silent-sources';
+import { useAccountReturn, useAccounts, useFollowAccounts } from '../accounts/account-lines';
+import { ACCOUNTS_PATH, ACCOUNTS_TITLE } from '../../linked-accounts';
 import { api } from '../../api';
 import { ReminderBell } from './reminders';
 import { cardOverPage, panelRedirect } from '../../panel-address';
@@ -157,6 +159,11 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   // A system that does not answer is said where its content is missing, never at the top of the page (D116, amended
   // 2026-11-12); the first time it is seen silent in the session it is said once (4.1.3).
   useAnnounceSilentSources();
+  // Linked accounts (D147): what happened at a system the person comes back from is said once, and the list follows
+  // the cards' read. The person's menu leads to the list only when there is a system to list.
+  useAccountReturn();
+  useFollowAccounts();
+  const linkable = useAccounts().accounts.length > 0;
   // An address from before D126 that opened a thing over the page leads to that thing's page (rule 3).
   const oldPanel = panelRedirect(location.pathname, location.search);
   useLayoutEffect(() => {
@@ -271,6 +278,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
                   appearance={{ mode, onChange: setMode, isPersistent }}
                   // The person's own page (D126 rule 1): with no rail, the band's person is the shell's way to it.
                   pageHref={personPageHref(user.id)}
+                  ways={linkable ? [{ label: ACCOUNTS_TITLE, href: ACCOUNTS_PATH }] : undefined}
                 />
               </HStack>
             }

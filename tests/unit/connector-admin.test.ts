@@ -180,6 +180,8 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
       registry.unregister(id);
     },
   };
+  /** What was handed on to be approved together with a manifest (D147 item 4). */
+  const approvedWith: Array<{ by: string; id: string; to: unknown }> = [];
   const deps: AdminDeps = {
     internal,
     store,
@@ -196,6 +198,9 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
       fetch: helloFetch,
       log: (message, ...details) => logged.push({ message, details }),
     }),
+    approvedWith: async (persona, id, diff) => {
+      approvedWith.push({ by: persona.principal.id, id, to: diff.linkedAccount?.to ?? null });
+    },
   };
   const admin = connectorUsecases(deps);
   const reconcile: ReconcileDeps = {
@@ -216,6 +221,7 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     live,
     service,
     logged,
+    approvedWith,
     transport: deps.transport,
     reconcile,
     advance: (ms: number) => {
@@ -791,6 +797,30 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
         fields: ['source'],
       },
     });
+  });
+  test('a manifest that names where people link their own account says so in the review, and its approval is handed on once', async () => {
+    const { admin, store, transport, approvedWith } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    await admin.update(mikael, 'hello', { state: 'enabled' });
+    const account = { resource: 'https://hello.example.test', scopes: ['notes.read'] };
+    serving(transport, m => ({ ...m, linkedAccount: account }));
+    const review = await admin.refreshManifest(mikael, 'hello', {});
+    // The account is named as the audience of a delegation is, and is no anonymous changed field.
+    expect(review.diff).toMatchObject({ linkedAccount: { from: null, to: account }, fields: [] });
+    expect(review.connector.linkedAccount).toBe(true);
+    // Nothing is handed on by looking: only the approval approves.
+    expect(approvedWith).toEqual([]);
+    await admin.refreshManifest(mikael, 'hello', { apply: true, offered: review.connector.offered!.revision });
+    expect(approvedWith).toEqual([{ by: 'person:mikael', id: 'hello', to: account }]);
+    expect(store.audit.at(-1)).toMatchObject({
+      action: 'connector.manifest',
+      details: { linkedAccount: { from: null, to: account } },
+    });
+    // A later change that leaves the account as it is names nothing about it.
+    serving(transport, m => ({ ...m, source: 'Hello 3', linkedAccount: account }));
+    const next = await admin.refreshManifest(mikael, 'hello', {});
+    expect(next.diff.linkedAccount).toBeUndefined();
+    expect(next.diff.fields).toEqual(['source']);
   });
   test('a wizard retry approves only its original draft; an enabled connector keeps its offer for review', async () => {
     const { admin, store, transport } = world();

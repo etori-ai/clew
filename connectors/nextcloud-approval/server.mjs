@@ -5,6 +5,8 @@
 //   NEXTCLOUD_URL           Nextcloud's base address, as the connector reaches it. Required for nextcloud
 //   NEXTCLOUD_ALLOW_HTTP    "true" lets NEXTCLOUD_URL be plain http on a private development network
 //   NEXTCLOUD_AUDIENCE      what the person's token is issued for (default "nextcloud")
+//   NEXTCLOUD_ACCOUNT       "delegated" (default: the identity provider's token, through user_oidc) or "linked" (the
+//                           person links an account at Nextcloud's own OAuth 2 server, D147)
 //   NEXTCLOUD_SOURCE_LABEL  the system's name as a person reads it (default "Nextcloud")
 //   NEXTCLOUD_PUBLIC_URL    Nextcloud's address in the person's browser, for links to a file (optional)
 import { createServer } from 'node:http';
@@ -38,6 +40,14 @@ if (publicUrl) {
     throw new Error('NEXTCLOUD_PUBLIC_URL must be https outside local development.');
 }
 
+// How the connector acts as the person. Linked: the manifest names Nextcloud's address, as the person's browser reaches
+// it where that is configured, and the token is one Nextcloud's own OAuth 2 server issued.
+const account = env.NEXTCLOUD_ACCOUNT || 'delegated';
+if (!['delegated', 'linked'].includes(account)) throw new Error('NEXTCLOUD_ACCOUNT must be "delegated" or "linked".');
+const resource = publicUrl ?? env.NEXTCLOUD_URL;
+if (account === 'linked' && !resource)
+  throw new Error('NEXTCLOUD_ACCOUNT=linked needs NEXTCLOUD_PUBLIC_URL or NEXTCLOUD_URL: the address of Nextcloud.');
+
 const source =
   adapter === 'nextcloud'
     ? createNextcloudApproval({ url: env.NEXTCLOUD_URL, allowHttp: env.NEXTCLOUD_ALLOW_HTTP === 'true' })
@@ -47,10 +57,11 @@ const { handle } = createConnector({
   secret: env.CLEW_CONNECTOR_SECRET,
   source,
   audience,
+  ...(account === 'linked' ? { linkedAccount: { resource: resource.replace(/\/+$/, '') } } : {}),
   sourceLabel: env.NEXTCLOUD_SOURCE_LABEL || undefined,
   publicUrl,
 });
 const port = Number(env.PORT ?? 4052);
 createServer(listener(handle)).listen(port, () =>
-  console.log(`nextcloud-approval connector listening on :${port} (${adapter} adapter)`),
+  console.log(`nextcloud-approval connector listening on :${port} (${adapter} adapter, ${account} account)`),
 );

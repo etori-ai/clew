@@ -4,9 +4,12 @@
  */
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** The server's code for the refusal, where the route gives one: what a page branches on, never the sentence. */
+  code: string | undefined;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
     this.name = 'ApiError';
   }
 }

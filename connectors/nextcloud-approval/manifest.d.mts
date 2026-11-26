@@ -6,5 +6,9 @@ export declare const fileRefPattern: string;
 export declare const STATUS: Record<'none' | 'others' | 'approved' | 'rejected' | 'mine', string>;
 export declare const decisionInput: unknown;
 export declare const executeResult: unknown;
-export declare function createManifest(options?: { audience?: string; source?: string }): unknown;
+export declare function createManifest(options?: {
+  audience?: string;
+  source?: string;
+  linkedAccount?: { resource: string; scopes?: string[] };
+}): unknown;
 export declare const manifest: unknown;

@@ -276,6 +276,7 @@ describe('a decision the source has not confirmed (D45, D47)', () => {
   });
   for (const [reason, description] of [
     ['needs-session', 'Ekonomisystemet kräver en aktiv inloggning. Åtgärden väntar.'],
+    ['needs-link', 'Ekonomisystemet behöver ditt konto. Åtgärden väntar.'],
     ['authority-revoked', 'Behörigheten har ändrats. Åtgärden väntar på kontroll.'],
     ['source-contract-changed', 'Källans villkor har ändrats. Åtgärden väntar på kontroll.'],
   ] as const)

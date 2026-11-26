@@ -76,11 +76,11 @@ const FACTS_WIDTH = 340;
  * registers, Läget and Att göra's queue) or its thing (a work item, its review, a record, a person, a unit and a plan,
  * D136), null until the page knows it (while its data loads, on a thing's missing page) and while a pane of the page's
  * own holds the end slot (Att göra's item). `none` is a page with no subject and why: Administration, where nothing is a
- * read the assistant may make; the assistant's own pages, Hem, Ny fråga and a conversation; a frame that is no page of
+ * read the assistant may make; the person's own account settings ("Kopplade konton", D147), for the same reason; the assistant's own pages, Hem, Ny fråga and a conversation; a frame that is no page of
  * the person's work, the first load's or a missing calendar's. On those the corner's "Fråga AI" starts a new question
  * (`CornerDoor`).
  */
-export type PageAsk = AskAbout | { none: 'administration' | 'assistant' | 'no-page' };
+export type PageAsk = AskAbout | { none: 'administration' | 'assistant' | 'account' | 'no-page' };
 /** A page with the assistant's pane (D141 rules 2 to 4, D138 items 3 and 4). */
 export interface AskAbout {
   subject: PageSubject | null;

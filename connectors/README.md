@@ -53,6 +53,7 @@ the first seven in process through `tests/fixture-connectors.ts`.
 | [servicedesk](servicedesk/README.md) | `servicedesk` | IT-servicedesken | The IT service desk: what a person ordered or reported and waits for, the first source of the requests profile (D123); a comment on one's own request from its page, the first action about a record (D137); an order for oneself or a direct report; the equipment registered to a person | 7 reads, 2 writes, scan | 4054 |
 | [intranet](intranet/README.md) | `intranet` | Intranätet | The content system that lists the shared header's places (D88) | 1 read, header | 4049 |
 | [appraisals](appraisals/README.md) | `appraisals` | Samtalssystemet | A third-party system that answers the talks profile instead of Clew's own module (D96) | 4 reads | 4051, registered but not enabled |
+| [purchasing](purchasing/README.md) | `purchasing` | Inköpssystemet | A purchasing system that issues its own credential: the fixture of a linked account (D147). It answers only for the account in a token its own authorization server issued, which in the stack is the realm `vendor` of Keycloak | 2 reads, 1 write, scan | 4057, in the compose profile `linked`, not registered by `dev:connectors` |
 
 ## Generated manifests
 

@@ -66,7 +66,7 @@ describe('the images Clew builds and starts', () => {
   });
   test('keep SQLite in /data so that any user in group 0 writes what another made', () => {
     const withData = dockerfiles.filter(file => /^ENV\s.*\b\w+_DB=\/data\//m.test(read(file)));
-    expect(withData.length).toBe(7);
+    expect(withData.length).toBe(8);
     for (const file of withData) {
       const text = read(file);
       const variable = /^ENV\s.*\b(\w+_DB)=\/data\//m.exec(text)![1];

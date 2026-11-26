@@ -41,6 +41,12 @@ export function noCalendar(error: unknown): 'hidden' | 'unbound' | null {
   if (error.status === 404) return 'hidden';
   return error.status === 400 && error.message === 'Ditt konto har ingen kalender kopplad.' ? 'unbound' : null;
 }
+/**
+ * A read that its system would not answer because it needs the account the person links there (D147): the capability
+ * route's 400 with this code. The page then offers the link where the read's content would be.
+ */
+export const needsAccount = (error: unknown): boolean =>
+  error instanceof ApiError && error.code === 'authorization-required';
 /** A capability read whose refusal means "nothing to show" (D96: a person with no talks system): `null` instead of an error. */
 export const unlessRefused = <T>(read: Promise<T>): Promise<T | null> =>
   read.catch((error: unknown) => {

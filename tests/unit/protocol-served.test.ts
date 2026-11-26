@@ -1202,6 +1202,19 @@ describe('a capability about an entity (D97)', () => {
         }),
         { path: 'installation[0].output', anchor: 'rule-installation-holdings-output' },
       ],
+      [
+        'a linked account beside delegation',
+        edited(talks, m => {
+          m.delegation = { audience: 'appraisals' };
+          m.linkedAccount = { resource: 'https://appraisals.example.test' };
+        }),
+        { path: 'linkedAccount', anchor: 'rule-acts-as-one-way' },
+      ],
+      [
+        'a linked account whose address carries a query',
+        edited(talks, m => (m.linkedAccount = { resource: 'https://appraisals.example.test/?tenant=1' })),
+        { path: 'linkedAccount.resource', anchor: 'rule-acts-as-one-way' },
+      ],
     ];
     const placed = new Set<string>();
     for (const [what, document, expected, id] of cases) {

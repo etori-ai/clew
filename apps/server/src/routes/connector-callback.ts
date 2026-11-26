@@ -49,6 +49,8 @@ const STATUS = {
   'not-found': 404,
   unavailable: 503,
   unknown: 503,
+  // The target's system needs the person's linked account (D147): a refusal of the person, as `denied` is.
+  'authorization-required': 403,
 } as const satisfies Record<ProtocolErrorCode, 400 | 403 | 404 | 503>;
 export function connectorCallback(deps: ConnectorCallbackDeps) {
   const { registry } = deps;

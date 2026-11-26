@@ -2339,6 +2339,33 @@
           "additionalProperties": false,
           "description": "The connector acts as the person against its system with a token Clew obtains by token exchange."
         },
+        "linkedAccount": {
+          "type": "object",
+          "required": [
+            "resource"
+          ],
+          "properties": {
+            "resource": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "The address of the system the connector calls, as Clew and the person's browser reach it: an http or https address without credentials, a query or a fragment. Clew looks for the system's authorization server from it (RFC 9728, RFC 8414) and names it as the `resource` the token is for (RFC 8707). Part of what an administrator approves (D144)."
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$",
+                "maxLength": 200
+              },
+              "uniqueItems": true,
+              "maxItems": 20,
+              "description": "The scopes the connector needs at the system's authorization server. Left out, Clew asks for none and the system gives its default."
+            }
+          },
+          "additionalProperties": false,
+          "description": "The connector acts as the person against its system with a token the system's own authorization server issued, which the person links once and Clew keeps (D147)."
+        },
         "documents": {
           "type": "boolean",
           "description": "Implements POST /clew/documents for authorised, versioned binary document reads (D79)."
@@ -2842,6 +2869,11 @@
                     {
                       "type": "string",
                       "const": "unknown"
+                    },
+                    {
+                      "type": "string",
+                      "const": "authorization-required",
+                      "description": "The connector's system would not take the person's token, answered with status 403. From a connector that declares `linkedAccount` it tells Clew the link is lost: the person is asked to link their account again (D147). Clew answers a caller the same when a person has no linked account, without calling the connector."
                     }
                   ]
                 },
@@ -2887,6 +2919,11 @@
             {
               "type": "string",
               "const": "unknown"
+            },
+            {
+              "type": "string",
+              "const": "authorization-required",
+              "description": "The connector's system would not take the person's token, answered with status 403. From a connector that declares `linkedAccount` it tells Clew the link is lost: the person is asked to link their account again (D147). Clew answers a caller the same when a person has no linked account, without calling the connector."
             }
           ]
         },
@@ -6895,6 +6932,33 @@
       },
       "additionalProperties": false,
       "description": "The connector acts as the person against its system with a token Clew obtains by token exchange."
+    },
+    "LinkedAccount": {
+      "type": "object",
+      "required": [
+        "resource"
+      ],
+      "properties": {
+        "resource": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "The address of the system the connector calls, as Clew and the person's browser reach it: an http or https address without credentials, a query or a fragment. Clew looks for the system's authorization server from it (RFC 9728, RFC 8414) and names it as the `resource` the token is for (RFC 8707). Part of what an administrator approves (D144)."
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$",
+            "maxLength": 200
+          },
+          "uniqueItems": true,
+          "maxItems": 20,
+          "description": "The scopes the connector needs at the system's authorization server. Left out, Clew asks for none and the system gives its default."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The connector acts as the person against its system with a token the system's own authorization server issued, which the person links once and Clew keeps (D147)."
     },
     "View": {
       "anyOf": [

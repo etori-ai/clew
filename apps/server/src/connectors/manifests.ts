@@ -49,7 +49,7 @@ export const pendingOffer = (row: {
     : undefined;
 
 /** The top-level fields the diff names on their own lines; every other field that changed is listed in `fields`. */
-const NAMED = new Set(['id', 'capabilities', 'areas', 'uses', 'delegation']);
+const NAMED = new Set(['id', 'capabilities', 'areas', 'uses', 'delegation', 'linkedAccount']);
 
 /** The fields of two objects whose values differ, by name, sorted. */
 const changedKeys = (before: object | undefined, after: object | undefined, skip: ReadonlySet<string> = new Set()) =>
@@ -68,7 +68,8 @@ const changedKeys = (before: object | undefined, after: object | undefined, skip
  * What changed between the approved manifest and an offered one, as the review and the audit row show it: capabilities
  * and areas, each changed one with the fields that changed in it (a widened `scope` or `roles` is what an administrator
  * weighs), the other systems' reads the connector calls back as the person (`uses`), the audience whose token it is
- * handed (`delegation`), and every other field by name.
+ * handed (`delegation`), the system its people link an account of their own at (`linkedAccount`, D147), and every
+ * other field by name.
  */
 export function manifestDiff(approved: ConnectorManifest | undefined, offered: ConnectorManifest): ManifestDiff {
   const names = (m?: ConnectorManifest) => new Set((m?.capabilities ?? []).map(c => c.name));
@@ -102,6 +103,10 @@ export function manifestDiff(approved: ConnectorManifest | undefined, offered: C
     usesAfter = new Set(offered.uses ?? []);
   const from = approved?.delegation?.audience ?? null,
     to = offered.delegation?.audience ?? null;
+  const account = (m?: ConnectorManifest) =>
+    m?.linkedAccount ? { resource: m.linkedAccount.resource, scopes: m.linkedAccount.scopes ?? [] } : null;
+  const accountFrom = account(approved),
+    accountTo = account(offered);
   // The capabilities and areas both manifests have, in another order: a change of what is drawn in which order, which
   // the review names, so an offer is never a review with nothing in it.
   const reordered = (a: string[], b: string[]) => a.join('\n') !== b.join('\n');
@@ -131,6 +136,7 @@ export function manifestDiff(approved: ConnectorManifest | undefined, offered: C
     usesAdded: minus(usesAfter, usesBefore),
     usesRemoved: minus(usesBefore, usesAfter),
     ...(from !== to ? { delegation: { from, to } } : {}),
+    ...(sameManifest(accountFrom, accountTo) ? {} : { linkedAccount: { from: accountFrom, to: accountTo } }),
     fields,
     same: sameManifest(approved, offered),
   };

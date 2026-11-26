@@ -879,3 +879,113 @@ describe("the Nextcloud API adapter, against Nextcloud's recorded answers", () =
     await expect(nextcloud.pending('not-a-token')).rejects.toBeInstanceOf(SourceDenied);
   });
 });
+
+describe('with an account the person links at Nextcloud (D147)', () => {
+  const RESOURCE = 'https://moln.example';
+  function linked() {
+    const nextcloud = createFixtureApproval({ now: () => at });
+    const service = createConnector({
+      jwks: testJwks,
+      secret,
+      source: nextcloud,
+      now: () => at,
+      linkedAccount: { resource: RESOURCE },
+    });
+    const connectorFetch: FetchLike = (input, init) => service.handle(new Request(input, init));
+    /** The token Clew holds for each person's link. */
+    const held = new Map<string, string>();
+    const refused: string[] = [];
+    const registry = new Registry();
+    registry.register(
+      remoteConnector(parseManifest(service.manifest, ID), {
+        url: 'http://nextcloud-approval',
+        key: secret,
+        assert: assertionFor(ID, secret),
+        fetch: connectorFetch,
+        linked: {
+          token: async actor => held.get(actor.id) ?? '',
+          refused: async actor => {
+            refused.push(actor.id);
+          },
+        },
+      }),
+    );
+    const code = (attempt: Promise<unknown>) =>
+      attempt.then(
+        () => 'answered',
+        error => String((error as { code?: string }).code),
+      );
+    return { service, registry, connectorFetch, held, refused, code };
+  }
+
+  test('the manifest declares a linked account where it declared delegation, and nothing else differs', async () => {
+    const { service, connectorFetch } = linked();
+    const manifest = service.manifest as Record<string, unknown>;
+    expect(manifestProblems(manifest, ID)).toEqual([]);
+    expect(manifest.linkedAccount).toEqual({ resource: RESOURCE });
+    expect(manifest.delegation).toBeUndefined();
+    const { linkedAccount: _linked, areas, ...rest } = manifest;
+    const { delegation: _delegation, areas: delegatedAreas, ...delegated } = ncaManifest as Record<string, unknown>;
+    expect(rest).toEqual(delegated);
+    // The scan needs no session, so it is said to run at night too.
+    expect(JSON.stringify(areas)).toContain('Varje natt');
+    expect(JSON.stringify(delegatedAreas)).not.toContain('Varje natt');
+    const sign = (key: string) => assertionFor(ID, key);
+    const report = await checkConnector({
+      key: secret,
+      url: 'http://nextcloud-approval',
+      id: ID,
+      assert: sign(secret),
+      assertForeign: sign('another-secret-entirely'),
+      fetch: connectorFetch,
+    });
+    expect(report.findings.filter(f => f.level === 'fail')).toEqual([]);
+  });
+
+  test('reads and scans as the person with the linked token, with no session behind the call', async () => {
+    const w = linked();
+    w.held.set(hillevi.id, tokenFor('hillevi'));
+    const rows = (await w.registry.run<{ rows: Row[] }>(hillevi, `${ID}.pending`, {})).rows;
+    expect(rows.length).toBeGreaterThan(0);
+    const scanned = await w.registry.scanOne(hillevi, ID);
+    expect(scanned.observation?.completeness).toBe('complete');
+    expect(scanned.drafts.length).toBe(rows.length);
+    expect(w.refused).toEqual([]);
+  });
+
+  test('a token Nextcloud refuses, or none, is authorization-required on a read and on the scan, and Clew is told', async () => {
+    const w = linked();
+    w.held.set(hillevi.id, tokenFor('hillevi', { exp: at / 1000 - 60 }));
+    expect(await w.code(w.registry.run(hillevi, `${ID}.pending`, {}))).toBe('authorization-required');
+    expect((await w.registry.scanOne(hillevi, ID)).observation?.completeness).toBe('authorization-required');
+    expect(w.refused).toEqual([hillevi.id, hillevi.id]);
+    // No token at all reaches the connector only when nothing answers for links; it says the same.
+    const answer = await w.connectorFetch('http://nextcloud-approval/clew/capabilities/' + ID + '.pending', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization:
+          'Bearer ' +
+          (await assertionFor(ID, secret)(hillevi, [], {
+            path: `/clew/capabilities/${ID}.pending`,
+            body: JSON.stringify({ actor: hillevi, input: {} }),
+          })),
+        'x-clew-connector-key': secret,
+      },
+      body: JSON.stringify({ actor: hillevi, input: {} }),
+    });
+    expect(answer.status).toBe(403);
+    expect(((await answer.json()) as { error: { code: string; message: string } }).error).toEqual({
+      code: 'authorization-required',
+      message: 'Nextcloud behöver ditt konto. Koppla ditt konto och försök igen.',
+    });
+  });
+
+  test('an account under another name than the person’s is denied, and the link is left for them to take away', async () => {
+    const w = linked();
+    w.held.set(hillevi.id, tokenFor('hassan'));
+    expect(await w.code(w.registry.run(hillevi, `${ID}.pending`, {}))).toBe('denied');
+    expect((await w.registry.scanOne(hillevi, ID)).observation?.completeness).toBe('authorization-required');
+    expect(w.refused).toEqual([]);
+  });
+});

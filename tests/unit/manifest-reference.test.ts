@@ -187,6 +187,8 @@ describe('the field list', () => {
         'capabilities[].menu.icon',
         'facts[].attributes',
         'delegation.audience',
+        'linkedAccount.resource',
+        'linkedAccount.scopes',
         'header.capability',
         'uses',
         'scan',
@@ -486,6 +488,14 @@ describe('the rules', () => {
       'hello',
     ],
     'id-matches': [hello, 'other'],
+    // One way to act as the person (D147): token exchange or a linked account, and an address Clew can discover from.
+    'acts-as-one-way': [
+      broken(hello, m => {
+        m.delegation = { audience: 'hello' };
+        m.linkedAccount = { resource: 'https://hello.example.test' };
+      }),
+      'hello',
+    ],
     'name-prefixed': [
       broken(hello, m => {
         m.capabilities[2].name = 'other.thing';
@@ -791,6 +801,7 @@ describe('the renderings', () => {
       'installation[]',
       'facts[]',
       'delegation',
+      'linkedAccount',
       'assistants',
       'header',
     ]);
@@ -812,7 +823,7 @@ describe('the renderings', () => {
     expect(data.headers.get('access-control-allow-origin')).toBe('*');
     const body = await data.json();
     expect(body.fields.map((f: { path: string }) => f.path)).toEqual(paths);
-    expect(body.sections.length).toBe(9);
+    expect(body.sections.length).toBe(10);
     const redirect = await routes.request('http://clew.local/manifest-reference', { redirect: 'manual' });
     expect(redirect.status).toBe(302);
     expect(redirect.headers.get('location')).toBe('/protocol/manifest');

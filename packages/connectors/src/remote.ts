@@ -18,7 +18,7 @@ import {
   type InstallationRead,
   type SourceErrorCode,
 } from './index';
-import { connectorProblems } from './validation';
+import { actsAsProblems, connectorProblems } from './validation';
 import {
   ASK_ROUTE,
   CallResponseSchema,
@@ -57,6 +57,15 @@ export interface RemoteTransport {
    * reads answer `denied` and are never sent.
    */
   installation?: (binding: AssertionBinding) => Promise<string>;
+  /**
+   * For a manifest that declares `linkedAccount` (D147): `token` is the access token of the account this actor linked
+   * at the connector's system, fresh, sent as the delegated token on every call a delegating connector gets one on,
+   * with or without a session. It throws a `CapabilityError`: `authorization-required` when the person has no link
+   * the system accepts (nothing is sent), `unavailable` when the system's authorization server cannot be asked.
+   * `refused` is told when the connector answers that the system would not take the token. Without it such a
+   * connector is called with no token and refuses the person.
+   */
+  linked?: { token(actor: Actor): Promise<string>; refused(actor: Actor, token: string): Promise<void> };
   fetch?: FetchLike;
   /** Milliseconds before a call counts as unavailable. */
   timeoutMs?: number;
@@ -137,7 +146,7 @@ export function manifestProblems(
   const problems: string[] = [];
   if (expectedId && manifest.id !== expectedId)
     problems.push(`Manifest id "${manifest.id}" does not match the configured id "${expectedId}".`);
-  problems.push(...connectorProblems(manifest, compile));
+  problems.push(...connectorProblems(manifest, compile), ...actsAsProblems(manifest));
   return problems;
 }
 /** Validate a manifest document; returns the typed manifest or throws with the schema problems listed, else the first rule it breaks. */
@@ -231,13 +240,19 @@ export async function fetchManifest(
 function unavailable(source: string) {
   return new CapabilityError(`${source} svarar inte just nu.`, 'unavailable');
 }
-/** The person's own token for the connector's system (D26), beside the assertion that proves Clew. Only when the manifest asks and a session is behind the call. */
+/**
+ * The person's own token for the connector's system, beside the assertion that proves Clew. With `delegation` (D26)
+ * only when a session is behind the call; with `linkedAccount` (D147) the token of the account the actor linked.
+ */
 export const DELEGATED_TOKEN_HEADER = 'x-clew-delegated-token';
 async function delegated(
   manifest: ConnectorManifest,
+  transport: RemoteTransport,
+  actor: Actor,
   clew: Clew | undefined,
   source: string,
 ): Promise<string | undefined> {
+  if (manifest.linkedAccount) return transport.linked?.token(actor);
   if (!manifest.delegation || !clew?.delegate) return undefined;
   try {
     return await clew.delegate(manifest.delegation.audience);
@@ -245,6 +260,20 @@ async function delegated(
     throw new CapabilityError(`${source} kunde inte få din behörighet just nu.`, 'unavailable');
   }
 }
+/**
+ * A connector that declares `linkedAccount` answers `authorization-required` with a 403 when its system would not take
+ * the token Clew sent: Clew is told, so the link is lost and the person is asked to link again (D147 item 7).
+ */
+async function tokenRefused(
+  manifest: ConnectorManifest,
+  transport: RemoteTransport,
+  actor: Actor,
+  token: string | undefined,
+) {
+  if (token && manifest.linkedAccount) await transport.linked?.refused(actor, token).catch(() => undefined);
+}
+const refusesToken = (json: unknown, status: number) =>
+  status === 403 && (json as { error?: { code?: unknown } } | null)?.error?.code === 'authorization-required';
 const CAPABILITY_ROUTE = '/clew/capabilities/';
 const DOCUMENTS_ROUTE = '/clew/documents';
 /** How long a source's assistant may be silent, and how long one answer may take in all, before it counts as unavailable. */
@@ -360,7 +389,8 @@ async function post(
 function failWith(json: unknown, status: number, source: string): never {
   const error = (json as { error?: { code?: ProtocolErrorCode; message?: string } } | null)?.error;
   if (error?.code === 'unavailable' || !error?.message) throw unavailable(source);
-  const failed = status === 401 || (error.code === 'denied' && status !== 403);
+  const failed =
+    status === 401 || ((error.code === 'denied' || error.code === 'authorization-required') && status !== 403);
   throw new CapabilityError(error.message, failed ? 'unavailable' : error.code);
 }
 
@@ -464,6 +494,7 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
     ...(c.asks ? { asks: c.asks } : {}),
     ...(c.effect ? { effect: c.effect } : {}),
     run: async (actor, input, clew) => {
+      const token = await delegated(manifest, transport, actor, clew, source);
       const { status, json } = await post(
         transport,
         source,
@@ -471,7 +502,7 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
         actor,
         // How the actor stands to each key the input names (D117), bound with the input by the assertion.
         { actor: published(actor), input, ...told(clew) },
-        await delegated(manifest, clew, source),
+        token,
         clew.chain,
         clew.operationId,
         clew.signal,
@@ -479,7 +510,10 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
         c.name === manifest.assistants?.list ? false : undefined,
       );
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);
-      if ('error' in json) failWith(json, status, source);
+      if ('error' in json) {
+        if (refusesToken(json, status)) await tokenRefused(manifest, transport, actor, token);
+        failWith(json, status, source);
+      }
       return json.output;
     },
   }));
@@ -504,8 +538,8 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
                 authorization:
                   'Bearer ' + (await transport.assert(actor, clew.chain, { path: DOCUMENTS_ROUTE, body: text })),
                 ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
-                ...(manifest.delegation
-                  ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, clew, source)) ?? '' }
+                ...(manifest.delegation || manifest.linkedAccount
+                  ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, transport, actor, clew, source)) ?? '' }
                   : {}),
               },
               body: text,
@@ -581,8 +615,8 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
                       'Bearer ' +
                       (await transport.assert(actor, clew.chain, { path: ASK_ROUTE, body: text, callback: false })),
                     ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
-                    ...(manifest.delegation
-                      ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, clew, source)) ?? '' }
+                    ...(manifest.delegation || manifest.linkedAccount
+                      ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, transport, actor, clew, source)) ?? '' }
                       : {}),
                   },
                   body: text,
@@ -629,6 +663,7 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
     ...(manifest.facts ? { facts: manifest.facts } : {}),
     ...(manifest.header ? { header: manifest.header.capability } : {}),
     ...(manifest.delegation ? { delegation: manifest.delegation } : {}),
+    ...(manifest.linkedAccount ? { linkedAccount: manifest.linkedAccount } : {}),
     areas: manifest.areas.map(a => ({
       id: a.id,
       title: a.title,
@@ -662,17 +697,22 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
       ? {
           // A connector that acts as the person gets their token on a scan their live session asked for (D26).
           scan: async (actor: Actor, clew: Clew) => {
+            const token = await delegated(manifest, transport, actor, clew, source);
             const { status, json } = await post(
               transport,
               source,
               '/clew/scan',
               actor,
               { actor: published(actor) },
-              await delegated(manifest, clew, source),
+              token,
               clew.chain,
               undefined,
               clew.signal,
             );
+            if (refusesToken(json, status)) {
+              await tokenRefused(manifest, transport, actor, token);
+              failWith(json, status, source);
+            }
             if (status >= 400 || !Value.Check(ScanResponseSchema, json)) throw unavailable(source);
             return json;
           },

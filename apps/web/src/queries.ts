@@ -249,6 +249,17 @@ export const documentQuery = (request: DocumentRequest) =>
     retry: false,
   });
 
+/**
+ * The systems the person can link an account at (D147), with what each link is: read by the shell on every page (the
+ * person's menu leads to their list only when there is one, and a return from a system is said by the system's name),
+ * by Hem and by the list itself. The person's own presses write the cache; a link lost meanwhile is read again when the
+ * cards' read says a system needs the account (`useFollowAccounts`).
+ */
+export const linkedAccountsQuery = queryOptions({
+  queryKey: keys.linkedAccounts,
+  queryFn: () => api.linkedAccounts(),
+  staleTime: 60_000,
+});
 /** Administration (D23). The detail read keeps its 400 for the page to turn into "Anslutningen finns inte". */
 /** The shared header (D88): what the person's header connector lists for them, read once per visit. */
 export const headerQuery = queryOptions({ queryKey: keys.header, queryFn: () => api.header(), staleTime: Infinity });
@@ -449,6 +460,13 @@ export const adminQueries = {
   appearance: queryOptions({ queryKey: keys.admin.appearance, queryFn: () => api.admin.appearance() }),
   connector: (id: string) =>
     queryOptions({ queryKey: keys.admin.connector(id), queryFn: () => api.admin.connector(id) }),
+  /** Where the connector's people link their own account (D147); the system is asked what it names, so never retried. */
+  connectorAccount: (id: string) =>
+    queryOptions({
+      queryKey: keys.admin.connectorAccount(id),
+      queryFn: async () => (await api.admin.account(id)).account,
+      retry: false,
+    }),
   preview: (id: string, role: Role) =>
     queryOptions({ queryKey: keys.admin.preview(id, role), queryFn: () => api.admin.preview(id, role) }),
   /** Modeller (D24): the list, one model, one provider. A 400 on a detail is "finns inte", as for a connector. */

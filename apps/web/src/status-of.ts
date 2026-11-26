@@ -38,7 +38,18 @@ export { nothingToDecide } from './work-items';
  * it, "Påminn mig" is its offer as on any item that waits, and "Det blev inte gjort" under ⋯ takes it back.
  */
 export type StatusMoveKind =
-  'check' | 'decide' | 'review' | 'undo' | 'remind' | 'take-up' | 'reopen' | 'hand-on' | 'hand-back' | 'release';
+  | 'check'
+  | 'decide'
+  | 'review'
+  | 'undo'
+  | 'remind'
+  | 'take-up'
+  | 'reopen'
+  | 'hand-on'
+  | 'hand-back'
+  | 'release'
+  /** Leave for the item's system to link the account there again (D147). */
+  | 'link';
 export interface StatusMoveWords {
   kind: StatusMoveKind;
   label: string;
@@ -93,6 +104,11 @@ export interface StatusContext {
   reviewed?: boolean | undefined;
   /** A dismissed item the server still lets the person reopen. */
   reopenable?: boolean | undefined;
+  /**
+   * The item's system needs the account the person links there (D147), as the person's list says now: `needed` while
+   * it has none the system accepts, `linked` once it has. Absent where the page does not know.
+   */
+  account?: 'needed' | 'linked' | undefined;
 }
 
 const capital = (s: string) => (s ? s[0]!.toLocaleUpperCase('sv-SE') + s.slice(1) : s);
@@ -100,6 +116,8 @@ const lower = (s: string) => s.toLocaleLowerCase('sv-SE');
 /** A sentence of the source's without its full stop, to stand as a title or before more words. */
 const bare = (s: string) => s.trim().replace(/\.$/, '');
 const CHECK: StatusMoveWords = { kind: 'check', label: 'Kontrollera status', offer: false };
+/** The account the item's system needs is linked there again, from the item (D147). */
+const LINK: StatusMoveWords = { kind: 'link', label: 'Koppla ditt konto igen', offer: false };
 const REVIEW: StatusMoveWords = { kind: 'review', label: 'Visa granskning', offer: false };
 const REMIND: StatusMoveWords = { kind: 'remind', label: 'Påminn mig', offer: true };
 const HAND_BACK: StatusMoveWords = { kind: 'hand-back', label: 'Det blev inte gjort', offer: true };
@@ -240,6 +258,31 @@ function executionNotice(thread: Thread, kind: StatusKind, ctx: StatusContext): 
       { title: 'Kan inte skickas än', description: `${source} kräver en aktiv inloggning. Åtgärden väntar.` },
       [CHECK, release(thread)],
     );
+  // The system needs the account the person linked there, and it had none it accepts when the decision was to be sent
+  // (D147). Nothing was sent. While the account is still missing the move is to link it; linking does not send what
+  // waited, so once it is linked the move is the check that sends it.
+  if (reason === 'needs-link') {
+    if (ctx.account === 'needed')
+      return withMoves(
+        {
+          title: 'Kan inte skickas än',
+          description: `${source} godtar inte längre ditt konto. Ditt beslut är sparat och inget har skickats.`,
+        },
+        [LINK, release(thread)],
+      );
+    if (ctx.account === 'linked')
+      return withMoves(
+        {
+          title: 'Har inte skickats',
+          description: `Ditt konto i ${source} är kopplat igen. Ditt beslut är sparat och inget har skickats.`,
+        },
+        [CHECK, release(thread)],
+      );
+    return withMoves({ title: 'Kan inte skickas än', description: `${source} behöver ditt konto. Åtgärden väntar.` }, [
+      CHECK,
+      release(thread),
+    ]);
+  }
   if (reason === 'authority-revoked')
     return withMoves(
       { title: 'Kan inte skickas än', description: 'Behörigheten har ändrats. Åtgärden väntar på kontroll.' },

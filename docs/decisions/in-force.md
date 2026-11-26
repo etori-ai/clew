@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**148 in force**: 99 accepted and 49 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
+**149 in force**: 99 accepted and 50 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -94,6 +94,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D122 · Clew keys its own records about a person by the person's id](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) | 2026-11-12 | provisional |  |
 | [D123 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) | 2026-11-12 | provisional |  |
 | [D135 · A person with several assignments sees the work of all of them, and a source is told every one](D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) | 2026-11-20 | provisional |  |
+| [D147 · A person links an account once where a system issues its own credential, and Clew holds the token](D147-a-person-links-an-account-once-where-a-system-issues-its-own-credential.md) | 2026-11-25 | provisional |  |
 
 ## Platform
 

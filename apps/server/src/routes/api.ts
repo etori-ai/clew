@@ -54,6 +54,8 @@ import {
 } from '../composition';
 import { Type, type Static } from 'typebox';
 import { executions } from '../composition/executions';
+import { linkedAccounts } from '../composition/linked-accounts';
+import { linkedAccountRoutes } from './linked-accounts';
 import { withFollowedUnits } from '../composition/people';
 import { jobs } from '../composition/jobs-across-systems';
 import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/connectors/protocol';
@@ -219,6 +221,8 @@ api.get('/changes', c =>
 );
 /** Human approval is deliberately separate from capabilities and model tools. */
 api.route('/executions', executionRoutes({ registry, executions }));
+/** A person's account at a system that issues its own credential (D147): linked once, by the person, never by a tool. */
+api.route('/linked-accounts', linkedAccountRoutes(linkedAccounts));
 /** A job across systems (D55): assemble the proposal for one fact as the person (nothing is written), approve it once (the human decision endpoint, never a tool), read it back. */
 api.post('/jobs/assemble', async c => {
   const { fact } = await body(c.req.raw, validators.fact as unknown as (value: unknown) => value is FactEnvelope),

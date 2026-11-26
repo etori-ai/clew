@@ -1713,6 +1713,15 @@
       "status": "accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question; item 3 amended 2026-11-24, finding `BL-15` of the baseline review: the connector protocol's viewer script is served with the notices of every package it bundles, not Scalar's alone, each at the version the script holds, and one package Clew's install does not hold, `unist-util-find-after`, credited from a kept text)",
       "date": "2026-11-23",
       "area": "platform"
+    },
+    {
+      "key": "D147-a-person-links-an-account-once-where-a-system-issues-its-own-credential",
+      "number": 147,
+      "path": "docs/decisions/D147-a-person-links-an-account-once-where-a-system-issues-its-own-credential.md",
+      "title": "D147 · A person links an account once where a system issues its own credential, and Clew holds the token",
+      "status": "provisional (drafted 2026-11-24 with four choices left to the product owner, who took them on 2026-11-25: \"as drafted, and include a service we can test this with, either a custom one via orbstack or some widely available service\". Nothing is built. Accepted when item 15 holds. The number is the next unused one on 2026-11-25 and is taken again from the generated index when the change lands on `main`.)",
+      "date": "2026-11-25",
+      "area": "identity, integrations"
     }
   ],
   "documents": [
@@ -1925,6 +1934,14 @@
         "Run and check",
         "What it never does",
         "Unverified"
+      ]
+    },
+    {
+      "path": "connectors/purchasing/README.md",
+      "title": "purchasing: a generic purchasing system that issues its own credential, as a fixture connector",
+      "category": "integrator-guide",
+      "headings": [
+        "Run it"
       ]
     },
     {
@@ -2654,6 +2671,15 @@
       "title": "D146 · Clew is licensed under the AGPL, as Eneo is",
       "category": "decision-history",
       "headings": []
+    },
+    {
+      "path": "docs/decisions/D147-a-person-links-an-account-once-where-a-system-issues-its-own-credential.md",
+      "title": "D147 · A person links an account once where a system issues its own credential, and Clew holds the token",
+      "category": "decision-history",
+      "headings": [
+        "As built",
+        "Sources"
+      ]
     },
     {
       "path": "docs/decisions/D15-postgres-scheduler-now-temporal-later.md",
@@ -3749,6 +3775,7 @@
         "A leaver's record and its erasure",
         "Organisation tree",
         "User delegation",
+        "Linked accounts",
         "Connector signing authority"
       ]
     },

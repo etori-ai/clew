@@ -439,6 +439,11 @@ function locate(problem: string, document: Manifestish): Located {
       : { path };
   }
   if (problem.startsWith('Manifest id ')) return { rule: 'id-matches', path: 'id' };
+  // One way to act as the person (D147): both declared, or a linked system's address Clew cannot discover from.
+  if (problem.startsWith('The manifest declares both delegation and linkedAccount'))
+    return { rule: 'acts-as-one-way', path: 'linkedAccount' };
+  if (problem.startsWith('linkedAccount.resource must be '))
+    return { rule: 'acts-as-one-way', path: 'linkedAccount.resource' };
   const capability = /^Capability ([^\s:]+)(.*)$/s.exec(problem);
   if (capability) {
     const [, name, rest] = capability;

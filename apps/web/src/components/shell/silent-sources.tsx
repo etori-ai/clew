@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Button, HStack, Text, useAnnounce } from '@clew/ui';
-import { areasQuery, threadsQuery } from '../../queries';
+import { areasQuery, linkedAccountsQuery, threadsQuery } from '../../queries';
+import { needingAccount } from '../../linked-accounts';
 import { useMarks } from '../../marks';
 
 /**
@@ -39,11 +40,19 @@ export function useSilentSources() {
   const threads = useQuery(threadsQuery).data;
   const areas = useQuery(areasQuery);
   const marks = useMarks();
-  const named = !areas.isPending;
+  // A system that needs the account the person links there (D147) answers; it is said by its own line, with the button
+  // that links the account, never as a system that does not answer. The list waits for that read too, or its failure:
+  // before it such a system would be announced as silent, and what is said aloud cannot be taken back.
+  const linked = useQuery(linkedAccountsQuery);
+  const accounts = linked.data?.accounts;
+  const named = !areas.isPending && !linked.isPending;
   const sources = threads?.sources;
   const list = useMemo(() => {
     if (!named || !sources) return EMPTY;
-    const down = sources.filter(s => s.error);
+    const linking = accounts ? needingAccount(accounts) : [];
+    const down = sources.filter(
+      s => s.error && !(s.error === 'authorization-required' && linking.includes(s.connector)),
+    );
     if (!down.length) return EMPTY;
     return down.map(s => ({
       connector: s.connector,
@@ -53,9 +62,24 @@ export function useSilentSources() {
         'En källa',
       since: s.lastSuccess,
     }));
-  }, [named, sources, marks, threads?.threads]);
+  }, [named, sources, marks, threads?.threads, accounts]);
   const of = useCallback((connector: string) => list.find(s => s.connector === connector), [list]);
-  return { list, of, named };
+  // What a row of an open item asks: whether what it shows may be old. That holds for a system that does not answer,
+  // and for one that has no account of the person's it accepts (D147): a scan that cannot read closes no card, so the
+  // cards Clew kept are as they were when the account last worked. The accounts' own read says which systems those
+  // are; the cards' read says it too where no session stands behind the scan, and there it is not taken up again.
+  const without = useMemo(
+    () => [
+      ...(accounts ? needingAccount(accounts) : []),
+      ...(sources ?? []).filter(s => s.error === 'authorization-required').map(s => s.connector),
+    ],
+    [accounts, sources],
+  );
+  const stale = useCallback(
+    (connector: string) => list.some(s => s.connector === connector) || without.includes(connector),
+    [list, without],
+  );
+  return { list, of, stale, named };
 }
 
 /** Who has been told in this session (one query client per signed-in session, D33): a system is said once. */

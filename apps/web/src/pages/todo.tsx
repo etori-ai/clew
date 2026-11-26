@@ -539,7 +539,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
    */
   const aboutLine = (r: QueueRow, source?: string | null) => {
     const t = r.thread;
-    const stale = t.state === 'open' && !!silent.of(t.connector);
+    const stale = t.state === 'open' && silent.stale(t.connector);
     // D135: the unit the work item is about, for a person with several.
     const words = [source, workUnit(user, t), nameOf(t), r.facts.why].filter(Boolean).join(DOT);
     return stale ? (words ? staleWhy(words) : 'Kan vara gammal') : words;

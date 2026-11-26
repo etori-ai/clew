@@ -1258,6 +1258,7 @@ export const connectorDetail = (
   // hello reads the calendar back as the person, as its fixture does (D144: shown on Översikt).
   uses: c.id === 'hello' ? ['calendar.today'] : [],
   delegation: null,
+  linkedAccount: false,
   offered: null,
   createdBy: 'person:mikael',
   updatedBy: 'person:mikael',
