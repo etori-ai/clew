@@ -975,7 +975,7 @@ export class MockApi {
       return this.staffForbidden || this.employee
         ? route.fulfill({
             status: 403,
-            json: { error: 'Sidan Personal är för den som är chef för en enhet.', code: 'denied' },
+            json: { error: 'Sidan Personal är för den som är chef.', code: 'denied' },
           })
         : json(this.staff);
     if (path.startsWith('/admin/')) {

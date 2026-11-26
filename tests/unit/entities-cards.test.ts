@@ -8,6 +8,7 @@ import {
   type ThreadDraft,
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { nameManagers } from '../named-managers';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
@@ -88,6 +89,8 @@ function directory() {
       },
     };
   };
+  // D147: who reports to whom is said on the employments, as a directory says it.
+  nameManagers(store.state);
   return { staff, persona, state: s, add: person };
 }
 

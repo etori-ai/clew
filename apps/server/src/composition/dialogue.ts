@@ -33,7 +33,11 @@ const dialogueStore = dialogueStoreWithCards({ durable: ledger, cancel: cancelDu
 const followed: Followed = async persona => {
   if (persona.role !== 'manager') return [];
   const reach = await staff.reach(persona);
-  return followedFrom(persona.id, reach.managed);
+  // D147: the reader's list also holds units they do not lead, where somebody employed reports to them.
+  const led = new Set(reach.units.filter(u => u.role === 'manager').map(u => u.unitId));
+  // Someone who also manages the reader is not their report, so what they lead is not followed up through them.
+  const reports = reach.managed.map(u => ({ ...u, people: u.people.filter(p => !reach.above.includes(p.id)) }));
+  return followedFrom(persona.id, reports, led);
 };
 export const dialogue = dialogueUsecases({ store: dialogueStore, followed, clock, ids });
 /** Erasing cards from the operator CLI leaves their sleeping workflows to observe the missing timers (D86). */

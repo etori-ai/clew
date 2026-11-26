@@ -63,7 +63,7 @@ A position ([D108](../decisions/D108-competence-is-an-owned-domain-one-holding-t
 
 ### Assign the manager to the unit they lead
 
-If your HR system marks Anna with `isManager: true`, resolve which unit she leads in your provisioner. If it records a manager against each employee, use those records to identify the responsible manager for each unit. In both cases Clew expects a membership for Anna in `unit-manager:<unitId>`. A flag, title or SCIM Enterprise User `manager` field on a user grants no manager placement.
+Clew takes two facts about a manager, and neither is worked out from the other. That Anna leads a unit is a membership of `unit-manager:<unitId>`: if your HR system marks her with `isManager: true`, resolve which unit she leads in your provisioner. That somebody reports to Anna is said on that person's employment, as `managerId` ([below](#say-who-each-person-reports-to)). A flag, a title or the SCIM Enterprise User `manager` field on a user grants no manager placement and names nobody's manager.
 
 For Anna to lead Utbildning, create its manager group with `POST /Groups` after creating `unit:110` and Anna. Substitute Anna’s returned user ID below. If the manager group already exists, add Anna with the membership patch above, targeting the manager group's Clew ID.
 
@@ -76,12 +76,31 @@ For Anna to lead Utbildning, create its manager group with `POST /Groups` after 
 }
 ```
 
-This membership gives Anna her placement as manager. Send one such membership per unit she leads. Clew derives her direct reports from the unit tree and the people placed on it. Managers on the same unit share its staff. Individual exceptions to that reporting line cannot be expressed with a field on the employee. [Reporting-line rules](writing-a-provisioner.md#the-organisation-tree)
+This membership gives Anna her placement as manager. Send one such membership per unit she leads. It lets her read what is about the unit and follow it up. It does not say who reports to her.
+
+### Say who each person reports to
+
+Send the manager on each of the person's [current employments](writing-a-provisioner.md#current-employments), as `managerId`: the Clew ID of the manager's user, the same value a membership carries. If your HR system records a manager against each employment, send that. For Lena to report to Anna:
+
+```json
+{
+  "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+  "Operations": [
+    {
+      "op": "replace",
+      "path": "urn:clew:params:scim:schemas:extension:employment:2.0:User:employments",
+      "value": [{ "unitId": "110", "title": "Lärare", "managerId": "<Anna's Clew user ID>" }]
+    }
+  ]
+}
+```
+
+The manager must be a user Clew already holds, so create the people first and send the managers after. Clew reads the reporting line from this and from nothing else ([D147](../decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md)): a person whose employments name no manager has none, two managers of one unit each see only the people whose employments name them, and a deactivated manager is nobody's manager. When a manager leaves, send the employments of the people who reported to them again with the new manager. [Reporting-line rules](writing-a-provisioner.md#the-organisation-tree)
 
 | To give someone… | Use this group's `externalId` |
 |---|---|
 | An employee placement | `unit:110` |
-| Responsibility for unit 110 | `unit-manager:110`. Membership supplies a manager placement on its own. Clew derives reporting lines from placements and the unit tree. |
+| Responsibility for unit 110 | `unit-manager:110`. Membership supplies a manager placement on its own. It names nobody's manager: that is `managerId` on the employment. |
 | Permission to administer users | `capability:admin.users`. Give the first administrator this membership as well as a unit placement. |
 
 When a manager changes, add the incoming manager and remove the outgoing manager’s membership when their responsibility ends. Adding the successor alone leaves both managers responsible for the unit. A directory group such as `ad:larare` can also be mapped to a capability by a Clew administrator. An active person needs an employee or manager placement to sign in. [Group semantics and reserved keys](writing-a-provisioner.md#groups)

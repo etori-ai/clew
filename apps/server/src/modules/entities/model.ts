@@ -15,9 +15,8 @@ export interface DirectoryPerson {
   userName: string | null;
   enabled: boolean;
   /**
-   * Set on a unit the reader manages for someone who is not placed on it and reports to its manager from a unit below it
-   * (D99 item 4): the units below that they lead or are placed on, with their role there. Absent for someone placed on
-   * the unit.
+   * The other units this person leads, for a report who leads units of their own (D147); absent for someone who leads
+   * none. The unit they are listed under is not among them: their `role` says whether they lead that one.
    */
   below?: Array<DirectoryUnit & { role: 'manager' | 'employee' }>;
 }
@@ -27,21 +26,18 @@ export interface DirectoryUnit {
 }
 /** A person on a unit the reader manages, as Personal lists them (D99). */
 export interface ReachPerson extends DirectoryPerson {
-  /** Their role on the unit itself; for someone who reports to it from below, the role they hold there. Absent: unknown. */
+  /** Their role on the unit they are listed under: `manager` where they lead it. Absent: unknown. */
   role?: 'manager' | 'employee';
 }
 /**
- * Where the reader stands: every unit they are assigned to, the units they manage with the people Personal lists on
- * them except the reader, and their place on D99's line. `above`: who manages the reader, the other leaders of the
- * nearest led unit above a unit they manage or of a unit they are placed on. `lineReports`: the co-managers of a unit
- * the reader manages whose line runs to a unit above it that the reader leads too. Personal lists everyone placed on a
- * managed unit, co-managers included; who reports to the reader is narrower (`reportsTo`).
+ * Where the reader stands: every unit they are assigned to, their reports under the unit of the employment that names
+ * the reader as manager, a unit the reader leads being there whether or not it has any (D147), and `above`, who manages
+ * the reader: the active managers their own employments name. Nothing of it is read from the tree.
  */
 export interface Reach {
   units: Array<DirectoryUnit & { role: 'manager' | 'employee' }>;
   managed: Array<DirectoryUnit & { people: ReachPerson[] }>;
   above: readonly string[];
-  lineReports: readonly string[];
 }
 /**
  * The directory (composition: the people module's `staffUsecases`). `person` finds an active person of the reader's

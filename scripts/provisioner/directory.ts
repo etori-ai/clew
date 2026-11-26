@@ -41,6 +41,14 @@ export interface Employment {
   /** Of full time, from 0 to 100. */
   employmentPercentage?: number;
 }
+/**
+ * An employment as the source has it: what Clew is sent, and the manager by the source's own id for them. The push
+ * sends the manager as the `id` Clew gave that person (`managerId`), which a source cannot know before it has asked.
+ */
+export interface DirectoryEmployment extends Employment {
+  /** The `externalId` of the person this employment reports to (D147). Absent: the source names nobody. */
+  manager?: string;
+}
 export type { Capability };
 export interface DirectoryUnit {
   id: string;
@@ -68,7 +76,7 @@ export interface DirectoryPerson {
   familyName: string;
   email: string;
   phoneNumbers?: DirectoryPhone[];
-  employments?: Employment[];
+  employments?: DirectoryEmployment[];
   /** The unit the person works in. */
   department: string;
   /** Whether the person manages that unit. */
@@ -738,6 +746,47 @@ function newHire(today = new Date()): DirectoryPerson {
     capabilities: [],
   };
 }
+/**
+ * D147: who each employment reports to, as a source says it and never read from the tree by Clew. On a unit somebody
+ * leads, the people who do not lead it report to one of those who do, taken in turn, so a unit with two managers has
+ * its people divided between them. On a unit nobody leads they report to whoever leads the nearest unit above that
+ * anybody does, and so does a person who leads the unit themselves. Nobody reports to themselves, the municipality's
+ * own head reports to nobody, and an employment that already names its manager keeps it.
+ */
+function withManagers(people: DirectoryPerson[]): DirectoryPerson[] {
+  const leads = (p: DirectoryPerson, unitId: string) =>
+      p.active && ((p.manager && p.department === unitId) || !!p.alsoManages?.includes(unitId)),
+    leadersOf = (unitId: string, but: DirectoryPerson) => people.filter(p => p !== but && leads(p, unitId)),
+    above = (unitId: string) => {
+      const unit = UNITS.find(u => u.id === unitId);
+      return unit && parentOf(unit);
+    },
+    turn = new Map<string, number>();
+  const managerOf = (person: DirectoryPerson, unitId: string): string | undefined => {
+    const seen = new Set<string>();
+    for (
+      let at: string | undefined = leads(person, unitId) ? above(unitId) : unitId;
+      at && !seen.has(at);
+      at = above(at)
+    ) {
+      seen.add(at);
+      const found = leadersOf(at, person);
+      if (!found.length) continue;
+      // Only the unit's own people are divided between its managers: someone who reports past it takes the first.
+      const n = at === unitId ? (turn.get(at) ?? 0) : 0;
+      if (at === unitId) turn.set(at, n + 1);
+      return found[n % found.length]!.externalId;
+    }
+    return undefined;
+  };
+  return people.map(person => {
+    const employments = person.employments?.map(job => {
+      const manager = job.manager ?? managerOf(person, job.unitId);
+      return manager ? { ...job, manager } : job;
+    });
+    return employments ? { ...person, employments } : person;
+  });
+}
 export const developmentDirectory: Directory = {
   complete: true,
   units: UNITS.map(unit => {
@@ -746,6 +795,6 @@ export const developmentDirectory: Directory = {
   }),
   groups: GROUPS,
   positions: POSITIONS,
-  people: [...handwritten, ...generated(), newHire()].map(inArea).map(withPositions),
+  people: withManagers([...handwritten, ...generated(), newHire()].map(inArea).map(withPositions)),
 };
 export const fullName = (p: DirectoryPerson) => `${p.givenName} ${p.familyName}`;

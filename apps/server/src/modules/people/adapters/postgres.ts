@@ -846,6 +846,41 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
         .where(eq(schema.assignments.personId, personId))
         .orderBy(schema.assignments.unitId);
     },
+    async reportsTo(organisationId, managerId) {
+      const rows = await tx
+        .select({
+          id: schema.people.id,
+          name: schema.people.name,
+          userName: schema.people.userName,
+          email: schema.people.email,
+          enabled: schema.people.enabled,
+          unitId: schema.employments.unitId,
+        })
+        .from(schema.employments)
+        .innerJoin(schema.people, eq(schema.people.id, schema.employments.personId))
+        .where(and(eq(schema.employments.managerId, managerId), eq(schema.people.organisationId, organisationId)))
+        .orderBy(sql`${schema.people.id} collate "C"`, schema.employments.position);
+      const found = new Map<string, Awaited<ReturnType<ProvisionTx['reportsTo']>>[number]>();
+      for (const { unitId, ...person } of rows) {
+        const held = found.get(person.id) ?? { ...person, unitIds: [], leads: [] };
+        if (!held.unitIds.includes(unitId)) held.unitIds.push(unitId);
+        found.set(person.id, held);
+      }
+      const ids = [...found.keys()];
+      for (let at = 0; at < ids.length; at += MEMBER_BATCH)
+        for (const row of await tx
+          .select({ personId: schema.assignments.personId, unitId: schema.assignments.unitId })
+          .from(schema.assignments)
+          .where(
+            and(
+              inArray(schema.assignments.personId, ids.slice(at, at + MEMBER_BATCH)),
+              eq(schema.assignments.role, 'manager'),
+            ),
+          )
+          .orderBy(sql`${schema.assignments.unitId} collate "C"`))
+          found.get(row.personId)!.leads.push(row.unitId);
+      return [...found.values()];
+    },
     async unitPeople(unitIds, organisationId) {
       if (!unitIds.length) return {};
       const rows = await tx

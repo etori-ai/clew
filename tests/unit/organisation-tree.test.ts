@@ -14,8 +14,8 @@ import { refusingNul } from '../refusing-nul';
 
 /**
  * The organisation tree (D99) on the memory adapter: a `unit:` group carries the unit above it, the server refuses
- * what would break the tree, a manager's reports follow the line and not the branch, and an administrator reads what
- * a push left.
+ * what would break the tree, and an administrator reads what a push left. A manager's reports are the people whose
+ * employments name them, wherever the tree puts either of them (D147).
  */
 const BASE = 'https://clew.test/scim/v2';
 const ORG = 'sundsvall';
@@ -74,6 +74,26 @@ function harness() {
       },
       BASE,
     );
+  /**
+   * The directory sends the person's employments: on this unit, one for each manager named (D147), which is how a
+   * directory says two managers.
+   */
+  const employ = (name: string, unitId: string, ...managerNames: string[]) =>
+    scim.patchUser(
+      p,
+      id(name),
+      {
+        schemas: [SCIM.patch],
+        Operations: [
+          {
+            op: 'replace',
+            path: SCIM.employment + ':employments',
+            value: managerNames.map(manager => ({ unitId, managerId: id(manager) })),
+          },
+        ],
+      },
+      BASE,
+    );
   const persona = (name: string, capabilities: Capability[] = [], organisationId = ORG): AuthenticatedContext => ({
     id: id(name) ?? name,
     name,
@@ -96,7 +116,7 @@ function harness() {
     expect(error).toBeInstanceOf(ScimError);
     return error as ScimError;
   };
-  return { store, scim, p, person, id, unit, managers, groups, persona, refusal };
+  return { store, scim, p, person, id, unit, managers, employ, groups, persona, refusal };
 }
 
 /** A manager of `ORG` signed in, by person id. */
@@ -175,7 +195,7 @@ describe('the organisation tree over SCIM (D99)', () => {
     expect(store.state.audit.at(-1)).toMatchObject({ action: 'grant.derived', subject: 'person:' + id('chef') });
   });
   test('a unit belongs to the organisation that pushed it: another organisation names no manager of it and no unit for its managers, and Personal reads its own organisation (D101)', async () => {
-    const { scim, unit, managers, person, id, refusal, store } = harness();
+    const { scim, unit, managers, employ, person, id, refusal, store } = harness();
     await person('anna');
     await person('karin');
     await unit('it', 'IT', null, ['anna']);
@@ -212,8 +232,15 @@ describe('the organisation tree over SCIM (D99)', () => {
     expect(store.state.groups.size).toBe(stored + 1);
     expect(store.state.audit.slice(audited).map(a => a.action)).toEqual(['scim.group.created']);
     expect(store.state.grants.get(olle.id)).toBeUndefined();
-    // An assignment stored before the rule held: the unit's manager is still shown their own organisation's people only.
+    // Anna's employment on the unit names Karin, and so does one of the other organisation's Olle, stored with his
+    // assignment before the rules held (D147 refuses a manager of another organisation where it is written): the manager
+    // is still shown their own organisation's people only.
+    await employ('anna', 'it', 'karin');
     store.state.assignments.set(olle.id, [{ unitId: 'it', role: 'employee' }]);
+    store.state.users.set(olle.id, {
+      ...store.state.users.get(olle.id)!,
+      employments: [{ unitId: 'it', managerId: id('karin') }],
+    });
     const staff = staffUsecases({ store });
     expect(
       (await staff.overview(harnessPersona(id('karin')))).units.find(u => u.unitId === 'it')?.people.map(q => q.name),
@@ -552,7 +579,7 @@ describe('the organisation tree over SCIM (D99)', () => {
   });
 });
 
-describe('a manager works with their direct reports (D99)', () => {
+describe('a manager works with their direct reports (D147)', () => {
   /**
    * Kommunstyrelsekontoret (karin leads; stina is placed there)
    *   └ KSK Avdelningar (nobody leads; olle is placed there)
@@ -560,6 +587,10 @@ describe('a manager works with their direct reports (D99)', () => {
    *       │   └ Utveckling (ulla and uno lead; max and mia are placed there)
    *       └ HR (nobody leads; hanna is placed there)
    *           └ Lön (lars leads; lisa is placed there)
+   *
+   * Who reports to whom is said on the employments and read from nowhere else (D147). Everybody's employment is on the
+   * unit they are placed on or lead, and names the nearest manager above them, which is the line D99 read from this
+   * tree: max and mia have two employments each, since two people lead their unit.
    */
   async function organisation() {
     const h = harness();
@@ -575,6 +606,20 @@ describe('a manager works with their direct reports (D99)', () => {
     await h.managers('it', ['david']);
     await h.managers('utv', ['ulla', 'uno']);
     await h.managers('lon', ['lars']);
+    const line: Array<[name: string, unitId: string, ...managers: string[]]> = [
+      ['stina', 'ksk', 'karin'],
+      ['olle', 'avd', 'karin'],
+      ['david', 'it', 'karin'],
+      ['ida', 'it', 'david'],
+      ['ulla', 'utv', 'david'],
+      ['uno', 'utv', 'david'],
+      ['max', 'utv', 'ulla', 'uno'],
+      ['mia', 'utv', 'ulla', 'uno'],
+      ['hanna', 'hr', 'karin'],
+      ['lars', 'lon', 'karin'],
+      ['lisa', 'lon', 'lars'],
+    ];
+    for (const [name, unitId, ...managers] of line) await h.employ(name, unitId, ...managers);
     const staff = staffUsecases({ store: h.store });
     const reports = async (name: string) =>
       (await staff.overview(h.persona(name))).units.map(u => ({
@@ -583,83 +628,85 @@ describe('a manager works with their direct reports (D99)', () => {
       }));
     return { ...h, staff, reports };
   }
-  test('a manager high up sees the people placed with them and the managers directly below, never the people those managers lead', async () => {
+  /** Karin's list while the directory is as `organisation` pushed it. */
+  const KARINS = [
+    { unit: 'Digitalisering och IT', people: ['David manager'] },
+    { unit: 'HR', people: ['Hanna employee'] },
+    { unit: 'Kommunstyrelsekontoret', people: ['Stina employee'] },
+    { unit: 'KSK Avdelningar', people: ['Olle employee'] },
+    { unit: 'Lön', people: ['Lars manager'] },
+  ];
+  test('a manager high up sees those whose employments name them, each under the unit they are employed on, never the people those managers lead', async () => {
     const { reports } = await organisation();
-    expect(await reports('karin')).toEqual([
-      {
-        unit: 'Kommunstyrelsekontoret',
-        people: [
-          'David manager Digitalisering och IT:manager',
-          // HR has no manager, so the line passes through it: hanna reports up, and so does the manager below her.
-          'Hanna employee HR:employee',
-          'Lars manager Lön:manager',
-          'Olle employee KSK Avdelningar:employee',
-          'Stina employee',
-        ],
-      },
-    ]);
+    // Karin leads Kommunstyrelsekontoret alone. The other cards are units she does not lead, there because somebody
+    // employed on them reports to her; D99 listed those four on her own unit's card, as reporting from below. David
+    // and Lars lead the unit they are listed under, and Ida, Ulla, Uno and Lisa, who name them, are not hers.
+    expect(await reports('karin')).toEqual(KARINS);
   });
-  test('a deactivated manager leads nobody: the line passes through their unit, and the tree says the same', async () => {
+  test('a deactivated manager is nobody’s manager, and those who name them are on no list until the directory names another: only the tree still reads the line through their unit', async () => {
     const h = await organisation();
-    // The directory deactivates David; his memberships, and so his assignment as manager of IT, stay.
+    // The directory deactivates David; his memberships stay, and so do the employments that name him.
     await h.scim.deleteUser(h.p, h.id('david'));
-    const [ksk] = await h.reports('karin');
-    expect(ksk!.people).toEqual([
-      'David manager Digitalisering och IT:manager',
-      'Hanna employee HR:employee',
-      'Ida employee Digitalisering och IT:employee',
-      'Lars manager Lön:manager',
-      'Olle employee KSK Avdelningar:employee',
-      'Stina employee',
-      'Ulla manager Utveckling:manager',
-      'Uno manager Utveckling:manager',
+    // D99 passed the line through his unit and gave Karin Ida, Ulla and Uno. D147 reads nothing from the tree: her
+    // list is who names her, David still among them and marked as deactivated.
+    expect(await h.reports('karin')).toEqual(KARINS);
+    const cardOf = async (unitId: string) =>
+      (await h.staff.overview(h.persona('karin'))).units.find(u => u.unitId === unitId)!.people;
+    expect((await cardOf('it')).map(q => [q.name, q.enabled])).toEqual([['David', false]]);
+    // Meanwhile the three report to nobody: a guessed manager would be the wrong person with access.
+    for (const name of ['ida', 'ulla', 'uno']) expect((await h.staff.reach(h.persona(name))).above).toEqual([]);
+    // The directory names Karin on Ida's employment, and Ida is hers, under the unit she is employed on.
+    await h.employ('ida', 'it', 'karin');
+    expect((await cardOf('it')).map(q => [q.name, q.enabled])).toEqual([
+      ['David', false],
+      ['Ida', true],
     ]);
+    expect((await h.staff.reach(h.persona('ida'))).above).toEqual([h.id('karin')]);
+    // Administration › Organisation reads the tree as D99 did: nobody leads IT, so its line is the unit above's.
     const tree = await organisationUsecases({ store: h.store }).overview(h.persona('karin', ['admin.users']));
     expect(tree.units.find(u => u.unitId === 'it')).toMatchObject({ managers: [], placed: 1, line: 'above' });
   });
-  test('a manager in the middle sees their own people and the managers of the unit below, and a manager at the edge sees what they saw before', async () => {
+  test('a manager in the middle sees their own people and, under the unit below, its managers; a manager at the edge sees their reports and never the co-manager', async () => {
     const { reports } = await organisation();
+    // David leads IT alone. Ulla and Uno are employed on Utveckling, which they lead, so that is the card they are on.
     expect(await reports('david')).toEqual([
-      {
-        unit: 'Digitalisering och IT',
-        people: ['Ida employee', 'Ulla manager Utveckling:manager', 'Uno manager Utveckling:manager'],
-      },
+      { unit: 'Digitalisering och IT', people: ['Ida employee'] },
+      { unit: 'Utveckling', people: ['Ulla manager', 'Uno manager'] },
     ]);
-    // D94 as it was: everyone assigned to the unit, a co-manager with their role, never the reader.
-    expect(await reports('ulla')).toEqual([
-      { unit: 'Utveckling', people: ['Max employee', 'Mia employee', 'Uno manager'] },
-    ]);
+    // D94 listed everyone assigned to the unit, a co-manager with their role. Uno's employment names David, so Uno is
+    // not on Ulla's list nor Ulla on Uno's; Max and Mia name them both and are on each.
+    for (const name of ['ulla', 'uno'])
+      expect(await reports(name)).toEqual([{ unit: 'Utveckling', people: ['Max employee', 'Mia employee'] }]);
   });
-  test('a manager who is still listed on the units below, as a flat push did it, gets a card per unit and nobody twice', async () => {
+  test('a manager who is also pushed as leading the units below, as a flat push did it, gains nobody by it: the cards are the same, and a report who leads another unit too carries it', async () => {
     const h = await organisation();
-    // karin is also pushed as a manager of IT, beside david.
-    await h.scim.replaceGroup(
-      h.p,
-      [...h.store.state.groups.values()].find(g => g.externalId === 'unit-manager:it')!.id,
-      {
-        externalId: 'unit-manager:it',
-        displayName: 'Chefer · it',
-        members: [{ value: h.id('david') }, { value: h.id('karin') }],
-      },
-      BASE,
-    );
+    const leaders = (unitId: string, names: string[]) =>
+      h.scim.replaceGroup(
+        h.p,
+        [...h.store.state.groups.values()].find(g => g.externalId === 'unit-manager:' + unitId)!.id,
+        {
+          externalId: 'unit-manager:' + unitId,
+          displayName: 'Chefer · ' + unitId,
+          members: names.map(name => ({ value: h.id(name) })),
+        },
+        BASE,
+      );
+    // karin is also pushed as a manager of IT, beside david, and david as one of Utveckling, beside ulla and uno.
+    await leaders('it', ['david', 'karin']);
+    await leaders('utv', ['ulla', 'uno', 'david']);
+    // Leading IT gives Karin nobody: Ida names David, and so do Ulla and Uno. David is on her list once, under the unit
+    // of his employment, with the other unit he leads.
     expect(await h.reports('karin')).toEqual([
-      {
-        unit: 'Digitalisering och IT',
-        people: ['David manager', 'Ida employee', 'Ulla manager Utveckling:manager', 'Uno manager Utveckling:manager'],
-      },
-      {
-        unit: 'Kommunstyrelsekontoret',
-        people: [
-          'Hanna employee HR:employee',
-          'Lars manager Lön:manager',
-          'Olle employee KSK Avdelningar:employee',
-          'Stina employee',
-        ],
-      },
+      { unit: 'Digitalisering och IT', people: ['David manager Utveckling:manager'] },
+      ...KARINS.slice(1),
+    ]);
+    // Nor does leading Utveckling give David Max and Mia, who name Ulla and Uno.
+    expect(await h.reports('david')).toEqual([
+      { unit: 'Digitalisering och IT', people: ['Ida employee'] },
+      { unit: 'Utveckling', people: ['Ulla manager', 'Uno manager'] },
     ]);
   });
-  test('without a tree nothing changes, and someone who manages no unit is still refused', async () => {
+  test('nothing is read from the place: someone on the reader’s unit is theirs once an employment says so, a unit the reader leads has its card with nobody on it, and someone with no unit to lead and no report is still refused', async () => {
     const h = harness();
     for (const name of ['hillevi', 'anna', 'petra']) await h.person(name);
     await h.unit('skola', 'Bergsåkers skola', null, ['anna']);
@@ -667,6 +714,11 @@ describe('a manager works with their direct reports (D99)', () => {
     await h.managers('skola', ['hillevi']);
     await h.managers('ekonomi', ['petra']);
     const staff = staffUsecases({ store: h.store });
+    // Anna is placed on the unit Hillevi leads, and no employment names Hillevi: the unit has its card, and nobody on it.
+    expect((await staff.overview(h.persona('hillevi'))).units).toEqual([
+      { unitId: 'skola', unitLabel: 'Bergsåkers skola', people: [] },
+    ]);
+    await h.employ('anna', 'skola', 'hillevi');
     expect((await staff.overview(h.persona('hillevi'))).units).toEqual([
       {
         unitId: 'skola',
@@ -682,6 +734,9 @@ describe('a manager works with their direct reports (D99)', () => {
           },
         ],
       },
+    ]);
+    expect((await staff.overview(h.persona('petra'))).units).toEqual([
+      { unitId: 'ekonomi', unitLabel: 'Ekonomi', people: [] },
     ]);
     await expect(staff.overview(h.persona('anna'))).rejects.toBeInstanceOf(ForbiddenError);
   });

@@ -484,6 +484,24 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
         .map(a => ({ unitId: a.unitId, unitLabel: state.units.get(a.unitId)?.label ?? a.unitId, role: a.role }))
         .sort((a, b) => a.unitId.localeCompare(b.unitId));
     },
+    async reportsTo(organisationId, managerId) {
+      const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+      return [...state.users.values()]
+        .filter(u => u.organisationId === organisationId && u.employments.some(job => job.managerId === managerId))
+        .sort((a, b) => byCodeUnit(a.id, b.id))
+        .map(u => ({
+          id: u.id,
+          name: u.name,
+          userName: u.userName,
+          email: u.email,
+          enabled: u.enabled,
+          unitIds: [...new Set(u.employments.filter(job => job.managerId === managerId).map(job => job.unitId))],
+          leads: (state.assignments.get(u.id) ?? [])
+            .filter(a => a.role === 'manager')
+            .map(a => a.unitId)
+            .sort(byCodeUnit),
+        }));
+    },
     async unitPeople(unitIds, organisationId) {
       const byUnit: Awaited<ReturnType<ProvisionTx['unitPeople']>> = {};
       for (const [personId, list] of [...state.assignments.entries()].sort(([a], [b]) => a.localeCompare(b))) {

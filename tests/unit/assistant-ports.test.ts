@@ -10,6 +10,7 @@ import {
   type Connector,
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { nameManagers } from '../named-managers';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
 import { personKey } from '../../apps/server/src/modules/entities/domain';
@@ -32,8 +33,9 @@ const ORG = 'poc';
 type Placement = { unitId: string; role: 'manager' | 'employee' };
 
 /**
- * Bergsåkers skola is led by Hillevi; Anna, Erik (`Erik.S`), Hassan and Nils, who has no user name, work there. Olle
- * leads Fritids below it, with Sven.
+ * Bergsåkers skola is led by Hillevi; Anna, Erik (`Erik.S`), Hassan and Nils, who has no user name, work there and
+ * report to her. Olle leads Fritids and reports to her too; Sven, on Fritids, reports to Olle. Who reports to whom is
+ * written on the employments (D147) by `nameManagers`.
  */
 function directory() {
   const store = memoryProvisionStore(),
@@ -114,6 +116,8 @@ function directory() {
     reader: async actor => persona(actor.id),
     holders: memoryPersonKeys(s).holders,
   });
+  // D147: who reports to whom is said on the employments, as a directory says it.
+  nameManagers(store.state);
   return { persona, staff, relations };
 }
 
@@ -251,11 +255,13 @@ async function refusal(call: Promise<unknown>) {
 describe("the assistant's function ports as the server binds them (AM-13)", () => {
   test('people: everyone the asker manages, by Clew’s key and the user name a read takes; nobody who cannot be asked about, nobody for an employee', async () => {
     const w = world();
+    // Each under the unit of the employment that names her (D147): Olle on Fritids, which he leads, not on her school.
+    // Sven reports to Olle and is nobody of hers.
     expect(await w.ports.people!(w.persona('hillevi'))).toEqual([
       { key: 'anna', userName: 'anna', name: 'Anna Lindqvist', unit: 'Bergsåkers skola' },
       { key: 'erik', userName: 'Erik.S', name: 'Erik Sandström', unit: 'Bergsåkers skola' },
       { key: 'hassan', userName: 'hassan', name: 'Hassan Ali', unit: 'Bergsåkers skola' },
-      { key: 'olle', userName: 'olle', name: 'Olle Ek', unit: 'Bergsåkers skola' },
+      { key: 'olle', userName: 'olle', name: 'Olle Ek', unit: 'Fritids' },
     ]);
     expect(await w.ports.people!(w.persona('hassan'))).toEqual([]);
   });

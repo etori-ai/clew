@@ -257,8 +257,8 @@ export interface Staffing {
   tree: UnitNode[];
 }
 /**
- * The actor's reports (D99 item 4, D117's `managed`: never a co-manager whose line runs elsewhere and never the actor's
- * own manager), each with what the layers match on, and the organisation's tree; read on every call, never stored.
+ * The actor's reports (D147, D117's `managed`: the people whose employments name the actor as manager, never someone
+ * who also manages the actor), each with what the layers match on, and the organisation's tree; read on every call, never stored.
  * Someone who manages no unit gets `{ manages: false, reports: [], tree }`.
  */
 export type Staff = (persona: AuthenticatedContext) => Promise<Staffing>;
@@ -278,9 +278,9 @@ export interface BoardingDirectory {
   /** The names of these units of the organisation, by id; a unit the tree does not hold is absent. */
   unitLabels(organisationId: string, unitIds: readonly string[]): Promise<Map<string, string>>;
   /**
-   * Whom the person reports to now (D99 item 4): from each unit they are assigned to (from the unit above, where they
-   * lead it), up to the nearest unit somebody active leads, its leaders, never the person. Empty for someone who reports
-   * to nobody.
+   * Whom the person reports to now (D147): the active people of the organisation their current employments name as
+   * manager, each once and by id, never the person. Empty for someone whose employments name nobody; nothing is read
+   * from the tree.
    */
   lineManagers(organisationId: string, personId: string): Promise<string[]>;
 }

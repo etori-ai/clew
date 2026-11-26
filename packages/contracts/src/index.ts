@@ -4432,22 +4432,19 @@ export interface UserAdminRow {
   /** D121: the relations to people the person holds by grant, from the grant projection; empty when none. */
   relationGrants: RelationGrant[];
 }
-/** Personal (D94): a person on a unit the signed-in manager manages, as the page lists them. No token, no subject. */
+/** Personal (D94, D147): someone who reports to the signed-in manager, as the page lists them. No token, no subject. */
 export interface StaffPerson {
   id: string;
   name: string;
   userName: string | null;
   email: string | null;
-  /**
-   * The person's role on this unit, not their active one. For a person who reports here from a unit below (D99), the
-   * role they hold there: `manager` when they lead one of those units.
-   */
+  /** The person's role on the unit they are listed under, not their active one: `manager` where they lead it. */
   role: Role;
   enabled: boolean;
   /**
-   * D99: set for a person who is not assigned to this unit but reports to its manager through the tree: the units
-   * below it that they lead, or are placed on where nobody leads, by label in Swedish order. Absent for a person
-   * assigned to the unit itself.
+   * For Personal (D147): the other units this person leads, by label in Swedish order; absent for someone who leads
+   * none. For Administration › Organisation, which still reads a unit as D99 did: set for a person who is not assigned
+   * to the unit but reports to its manager through the tree, with the units below that they lead or are placed on.
    */
   below?: Array<{ unitId: string; unitLabel: string; role: Role }>;
 }
@@ -4455,13 +4452,15 @@ export interface StaffUnit {
   unitId: string;
   unitLabel: string;
   /**
-   * The manager's reports through this unit (D99), by name in Swedish order: everyone assigned to the unit except the
-   * manager reading, then the managers of the nearest units below that have one, and the people placed on a unit
-   * below that nobody leads. Never the people those managers lead.
+   * The manager's reports under this unit (D147), by name in Swedish order: the people with a current employment on it
+   * that names the reader as manager, never the reader. Empty for a unit the reader leads where nobody reports to them.
    */
   people: StaffPerson[];
 }
-/** The units the manager manages, by label in Swedish order; the server refuses anyone who manages none. */
+/**
+ * The units of the manager's reports and the units the manager leads, by label in Swedish order; the server refuses
+ * someone who leads no unit and whom nobody reports to.
+ */
 export interface StaffOverview {
   units: StaffUnit[];
 }
