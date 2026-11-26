@@ -2437,7 +2437,8 @@ export const EmploymentSchema = object({
   unitId: Type.String(),
   title: Type.Optional(Type.String()),
   employmentType: Type.Optional(Type.String()),
-  startDate: Type.Optional(Type.String({ format: 'date', maxLength: 10 })),
+  // PostgreSQL's date starts the common era at year 0001.
+  startDate: Type.Optional(Type.String({ format: 'date', pattern: '^(?!0000-)', maxLength: 10 })),
   employmentPercentage: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
   /** The id of the person this employment reports to: a user of the same organisation, never the person themselves. */
   managerId: Type.Optional(Type.String()),
@@ -2448,9 +2449,8 @@ const PersonProfileSchema = object({
   email: Type.Union([Type.String(), Type.Null()]),
   phoneNumbers: Type.Array(DirectoryPhoneSchema),
   /**
-   * `unitLabel` is absent when the unit has been removed since the directory sent the employment. The manager of an
-   * employment is not part of a profile: it is told to the provisioner that wrote it and to nobody else until a
-   * decision says who reads it (D147).
+   * `unitLabel` is absent when the unit has been removed since the directory sent the employment. SCIM returns the
+   * manager to the organisation's provisioners. A person's profile omits it (D147).
    */
   employments: Type.Array(object({ ...shownEmployment, unitLabel: Type.Optional(Type.String()) })),
   title: Type.Union([Type.String(), Type.Null()]),

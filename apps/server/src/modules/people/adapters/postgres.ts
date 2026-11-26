@@ -624,11 +624,13 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
       return found;
     },
     async readUser(organisationId, id, lock) {
-      const query = tx
-        .select(userColumns)
-        .from(schema.people)
-        .where(and(eq(schema.people.id, id), eq(schema.people.organisationId, organisationId)));
-      const [row] = await (lock ? query.for(ROW_LOCK) : query);
+      const where = and(eq(schema.people.organisationId, organisationId), eq(schema.people.id, id));
+      if (lock) {
+        // After waiting for a writer, the next statement sees the employments it committed with the person.
+        const [held] = await tx.select({ id: schema.people.id }).from(schema.people).where(where).for(ROW_LOCK);
+        if (!held) return undefined;
+      }
+      const [row] = await tx.select(userColumns).from(schema.people).where(where);
       return row && userRecord(row);
     },
     async findUser(by, value) {
