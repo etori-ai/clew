@@ -52,8 +52,12 @@ files were read; it was not run.
    ([D144](D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md)), and D144 item 3's
    review names it as it names the audience of `delegation`: the address, the scopes, and the issuer Clew found
    there. That issuer and the client identity in use are kept with the approved manifest and shown on the
-   connector's page. A discovery that later answers another issuer sends nobody anywhere and stops the existing
-   links from being used until an administrator approves it.
+   connector's page. A discovery that later answers another issuer sends nobody new anywhere until an administrator
+   approves it. The links to the approved server are used as before meanwhile, for as long as the system accepts
+   them, and stop being used when the new server is approved. (Amended by the product owner on 2026-11-26, who kept
+   what was built: the item first said that the existing links stop being used at once. A system whose metadata is
+   wrong for an hour then cuts nobody off, and a system that has really moved refuses the old tokens itself, which
+   loses those links one by one in the ordinary way.)
 
 5. **The link is the person's own record.** One row per person and connector, keyed by the person's id
    ([D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)): the issuer, the resource, the
@@ -307,10 +311,10 @@ Where it differs from the items above:
 
 - **Item 4.** The approval is kept in the module's own table, not with the approved manifest. Until 2026-11-25 only
   an operator made it, with `bun scripts/connector-link.ts <connector id>`; the connector's page now does (below).
-  A system that names another server sends nobody new anywhere, as the item says, but the links to the approved
-  server are used as before until an administrator approves the new one: a call sends the token it holds and
-  refreshes it at the approved server's own addresses. The item says the links stop being used meanwhile. The page
-  says what is built, and which of the two should hold is the product owner's to decide.
+  A system that names another server sends nobody new anywhere, and the links to the approved server are used as
+  before until an administrator approves the new one: a call sends the token it holds and refreshes it at the
+  approved server's own addresses. The item first said that the links stop being used meanwhile; the product owner
+  kept what was built on 2026-11-26 and the item is amended.
 - **Item 6.** The button does not go to a route that redirects. The page asks `POST /api/linked-accounts/:connector/link`
   for the system's address, with the session's CSRF token, and then sends its window there (or leaves for it in the
   same tab): a link that could be started by a plain address could be started by any other site.
