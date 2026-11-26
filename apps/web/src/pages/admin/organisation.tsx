@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { OrganisationUnit, SessionUser, StaffPerson } from '@clew/contracts';
+import type { OrganisationPerson, OrganisationUnit, SessionUser, StaffPerson } from '@clew/contracts';
 import {
   Avatar,
   AvatarGroup,
@@ -48,18 +48,22 @@ import { AdminShell } from './shell';
  * a row of an Astryx `TreeList` under the unit above it, with who leads it as avatars and a mark for what an import left
  * wrong. On a wide screen the tree is a ledger: the unit's own count and its branch's stand in a column at the row's end,
  * in words, so the sizes are read down the tree; a phone keeps them in the sentence under the name. What a push left
- * wrong is one card above the tree, "Att rätta i katalogen", a row per problem: people with no unit, units with people
- * and no manager on them or above them, units people are on that the catalogue never named. The units it names open
- * the overlay.
+ * wrong is one card above the tree, "Att rätta i katalogen", a row per problem: people with no unit, people who report
+ * to nobody, units with people that nobody leads, units people are on that the catalogue never named. The units it
+ * names open the overlay.
+ *
+ * Three facts are kept apart (D147): a person is placed on a unit, a person leads a unit, and a person reports to the
+ * people their employments name. The tree shows the first two. Whom a person reports to is said on the person's own row
+ * in the overlay and is never read from the tree, so a unit without managers is led by nobody, whatever stands above it.
  *
  * A row opens the unit as a focused overlay over the tree (D83): an end `Drawer` on a desktop, a `BottomSheet` on a
  * phone, at `/admin/organisation?unit=<unitId>`. The overlay is walked (D124 items 1 to 3): "Ingår i …" steps to the
- * unit above, and a unit named in "Rapporterar till …" or listed under "Enheter under" steps down, each without closing
- * the overlay and without a new entry in the history, so Back still closes it. It walks before it lists: the step up,
- * the status line, who leads the unit, who reports to them from the units below, the units below that no reporting row
- * names, and last the others placed on the unit, one line each. A step moves the focus to the unit's heading and says
- * "Visar <enhet>". Closing gives the focus back to what opened the overlay when no step was taken; after a step it goes
- * to the tree's row for the unit shown, with the tree open down to it.
+ * unit above, a unit listed under "Enheter under" steps down and a unit named in "Rapporterar till …" steps to it
+ * wherever it stands in the tree, each without closing the overlay and without a new entry in the history, so Back
+ * still closes it. It walks before it lists: the step up, the status line, who leads the unit, who reports to them from
+ * other units, the units below that no reporting row names, and last the others placed on the unit. A step moves the
+ * focus to the unit's heading and says "Visar <enhet>". Closing gives the focus back to what opened the overlay when no
+ * step was taken; after a step it goes to the tree's row for the unit shown, with the tree open down to it.
  *
  * Nothing here is edited: the tree is the catalogue's, and the page shows what the last import made of it. A unit the
  * server says does not exist (400) is said so without a retry, which cannot help; while a unit is not known, by the tree
@@ -98,13 +102,23 @@ const ancestorsOf = (units: ReadonlyMap<string, OrganisationUnit>, unitId: strin
   }
   return above;
 };
-/** "Chef: Karin Berg": who leads the unit, or where its people's line goes when nobody does. */
-const ledBy = (u: OrganisationUnit) =>
-  u.managers.length
-    ? `${u.managers.length === 1 ? 'Chef' : 'Chefer'}: ${names.format(u.managers.map(m => m.name))}`
-    : u.line === 'above'
-      ? 'Leds från enheten ovanför'
-      : 'Ingen chef';
+/** "Chef: Karin Berg", "Chefer: Karin Berg och Omar Ali": managers by name, as a unit's row and a person's row say it. */
+const managersText = (managers: ReadonlyArray<{ name: string }>) =>
+  `${managers.length === 1 ? 'Chef' : 'Chefer'}: ${names.format(managers.map(m => m.name))}`;
+/** Who leads the unit: its own managers or nobody. The tree passes no line on from the unit above (D147). */
+const ledBy = (u: OrganisationUnit) => (u.managers.length ? managersText(u.managers) : 'Ingen chef');
+/**
+ * Whom a person placed on a unit reports to, as their row says it (D147): the active people their employments name, or
+ * why nobody. The words say the gap, so no colour has to. A deactivated person reports to nobody anyway and has no line.
+ */
+const reportsTo = (p: OrganisationPerson) => {
+  if (!p.enabled) return null;
+  if (p.gap === 'none') return 'Ingen chef angiven';
+  if (p.gap === 'inactive') return 'Chefen är avstängd';
+  // Each names the other as manager, so neither is the other's: the row names whom the ring is with.
+  if (p.gap === 'round') return `Rapporterar i cirkel med ${names.format((p.circle ?? []).map(m => m.name))}`;
+  return p.managers.length ? managersText(p.managers) : null;
+};
 /** "86 med enheterna under": the unit's branch, said only where it holds more than the unit itself. */
 const branchOf = (u: OrganisationUnit) => (u.branch > u.placed ? `${u.branch} med enheterna under` : null);
 /** "Chef: Karin Berg · 2 personer, 86 med enheterna under": who leads the unit and how many it holds, as one line. */
@@ -129,10 +143,15 @@ const leaders = (u: OrganisationUnit, size: 'sm' | 'md' = 'sm') =>
   ) : (
     <Avatar size={size} tooltip={false} aria-hidden {...(u.managers[0] ? { name: u.managers[0].name } : {})} />
   );
-/** What an import left wrong on a unit, as the tree marks it. A unit with units under it may well be empty. */
+/**
+ * What an import left wrong on a unit, as the tree marks it. A unit with units under it may well be empty. "Saknar chef"
+ * is said of the unit, which has people and nobody who leads it; "2 personer utan chef" of the people placed on it who report to
+ * nobody (D147). The two are different facts, and a unit may have either without the other.
+ */
 const marksOf = (u: OrganisationUnit, hasBelow: boolean) => [
   ...(!u.pushed ? [{ label: 'Saknar enhetsgrupp', variant: 'warning' as const }] : []),
   ...(u.line === 'none' && u.placed > 0 ? [{ label: 'Saknar chef', variant: 'warning' as const }] : []),
+  ...(u.unmanaged > 0 ? [{ label: `${people(u.unmanaged)} utan chef`, variant: 'warning' as const }] : []),
   ...(u.placed === 0 && !hasBelow ? [{ label: 'Tom', variant: 'neutral' as const }] : []),
 ];
 /** Swedish list punctuation between nodes: "A", "A och B", "A, B och C". */
@@ -234,7 +253,10 @@ export function AdminOrganisationPage({ user }: { user: SessionUser }) {
   }, [below, selected, shown, search, navigate, mobile]);
   const leaderless = units.filter(u => u.line === 'none' && u.placed > 0),
     unnamed = units.filter(u => !u.pushed),
-    unplaced = query.data?.unplaced ?? 0;
+    unplaced = query.data?.unplaced ?? 0,
+    // D147: how many people report to nobody, each once, and the units that hold them.
+    unmanaged = query.data?.unmanaged ?? 0,
+    gapped = units.filter(u => u.unmanaged > 0);
   /** Where the focus goes when the overlay closes and nothing opened it: the unit's own row, else the tree's first. */
   const focusTree = useCallback(() => {
     const rows = tree.current?.querySelectorAll<HTMLElement>('[role="treeitem"]');
@@ -290,6 +312,20 @@ export function AdminOrganisationPage({ user }: { user: SessionUser }) {
           },
         ]
       : []),
+    ...(unmanaged > 0
+      ? [
+          {
+            mark: 'Utan chef',
+            title: (
+              <>
+                {`${people(unmanaged)} på ${gapped.length} ${gapped.length === 1 ? 'enhet' : 'enheter'} har ingen chef: `}
+                {listed(gapped.map(unitLink))}
+              </>
+            ),
+            text: 'Katalogen anger ingen aktiv chef på deras anställningar, så de står inte på någons lista i Personal och ingen kan agera som deras chef. Rätta chefen på anställningen i katalogen.',
+          },
+        ]
+      : []),
     ...(leaderless.length > 0
       ? [
           {
@@ -300,7 +336,7 @@ export function AdminOrganisationPage({ user }: { user: SessionUser }) {
                 {listed(leaderless.map(unitLink))}
               </>
             ),
-            text: 'Varken enheten eller någon enhet ovanför har en chef, så personerna där rapporterar inte till någon.',
+            text: 'Ingen leder enheten. Personerna där kan ändå ha en chef: vem de rapporterar till anges på deras anställningar.',
           },
         ]
       : []),
@@ -540,24 +576,28 @@ function GroupHeading({ id, title, count }: { id: string; title: string; count: 
 /**
  * One group of people in the overlay: its heading and count, a line about what it holds when one is needed, and the
  * people as a list named by the heading and the unit. Rank shows by size (D124 item 2): the unit's own leaders at 48 px
- * with the e-mail under the name, the people who report to them at 36 px with the unit they lead as the step down, the
- * others one line each at 24 px. No row draws a user name. A group nobody is in is not drawn.
+ * with whom they report to and the e-mail under the name, the people who report to them from other units at 36 px with
+ * the unit they lead as the step to it, the others at 24 px with whom they report to (D147). No row draws a user name.
+ * A group nobody is in is not drawn.
  */
-function PeopleGroup({
+function PeopleGroup<P extends StaffPerson>({
   title,
   unitLabel,
   members,
   size,
   note,
   line,
+  flag,
 }: {
   title: string;
   unitLabel: string;
-  members: StaffPerson[];
+  members: P[];
   size: 'sm' | 'md' | 'lg';
   note?: string;
-  /** The line under a name; without one the row is one line. */
-  line?: (p: StaffPerson) => ReactNode;
+  /** The line under a name; a person it says nothing of has a row of one line. */
+  line?: (p: P) => ReactNode;
+  /** A warning at the row's end for an active person, so the few it is said of are found without reading every line. */
+  flag?: (p: P) => string | undefined;
 }) {
   const id = useId();
   if (members.length === 0) return null;
@@ -567,7 +607,8 @@ function PeopleGroup({
       {note && <Text type="supporting">{note}</Text>}
       <List aria-label={`${title}${DOT}${unitLabel}`} hasDividers edge="flush">
         {members.map(p => {
-          const under = line?.(p);
+          const under = line?.(p),
+            flagged = p.enabled ? flag?.(p) : undefined;
           return (
             <ListItem
               key={p.id}
@@ -584,7 +625,13 @@ function PeopleGroup({
                     ),
                   }
                 : {})}
-              endContent={!p.enabled ? <Badge variant="neutral" label="Avstängd" /> : undefined}
+              endContent={
+                !p.enabled ? (
+                  <Badge variant="neutral" label="Avstängd" />
+                ) : flagged ? (
+                  <Badge variant="warning" label={flagged} />
+                ) : undefined
+              }
             />
           );
         })}
@@ -659,8 +706,8 @@ function UnitSheet({
   const leading = placed.filter(p => p.role === 'manager'),
     others = placed.filter(p => p.role !== 'manager'),
     leadingNames = leading.filter(p => p.enabled).map(p => p.name);
-  // The units below that no reporting row names: one that is led from above and has nobody of its own, or any unit
-  // below a unit nobody leads. The rest are the step down on their manager's row.
+  // The units below that no reporting row names. A reporting row names the units its person leads or is employed on,
+  // wherever they stand in the tree (D147); where one of them is a unit below, that row is the step down to it.
   const stepped = new Set(reports.flatMap(p => (p.below ?? []).map(b => b.unitId)));
   const under = (below.get(unitId) ?? []).filter(u => !stepped.has(u.unitId));
   const marks = unit ? marksOf(unit, (below.get(unitId) ?? []).length > 0).filter(m => m.variant === 'warning') : [];
@@ -669,10 +716,8 @@ function UnitSheet({
     : !unit.pushed
       ? 'Katalogen har fört in personer på enheten men inte enheten själv, så den har varken namn eller plats i trädet.'
       : unit.line === 'none' && unit.placed > 0
-        ? 'Varken enheten eller någon enhet ovanför har en chef, så personerna här rapporterar inte till någon.'
-        : unit.line === 'above'
-          ? 'Enheten har ingen egen chef. Den leds från enheten ovanför.'
-          : null;
+        ? 'Ingen leder enheten. Personerna här kan ändå ha en chef: vem de rapporterar till anges på deras anställningar.'
+        : null;
   const underId = useId();
   const header = (
     <LayoutHeader>
@@ -763,14 +808,15 @@ function UnitSheet({
             unitLabel={title}
             members={leading}
             size="lg"
-            line={p => p.email}
+            line={p => [reportsTo(p), p.email].filter(Boolean).join(DOT)}
+            flag={p => (p.gap ? 'Utan chef' : undefined)}
           />
           <PeopleGroup
             title={`Rapporterar till ${names.format(leadingNames)}`}
             unitLabel={title}
             members={reports}
             size="md"
-            note="Från enheterna under: cheferna närmast under, och de som är placerade på en enhet som ingen leder."
+            note={`Personer på andra enheter som enligt sin anställning rapporterar till ${leadingNames.length === 1 ? 'enhetens chef' : 'någon av enhetens chefer'}.`}
             line={p => {
               const led = (p.below ?? []).filter(b => b.role === 'manager'),
                 steps = led.length ? led : (p.below ?? []);
@@ -807,7 +853,14 @@ function UnitSheet({
               </List>
             </VStack>
           )}
-          <PeopleGroup title="Medarbetare" unitLabel={title} members={others} size="sm" />
+          <PeopleGroup
+            title="Medarbetare"
+            unitLabel={title}
+            members={others}
+            size="sm"
+            line={reportsTo}
+            flag={p => (p.gap ? 'Utan chef' : undefined)}
+          />
         </AsyncContent>
       )}
     </VStack>

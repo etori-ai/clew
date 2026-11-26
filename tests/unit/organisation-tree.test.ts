@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuthenticatedContext, Capability } from '@clew/contracts';
+import type { AuthenticatedContext, Capability, ManagerGap, OrganisationPerson } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../apps/server/src/context';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { SCIM, ScimError } from '../../apps/server/src/modules/people/contracts';
 import {
   applyGroupPatch,
   organisationOf,
+  reportingOf,
   resourceTypes,
   schemaDocuments,
 } from '../../apps/server/src/modules/people/domain';
@@ -15,7 +16,8 @@ import { refusingNul } from '../refusing-nul';
 /**
  * The organisation tree (D99) on the memory adapter: a `unit:` group carries the unit above it, the server refuses
  * what would break the tree, and an administrator reads what a push left. A manager's reports are the people whose
- * employments name them, wherever the tree puts either of them (D147).
+ * employments name them, wherever the tree puts either of them (D147), and the administrator's page says who reports to
+ * nobody.
  */
 const BASE = 'https://clew.test/scim/v2';
 const ORG = 'sundsvall';
@@ -75,10 +77,10 @@ function harness() {
       BASE,
     );
   /**
-   * The directory sends the person's employments: on this unit, one for each manager named (D147), which is how a
-   * directory says two managers.
+   * The directory sends the person's employments, the whole list in its order (D114): each on a unit, naming a manager
+   * (D147) or none.
    */
-  const employ = (name: string, unitId: string, ...managerNames: string[]) =>
+  const employments = (name: string, jobs: ReadonlyArray<readonly [unitId: string, manager?: string]>) =>
     scim.patchUser(
       p,
       id(name),
@@ -88,11 +90,20 @@ function harness() {
           {
             op: 'replace',
             path: SCIM.employment + ':employments',
-            value: managerNames.map(manager => ({ unitId, managerId: id(manager) })),
+            value: jobs.map(([unitId, manager]) => ({ unitId, ...(manager ? { managerId: id(manager) } : {}) })),
           },
         ],
       },
       BASE,
+    );
+  /**
+   * The person's employments on one unit, one for each manager named (D147), which is how a directory says two
+   * managers.
+   */
+  const employ = (name: string, unitId: string, ...managerNames: string[]) =>
+    employments(
+      name,
+      managerNames.map(manager => [unitId, manager] as const),
     );
   const persona = (name: string, capabilities: Capability[] = [], organisationId = ORG): AuthenticatedContext => ({
     id: id(name) ?? name,
@@ -116,7 +127,7 @@ function harness() {
     expect(error).toBeInstanceOf(ScimError);
     return error as ScimError;
   };
-  return { store, scim, p, person, id, unit, managers, employ, groups, persona, refusal };
+  return { store, scim, p, person, id, unit, managers, employ, employments, groups, persona, refusal };
 }
 
 /** A manager of `ORG` signed in, by person id. */
@@ -133,6 +144,16 @@ const harnessPersona = (personId: string): AuthenticatedContext => ({
   sessionBinding: 'test',
   expiresAt: '2026-11-10T18:00:00.000Z',
   authorize: async () => ({ version: 'v1' }),
+});
+/**
+ * A person of a unit as Administration › Organisation lists them (D147), cut down to the line: the managers their
+ * employments name, by name, and why they report to nobody. `gap` is absent where the page leaves it out.
+ */
+const lineOf = (q: OrganisationPerson): { name: string; managers: string[]; circle?: string[]; gap?: ManagerGap } => ({
+  name: q.name,
+  managers: q.managers.map(m => m.name),
+  ...(q.circle ? { circle: q.circle.map(m => m.name) } : {}),
+  ...(q.gap ? { gap: q.gap } : {}),
 });
 describe('the organisation tree over SCIM (D99)', () => {
   test('a tree is pushed from the root down, a node nobody is placed on included, and a unit answers the unit above it', async () => {
@@ -643,8 +664,24 @@ describe('a manager works with their direct reports (D147)', () => {
     // and Lars lead the unit they are listed under, and Ida, Ulla, Uno and Lisa, who name them, are not hers.
     expect(await reports('karin')).toEqual(KARINS);
   });
-  test('a deactivated manager is nobody’s manager, and those who name them are on no list until the directory names another: only the tree still reads the line through their unit', async () => {
+  test('a deactivated manager is nobody’s manager, and those who name them are on no list until the directory names another: Administration › Organisation says meanwhile that they report to nobody', async () => {
     const h = await organisation();
+    const admin = h.persona('karin', ['admin.users']),
+      tree = organisationUsecases({ store: h.store });
+    /** How many report to nobody in all, and on each unit that has somebody who does. */
+    const unmanaged = async () => {
+      const view = await tree.overview(admin);
+      return {
+        all: view.unmanaged,
+        units: Object.fromEntries(view.units.filter(u => u.unmanaged).map(u => [u.unitId, u.unmanaged])),
+      };
+    };
+    const linesOf = async (unitId: string) => (await tree.unit(admin, unitId)).people.map(lineOf);
+    const fromElsewhere = async (unitId: string) => (await tree.unit(admin, unitId)).reports.map(q => q.name);
+    // As pushed, one person reports to nobody: Karin, whom nobody is above and whose employments name nobody. Ulla and
+    // Uno, employed on the unit they lead, report to David from outside the unit he leads.
+    expect(await unmanaged()).toEqual({ all: 1, units: { ksk: 1 } });
+    expect(await fromElsewhere('it')).toEqual(['Ulla', 'Uno']);
     // The directory deactivates David; his memberships stay, and so do the employments that name him.
     await h.scim.deleteUser(h.p, h.id('david'));
     // D99 passed the line through his unit and gave Karin Ida, Ulla and Uno. D147 reads nothing from the tree: her
@@ -655,6 +692,29 @@ describe('a manager works with their direct reports (D147)', () => {
     expect((await cardOf('it')).map(q => [q.name, q.enabled])).toEqual([['David', false]]);
     // Meanwhile the three report to nobody: a guessed manager would be the wrong person with access.
     for (const name of ['ida', 'ulla', 'uno']) expect((await h.staff.reach(h.persona(name))).above).toEqual([]);
+    // Administration › Organisation is where that shows (D147). Nobody leads IT, and no unit above lends it a line: D99
+    // read IT's line as that of the nearest led unit above. The three are counted on the units they are placed on,
+    // beside Karin.
+    expect((await tree.overview(admin)).units.find(u => u.unitId === 'it')).toMatchObject({
+      managers: [],
+      placed: 1,
+      line: 'none',
+      unmanaged: 1,
+    });
+    expect(await unmanaged()).toEqual({ all: 4, units: { it: 1, ksk: 1, utv: 2 } });
+    // Each is said to name only somebody deactivated. David is listed as deactivated and given no reason of his own.
+    expect(await linesOf('it')).toEqual([
+      { name: 'David', managers: ['Karin'] },
+      { name: 'Ida', managers: [], gap: 'inactive' },
+    ]);
+    expect(await linesOf('utv')).toEqual([
+      { name: 'Max', managers: ['Ulla', 'Uno'] },
+      { name: 'Mia', managers: ['Ulla', 'Uno'] },
+      { name: 'Ulla', managers: [], gap: 'inactive' },
+      { name: 'Uno', managers: [], gap: 'inactive' },
+    ]);
+    // And nobody reports to the leaders of IT from elsewhere, since nobody leads it.
+    expect(await fromElsewhere('it')).toEqual([]);
     // The directory names Karin on Ida's employment, and Ida is hers, under the unit she is employed on.
     await h.employ('ida', 'it', 'karin');
     expect((await cardOf('it')).map(q => [q.name, q.enabled])).toEqual([
@@ -662,9 +722,12 @@ describe('a manager works with their direct reports (D147)', () => {
       ['Ida', true],
     ]);
     expect((await h.staff.reach(h.persona('ida'))).above).toEqual([h.id('karin')]);
-    // Administration › Organisation reads the tree as D99 did: nobody leads IT, so its line is the unit above's.
-    const tree = await organisationUsecases({ store: h.store }).overview(h.persona('karin', ['admin.users']));
-    expect(tree.units.find(u => u.unitId === 'it')).toMatchObject({ managers: [], placed: 1, line: 'above' });
+    // Ida is no longer counted. Ulla and Uno, whom the directory has not come to yet, still are.
+    expect(await unmanaged()).toEqual({ all: 3, units: { ksk: 1, utv: 2 } });
+    expect(await linesOf('it')).toEqual([
+      { name: 'David', managers: ['Karin'] },
+      { name: 'Ida', managers: ['Karin'] },
+    ]);
   });
   test('a manager in the middle sees their own people and, under the unit below, its managers; a manager at the edge sees their reports and never the co-manager', async () => {
     const { reports } = await organisation();
@@ -742,7 +805,19 @@ describe('a manager works with their direct reports (D147)', () => {
   });
 });
 
-describe('Administration › Organisation (D99)', () => {
+describe('Administration › Organisation (D99, D147)', () => {
+  /**
+   * Kommunstyrelsekontoret (karin leads; stina is placed there)
+   *   └ KSK Avdelningar (nobody leads, nobody is placed there)
+   *       └ Digitalisering och IT (david leads; ida and the deactivated gone are placed there)
+   * Kultur och fritid (nobody leads; hanna is placed there)
+   *   └ Arkivet (nobody leads, nobody is placed there)
+   * okand (nils leads; no unit group was pushed for it)
+   *
+   * The tree says where people are placed (D99) and the employments say who they report to (D147): stina's names
+   * karin, david's on IT names karin, and ida's names david. Karin, hanna, nils and gone have no employment, so they
+   * name nobody.
+   */
   async function organisation() {
     const h = harness();
     for (const name of ['karin', 'stina', 'david', 'ida', 'hanna', 'nils']) await h.person(name);
@@ -756,9 +831,12 @@ describe('Administration › Organisation (D99)', () => {
     await h.managers('it', ['david']);
     // A manager of a unit nobody pushed a unit group for.
     await h.managers('okand', ['nils']);
+    await h.employ('stina', 'ksk', 'karin');
+    await h.employ('david', 'it', 'karin');
+    await h.employ('ida', 'it', 'david');
     return { ...h, organisation: organisationUsecases({ store: h.store }) };
   }
-  test('the tree with who leads each unit, how many are placed on it and below it, and what a push left wrong', async () => {
+  test('the tree with who leads each unit, how many are placed on it and below it, how many on it report to nobody, and what a push left wrong', async () => {
     const h = await organisation();
     const view = await h.organisation.overview(h.persona('karin', ['admin.users']));
     expect(view.unplaced).toBe(0);
@@ -779,20 +857,42 @@ describe('Administration › Organisation (D99)', () => {
       placed: 2,
       branch: 4,
       line: 'own',
+      // Karin herself: nobody is above her, and no employment of hers names anybody. Stina names her.
+      unmanaged: 1,
       pushed: true,
     });
-    // Nobody leads it and nobody is placed on it, yet it is a node; a deactivated person is counted nowhere.
-    expect(by.avd).toMatchObject({ parentId: 'ksk', managers: [], placed: 0, branch: 2, line: 'above' });
-    expect(by.it).toMatchObject({ parentId: 'avd', placed: 2, branch: 2, line: 'own' });
-    expect(by.fritid).toMatchObject({ parentId: null, managers: [], placed: 1, branch: 1, line: 'none' });
-    expect(by.arkiv).toMatchObject({ parentId: 'fritid', placed: 0, branch: 0, line: 'none' });
-    expect(by.okand).toMatchObject({ unitLabel: 'okand', parentId: null, placed: 1, line: 'own', pushed: false });
+    // Nobody leads it and nobody is placed on it, yet it is a node; a deactivated person is counted nowhere. The unit
+    // above is led, which says nothing of this one (D147): D99 read its line as the unit above's.
+    expect(by.avd).toMatchObject({ parentId: 'ksk', managers: [], placed: 0, branch: 2, line: 'none', unmanaged: 0 });
+    // David and Ida each name an active manager. Gone names nobody, and is deactivated, so is not counted for it.
+    expect(by.it).toMatchObject({ parentId: 'avd', placed: 2, branch: 2, line: 'own', unmanaged: 0 });
+    expect(by.fritid).toMatchObject({
+      parentId: null,
+      managers: [],
+      placed: 1,
+      branch: 1,
+      line: 'none',
+      unmanaged: 1,
+    });
+    expect(by.arkiv).toMatchObject({ parentId: 'fritid', placed: 0, branch: 0, line: 'none', unmanaged: 0 });
+    expect(by.okand).toMatchObject({
+      unitLabel: 'okand',
+      parentId: null,
+      placed: 1,
+      line: 'own',
+      unmanaged: 1,
+      pushed: false,
+    });
+    // Karin, Hanna and Nils.
+    expect(view.unmanaged).toBe(3);
   });
-  test('a person who is active and placed nowhere is counted, and the people of a unit are read on their own', async () => {
+  test('a person who is active and placed nowhere is counted as that alone, and the people of a unit are read on their own, each with the managers their employments name', async () => {
     const h = await organisation();
     await h.person('ny');
     const admin = h.persona('karin', ['admin.users']);
-    expect((await h.organisation.overview(admin)).unplaced).toBe(1);
+    // Ny names no manager either, and is not among those who report to nobody: that count is of people placed on a
+    // unit, and what Ny lacks first is a place.
+    expect(await h.organisation.overview(admin)).toMatchObject({ unplaced: 1, unmanaged: 3 });
     expect(await h.organisation.unit(admin, 'it')).toEqual({
       unitId: 'it',
       unitLabel: 'Digitalisering och IT',
@@ -804,7 +904,9 @@ describe('Administration › Organisation (D99)', () => {
           email: 'david@sundsvall.test',
           role: 'manager',
           enabled: true,
+          managers: [{ id: h.id('karin'), name: 'Karin' }],
         },
+        // Gone names no manager. That is said of nobody who is deactivated, so there is no `gap`.
         {
           id: h.id('gone'),
           name: 'Gone',
@@ -812,13 +914,23 @@ describe('Administration › Organisation (D99)', () => {
           email: 'gone@sundsvall.test',
           role: 'employee',
           enabled: false,
+          managers: [],
         },
-        { id: h.id('ida'), name: 'Ida', userName: 'ida', email: 'ida@sundsvall.test', role: 'employee', enabled: true },
+        {
+          id: h.id('ida'),
+          name: 'Ida',
+          userName: 'ida',
+          email: 'ida@sundsvall.test',
+          role: 'employee',
+          enabled: true,
+          managers: [{ id: h.id('david'), name: 'David' }],
+        },
       ],
       reports: [],
     });
-    // Who reports to the unit's manager from below: the manager of the nearest led unit, through the unit nobody
-    // leads, and never the people that manager leads. A unit nobody leads has no reports of its own.
+    // Who reports to the unit's leader from elsewhere (D147): David, whose employment on IT names Karin, under the unit
+    // he leads. D99 found him by walking down the tree through the unit nobody leads; now his employment says it, and
+    // the people who name David are never Karin's. A unit nobody leads has no reports.
     const ksk = await h.organisation.unit(admin, 'ksk');
     expect(ksk.people.map(q => [q.name, q.role])).toEqual([
       ['Karin', 'manager'],
@@ -838,6 +950,239 @@ describe('Administration › Organisation (D99)', () => {
     expect((await h.organisation.unit(admin, 'avd')).reports).toEqual([]);
     expect((await h.organisation.unit(admin, 'avd')).people).toEqual([]);
     expect((await h.organisation.unit(admin, 'okand')).people.map(q => q.name)).toEqual(['Nils']);
+  });
+  test('the people of a unit each say whom they report to, by name, or why to nobody: no manager named, only a deactivated one, or one who names them back; a deactivated person is given no reason (D147)', async () => {
+    const h = harness();
+    // Ärla is made before Åke, so their ids and the code units of their names both put Ärla first: only Swedish order,
+    // which a person's managers are listed in, puts Åke first.
+    for (const name of ['rut', 'ärla', 'åke', 'anna', 'bo', 'cia', 'dan', 'eva', 'fia', 'slutat']) await h.person(name);
+    await h.person('gone', false);
+    await h.unit('skola', 'Bergsåkers skola', null, ['anna', 'bo', 'cia', 'dan', 'eva', 'fia', 'gone']);
+    // The managers named are placed on another unit, or lead this one: where a manager stands is not asked.
+    await h.unit('kansli', 'Kansliet', null, ['ärla', 'åke', 'slutat']);
+    await h.managers('skola', ['rut']);
+    await h.employ('anna', 'skola', 'rut');
+    // Bo has an employment, and it names no manager.
+    await h.employments('bo', [['skola']]);
+    await h.employ('cia', 'skola', 'slutat');
+    // Dan and Eva name each other, which no write refuses (D147 item 4).
+    await h.employ('dan', 'skola', 'eva');
+    await h.employ('eva', 'skola', 'dan');
+    await h.employ('fia', 'skola', 'slutat', 'ärla', 'åke');
+    // The directory deactivates one of the managers named; the employments that name them stay.
+    await h.scim.deleteUser(h.p, h.id('slutat'));
+    const admin = h.persona('rut', ['admin.users']),
+      organisation = organisationUsecases({ store: h.store });
+    const { people } = await organisation.unit(admin, 'skola');
+    expect(people.map(lineOf)).toEqual([
+      { name: 'Anna', managers: ['Rut'] },
+      { name: 'Bo', managers: [], gap: 'none' },
+      // The one manager Cia names is deactivated, and a deactivated manager is nobody's.
+      { name: 'Cia', managers: [], gap: 'inactive' },
+      // Each is shown whom the chain comes round with, apart from their managers, of whom they have none.
+      { name: 'Dan', managers: [], circle: ['Eva'], gap: 'round' },
+      { name: 'Eva', managers: [], circle: ['Dan'], gap: 'round' },
+      // Two active managers beside the deactivated one, who is left out.
+      { name: 'Fia', managers: ['Åke', 'Ärla'] },
+      // Deactivated and naming no manager, which is said of nobody who is deactivated.
+      { name: 'Gone', managers: [] },
+      // Rut leads the unit and names nobody.
+      { name: 'Rut', managers: [], gap: 'none' },
+    ]);
+    expect(people.find(q => q.name === 'Fia')?.managers).toEqual([
+      { id: h.id('åke'), name: 'Åke' },
+      { id: h.id('ärla'), name: 'Ärla' },
+    ]);
+    // The tree counts the same people on the unit, Bo, Cia, Dan, Eva and Rut, of the seven who are active.
+    const view = await organisation.overview(admin);
+    expect(view.units.find(u => u.unitId === 'skola')).toMatchObject({ placed: 7, unmanaged: 5 });
+    // With Ärla and Åke on the other unit, whose employments name nobody.
+    expect(view.unmanaged).toBe(7);
+  });
+  test('who reports to the leaders of a unit from elsewhere is read from the employments that name them, each person once, under the units they lead or else the units of those employments, and never from the tree (D147)', async () => {
+    /**
+     * Förvaltningen (frida and felix lead; fia is placed there)
+     *   ├ Bergsåkers skola (sven leads; sara is placed there)
+     *   ├ Fritidshemmet (sven leads; nobody is placed there)
+     *   ├ Köket (nobody leads; kim and kalle are placed there)
+     *   ├ Matsalen (nobody leads; kajsa is placed there)
+     *   └ Förrådet (nobody leads; folke is placed there)
+     */
+    const h = harness();
+    for (const name of ['frida', 'felix', 'fia', 'sven', 'sara', 'kim', 'kalle', 'kajsa', 'folke'])
+      await h.person(name);
+    await h.unit('forv', 'Förvaltningen', null, ['fia']);
+    await h.unit('skola', 'Bergsåkers skola', 'forv', ['sara']);
+    await h.unit('fritids', 'Fritidshemmet', 'forv');
+    await h.unit('kok', 'Köket', 'forv', ['kim', 'kalle']);
+    await h.unit('matsal', 'Matsalen', 'forv', ['kajsa']);
+    await h.unit('forrad', 'Förrådet', 'forv', ['folke']);
+    await h.managers('forv', ['frida', 'felix']);
+    await h.managers('skola', ['sven']);
+    await h.managers('fritids', ['sven']);
+    await h.employ('fia', 'forv', 'frida');
+    await h.employ('sven', 'skola', 'frida');
+    await h.employ('sara', 'skola', 'sven');
+    // Kim has two employments that name Frida, on two units, the one on Matsalen first in the directory's order.
+    await h.employments('kim', [
+      ['matsal', 'frida'],
+      ['kok', 'frida'],
+    ]);
+    // Kalle names both who lead Förvaltningen, an employment for each.
+    await h.employ('kalle', 'kok', 'frida', 'felix');
+    await h.employ('kajsa', 'matsal', 'kim');
+    // Folke is on a unit below that nobody leads, and his employment names nobody.
+    await h.employments('folke', [['forrad']]);
+    const admin = h.persona('frida', ['admin.users']),
+      organisation = organisationUsecases({ store: h.store });
+    const listed = (name: string) => ({
+      id: h.id(name),
+      name: name[0]!.toUpperCase() + name.slice(1),
+      userName: name,
+      email: name + '@sundsvall.test',
+      enabled: true,
+    });
+    const forv = await organisation.unit(admin, 'forv');
+    // Fia names Frida and is placed on the unit itself: she is among its people, and so not among those from elsewhere.
+    expect(forv.people.map(q => [q.name, q.managers.map(m => m.name)])).toEqual([
+      ['Felix', []],
+      ['Fia', ['Frida']],
+      ['Frida', []],
+    ]);
+    // By name. Kalle once, though he names both leaders. Kim under the units of the two employments that name Frida, by
+    // the units' names. Sven leads units, so he stands under those, by their names (their ids are the other way round),
+    // as a manager. Not Sara, who names Sven; nor Kajsa, who names Kim; nor Folke, whom D99 listed here as placed on a
+    // unit below that nobody leads: no employment of his names anybody, and the tree is not read.
+    expect(forv.reports).toEqual([
+      { ...listed('kalle'), role: 'employee', below: [{ unitId: 'kok', unitLabel: 'Köket', role: 'employee' }] },
+      {
+        ...listed('kim'),
+        role: 'employee',
+        below: [
+          { unitId: 'kok', unitLabel: 'Köket', role: 'employee' },
+          { unitId: 'matsal', unitLabel: 'Matsalen', role: 'employee' },
+        ],
+      },
+      {
+        ...listed('sven'),
+        role: 'manager',
+        below: [
+          { unitId: 'skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
+          { unitId: 'fritids', unitLabel: 'Fritidshemmet', role: 'manager' },
+        ],
+      },
+    ]);
+    const fromElsewhere = async (unitId: string) => (await organisation.unit(admin, unitId)).reports.map(q => q.name);
+    // Sara names Sven. On the unit she is placed on she is among its people; on the other unit Sven leads she is the
+    // one who reports to its leader from elsewhere.
+    expect(await fromElsewhere('skola')).toEqual([]);
+    expect(await fromElsewhere('fritids')).toEqual(['Sara']);
+    // A unit nobody leads has no reports. Kajsa's employment names Kim, who is placed on Köket and leads nothing: Kajsa
+    // reports to Kim, and to no leader of the unit, since it has none.
+    expect(await fromElsewhere('kok')).toEqual([]);
+    expect(await fromElsewhere('forrad')).toEqual([]);
+  });
+  test('someone elsewhere who names two leaders of a unit, each on an employment on a unit of its own, is listed once under both units, whichever leader is read first (D147)', async () => {
+    // The store hands over a unit's people by id, so the leader made first is read first: once each way.
+    for (const leaders of [
+      ['frida', 'felix'],
+      ['felix', 'frida'],
+    ] as const) {
+      const h = harness();
+      for (const name of [...leaders, 'kim']) await h.person(name);
+      await h.unit('forv', 'Förvaltningen', null);
+      await h.unit('kok', 'Köket', 'forv', ['kim']);
+      await h.unit('matsal', 'Matsalen', 'forv');
+      await h.managers('forv', ['frida', 'felix']);
+      // Kim's employment on Köket names Frida and the one on Matsalen names Felix, Matsalen first in the directory.
+      await h.employments('kim', [
+        ['matsal', 'felix'],
+        ['kok', 'frida'],
+      ]);
+      const forv = await organisationUsecases({ store: h.store }).unit(h.persona('frida', ['admin.users']), 'forv'),
+        where = leaders[0] + ' made first';
+      // One row for Kim, under both units by their names: the row of the leader read first alone would lose the unit
+      // of the employment that names the other.
+      expect([where, forv.reports]).toEqual([
+        where,
+        [
+          {
+            id: h.id('kim'),
+            name: 'Kim',
+            userName: 'kim',
+            email: 'kim@sundsvall.test',
+            enabled: true,
+            role: 'employee',
+            below: [
+              { unitId: 'kok', unitLabel: 'Köket', role: 'employee' },
+              { unitId: 'matsal', unitLabel: 'Matsalen', role: 'employee' },
+            ],
+          },
+        ],
+      ]);
+    }
+  });
+  test('someone a leader of the unit names as their own manager is not among those who report to its leaders, though their employment names the leader back; where they also name a second leader, who does not name them, they are listed under the units of those employments alone (D147)', async () => {
+    // Once with each leader read first, as above: what the second leader gives must not depend on the first.
+    for (const leaders of [
+      ['frida', 'felix'],
+      ['felix', 'frida'],
+    ] as const) {
+      const h = harness();
+      for (const name of [...leaders, 'bo']) await h.person(name);
+      await h.unit('forv', 'Förvaltningen', null);
+      await h.unit('lager', 'Lagret', null, ['bo']);
+      await h.unit('depa', 'Depån', null);
+      await h.managers('forv', ['frida', 'felix']);
+      // Frida's employment names Bo and Bo's names Frida: the chain comes round, and neither is the other's report
+      // (D147 item 7). Felix names nobody, and nobody names him yet.
+      await h.employ('frida', 'forv', 'bo');
+      await h.employ('bo', 'lager', 'frida');
+      const admin = h.persona('frida', ['admin.users']),
+        organisation = organisationUsecases({ store: h.store }),
+        where = leaders[0] + ' made first';
+      // Frida reports to nobody, and the page says with whom the chain comes round, apart from her managers.
+      const leading: Array<ReturnType<typeof lineOf>> = [
+        { name: 'Felix', managers: [], gap: 'none' },
+        { name: 'Frida', managers: [], circle: ['Bo'], gap: 'round' },
+      ];
+      const round = await organisation.unit(admin, 'forv');
+      expect([where, round.people.map(lineOf)]).toEqual([where, leading]);
+      expect(round.people.find(q => q.name === 'Frida')?.circle).toEqual([{ id: h.id('bo'), name: 'Bo' }]);
+      // Bo's employment names Frida, who leads the unit, and he is placed elsewhere. He is still not her report.
+      expect([where, round.reports]).toEqual([where, []]);
+      // The same from Bo's side, on the unit he is placed on.
+      expect((await organisation.unit(admin, 'lager')).people.map(lineOf)).toEqual([
+        { name: 'Bo', managers: [], circle: ['Frida'], gap: 'round' },
+      ]);
+      // Bo gets a second employment, on Depån, that names Felix. Felix does not name Bo, so Bo reports to him and is
+      // listed for the unit Felix leads: under the unit of the employment that names Felix, and not under Lagret, where
+      // the employment names Frida, whose report he is not.
+      await h.employments('bo', [
+        ['lager', 'frida'],
+        ['depa', 'felix'],
+      ]);
+      const both = await organisation.unit(admin, 'forv');
+      expect([where, both.reports]).toEqual([
+        where,
+        [
+          {
+            id: h.id('bo'),
+            name: 'Bo',
+            userName: 'bo',
+            email: 'bo@sundsvall.test',
+            enabled: true,
+            role: 'employee',
+            below: [{ unitId: 'depa', unitLabel: 'Depån', role: 'employee' }],
+          },
+        ],
+      ]);
+      // Frida's line is as it was. Bo has a manager now, and Frida is kept apart from him.
+      expect([where, both.people.map(lineOf)]).toEqual([where, leading]);
+      expect((await organisation.unit(admin, 'lager')).people.map(lineOf)).toEqual([
+        { name: 'Bo', managers: ['Felix'], circle: ['Frida'] },
+      ]);
+    }
   });
   test('only an administrator of users reads it, and a unit of another organisation does not exist', async () => {
     const h = await organisation();
@@ -917,6 +1262,77 @@ describe('Administration › Organisation (D99)', () => {
       ['top', 0, 2],
     ]);
     expect(view.unplaced).toBe(0);
+  });
+  test('whom a person reports to is the active people their employments name, and nobody when no manager is named, none named is active or each one named names the person back (D147)', () => {
+    // `slutat` is named and not among the active: deactivated, or no person of the organisation.
+    const reporting = reportingOf(new Set(['anna', 'bo', 'cia', 'dan', 'eva', 'fia', 'siv', 'gun', 'hugo', 'chef']), [
+      { personId: 'bo', managerId: 'slutat' },
+      { personId: 'cia', managerId: 'dan' },
+      { personId: 'dan', managerId: 'cia' },
+      { personId: 'eva', managerId: 'slutat' },
+      { personId: 'eva', managerId: 'chef' },
+      { personId: 'fia', managerId: 'fia' },
+      { personId: 'siv', managerId: 'siv' },
+      { personId: 'siv', managerId: 'chef' },
+      { personId: 'gun', managerId: 'hugo' },
+      { personId: 'gun', managerId: 'chef' },
+      { personId: 'hugo', managerId: 'gun' },
+    ]);
+    // No employment of Anna's names a manager.
+    expect(reporting('anna')).toEqual({ managers: [], round: [], gap: 'none' });
+    // The one manager Bo names is not active, and a deactivated manager is nobody's.
+    expect(reporting('bo')).toEqual({ managers: [], round: [], gap: 'inactive' });
+    // Cia and Dan name each other, so neither is the other's manager. Each answer says whom the chain comes round
+    // with, apart from the managers.
+    expect(reporting('cia')).toEqual({ managers: [], round: ['dan'], gap: 'round' });
+    expect(reporting('dan')).toEqual({ managers: [], round: ['cia'], gap: 'round' });
+    // One active manager beside one who is not is a manager.
+    expect(reporting('eva')).toEqual({ managers: ['chef'], round: [] });
+    // Nobody is their own manager: naming oneself is naming nobody, alone or beside a manager, and is not a chain that
+    // comes round.
+    expect(reporting('fia')).toEqual({ managers: [], round: [], gap: 'none' });
+    expect(reporting('siv')).toEqual({ managers: ['chef'], round: [] });
+    // Hugo names Gun back and Chef does not, so Gun has one manager, Chef: Hugo is not hers, and the answer keeps him
+    // apart. Hugo names only Gun, and has none.
+    expect(reporting('gun')).toEqual({ managers: ['chef'], round: ['hugo'] });
+    expect(reporting('hugo')).toEqual({ managers: [], round: ['gun'], gap: 'round' });
+  });
+  test('a person who reports to nobody is counted on each unit they are placed on and once for the organisation; a deactivated person and a person placed nowhere are not (D147)', () => {
+    const view = organisationOf(
+      [
+        { id: 'top', label: 'Top', parentId: null },
+        { id: 'a', label: 'A', parentId: 'top' },
+        { id: 'b', label: 'B', parentId: 'top' },
+      ],
+      [
+        { personId: 'boss', name: 'Boss', enabled: true, unitId: 'top', role: 'manager' },
+        { personId: 'two', name: 'Two', enabled: true, unitId: 'a', role: 'employee' },
+        { personId: 'two', name: 'Two', enabled: true, unitId: 'b', role: 'employee' },
+        { personId: 'led', name: 'Led', enabled: true, unitId: 'a', role: 'employee' },
+        { personId: 'left', name: 'Left', enabled: true, unitId: 'b', role: 'employee' },
+        { personId: 'off', name: 'Off', enabled: false, unitId: 'a', role: 'employee' },
+        { personId: 'gone', name: 'Gone', enabled: false, unitId: 'b', role: 'manager' },
+        { personId: 'new', name: 'New', enabled: true, unitId: null, role: null },
+      ],
+      {},
+      // Two, Off and New name nobody. Left names only Gone, who is deactivated. Boss names New, who is active and
+      // placed nowhere, and is a manager all the same.
+      [
+        { personId: 'boss', managerId: 'new' },
+        { personId: 'led', managerId: 'boss' },
+        { personId: 'left', managerId: 'gone' },
+      ],
+    );
+    expect(view.units.map(u => [u.unitId, u.placed, u.unmanaged])).toEqual([
+      // Two, and not Off, who is deactivated.
+      ['a', 2, 1],
+      // Two again, and Left.
+      ['b', 2, 2],
+      ['top', 1, 0],
+    ]);
+    // Two once, and Left. New reports to nobody too, and is counted as placed nowhere, not here.
+    expect(view.unmanaged).toBe(2);
+    expect(view.unplaced).toBe(1);
   });
 });
 

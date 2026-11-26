@@ -4443,8 +4443,8 @@ export interface StaffPerson {
   enabled: boolean;
   /**
    * For Personal (D147): the other units this person leads, by label in Swedish order; absent for someone who leads
-   * none. For Administration › Organisation, which still reads a unit as D99 did: set for a person who is not assigned
-   * to the unit but reports to its manager through the tree, with the units below that they lead or are placed on.
+   * none. For the `reports` of Administration › Organisation, who are placed on other units: the units they lead, or
+   * where they lead none the units of the employments that name one of the unit's leaders.
    */
   below?: Array<{ unitId: string; unitLabel: string; role: Role }>;
 }
@@ -4479,8 +4479,13 @@ export interface OrganisationUnit {
   placed: number;
   /** How many people are assigned to the unit or to a unit below it, each person once. */
   branch: number;
-  /** Who the people placed here report to: the unit's own managers, the managers of a unit above, or nobody. */
-  line: 'own' | 'above' | 'none';
+  /** Whether anybody leads the unit (D147): its own managers, or nobody. The tree passes no line on. */
+  line: 'own' | 'none';
+  /**
+   * D147: how many active people placed on the unit report to nobody, because their employments name no manager, name
+   * only people who are deactivated, or name only people who report to them in turn.
+   */
+  unmanaged: number;
   /** False when people are assigned to the unit but no `unit:` group names it, so it has no name and no place. */
   pushed: boolean;
 }
@@ -4489,16 +4494,38 @@ export interface OrganisationOverview {
   units: OrganisationUnit[];
   /** People who are provisioned and active but placed on no unit, so they can do nothing (D68). */
   unplaced: number;
+  /** D147: how many active people placed on a unit report to nobody, each person once. */
+  unmanaged: number;
+}
+/**
+ * Why a person reports to nobody (D147): no employment of theirs names a manager (`none`), every manager named is
+ * deactivated (`inactive`), or everyone named reports to the person in turn, so neither is the other's report (`round`).
+ */
+export type ManagerGap = 'none' | 'inactive' | 'round';
+/** A person on a unit as Administration › Organisation lists them: with whom they report to, or why to nobody. */
+export interface OrganisationPerson extends StaffPerson {
+  /**
+   * The people the person reports to, by name in Swedish order: the active people their current employments name as
+   * manager, without anyone who names the person back.
+   */
+  managers: Array<{ id: string; name: string }>;
+  /**
+   * The active people the person names as manager who name the person back, by name in Swedish order: neither of two
+   * such people is the other's manager. Absent when there is none.
+   */
+  circle?: Array<{ id: string; name: string }>;
+  /** Set when the person reports to nobody; absent for a deactivated person, who reports to nobody anyway. */
+  gap?: ManagerGap;
 }
 /** The people assigned to one unit, by name in Swedish order, as the tree shows them beside a selected unit. */
 export interface OrganisationUnitPeople {
   unitId: string;
   unitLabel: string;
-  people: StaffPerson[];
+  people: OrganisationPerson[];
   /**
-   * Who reports to the unit's managers from the units below it (D99 item 4), each with `below`, by name in Swedish
-   * order: the managers of the nearest units that have one, and the people placed on a unit below that nobody leads.
-   * Empty for a unit nobody leads, since the line passes through it.
+   * Who reports to the people who lead the unit without being placed on it (D147), by name in Swedish order: the
+   * people elsewhere whose employments name one of them as manager, each with `below`, the units they lead, or where
+   * they lead none the units of those employments. Empty for a unit nobody leads.
    */
   reports: StaffPerson[];
 }

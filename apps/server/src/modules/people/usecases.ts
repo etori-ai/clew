@@ -57,6 +57,7 @@ import {
   leavesOut,
   namesHeld,
   organisationOf,
+  reportingOf,
   pageOf,
   parseFilter,
   positionOfKey,
@@ -1418,60 +1419,22 @@ export type UsersAdminUsecases = ReturnType<typeof usersAdminUsecases>;
 /**
  * Personal (D94, D147): a manager's reports, read only. The scope is the server's: who reports to the actor is read
  * from the employments that name them, and the units they lead from their own assignments, never from the request.
- * Nothing is written, so there is no audit row. The walk down the tree below (`addReportsFromBelow`) is Administration
- * › Organisation's alone since D147: it shows a unit as D99 read it.
+ * Nothing is written, so there is no audit row.
  */
 const byName = (a: StaffPerson, b: StaffPerson) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id);
-/** The tree as the units directly below each unit. */
-const unitsUnder = (tree: readonly TreeUnit[]) => {
-  const below = new Map<string, TreeUnit[]>();
-  for (const u of tree) if (u.parentId !== null) below.set(u.parentId, [...(below.get(u.parentId) ?? []), u]);
-  return below;
-};
 /**
- * D99 item 4, the walk down from one unit: adds to `people` those who report to the unit's managers from the units
- * below it, each with `below`. `people` holds the unit's own people when it is called, and a person already there
- * keeps their row. Level by level, each unit once: `seen` also ends the walk if a stored chain were ever a cycle. A
- * unit in `skip` is left alone with everything under it, and `reader` is never listed.
+ * The names of these units of the organisation, by id. A unit's name is its `unit:` group's. An employment is kept when
+ * its unit's group is removed (D114), so one the tree no longer names is called what the unit table still calls it; a
+ * unit neither knows is absent, and its caller shows the id.
  */
-async function addReportsFromBelow(
-  tx: ProvisionTx,
-  below: ReadonlyMap<string, TreeUnit[]>,
-  unitId: string,
-  people: Map<string, StaffPerson>,
-  options: { skip?: ReadonlySet<string>; reader?: string; organisationId?: string } = {},
-) {
-  const seen = new Set([unitId]);
-  for (let level = below.get(unitId) ?? []; level.length;) {
-    const visit = level.filter(u => !seen.has(u.id) && !options.skip?.has(u.id));
-    if (!visit.length) break;
-    for (const u of visit) seen.add(u.id);
-    const placedBelow = await tx.unitPeople(
-      visit.map(u => u.id),
-      options.organisationId,
-    );
-    level = [];
-    for (const next of visit) {
-      const there = placedBelow[next.id] ?? [],
-        leads = there.filter(leadsUnit),
-        report = leads.length ? leads : there;
-      for (const p of report) {
-        if (p.id === options.reader) continue;
-        const held = people.get(p.id) ?? { ...p, below: [] },
-          from = { unitId: next.id, unitLabel: next.label, role: p.role };
-        // Assigned to the unit itself: the row stays as it is. Else the units they report from, a led one first in the role.
-        if (!held.below) continue;
-        people.set(p.id, {
-          ...held,
-          role: held.role === 'manager' || p.role === 'manager' ? 'manager' : 'employee',
-          below: [...held.below, from].sort(
-            (a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId),
-          ),
-        });
-      }
-      if (!leads.length) level.push(...(below.get(next.id) ?? []));
-    }
-  }
+async function unitNames(tx: ProvisionTx, organisationId: string, ids: readonly string[]) {
+  const names = new Map<string, string>();
+  if (!ids.length) return names;
+  for (const u of await tx.unitTree(organisationId, ids)) names.set(u.id, u.label);
+  const rest = ids.filter(id => !names.has(id));
+  if (rest.length)
+    for (const [id, label] of Object.entries(await tx.unitLabels(rest, organisationId))) names.set(id, label);
+  return names;
 }
 /**
  * D147: whom a person reports to. The managers their current employments name, each once and never the person
@@ -1494,27 +1457,24 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
    * each such employment, by name; the units by label. A unit the reader leads has its card whether or not anybody on
    * it reports to them, and a unit they do not lead has one when somebody employed there does. Someone who leads units
    * of their own has the manager's role on the one they are listed under, where they lead it, and carries the others
-   * as `below`. The reader is never listed.
+   * as `below`. The reader is never listed, and neither is anyone in `above`, the reader's own managers: where two
+   * people's employments name each other the chain comes round, and neither is the other's report (D147 item 7), so
+   * neither is on the other's list, in the talks round or the calendar's team that read it.
    */
   async function reportsBy(
     tx: ProvisionTx,
     persona: AuthenticatedContext,
     led: Array<{ unitId: string; unitLabel: string }>,
+    above: readonly string[],
   ): Promise<StaffUnit[]> {
     // Within the reader's organisation, as the tree is: a unit id names nobody elsewhere (D101, a unit belongs to one
     // organisation).
-    const rows = (await tx.reportsTo(persona.organisationId, persona.id)).filter(p => p.id !== persona.id),
+    const rows = (await tx.reportsTo(persona.organisationId, persona.id)).filter(
+        p => p.id !== persona.id && !above.includes(p.id),
+      ),
       labels = new Map(led.map(u => [u.unitId, u.unitLabel]));
-    // A unit's name is its `unit:` group's. An employment is kept when its unit's group is removed (D114), so one the
-    // tree no longer names is called what the unit table still calls it, and by its id only when that knows no name.
     const named = [...new Set(rows.flatMap(p => [...p.unitIds, ...p.leads]))].filter(id => !labels.has(id));
-    if (named.length) {
-      for (const u of await tx.unitTree(persona.organisationId, named)) labels.set(u.id, u.label);
-      const rest = named.filter(id => !labels.has(id));
-      if (rest.length)
-        for (const [id, label] of Object.entries(await tx.unitLabels(rest, persona.organisationId)))
-          labels.set(id, label);
-    }
+    for (const [id, label] of await unitNames(tx, persona.organisationId, named)) labels.set(id, label);
     const labelOf = (unitId: string) => labels.get(unitId) ?? unitId,
       byLabel = (a: { unitId: string; unitLabel: string }, b: { unitId: string; unitLabel: string }) =>
         bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId),
@@ -1541,7 +1501,7 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
     overview: (persona: AuthenticatedContext): Promise<StaffOverview> =>
       deps.store.transaction(async tx => {
         const led = (await tx.assignmentsOf(persona.id)).filter(a => a.role === 'manager'),
-          units = await reportsBy(tx, persona, led);
+          units = await reportsBy(tx, persona, led, await managersOf(tx, persona.organisationId, persona.id));
         // Someone who leads no unit and whom nobody reports to has no card at all.
         if (!units.length) throw new ForbiddenError('Sidan Personal är för den som är chef.');
         return { units };
@@ -1559,15 +1519,17 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
       above: string[];
     }> =>
       deps.store.transaction(async tx => {
-        const units = await tx.assignmentsOf(persona.id);
+        const units = await tx.assignmentsOf(persona.id),
+          above = await managersOf(tx, persona.organisationId, persona.id);
         return {
           units,
           managed: await reportsBy(
             tx,
             persona,
             units.filter(a => a.role === 'manager'),
+            above,
           ),
-          above: await managersOf(tx, persona.organisationId, persona.id),
+          above,
         };
       }),
     /**
@@ -1678,35 +1640,88 @@ export function organisationUsecases(deps: { store: ProvisionStore }) {
           tree,
           placements,
           unnamed.length ? await tx.unitLabels(unnamed, persona.organisationId) : {},
+          await tx.managersNamed(persona.organisationId),
         );
       });
     },
     /**
-     * The people of one unit of the administrator's own organisation, and who reports to its managers from the units
-     * below (D99 item 4, the same walk Personal makes). The unit is one the organisation pushed or has people on, and
-     * the people are the organisation's own: a unit of another organisation does not exist here. A unit nobody leads
-     * has no reports: the line passes through it to a manager above.
+     * The people of one unit of the administrator's own organisation, each with whom they report to or why to nobody
+     * (D147), and the people elsewhere who report to those who lead the unit. The unit is one the organisation pushed
+     * or has people on, and the people are the organisation's own: a unit of another organisation does not exist here.
+     * A unit nobody leads has no reports. Nothing here is read from the tree.
      */
     async unit(persona: AuthenticatedContext, unitId: string): Promise<OrganisationUnitPeople> {
       require(persona);
       // A unit id is the source's and never holds a NUL, which PostgreSQL would refuse to compare: it names no unit.
       if (holdsNul(unitId)) throw new InputError('Enheten finns inte.');
       return deps.store.transaction(async tx => {
+        const organisationId = persona.organisationId;
         // The unit's node as the overview reads it (`unitTree`): the organisation's own, by a key read as the SCIM
         // boundary accepts one, so a unit key written wrong that a group stored before D96 still carries names no unit.
-        const [node] = await tx.unitTree(persona.organisationId, [unitId]),
-          people = (await tx.unitPeople([unitId], persona.organisationId))[unitId] ?? [];
+        const [node] = await tx.unitTree(organisationId, [unitId]),
+          people = (await tx.unitPeople([unitId], organisationId))[unitId] ?? [];
         if (!node && !people.length) throw new InputError('Enheten finns inte.');
-        const held = new Map<string, StaffPerson>(people.map(p => [p.id, p]));
-        if (people.some(leadsUnit))
-          await addReportsFromBelow(tx, unitsUnder(await tx.unitTree(persona.organisationId)), unitId, held, {
-            organisationId: persona.organisationId,
-          });
+        // Whom each person here names, and whom those people name in turn: someone who names a person back is not
+        // their manager (`reportingOf`). A manager is read once, for their name and whether they are active.
+        const named = await tx.managersNamed(
+            organisationId,
+            people.map(p => p.id),
+          ),
+          managerIds = [...new Set(named.map(n => n.managerId))].filter(id => !holdsNul(id)),
+          back = await tx.managersNamed(organisationId, managerIds),
+          managers = new Map<string, { id: string; name: string }>();
+        for (const id of managerIds) {
+          const found = await tx.readUser(organisationId, id);
+          if (found?.enabled) managers.set(id, { id, name: found.name });
+        }
+        const reporting = reportingOf(new Set(managers.keys()), [...named, ...back]);
+        // Who reports to those who lead the unit from elsewhere: each once, under the units they lead, else under the
+        // units of the employments that name the leader.
+        const here = new Set(people.map(p => p.id)),
+          elsewhere = new Map<string, Awaited<ReturnType<ProvisionTx['reportsTo']>>[number]>();
+        for (const leader of people.filter(leadsUnit)) {
+          // Someone the leader reports to is not the leader's report, whatever names them back. Active managers only,
+          // as Personal reads it: a deactivated manager is nobody's, so no chain comes round through one.
+          const above = new Set(
+            named.filter(n => n.personId === leader.id && managers.has(n.managerId)).map(n => n.managerId),
+          );
+          for (const report of await tx.reportsTo(organisationId, leader.id)) {
+            if (here.has(report.id) || above.has(report.id)) continue;
+            // One who names two of the unit's leaders is listed once, under the units of every such employment.
+            const held = elsewhere.get(report.id);
+            if (held) held.unitIds = [...new Set([...held.unitIds, ...report.unitIds])];
+            else elsewhere.set(report.id, { ...report, unitIds: [...report.unitIds] });
+          }
+        }
+        const labels = await unitNames(tx, organisationId, [
+          ...new Set([...elsewhere.values()].flatMap(r => [...r.unitIds, ...r.leads])),
+        ]);
+        const rowsOf = (ids: readonly string[], role: Role) =>
+          ids
+            .map(id => ({ unitId: id, unitLabel: labels.get(id) ?? id, role }))
+            .sort((a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId));
         return {
           unitId,
-          unitLabel: node?.label ?? (await tx.unitLabels([unitId], persona.organisationId))[unitId] ?? unitId,
-          people: people.sort(byName),
-          reports: [...held.values()].filter(p => p.below).sort(byName),
+          unitLabel: node?.label ?? (await tx.unitLabels([unitId], organisationId))[unitId] ?? unitId,
+          people: people.sort(byName).map(p => {
+            const line = reporting(p.id),
+              named = (ids: readonly string[]) =>
+                ids.map(id => managers.get(id)!).sort((a, b) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id));
+            return {
+              ...p,
+              managers: named(line.managers),
+              ...(line.round.length ? { circle: named(line.round) } : {}),
+              // A deactivated person reports to nobody anyway: the gap is said of those who work here.
+              ...(p.enabled && line.gap ? { gap: line.gap } : {}),
+            };
+          }),
+          reports: [...elsewhere.values()]
+            .map(({ unitIds, leads, ...report }): StaffPerson => ({
+              ...report,
+              role: leads.length ? 'manager' : 'employee',
+              below: leads.length ? rowsOf(leads, 'manager') : rowsOf(unitIds, 'employee'),
+            }))
+            .sort(byName),
         };
       });
     },

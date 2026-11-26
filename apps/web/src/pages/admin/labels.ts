@@ -26,8 +26,9 @@ const instant = new Intl.DateTimeFormat('sv-SE', {
 export const instantText = (iso: string) => instant.format(new Date(iso));
 const unitNames = new Intl.ListFormat('sv', { type: 'conjunction' });
 /**
- * The role as a list of people says it. A person assigned to the unit has their role on it; one who reports there from
- * below (D99) is named by the units they lead, or are placed on where nobody leads: "Chef för Utveckling".
+ * The role as a list of people says it. A person assigned to the unit has their role on it; one listed with `below`,
+ * who reports to the unit's manager from elsewhere (D147), is named by the units they lead, or where they lead none by
+ * the units of the employments that name the manager: "Chef för Utveckling".
  */
 export const roleText = (p: StaffPerson) => {
   const below = p.below ?? [];

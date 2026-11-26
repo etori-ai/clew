@@ -28,6 +28,7 @@ import {
   type RelationGrant,
   type DirectoryPhone,
   type Employment,
+  type ManagerGap,
   type OrganisationOverview,
   type OrganisationUnit,
   type Position,
@@ -320,14 +321,45 @@ export function branchOf(tree: readonly TreeUnit[], unitId: string): string[] {
  */
 export const leadsUnit = (p: { role: Role | null; enabled: boolean }) => p.enabled && p.role === 'manager';
 /**
+ * D147: whom a person reports to, of the pairs the employments name. `active` is who may be a manager: a deactivated
+ * person is nobody's. Someone the person names who names the person back is not their manager either: a chain that
+ * comes round is neither's line, as Personal's list reads it. The answer is the people who do manage the person, those
+ * the chain comes round with (`round`), and why nobody manages them where nobody does: no employment names a manager, everyone named is deactivated, or everyone named
+ * who is active names the person back.
+ */
+export function reportingOf(
+  active: ReadonlySet<string>,
+  named: ReadonlyArray<{ personId: string; managerId: string }>,
+) {
+  const byPerson = new Map<string, Set<string>>();
+  for (const { personId, managerId } of named)
+    if (managerId !== personId) byPerson.set(personId, (byPerson.get(personId) ?? new Set()).add(managerId));
+  return (personId: string): { managers: string[]; round: string[]; gap?: ManagerGap } => {
+    const all = [...(byPerson.get(personId) ?? [])],
+      working = all.filter(id => active.has(id)),
+      round = working.filter(id => byPerson.get(id)?.has(personId)),
+      managers = working.filter(id => !round.includes(id));
+    const gap: ManagerGap | undefined = !all.length
+      ? 'none'
+      : !working.length
+        ? 'inactive'
+        : !managers.length
+          ? 'round'
+          : undefined;
+    return { managers, round, ...(gap ? { gap } : {}) };
+  };
+}
+/**
  * The tree an administrator reads. A unit people are assigned to without a `unit:` group is drawn as a root that was
  * not pushed, named as the unit table knows it; a parent that names no node is read as no parent, so every node is
- * drawn. Deactivated people are left out of every count.
+ * drawn. Deactivated people are left out of every count. `named` is who the
+ * organisation's people name as manager (D147), from which a unit says how many of its people report to nobody.
  */
 export function organisationOf(
   tree: readonly TreeUnit[],
   placements: readonly Placement[],
   knownLabels: Readonly<Record<string, string>> = {},
+  named: ReadonlyArray<{ personId: string; managerId: string }> = [],
 ): OrganisationOverview {
   const nodes = new Map<string, TreeUnit & { pushed: boolean }>();
   for (const unit of tree) nodes.set(unit.id, { ...unit, pushed: true });
@@ -356,15 +388,16 @@ export function organisationOf(
       branch.set(at, (branch.get(at) ?? new Set()).add(p.personId));
     }
   }
-  const lineOf = (id: string): OrganisationUnit['line'] => {
-    if (managers.get(id)?.length) return 'own';
-    const seen = new Set([id]);
-    for (let at = parentOf(id); at !== null && !seen.has(at); at = parentOf(at)) {
-      if (managers.get(at)?.length) return 'above';
-      seen.add(at);
-    }
-    return 'none';
-  };
+  // D147: who reports to nobody, of the active people placed on a unit. Counted on each unit they are placed on, and
+  // once for the organisation.
+  const reporting = reportingOf(new Set(active.map(p => p.personId)), named),
+    unmanaged = new Map<string, Set<string>>(),
+    without = new Set<string>();
+  for (const p of active) {
+    if (p.unitId === null || !reporting(p.personId).gap) continue;
+    unmanaged.set(p.unitId, (unmanaged.get(p.unitId) ?? new Set()).add(p.personId));
+    without.add(p.personId);
+  }
   const placedPeople = new Set(active.filter(p => p.unitId !== null).map(p => p.personId));
   return {
     units: [...nodes.values()]
@@ -375,11 +408,14 @@ export function organisationOf(
         managers: (managers.get(n.id) ?? []).sort((a, b) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id)),
         placed: placed.get(n.id) ?? 0,
         branch: branch.get(n.id)?.size ?? 0,
-        line: lineOf(n.id),
+        // The tree passes no line on (D147): a unit is led by its own managers or by nobody.
+        line: managers.get(n.id)?.length ? ('own' as const) : ('none' as const),
+        unmanaged: unmanaged.get(n.id)?.size ?? 0,
         pushed: n.pushed,
       }))
       .sort((a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId)),
     unplaced: new Set(active.filter(p => !placedPeople.has(p.personId)).map(p => p.personId)).size,
+    unmanaged: without.size,
   };
 }
 
