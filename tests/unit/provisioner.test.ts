@@ -2071,7 +2071,8 @@ describe('the synthetic provisioner', () => {
       type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
       const same: [
         Same<DirectoryPhone, ClewPhone>,
-        Same<Employment, ClewEmployment>,
+        // The example sends the source's fields. Only a resolved SCIM User id belongs in managerId.
+        Same<Employment, Omit<ClewEmployment, 'managerId'>>,
         Same<Capability, ClewCapability>,
       ] = [true, true, true];
       expect(same).toEqual([true, true, true]);

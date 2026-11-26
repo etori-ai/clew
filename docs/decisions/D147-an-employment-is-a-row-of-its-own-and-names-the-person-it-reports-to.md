@@ -14,7 +14,9 @@ The storage:
    of its own and a record reads exactly as it was written.
 2. **An employment may name its manager.** `managerId` in the employment extension
    (`urn:clew:params:scim:schemas:extension:employment:2.0:User`) is the `id` of the manager's User resource. It is
-   optional; null and the empty string are no manager. Two entries that differ only in their manager are two entries.
+   assigned by Clew. The provisioner uses the manager's source key (`externalId`) to find that User and sends its
+   `id` in `managerId`. The field is optional. Null and the empty string mean no manager. Two entries that differ
+   only in their manager are two entries.
 3. **What is refused where it is written.** A `managerId` that names nobody of the provisioner's organisation, one that
    names the user themselves, and one that is no string answer 400 `invalidValue` and store nothing, as an employment on
    a unit the organisation does not hold does. A manager with no `unitId` is refused as a title with none is. Beside a
@@ -25,8 +27,9 @@ The storage:
 4. **What is not refused.** A manager who has been deactivated is still a user of the organisation and is stored, since
    the directory says so. A chain of managers that comes back to the person is not looked for when it is written: two
    writes can close one between them, so whatever reads the line stops at a person it has passed (item 7).
-5. **A profile leaves it out.** The manager is told back to the provisioner that wrote it. A person's profile does not
-   show it (`PersonProfile`), and an employment still gives no access to a unit or a capability.
+5. **Who can read the manager.** A SCIM User read or list returns the manager to any provisioner of the person's
+   organisation. A person's profile does not show it (`PersonProfile`), and an employment still gives no access to a
+   unit or a capability.
 
 The line:
 
@@ -129,8 +132,9 @@ moves and its rule that a manager works with their direct reports stand.
 by the manager's role first.
 
 **Evidence.** The storage: `tests/unit/scim-as-clients-send-it.test.ts` (the manager told back, audited, refused and
-left beside a deactivation), `tests/scim-store-contract.ts` on both adapters, `tests/db/person-erase.test.ts`, and the
-migration run against a database that held a list. The line: `tests/unit/staff.test.ts`,
+left beside a deactivation), `tests/scim-store-contract.ts` on both adapters, `tests/db/person-erase.test.ts`,
+`tests/db/postgres-scim-concurrency.test.ts` (two overlapping additions both survive), and
+`tests/db/employments-migration.test.ts` (the upgrade from existing lists). The line: `tests/unit/staff.test.ts`,
 `tests/unit/asked-about.test.ts` (who is `managed`, a chain that comes round, the units below),
 `tests/boarding-directory-contract.ts` on both adapters (a leaver's managers), `tests/unit/organisation-tree.test.ts`
 (who reports to nobody, and why), `tests/a11y/organisation.spec.ts`, and `tests/unit/provisioner.test.ts`

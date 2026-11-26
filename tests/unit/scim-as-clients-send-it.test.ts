@@ -290,7 +290,7 @@ describe('current employments on a SCIM user', () => {
   const jobs = [
     { unitId: 'school', title: 'Lärare' },
     { unitId: 'school', title: 'Samordnare' },
-  ];
+  ] as const;
   /** The two units the employments of these tests are on: a unit is sent before an employment names it. */
   const units = async (group: ReturnType<typeof app>['group']) => ({
     school: await group({ externalId: 'unit:school', displayName: 'Skolan' }),
@@ -464,6 +464,31 @@ describe('current employments on a SCIM user', () => {
       base,
     ]);
   });
+  test('year zero is omitted on create, replacement and a patch that deactivates the person', async () => {
+    const { json, group, patch, person } = app();
+    await units(group);
+    const job = { unitId: 'school', title: 'Lärare' };
+    const sent = [
+      { ...job, startDate: '0000-01-01' },
+      { unitId: 'office', startDate: '0001-01-01' },
+    ];
+    const kept = [job, { unitId: 'office', startDate: '0001-01-01' }];
+    const body = person(1, { [urn]: { employments: sent } });
+    const created = await json('POST', '/Users', body);
+    expect(created.status).toBe(201);
+    const path = '/Users/' + created.body.id;
+    const replaced = await json('PUT', path, body);
+    const deactivated = await patch(
+      path,
+      { op: 'replace', path: field, value: sent },
+      { op: 'replace', path: 'active', value: false },
+    );
+    expect(replaced.status).toBe(200);
+    expect(deactivated).toMatchObject({ status: 200, body: { active: false } });
+    for (const result of [created, replaced, deactivated, await json('GET', path)]) {
+      expect(result.body[urn].employments).toEqual(kept);
+    }
+  });
   test('each employment carries its own optional percentage of full time', async () => {
     const { create, group, json, patch, person } = app();
     await units(group);
@@ -635,6 +660,7 @@ describe('current employments on a SCIM user', () => {
         [{ unitId: 'school', managerId: 'nobody' }],
         /^An employment names the manager 'nobody', which is no user of this organisation\. 'managerId' is the 'id' of the manager's User resource, .*\(D147\)\. The user was not stored\.$/,
       ],
+      [[{ unitId: 'school', managerId: 'e-1' }], /^An employment names the manager 'e-1', which is no user/],
       [
         [
           { unitId: 'school', managerId: 'nobody' },
@@ -676,6 +702,24 @@ describe('current employments on a SCIM user', () => {
     ).toMatchObject({ status: 200, body: { active: false, [urn]: { employments: held } } });
     expect((await json('GET', '/Users?filter=' + encodeURIComponent('externalId eq "e-9"'))).body.totalResults).toBe(0);
   });
+  test("the organisation's provisioners can read an employment's manager on a User and in a list", async () => {
+    const { json, create, group, store } = app();
+    await units(group);
+    const managerId = await create(1);
+    const employments = [{ unitId: 'school', managerId }];
+    const id = await create(2, { [urn]: { employments } });
+    store.state.provisioners.set('digest:peer', { id: 'peer', organisationId: 'org', label: 'Peer' });
+    store.state.provisioners.set('digest:other', { id: 'other', organisationId: 'other-org', label: 'Other' });
+
+    const path = '/Users/' + id;
+    const list = '/Users?filter=' + encodeURIComponent('externalId eq "e-2"');
+    expect((await json('GET', path, undefined, 'Bearer peer')).body[urn]?.employments).toEqual(employments);
+    expect((await json('GET', list, undefined, 'Bearer peer')).body.Resources[0]?.[urn]?.employments).toEqual(
+      employments,
+    );
+    expect((await json('GET', path, undefined, 'Bearer other')).status).toBe(404);
+    expect((await json('GET', list, undefined, 'Bearer other')).body.Resources).toEqual([]);
+  });
   test("'employments' without the extension's URN is refused and says how it is written, where it once answered 200 and stored nothing", async () => {
     const { json, create, patch, person, group } = app();
     await units(group);
@@ -715,21 +759,21 @@ describe('current employments on a SCIM user', () => {
   test('a unit removed afterwards does not stop the person’s other changes, and the profile shows the title without it', async () => {
     const { json, create, patch, person, group, store } = app();
     const { office } = await units(group);
+    const managerId = await create(2);
     const employments = [
-      jobs[0],
-      { unitId: 'office', title: 'Registrator' },
+      { ...jobs[0], managerId },
+      { unitId: 'office', title: 'Registrator', managerId },
       { unitId: 'office', employmentPercentage: 0 },
       { unitId: 'office' },
     ];
     const id = await create(1, { title: 'Katalogtitel', [urn]: { employments } });
     const path = '/Users/' + id;
-    await create(2);
     expect((await json('DELETE', '/Groups/' + office)).status).toBe(204);
     // The list did not change, so it is not asked about again: a rename goes through, and so does the daily PUT.
     expect((await patch(path, { op: 'replace', path: 'displayName', value: 'Renamed' })).status).toBe(200);
     expect((await json('PUT', path, person(1, { title: 'Katalogtitel', [urn]: { employments } }))).status).toBe(200);
     const reader = {
-      id: 'id-4',
+      id: managerId,
       organisationId: 'org',
       userName: 'user2',
       name: 'User 2',
@@ -737,14 +781,12 @@ describe('current employments on a SCIM user', () => {
     // A person is read by their id (D122).
     const seen = await staffUsecases({ store }).person(reader, id, true);
     // The employments carry the titles, so the core one is not shown beside them.
-    expect(seen?.profile).toMatchObject({
-      title: null,
-      employments: [
-        { ...jobs[0], unitLabel: 'Skolan' },
-        { unitId: 'office', title: 'Registrator' },
-        { unitId: 'office', employmentPercentage: 0 },
-      ],
-    });
+    expect(seen?.profile?.title).toBeNull();
+    expect(seen?.profile?.employments).toEqual([
+      { ...jobs[0], unitLabel: 'Skolan' },
+      { unitId: 'office', title: 'Registrator' },
+      { unitId: 'office', employmentPercentage: 0 },
+    ]);
   });
 });
 describe('a deactivation is never refused for what stands beside it (D113)', () => {

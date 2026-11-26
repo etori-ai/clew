@@ -24,8 +24,13 @@ SELECT
 	job.value ->> 'unitId',
 	job.value ->> 'title',
 	job.value ->> 'employmentType',
-	CASE WHEN job.value ->> 'startDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN (job.value ->> 'startDate')::date END,
-	CASE WHEN jsonb_typeof(job.value -> 'employmentPercentage') = 'number' THEN (job.value ->> 'employmentPercentage')::double precision END
+	CASE WHEN job.value ->> 'startDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+		AND pg_input_is_valid(job.value ->> 'startDate', 'date')
+		THEN (job.value ->> 'startDate')::date END,
+	CASE WHEN jsonb_typeof(job.value -> 'employmentPercentage') = 'number'
+		AND (job.value -> 'employmentPercentage') BETWEEN '0'::jsonb AND '100'::jsonb
+		AND pg_input_is_valid(job.value ->> 'employmentPercentage', 'double precision')
+		THEN (job.value ->> 'employmentPercentage')::double precision END
 FROM "auth_person" p
 CROSS JOIN LATERAL jsonb_array_elements(p."employments") WITH ORDINALITY AS job(value, ordinality)
 WHERE jsonb_typeof(p."employments") = 'array' AND job.value ->> 'unitId' IS NOT NULL;--> statement-breakpoint

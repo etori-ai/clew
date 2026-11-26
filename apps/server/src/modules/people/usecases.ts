@@ -1778,7 +1778,7 @@ export function personErasureUsecases(deps: { store: ProvisionStore; clock: () =
         // The person's groups before the person, as a group write takes its group before it locks a member.
         await tx.lockGroupsOf(personId);
         const locked = await tx.lockPerson(personId),
-          person = locked && (await tx.readUser(locked.organisationId, personId, true));
+          person = locked && (await tx.readUser(locked.organisationId, personId));
         if (!person) return { refused: 'unknown' };
         if (person.enabled) return { refused: 'active' };
         const subject = 'person:' + personId,
