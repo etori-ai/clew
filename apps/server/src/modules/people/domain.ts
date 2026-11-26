@@ -1835,7 +1835,10 @@ export const schemaDocuments = (base: string) => [
           attribute('unitId', 'string', { required: true, caseExact: true }),
           attribute('title', 'string'),
           attribute('employmentType', 'string', { description: "The source's label for the form of employment." }),
-          attribute('startDate', 'string', { description: 'First calendar day of this employment, YYYY-MM-DD.' }),
+          attribute('startDate', 'string', {
+            description:
+              'First calendar day of this employment in YYYY-MM-DD format, with a year from 0001 through 9999.',
+          }),
           attribute('employmentPercentage', 'decimal', {
             description:
               'Percentage of full-time hours for this employment. Send a JSON number from 0 to 100 inclusive without a percent sign. Use 50 for half time.',
@@ -1843,7 +1846,7 @@ export const schemaDocuments = (base: string) => [
           attribute('managerId', 'string', {
             caseExact: true,
             description:
-              "The 'id' of the User this employment reports to: a user of the same organisation, sent before an employment names them, and never the user themselves.",
+              "The Clew-assigned 'id' of the manager's SCIM User in the same organisation. Match the source's 'externalId' to that User before sending the employment. A user cannot name themselves as manager.",
           }),
         ],
       }),

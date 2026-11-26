@@ -40,14 +40,12 @@ export interface Employment {
   startDate?: string;
   /** Of full time, from 0 to 100. */
   employmentPercentage?: number;
-  /** The `id` Clew gave the User this employment reports to (D147). */
-  managerId?: string;
 }
 /**
  * An employment as the source has it: what Clew is sent, and the manager by the source's own id for them. The push
  * sends the manager as the `id` Clew gave that person (`managerId`), which a source cannot know before it has asked.
  */
-export interface DirectoryEmployment extends Omit<Employment, 'managerId'> {
+export interface DirectoryEmployment extends Employment {
   /** The `externalId` of the person this employment reports to (D147). Absent: the source names nobody. */
   manager?: string;
 }
