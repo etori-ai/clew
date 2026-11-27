@@ -1,5 +1,5 @@
 import type { StatusKind } from './connector.mjs';
-import type { FieldMap } from './pob.mjs';
+import type { AgreementFieldMap, FieldMap } from './pob.mjs';
 export declare function readConfig(env?: Record<string, string | undefined>): {
   adapter: 'fixture' | 'api';
   pob?: {
@@ -13,6 +13,8 @@ export declare function readConfig(env?: Record<string, string | undefined>): {
     listLimit: number;
     insecureHosts: string[];
     startCheck: 'strict' | 'warn' | 'off';
+    agreementFields?: AgreementFieldMap;
+    agreementPath?: string;
   };
   port: number;
   secret?: string;
@@ -25,6 +27,7 @@ export declare function readConfig(env?: Record<string, string | undefined>): {
   problemMemo: string;
   caseLink?: string;
   writes: string[];
+  costs?: { identifier: string; amountLabel?: string; codePattern?: string };
   create: { caseType: string; category: string; groupId: string };
   urgentNote?: string;
 };

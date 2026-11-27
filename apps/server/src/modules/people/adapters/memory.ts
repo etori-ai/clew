@@ -1,13 +1,14 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   byCode,
   bySwedish,
   ERASED,
   unitGroupOf,
-  type Assignment,
   type Grant,
   type GroupCapabilityRule,
   type GroupRelationRule,
   type GroupRecord,
+  type HeldUnit,
   type Placement,
   type UserRecord,
 } from '../domain';
@@ -30,7 +31,10 @@ export interface MemoryProvisionState {
   /** D121: a group gives its members a relation to people by grant. */
   groupRelations: Array<GroupRelationRule & { organisationId: string }>;
   units: Map<string, { organisationId: string; label: string }>;
-  assignments: Map<string, Assignment[]>;
+  /** The units each person belongs to, as `auth_assignment` holds them. */
+  assignments: Map<string, string[]>;
+  /** The units each person leads, as `auth_unit_lead` holds them. */
+  leads: Map<string, string[]>;
   /** `relations` (D121) only when the person holds one, as the projection stores it. */
   grants: Map<string, Omit<Grant, 'capabilities' | 'relations'> & { capabilities: string[]; relations?: string[] }>;
   /** D108 item 5: the organisations' positions, by the store's id; a code is unique within its organisation. */
@@ -82,6 +86,7 @@ export function memoryProvisionStore(
     groupRelations: [],
     units: new Map(),
     assignments: new Map(),
+    leads: new Map(),
     grants: new Map(),
     positions: new Map(),
     personPositions: new Map(),
@@ -95,30 +100,64 @@ export function memoryProvisionStore(
   const snapshot = () => structuredClone(state),
     restore = (s: MemoryProvisionState) => Object.assign(state, s);
   const live = transactionOver(state, options);
+  // One writing transaction at a time, as a row lock makes two writes of one person run one after the other: this
+  // store has no locks, so two that ran into each other would each read what the other had not committed, and one that
+  // failed would take the other's writes back with its own. A transaction begun inside another runs in it, as a second
+  // statement on its connection would.
+  const inside = new AsyncLocalStorage<true>();
+  let tail: Promise<unknown> = Promise.resolve(),
+    // What had committed when the transaction in flight began: what a snapshot reads meanwhile.
+    committed: MemoryProvisionState | undefined;
+  const exclusive = <T>(run: () => Promise<T>): Promise<T> => {
+    if (inside.getStore()) return run();
+    const next = tail.then(() => inside.run(true, run));
+    tail = next.catch(() => undefined);
+    return next;
+  };
   return {
     state,
     async transaction(fn, mode) {
       // A snapshot reads a copy taken when it begins, as Postgres's REPEATABLE READ reads what had committed when its
-      // first statement began, so a change that commits while it is open is not in it. It only reads: nothing it does
-      // is kept (`tests/provisioning-store-contract.ts`).
+      // first statement began, so a change that commits while it is open is not in it, and neither is one a
+      // transaction in flight has not committed. It only reads: nothing it does is kept
+      // (`tests/provisioning-store-contract.ts`).
       if (mode?.snapshot) {
-        const frozen = transactionOver(snapshot(), options);
+        const frozen = transactionOver(
+          committed && !inside.getStore() ? structuredClone(committed) : snapshot(),
+          options,
+        );
         return fn({ ...frozen.tx, leavers: frozen.leaversOf([]) });
       }
-      const before = snapshot(),
-        pending: Array<() => Promise<void>> = [];
-      const result = await fn({ ...live.tx, leavers: live.leaversOf(pending) }).catch(error => {
-        restore(before);
-        throw error;
+      return exclusive(async () => {
+        const nested = committed !== undefined,
+          before = snapshot(),
+          pending: Array<() => Promise<void>> = [];
+        if (!nested) committed = before;
+        try {
+          const result = await fn({ ...live.tx, leavers: live.leaversOf(pending) }).catch(error => {
+            restore(before);
+            throw error;
+          });
+          for (const told of pending) await told();
+          return result;
+        } finally {
+          if (!nested) committed = undefined;
+        }
       });
-      for (const told of pending) await told();
-      return result;
     },
   };
 }
 /** The port of a transaction over one state: the store's own, or the copy a snapshot reads. */
 function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOptions) {
   const byId = <T extends { id: string }>(rows: T[]) => rows.sort((a, b) => a.id.localeCompare(b.id));
+  /** A person's units, each once and by unit id: where they belong and what they lead, read together (`HeldUnit`). */
+  const heldBy = (personId: string): HeldUnit[] => {
+    const belongs = new Set(state.assignments.get(personId)),
+      leads = new Set(state.leads.get(personId));
+    return [...new Set([...belongs, ...leads])]
+      .sort((a, b) => a.localeCompare(b))
+      .map(unitId => ({ unitId, role: leads.has(unitId) ? 'manager' : 'employee', belongs: belongs.has(unitId) }));
+  };
   const page = <T extends { id: string }>(rows: T[], p: { startIndex: number; count: number }) => ({
     total: rows.length,
     rows: byId(rows).slice(p.startIndex - 1, p.startIndex - 1 + p.count),
@@ -229,10 +268,28 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
     async writeUnits(organisationId, units) {
       for (const u of units) state.units.set(u.id, { organisationId, label: u.label });
     },
-    async replaceAssignments(personId, assignments) {
-      state.assignments.set(
-        personId,
-        assignments.map(a => ({ ...a })),
+    async replaceUnits(personId, held) {
+      state.assignments.set(personId, [...new Set(held.belongs)]);
+      state.leads.set(personId, [...new Set(held.leads)]);
+    },
+    async organisationOf(personId) {
+      return state.users.get(personId)?.organisationId;
+    },
+    async employedOn(organisationId, unitId) {
+      return [...state.users.values()]
+        .filter(u => u.organisationId === organisationId && u.employments.some(job => job.unitId === unitId))
+        .map(u => u.id)
+        .sort((a, b) => a.localeCompare(b));
+    },
+    async hasReports(organisationId, personId) {
+      const named = new Set(state.users.get(personId)?.employments.map(job => job.managerId));
+      return [...state.users.values()].some(
+        u =>
+          u.organisationId === organisationId &&
+          u.enabled &&
+          u.id !== personId &&
+          !named.has(u.id) &&
+          u.employments.some(job => job.managerId === personId),
       );
     },
     async grant(personId) {
@@ -249,7 +306,7 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
         ...rest,
         capabilities: [...grant.capabilities],
         ...(relations?.length ? { relations: [...relations] } : {}),
-        ...(assignments && assignments.length > 1 ? { assignments: assignments.map(a => ({ ...a })) } : {}),
+        ...(assignments?.length ? { assignments: assignments.map(a => ({ ...a })) } : {}),
       });
     },
     async positionsOf(personId) {
@@ -466,7 +523,7 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
               ),
             ) &&
             (!(search.unitIds || search.role) ||
-              (state.assignments.get(u.id) ?? []).some(
+              heldBy(u.id).some(
                 a => (!search.unitIds || search.unitIds.includes(a.unitId)) && (!search.role || a.role === search.role),
               )) &&
             (!search.status || search.status === status) &&
@@ -480,18 +537,48 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
       };
     },
     async assignmentsOf(personId) {
-      return (state.assignments.get(personId) ?? [])
-        .map(a => ({ unitId: a.unitId, unitLabel: state.units.get(a.unitId)?.label ?? a.unitId, role: a.role }))
-        .sort((a, b) => a.unitId.localeCompare(b.unitId));
+      return heldBy(personId).map(a => ({ ...a, unitLabel: state.units.get(a.unitId)?.label ?? a.unitId }));
+    },
+    async managersNamed(organisationId, personIds) {
+      const asked = personIds && new Set(personIds),
+        byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+      return [...state.users.values()]
+        .filter(u => u.organisationId === organisationId && (!asked || asked.has(u.id)))
+        .flatMap(u =>
+          [...new Set(u.employments.flatMap(job => (job.managerId ? [job.managerId] : [])))].map(managerId => ({
+            personId: u.id,
+            managerId,
+          })),
+        )
+        .sort((a, b) => byCodeUnit(a.personId, b.personId) || byCodeUnit(a.managerId, b.managerId));
+    },
+    async reportsTo(organisationId, managerId) {
+      const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+      return [...state.users.values()]
+        .filter(u => u.organisationId === organisationId && u.employments.some(job => job.managerId === managerId))
+        .sort((a, b) => byCodeUnit(a.id, b.id))
+        .map(u => ({
+          id: u.id,
+          name: u.name,
+          userName: u.userName,
+          email: u.email,
+          enabled: u.enabled,
+          unitIds: [...new Set(u.employments.filter(job => job.managerId === managerId).map(job => job.unitId))],
+          leads: [...(state.leads.get(u.id) ?? [])].sort(byCodeUnit),
+        }));
     },
     async unitPeople(unitIds, organisationId) {
       const byUnit: Awaited<ReturnType<ProvisionTx['unitPeople']>> = {};
-      for (const [personId, list] of [...state.assignments.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      const people = [...new Set([...state.assignments.keys(), ...state.leads.keys()])].sort((a, b) =>
+        a.localeCompare(b),
+      );
+      for (const personId of people) {
         const u = state.users.get(personId);
         if (!u || (organisationId !== undefined && u.organisationId !== organisationId)) continue;
         const person = { id: u.id, name: u.name, userName: u.userName, email: u.email, enabled: u.enabled };
-        for (const a of list)
-          if (unitIds.includes(a.unitId)) (byUnit[a.unitId] ??= []).push({ ...person, role: a.role });
+        for (const a of heldBy(personId))
+          if (unitIds.includes(a.unitId))
+            (byUnit[a.unitId] ??= []).push({ ...person, role: a.role, belongs: a.belongs });
       }
       return byUnit;
     },
@@ -509,16 +596,27 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
         .filter(unit => !wanted || wanted.has(unit.id))
         .sort((a, b) => a.id.localeCompare(b.id));
     },
+    async unitIdentifiers(organisationId, unitIds) {
+      const wanted = new Set(unitIds);
+      return new Map(
+        [...state.groups.values()].flatMap(g => {
+          const id = g.organisationId === organisationId ? unitGroupOf(g.externalId) : undefined;
+          return id !== undefined && wanted.has(id) && g.unitIdentifiers.length
+            ? [[id, g.unitIdentifiers.map(row => ({ ...row }))] as const]
+            : [];
+        }),
+      );
+    },
     async placements(organisationId) {
       return [...state.users.values()]
         .filter(u => u.organisationId === organisationId)
         .sort((a, b) => a.id.localeCompare(b.id))
         .flatMap((u): Placement[] => {
           const person = { personId: u.id, name: u.name, enabled: u.enabled },
-            held = [...(state.assignments.get(u.id) ?? [])].sort((a, b) => a.unitId.localeCompare(b.unitId));
+            held = heldBy(u.id);
           return held.length
-            ? held.map(a => ({ ...person, unitId: a.unitId, role: a.role }))
-            : [{ ...person, unitId: null, role: null }];
+            ? held.map(a => ({ ...person, ...a }))
+            : [{ ...person, unitId: null, role: null, belongs: false }];
         });
     },
     async bound(personId) {

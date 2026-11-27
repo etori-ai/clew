@@ -801,13 +801,21 @@ export interface CompetenceStore {
 }
 
 /**
- * The manager's reports (D99 item 4), from the assignments and the tree when asked, never stored: the units the reader
- * manages, each with exactly the people who report to the reader through it, the `managed` relation of D117. Not
- * Personal's list, which also holds a co-manager of the unit and the reader's own manager where they are placed on it.
- * Someone who manages no unit gets `{ units: [] }`, so this module decides what a non-manager is refused with and never
- * imports another module's error.
+ * The manager's reports (D147), from the employments when asked, never stored: the units of the reader's list, each
+ * with exactly the people who report to the reader through it, the `managed` relation of D117. Not Personal's list,
+ * which also holds a co-manager of the unit and the reader's own manager where they are placed on it. Someone nobody
+ * reports to and who leads no unit gets `{ units: [] }`, so this module decides what a non-manager is refused with and
+ * never imports another module's error.
+ *
+ * A unit is on `units` when the reader leads it or when somebody employed on it reports to them, and the second says
+ * nothing of the unit (D149). `leads` is the units the reader leads: the only ones a read of a unit's own figures is
+ * answered for, since those count people who are not the reader's reports. Absent means that the reader leads none, so
+ * a binding that does not say it is answered for no unit.
  */
-export type Staff = (persona: AuthenticatedContext) => Promise<StaffOverview>;
+export interface StaffReach extends StaffOverview {
+  leads?: ReadonlyArray<{ unitId: string; unitLabel: string }>;
+}
+export type Staff = (persona: AuthenticatedContext) => Promise<StaffReach>;
 /**
  * The people the reader reports to now (D99 item 4, D117's line): whoever leads the nearest unit above the reader that
  * somebody leads, active, by person id, never the reader. Empty for someone who reports to nobody. Computed when asked,

@@ -371,6 +371,17 @@ test("a talk round moves everyone's revision; a push of the organisation moves i
       .set({ updatedAt: new Date() })
       .where(eq(schema.groups.id, base + '-group-1'));
     expect(await counter('organisation')).toBe(organisation + 1);
+    // An employment is a row of its own (D147). A new one, and a new title on it, are drawn, though nothing of the
+    // person's own row changes with them but the time of change, which the person's signal leaves out.
+    await database()
+      .insert(schema.employments)
+      .values({ personId: base + '-member', position: 0, unitId: base + '-unit', title: 'Lärare' });
+    expect(await counter('organisation')).toBe(organisation + 2);
+    await database()
+      .update(schema.employments)
+      .set({ title: 'Rektor' })
+      .where(eq(schema.employments.personId, base + '-member'));
+    expect(await counter('organisation')).toBe(organisation + 3);
   } finally {
     await database().execute(sql`delete from auth_group_member where person_id = ${base + '-member'}`);
     await database().execute(sql`delete from auth_group where organisation_id = ${base}`);

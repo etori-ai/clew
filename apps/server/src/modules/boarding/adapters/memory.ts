@@ -1,5 +1,5 @@
 import { dueTimerFires } from '@clew/contracts';
-import { dueTimerAt, lineUpwards } from '../domain';
+import { dueTimerAt } from '../domain';
 import {
   PlanTaken,
   type BoardingAudit,
@@ -398,6 +398,8 @@ export interface MemoryDirectoryPerson extends Pick<Report, 'positionCodes' | 'e
   organisationId: string;
   enabled: boolean;
   assignments: Array<{ unitId: string; role: 'manager' | 'employee' }>;
+  /** D147: the people their current employments name as manager. */
+  managerIds?: string[];
 }
 /**
  * The directory in memory (D25): the unit tests' `BoardingDirectory`, held to Postgres by
@@ -441,20 +443,12 @@ export function memoryBoardingDirectory(
     async lineManagers(organisationId, personId) {
       const person = people.get(personId);
       if (!person || person.organisationId !== organisationId) return [];
-      const parents = new Map(
-        [...units.values()].filter(u => u.organisationId === organisationId).map(u => [u.id, u.parentId]),
-      );
-      const leadersOf = (unitId: string) =>
-        [...people.values()]
-          .filter(
-            p =>
-              p.id !== personId &&
-              p.enabled &&
-              p.organisationId === organisationId &&
-              p.assignments.some(a => a.unitId === unitId && a.role === 'manager'),
-          )
-          .map(p => p.id);
-      return lineUpwards(person.assignments, parents, leadersOf);
+      return [...new Set(person.managerIds ?? [])]
+        .filter(id => {
+          const manager = people.get(id);
+          return id !== personId && !!manager?.enabled && manager.organisationId === organisationId;
+        })
+        .sort();
     },
   };
   return {

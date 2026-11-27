@@ -11,6 +11,7 @@ import {
   type Connector,
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { nameManagers } from '../named-managers';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { groupsOf } from '../../apps/server/src/modules/entities/domain';
 import { reportUsecases } from '../../apps/server/src/modules/entities/usecases';
@@ -33,6 +34,7 @@ import {
 import { conversationList } from '../../apps/server/src/modules/conversations/domain';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { threadAccess } from '../../apps/server/src/threads/access';
+import { hold } from '../held-units';
 
 /**
  * The reads D141 rule 4 opens or adds for the pages the assistant is asked beside, that are not a domain's own module
@@ -47,9 +49,10 @@ const ORG = 'poc';
 type Placement = { unitId: string; role: 'manager' | 'employee' };
 
 /**
- * Bergsåkers skola is led by Hillevi and by Cecilia. On the school: Anna (a teacher by her employment), Erik (a
- * caretaker by the core title) and Maria, and Nils, who has no user name. Olle leads Fritids below it, with Sven. Karin
- * works in Ekonomi and manages nobody.
+ * Bergsåkers skola is led by Hillevi and by Cecilia, and neither's employment names the other. On the school: Anna (a
+ * teacher by her employment), Erik (a caretaker by the core title) and Maria, and Nils, who has no user name; their
+ * employments name both. Olle leads Fritids and reports to both as well; Sven, on Fritids, reports to Olle. Karin works
+ * in Ekonomi and manages nobody. Who reports to whom is written on the employments (D147) by `nameManagers`.
  */
 function directory() {
   const store = memoryProvisionStore(),
@@ -57,6 +60,7 @@ function directory() {
   const unit = (id: string, label: string, parent: string | null) => {
     s.units.set(id, { organisationId: ORG, label });
     s.groups.set('g-' + id, {
+      unitIdentifiers: [],
       id: 'g-' + id,
       organisationId: ORG,
       externalId: 'unit:' + id,
@@ -97,7 +101,7 @@ function directory() {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set(id, placements);
+    hold(s, id, placements);
     s.grants.set(id, {
       unitId: placements[0]!.unitId,
       unitLabel: s.units.get(placements[0]!.unitId)!.label,
@@ -138,6 +142,8 @@ function directory() {
       authorize: async () => ({ version: 'v1' }),
     };
   };
+  // D147: who reports to whom is said on the employments, as a directory says it.
+  nameManagers(store.state);
   return { persona, staff: staffUsecases({ store }), state: s };
 }
 
@@ -170,13 +176,15 @@ describe('people.reports: Personal’s list as a read (D141 rule 4)', () => {
     const w = world();
     const answer = await w.read('hillevi');
     expect(checkContract(ReportsOutputSchema, answer)).toBe(true);
+    // Her reports (D147): the people whose employments name her, each under the unit of that employment, so Olle is
+    // on Fritids, which he leads, and not on the school. Cecilia leads the school beside her and is not her report.
     expect(answer.rows).toEqual([
       { name: 'Anna Lindqvist', userName: 'anna', title: 'Lärare', unit: 'Bergsåkers skola' },
-      { name: 'Cecilia Holm', userName: 'cecilia', unit: 'Bergsåkers skola' },
       { name: 'Erik Sandström', userName: 'Erik.S', title: 'Vaktmästare', unit: 'Bergsåkers skola' },
       { name: 'Maria Källström', userName: 'maria', unit: 'Bergsåkers skola' },
-      { name: 'Olle Ek', userName: 'olle', unit: 'Bergsåkers skola' },
+      { name: 'Olle Ek', userName: 'olle', unit: 'Fritids' },
     ]);
+    expect(JSON.stringify(answer)).not.toContain('Cecilia');
     // Exactly the people of the entity list (`GET /api/entities/person`): the rule is `groupsOf`'s, never derived again.
     const listed = groupsOf('person', await w.d.staff.reach(w.d.persona('hillevi'))).flatMap(g =>
       g.entities.map(p => p.name),
@@ -187,7 +195,7 @@ describe('people.reports: Personal’s list as a read (D141 rule 4)', () => {
     for (const marker of ['Tillsvidare', '2020-01-01', '80']) expect(JSON.stringify(answer)).not.toContain(marker);
     // The model reads each row under the view's labels, with the user name another read takes as `person`.
     expect(modelReading(reportsView, 'Mina medarbetare', answer)).toMatchObject({
-      antal: 5,
+      antal: 4,
       rader: expect.arrayContaining([
         { Namn: 'Anna Lindqvist', Titel: 'Lärare', Enhet: 'Bergsåkers skola', Användarnamn: 'anna' },
       ]),
@@ -206,8 +214,12 @@ describe('people.reports: Personal’s list as a read (D141 rule 4)', () => {
 
   test('a manager who manages nobody any longer has an empty list, not a refusal', async () => {
     const w = world();
-    w.d.state.assignments.set('olle', [{ unitId: 'unit-fritids', role: 'employee' }]);
-    w.d.state.assignments.set('sven', []);
+    // Leading no unit any longer is not it (D147): Sven's employment still names Olle, so Sven is still his report.
+    hold(w.d.state, 'olle', [{ unitId: 'unit-fritids', role: 'employee' }]);
+    hold(w.d.state, 'sven', []);
+    expect((await w.read('olle')).rows).toEqual([{ name: 'Sven Berg', userName: 'sven', unit: 'Fritids' }]);
+    // Once no employment names him he manages nobody; his session still has a manager's role, and the read answers.
+    w.d.state.users.get('sven')!.employments = [];
     expect((await w.read('olle')).rows).toEqual([]);
   });
 
@@ -215,7 +227,7 @@ describe('people.reports: Personal’s list as a read (D141 rule 4)', () => {
     const w = world();
     w.registry.govern('people', { ...openGovernance(), capabilities: { [REPORTS_CAPABILITY]: { model: false } } });
     expect(offered(w.registry, actorOf(w.d.persona('hillevi')), REPORTS_CAPABILITY)).toBe(false);
-    expect((await w.read('hillevi')).rows).toHaveLength(5);
+    expect((await w.read('hillevi')).rows).toHaveLength(4);
   });
 });
 

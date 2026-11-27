@@ -10,7 +10,7 @@ import {
   reflowProblems,
   test,
 } from './support';
-import { ENTITY_UNIT, TALK_LENS, user } from './data';
+import { ENTITY_UNIT, TALK_LENS, entityList, user } from './data';
 import { BELOW_UNIT, MEMBER_UNIT, SICK_UNIT, TALK_UNITS, Units, unitAction, unitCard } from './unit-data';
 
 /**
@@ -126,6 +126,30 @@ test.describe('the unit as a page', () => {
     await expect(facts(page)).not.toContainText('Chef');
     await expect(page.getByRole('link', { name: 'Öppna Personal' })).toHaveCount(0);
     await expect(heading(page, 2, `Inget mer att visa om ${MEMBER_UNIT.label}`)).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
+  test('a unit the reader belongs to, where somebody reports to them, says their role is Medarbetare and counts those who report to them (D149)', async ({
+    page,
+    api: _,
+  }) => {
+    await new Units().route(page);
+    // The reader is employed on the unit, which somebody else leads, and one person on it reports to them: the unit is
+    // on their list of people for that person alone, which says nothing of who leads it.
+    const list = entityList();
+    await page.route('**/api/entities/person', route =>
+      route.fulfill({
+        json: { ...list, groups: [...list.groups, { ...MEMBER_UNIT, entities: [list.groups[0]!.entities[0]!] }] },
+      }),
+    );
+    await open(page, `/units/${MEMBER_UNIT.id}`);
+    await expect(heading(page, 1, MEMBER_UNIT.label)).toBeVisible();
+    for (const text of ['Din roll', 'Medarbetare', 'Rapporterar till dig', '1 medarbetare'])
+      await expect(facts(page)).toContainText(text);
+    await expect(facts(page)).not.toContainText('Chef');
+    // The count is of the people who report to the reader, and is not said as the unit's staff.
+    await expect(facts(page).getByText('Personal', { exact: true })).toHaveCount(0);
+    await expect(facts(page).getByRole('link', { name: 'Öppna Personal' })).toHaveAttribute('href', '/staff');
     await expectNoAxeViolations(page);
   });
 

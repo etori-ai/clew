@@ -67,7 +67,7 @@ import { useMarks } from '../marks';
 import { PageFrame, type EntryStyle } from '../components/shell/page-frame';
 import { createAskFieldTheme } from '@clew/ui/theme';
 import { useBranding } from '../branding';
-import { unitsLine, workUnit } from '../user-units';
+import { lageUnit, unitsLine, workUnit } from '../user-units';
 
 /** How many work items Hem shows under "Behöver dig" (board Hem): the most urgent; every one is in Att göra. */
 const ON_HEM = 4;
@@ -375,8 +375,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     <Lage
       areas={areas}
       loading={loadingAreas}
-      unitLabel={user.unitLabel}
-      unitId={user.unitId || undefined}
+      // The unit the manager leads, which need not be the one they are employed on (D149).
+      unitLabel={lageUnit(user).unitLabel}
+      unitId={lageUnit(user).unitId || undefined}
       // A tile leads where every other way to a tool leads, the tool's page (D42), when the view is a tool in the
       // person's menu; any other view to its own page with Hem as the way back (D126 rule 1).
       tileHref={(capability, title) =>

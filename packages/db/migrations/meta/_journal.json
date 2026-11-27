@@ -8,6 +8,27 @@
       "when": 1795520563938,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795608221715,
+      "tag": "0001_employments_as_rows",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795774260691,
+      "tag": "0002_unit_identifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795786498891,
+      "tag": "0003_who_leads_a_unit",
+      "breakpoints": true
     }
   ]
 }

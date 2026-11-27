@@ -1,11 +1,12 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
 import type { ProvisionStore, ProvisionTx } from '../../apps/server/src/modules/people/ports';
 import { scimUsecases, usersAdminUsecases } from '../../apps/server/src/modules/people/usecases';
-import type { AuthenticatedContext } from '@clew/contracts';
+import { SCIM_EMPLOYMENT_SCHEMA, type AuthenticatedContext } from '@clew/contracts';
+import { waitForBlockedTransaction } from './wait-for-blocked-transaction';
 
 /**
  * Two SCIM requests at once on Postgres (D68): what the memory adapter cannot show. A derivation locks the person, so
@@ -38,6 +39,7 @@ afterAll(async () => {
     if (people.length) {
       await db.delete(schema.groupMembers).where(inArray(schema.groupMembers.personId, people));
       await db.delete(schema.assignments).where(inArray(schema.assignments.personId, people));
+      await db.delete(schema.unitLeads).where(inArray(schema.unitLeads.personId, people));
       await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, people));
     }
     if (groups.length) await db.delete(schema.groups).where(inArray(schema.groups.id, groups));
@@ -682,42 +684,39 @@ test('groups that share their members, renamed while members come and go, writte
       id === outOf(5, 2) ? undefined : { role: 'employee', capabilities: id === outOf(5, 0) ? [] : ['admin.users'] },
     );
 });
-test('concurrent user patches preserve the name and the deactivation', async () => {
-  const { deps, p, store, user, scim } = stack();
+test('concurrent user patches preserve both employment additions, the name and the deactivation', async () => {
+  const { deps, p, user, scim } = stack();
+  const unitId = p.id + '-school';
+  await scim.createGroup(p, { externalId: 'unit:' + unitId, displayName: 'School' }, BASE);
   const { id } = await scim.createUser(p, user(1), BASE);
-  const slow = paused(store);
-  const patch = (path: string, value: string | boolean) => ({
+  const patch = (path: string, value: string | boolean, title: string) => ({
     schemas: [PATCH],
-    Operations: [{ op: 'replace', path, value }],
+    Operations: [
+      { op: 'replace', path, value },
+      { op: 'add', path: SCIM_EMPLOYMENT_SCHEMA + ':employments', value: [{ unitId, title }] },
+    ],
   });
-  const first = scimUsecases({ store: slow.store, ...deps }).patchUser(p, id, patch('active', false), BASE);
-  await slow.atRead;
-  // The first write is uncommitted. A second writer must read the committed inactive state.
-  let reading!: () => void;
-  const started = new Promise<void>(resolve => {
-    reading = resolve;
+  const firstWritten = Promise.withResolvers<void>();
+  const first = database().transaction(async tx => {
+    const writer = scimUsecases({ ...deps, store: postgresProvisionStore({ db: () => tx }) });
+    await writer.patchUser(p, id, patch('active', false, 'Teacher'), BASE);
+    firstWritten.resolve();
+    await waitForBlockedTransaction(tx);
   });
-  const observed: ProvisionStore = {
-    transaction: fn =>
-      store.transaction(tx =>
-        fn({
-          ...tx,
-          readUser: (...args) => {
-            reading();
-            return tx.readUser(...args);
-          },
-        }),
-      ),
-  };
-  const second = scimUsecases({ store: observed, ...deps }).patchUser(p, id, patch('displayName', 'New name'), BASE);
-  try {
-    await started;
-    await new Promise(resolve => setTimeout(resolve, 100));
-  } finally {
-    slow.release();
-  }
-  await Promise.all([first, second]);
-  expect(await scim.getUser(p, id, BASE)).toMatchObject({ active: false, displayName: 'New name' });
+  const second = firstWritten.promise.then(() =>
+    scim.patchUser(p, id, patch('displayName', 'New name', 'Tutor'), BASE),
+  );
+  const [, written] = await Promise.all([first, second]);
+  const jobs = [
+    { unitId, title: 'Teacher' },
+    { unitId, title: 'Tutor' },
+  ];
+  expect(written[SCIM_EMPLOYMENT_SCHEMA]?.employments).toEqual(jobs);
+  expect(await scim.getUser(p, id, BASE)).toMatchObject({
+    active: false,
+    displayName: 'New name',
+    [SCIM_EMPLOYMENT_SCHEMA]: { employments: jobs },
+  });
   const rows = await database()
     .select({ action: schema.audit.action })
     .from(schema.audit)
@@ -1230,6 +1229,7 @@ test('a member is added to a unit while the unit is removed, in either order: th
     expect(await db.select().from(schema.groups).where(eq(schema.groups.id, groupId))).toEqual([]);
     expect(await db.select().from(schema.groupMembers).where(eq(schema.groupMembers.personId, personId))).toEqual([]);
     expect(await db.select().from(schema.assignments).where(eq(schema.assignments.personId, personId))).toEqual([]);
+    expect(await db.select().from(schema.unitLeads).where(eq(schema.unitLeads.personId, personId))).toEqual([]);
   };
   const begin = async (n: number) => ({
     person: (await scim.createUser(p, user(n), BASE)).id,
@@ -1348,4 +1348,208 @@ test('one id issued twice at once: the second waits for the first, is told the i
       .from(schema.audit)
       .where(eq(schema.audit.subject, 'provisioner:' + id)),
   ).toEqual([{ actor: 'person:anna', action: 'provisioner.added' }]);
+});
+/**
+ * D149 on Postgres: a unit, people employed on it, and what the stored grant and the two tables say of one of
+ * them. An employment is enough to be of the unit; who the employment names is a manager for as long as it does.
+ */
+function reporting() {
+  const made = stack(),
+    { prefix, p, user, scim } = made,
+    unitId = prefix + '-school',
+    db = database();
+  const employed = (n: number, managerId?: string) => ({
+    ...user(n),
+    schemas: ['urn:ietf:params:scim:schemas:core:2.0:User', SCIM_EMPLOYMENT_SCHEMA],
+    [SCIM_EMPLOYMENT_SCHEMA]: { employments: [{ unitId, ...(managerId ? { managerId } : {}) }] },
+  });
+  /** The employment names this manager, or nobody. */
+  const names = (managerId?: string) => ({
+    schemas: [PATCH],
+    Operations: [
+      {
+        op: 'replace',
+        path: SCIM_EMPLOYMENT_SCHEMA + ':employments',
+        value: [{ unitId, ...(managerId ? { managerId } : {}) }],
+      },
+    ],
+  });
+  const stored = async (personId: string) => {
+    const [row] = await db
+      .select({
+        unitId: schema.accessGrants.unitId,
+        role: schema.accessGrants.role,
+        assignments: schema.accessGrants.assignments,
+      })
+      .from(schema.accessGrants)
+      .where(eq(schema.accessGrants.personId, personId));
+    return row;
+  };
+  const role = async (personId: string) => (await stored(personId))?.role;
+  const unit = () => scim.createGroup(p, { externalId: 'unit:' + unitId, displayName: 'Skolan' }, BASE);
+  return { ...made, unitId, employed, names, stored, role, unit };
+}
+test('whoever an active person names as manager is a manager from that write to the one that takes it back, and leads no unit for it: the grant, the two tables and the audit say so (D149)', async () => {
+  const { prefix, p, scim, unitId, employed, names, stored, unit } = reporting(),
+    db = database();
+  await unit();
+  const alone = { unitId, role: 'employee' as const, assignments: [] },
+    // One unit, and an employee on it, which is more than the unit and the role say: the grant carries it.
+    reportedTo = {
+      unitId,
+      role: 'manager' as const,
+      assignments: [{ unitId, unitLabel: 'Skolan', role: 'employee' as const }],
+    };
+  // Employed on the unit and in no group: the employment is enough to be of it.
+  const boss = (await scim.createUser(p, employed(1), BASE)).id;
+  expect(await stored(boss)).toEqual(alone);
+  // Somebody's employment names her: she is a manager, in the write that named her.
+  const report = (await scim.createUser(p, employed(2, boss), BASE)).id;
+  expect(await stored(boss)).toEqual(reportedTo);
+  expect(await stored(report)).toEqual(alone);
+  // A deactivated person is nobody's report, and is one again when they are back.
+  await scim.deleteUser(p, report);
+  expect(await stored(boss)).toEqual(alone);
+  await scim.patchUser(
+    p,
+    report,
+    { schemas: [PATCH], Operations: [{ op: 'replace', path: 'active', value: true }] },
+    BASE,
+  );
+  expect(await stored(boss)).toEqual(reportedTo);
+  // The employment names nobody.
+  await scim.patchUser(p, report, names(), BASE);
+  expect(await stored(boss)).toEqual(alone);
+  // None of it made her lead a unit, and she is of the one she is employed on.
+  const held = async () => ({
+    belongs: (await db.select().from(schema.assignments).where(eq(schema.assignments.personId, boss))).map(
+      row => row.unitId,
+    ),
+    leads: (await db.select().from(schema.unitLeads).where(eq(schema.unitLeads.personId, boss))).map(row => row.unitId),
+  });
+  expect(await held()).toEqual({ belongs: [unitId], leads: [] });
+  // Each turn is a row on her, written with the change that made it.
+  const derived = await db
+    .select({ details: schema.audit.details })
+    .from(schema.audit)
+    .where(and(eq(schema.audit.subject, 'person:' + boss), eq(schema.audit.action, 'grant.derived')))
+    .orderBy(schema.audit.id);
+  expect(derived.map(row => (row.details as { role: string }).role)).toEqual([
+    'employee',
+    'manager',
+    'employee',
+    'manager',
+    'employee',
+  ]);
+  // Leading a unit she is employed elsewhere than is a row of its own: she acts as the unit of her employment, is a
+  // manager, and her units say where she leads and where she only belongs.
+  const office = prefix + '-office';
+  await scim.createGroup(p, { externalId: 'unit:' + office, displayName: 'Kontoret' }, BASE);
+  await scim.createGroup(
+    p,
+    { externalId: 'unit-manager:' + office, displayName: 'Chefer', members: [{ value: boss }] },
+    BASE,
+  );
+  expect(await stored(boss)).toEqual({
+    unitId,
+    role: 'manager',
+    assignments: [
+      { unitId: office, unitLabel: 'Kontoret', role: 'manager' },
+      { unitId, unitLabel: 'Skolan', role: 'employee' },
+    ],
+  });
+  expect(await held()).toEqual({ belongs: [unitId], leads: [office] });
+});
+test('two people who come to name each other as manager at once are both written: each write holds the two of them in one order, so the second waits for the first and neither is ended as a deadlock (D149)', async () => {
+  const { deps, p, store, scim, employed, names, role, unit } = reporting();
+  await unit();
+  const a = (await scim.createUser(p, employed(1), BASE)).id,
+    b = (await scim.createUser(p, employed(2), BASE)).id;
+  // The first stops when it holds the two of them and has not written yet.
+  const slow = pausedBefore(store, 'updateUser');
+  const first = scimUsecases({ store: slow.store, ...deps }).patchUser(p, a, names(b), BASE);
+  await slow.atCall;
+  const second = scim.patchUser(p, b, names(a), BASE),
+    secondDone = settled(second);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  expect(secondDone()).toBe(false);
+  slow.release();
+  await Promise.all([first, second]);
+  // Two who name each other are neither's report.
+  expect([await role(a), await role(b)]).toEqual(['employee', 'employee']);
+  // And with nothing to hold them apart, round after round.
+  for (let round = 0; round < 6; round++) {
+    await Promise.all([scim.patchUser(p, a, names(), BASE), scim.patchUser(p, b, names(), BASE)]);
+    await Promise.all([scim.patchUser(p, a, names(b), BASE), scim.patchUser(p, b, names(a), BASE)]);
+    expect([await role(a), await role(b)]).toEqual(['employee', 'employee']);
+  }
+  // One of them stops naming the other: the other reports to them from that write.
+  await scim.patchUser(p, a, names(), BASE);
+  expect([await role(a), await role(b)]).toEqual(['manager', 'employee']);
+});
+test('a write that finds another manager named than the one it read holds them too and starts over: the manager named meanwhile is nobody’s when it is done (D149)', async () => {
+  const { deps, p, store, scim, employed, names, role, unit } = reporting();
+  await unit();
+  const [a, b, c] = [
+    (await scim.createUser(p, employed(1), BASE)).id,
+    (await scim.createUser(p, employed(2), BASE)).id,
+    (await scim.createUser(p, employed(3), BASE)).id,
+  ];
+  // Between the read that says whom to hold and the first hold, which is of the unit the employment names, another
+  // request names a third person, and commits. Once this one holds the unit, no such write can come between.
+  let holds = 0;
+  const racing = scimUsecases({
+    store: watched(store, async (name, moment) => {
+      if (name !== 'lockUnits' || moment !== 'before') return;
+      if (holds++ === 0) await scim.patchUser(p, b, names(c), BASE);
+    }),
+    ...deps,
+  });
+  expect(await role(c)).toBe('employee');
+  await racing.patchUser(p, b, names(a), BASE);
+  // It held twice: the first time without the one named meanwhile, whom it could not have derived.
+  expect(holds).toBe(2);
+  expect([await role(a), await role(b), await role(c)]).toEqual(['manager', 'employee', 'employee']);
+});
+test('a manager is written while the people who name her are created and deactivated together, round after round: every write finishes, and she is a manager exactly while one of them is active (D149)', async () => {
+  const { p, scim, employed, role, unit } = reporting();
+  await unit();
+  const boss = (await scim.createUser(p, employed(1), BASE)).id;
+  let n = 1;
+  for (let round = 0; round < 5; round++) {
+    const [, ...made] = await Promise.all([
+      scim.patchUser(
+        p,
+        boss,
+        { schemas: [PATCH], Operations: [{ op: 'replace', path: 'title', value: 'Rektor ' + round }] },
+        BASE,
+      ),
+      ...[0, 1, 2].map(() => scim.createUser(p, employed(++n, boss), BASE)),
+    ]);
+    expect(await role(boss)).toBe('manager');
+    await Promise.all(made.map(report => scim.deleteUser(p, report.id)));
+    expect(await role(boss)).toBe('employee');
+  }
+});
+test('a unit is not removed between the check that it exists and the write of a first employment on it: the removal waits for the write, and takes the person out of the unit with it (D149)', async () => {
+  const { deps, p, store, scim, employed, stored, unit, unitId } = reporting();
+  const group = await unit();
+  // A person is created with an employment on the unit, and stops when the unit has been checked and nothing of the
+  // person is written yet.
+  const slow = pausedBefore(store, 'insertUser');
+  const created = scimUsecases({ store: slow.store, ...deps }).createUser(p, employed(1), BASE);
+  await slow.atCall;
+  // The removal of the unit waits for that write. Read before it, the unit had nobody employed on it, and the person
+  // would have been left as of a unit that is gone, its id free for another organisation to take.
+  const removed = scim.deleteGroup(p, group.id);
+  expect(await stillWaiting(settled(removed), slow.release)).toBe(true);
+  const person = (await created).id;
+  await removed;
+  // The unit is gone. The employment still names it and places nobody: no unit, and so no grant.
+  expect(await stored(person)).toBeUndefined();
+  expect(await database().select().from(schema.assignments).where(eq(schema.assignments.personId, person))).toEqual([]);
+  // The other way round, the employment is refused: the unit was removed before the person was written.
+  const refused = await scim.createUser(p, employed(2), BASE).catch(error => error);
+  expect(refused).toMatchObject({ status: 400, scimType: 'invalidValue' });
+  expect(String(refused.detail)).toContain(unitId);
 });

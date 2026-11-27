@@ -9,6 +9,7 @@ import { ERASED, IDENTIFIERS_ABOUT } from '../../apps/server/src/modules/people/
 import type { ProvisionStore, ProvisionTx } from '../../apps/server/src/modules/people/ports';
 import { PERSON_ERASED, personErasureUsecases, scimUsecases } from '../../apps/server/src/modules/people/usecases';
 import { memoryPersonKeys } from '../person-keys';
+import { unitsHeld } from '../held-units';
 
 /**
  * An operator's erasure of a deactivated person (D123, Q7 of the 2026-11-12 users review) on the memory adapter: the
@@ -272,7 +273,7 @@ describe('erasing a person (D123)', () => {
     await scim.deleteUser(p, id);
     const held = store.state.users.get(id)!,
       events = store.state.audit.map(row => [row.action, row.subject]);
-    expect(store.state.assignments.get(id)).toHaveLength(1);
+    expect(unitsHeld(store.state, id)).toHaveLength(1);
     expect(store.state.grants.has(id)).toBe(true);
 
     const erased = await erasure.erasePerson(OPERATOR, id);
@@ -324,7 +325,7 @@ describe('erasing a person (D123)', () => {
     expect([...store.state.members].filter(key => key.endsWith('\u0000' + id))).toEqual([]);
     expect([...store.state.members].filter(key => key.endsWith('\u0000' + bo))).toHaveLength(1);
     expect([store.state.groups.get(unit.id)!.updatedAt, store.state.groups.get(choir.id)!.updatedAt]).toEqual([at, at]);
-    expect(store.state.assignments.get(id) ?? []).toEqual([]);
+    expect(unitsHeld(store.state, id) ?? []).toEqual([]);
     expect(store.state.grants.has(id)).toBe(false);
     expect(store.state.grants.has(bo)).toBe(true);
     expect(store.state.bindings).toEqual([{ issuer: ISSUER, subject: 'sub-bo', personId: bo }]);

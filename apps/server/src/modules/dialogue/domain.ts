@@ -149,17 +149,24 @@ export function areaFor(input: {
   };
 }
 /**
- * The units a manager follows up (D117, D99's reporting line): the units they manage, with themselves as the manager the
- * activities go to, then the units led by the managers who report to them, with that manager. One level down, never the
- * whole branch; a unit they manage is never also one below. An employee follows up nothing.
+ * The units a manager follows up (D117): the units they lead (`led`), with themselves as the manager the activities go
+ * to, then the units led by the managers who report to them (D147), with that manager. One level down, never the whole
+ * branch; a unit they lead is never also one below. A unit that only holds one of their reports is not followed up, and
+ * an employee follows up nothing.
  */
-export function followedFrom(personId: string, managed: readonly StaffUnit[]): FollowedUnit[] {
+export function followedFrom(
+  personId: string,
+  managed: readonly StaffUnit[],
+  led: ReadonlySet<string> = new Set(managed.map(u => u.unitId)),
+): FollowedUnit[] {
   const found = new Map<string, FollowedUnit>();
   for (const u of managed)
-    found.set(u.unitId, { unitId: u.unitId, label: u.unitLabel, relation: 'own', managerId: personId });
+    if (led.has(u.unitId))
+      found.set(u.unitId, { unitId: u.unitId, label: u.unitLabel, relation: 'own', managerId: personId });
   for (const u of managed)
     for (const p of u.people)
-      for (const b of p.below ?? [])
+      // The units this report leads: the one they are listed under, where they lead it, and the others (`below`).
+      for (const b of [...(p.role === 'manager' ? [{ ...u, role: 'manager' as const }] : []), ...(p.below ?? [])])
         if (b.role === 'manager' && p.enabled !== false && !found.has(b.unitId))
           found.set(b.unitId, { unitId: b.unitId, label: b.unitLabel, relation: 'below', managerId: p.id });
   return [...found.values()];

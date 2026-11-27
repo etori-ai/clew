@@ -1125,7 +1125,7 @@
       "number": 94,
       "path": "docs/decisions/D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md",
       "title": "D94 · A manager has a Personal section that lists the people on the units they manage",
-      "status": "accepted, built 2026-11-09 (the destination, the read, the page; notes and the utvecklingssamtal are not decided here); item 2 amended by D99 (2026-11-10): Personal lists a manager's reports, which adds the managers directly below in the organisation tree",
+      "status": "accepted, built 2026-11-09 (the destination, the read, the page; notes and the utvecklingssamtal are not decided here); item 2 amended by D99 (2026-11-10): Personal lists a manager's reports, which adds the managers directly below in the organisation tree; item 2 amended again by [D147](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) (2026-11-25, provisional): Personal lists the people whose employments name the reader as manager, under the unit of that employment",
       "date": "2026-11-09",
       "area": "product, identity"
     },
@@ -1188,7 +1188,7 @@
       "number": 99,
       "path": "docs/decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md",
       "title": "D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports",
-      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); the order inside the unit overlay of item 6 and where its close returns the focus are amended by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) (2026-11-13, provisional, built 2026-11-13: see the last paragraph of \"As built\"); an amendment of item 6 of 2026-11-12 (a unit's people as a page) was withdrawn in the merge with D124, see that amendment",
+      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); the order inside the unit overlay of item 6 and where its close returns the focus are amended by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) (2026-11-13, provisional, built 2026-11-13: see the last paragraph of \"As built\"); an amendment of item 6 of 2026-11-12 (a unit's people as a page) was withdrawn in the merge with D124, see that amendment; item 4 (the reporting line) replaced by [D147](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) (2026-11-25, provisional): who reports to whom is read from the manager each employment names, never from the tree; Administration › Organisation shows who leads a unit and whom each person reports to as two facts, and who reports to nobody; the unit extension carries a second attribute, the identifiers other systems know the unit by, and the first item under \"Open\" is answered by [D148](D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md) (2026-11-27, provisional)",
       "date": "2026-11-10",
       "area": "identity, product"
     },
@@ -1341,7 +1341,7 @@
       "number": 114,
       "path": "docs/decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md",
       "title": "D114 · Person profiles show current employments and categorised phone numbers",
-      "status": "provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet; item 3 amended 2026-11-12 in the fixes of the review of users and the organisation (S8, Q2): blank addresses are left out before one is chosen, and the primary work address is taken before the first; the section on work placements, first written the same day with [the note on municipal employment](../reviews/2026-11-12-municipal-employment-and-work-placements.md), which names nobody who chose it, was settled in the same fixes, whose open decisions the product owner asked the work to take (X4, X5): a work placement is not a placement in the sense of [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md), is not sent today and gives no access or reporting line, and a person who must act at another unit gets a `unit:` membership there",
+      "status": "provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet; item 3 amended 2026-11-12 in the fixes of the review of users and the organisation (S8, Q2): blank addresses are left out before one is chosen, and the primary work address is taken before the first; the section on work placements, first written the same day with [the note on municipal employment](../reviews/2026-11-12-municipal-employment-and-work-placements.md), which names nobody who chose it, was settled in the same fixes, whose open decisions the product owner asked the work to take (X4, X5): a work placement is not a placement in the sense of [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md), is not sent today and gives no access or reporting line, and a person who must act at another unit gets a `unit:` membership there; item 2 refined by [D147](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) (2026-11-25, provisional): an employment is a row of its own and may name its manager, which decides who the person reports to and gives no access",
       "date": "2026-11-12",
       "area": "identity, ui"
     },
@@ -1377,7 +1377,7 @@
       "number": 117,
       "path": "docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md",
       "title": "D117 · A manager follows up the units of the managers who report to them, and a source is told those units",
-      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice); item 5 as built differs, see the note of 2026-11-13 at the end; item 5 amended by [D135](D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) (2026-11-20, provisional): the actor gains `assignments`, the person's own units and roles, beside `units`, which stays the units a manager follows up; item 5 narrowed 2026-11-24 in the fixes of the review of 2026-11-23 (`ID-3`): `units` names the units a manager manages and those below, never one they are only placed on, as D135 item 5 says, while the list of units and the unit's page still have it; amended 2026-11-24: the view's read that item 5 and the note of 2026-11-13 name as `GET /api/cap/:name` is `POST /api/cap/:name` with its input as the body, never in an address (WD-M4 of the web review of 2026-11-23)",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice); item 5 as built differs, see the note of 2026-11-13 at the end; item 5 amended by [D135](D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) (2026-11-20, provisional): the actor gains `assignments`, the person's own units and roles, beside `units`, which stays the units a manager follows up; item 5 narrowed 2026-11-24 in the fixes of the review of 2026-11-23 (`ID-3`): `units` names the units a manager manages and those below, never one they are only placed on, as D135 item 5 says, while the list of units and the unit's page still have it; amended 2026-11-24: the view's read that item 5 and the note of 2026-11-13 name as `GET /api/cap/:name` is `POST /api/cap/:name` with its input as the body, never in an address (WD-M4 of the web review of 2026-11-23); the units below now rest on [D147](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) (2026-11-25, provisional): the units led by the people whose employments name the reader, wherever they stand in the tree",
       "date": "2026-11-13",
       "area": "product, integrations"
     },
@@ -1611,7 +1611,7 @@
       "number": 135,
       "path": "docs/decisions/D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md",
       "title": "D135 · A person with several assignments sees the work of all of them, and a source is told every one",
-      "status": "provisional (Oliver Borgström, 2026-11-20; accepted once a real directory has pushed people with more than one assignment and one connector that was not written for Clew answers for each of them); amended 2026-11-24 in the fixes of the review of batch 9 of the review of 2026-11-23: the time fixture declares `assignments: true` too and answers for every unit a person manages, as the HR fixture does, so \"Only the HR fixture\" under the build's limits reads \"Only the HR and time fixtures\"",
+      "status": "provisional (Oliver Borgström, 2026-11-20; accepted once a real directory has pushed people with more than one assignment and one connector that was not written for Clew answers for each of them); amended 2026-11-24 in the fixes of the review of batch 9 of the review of 2026-11-23: the time fixture declares `assignments: true` too and answers for every unit a person manages, as the HR fixture does, so \"Only the HR fixture\" under the build's limits reads \"Only the HR and time fixtures\"; amended 2026-11-27 by [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md): the unit a person acts as is the one they are employed on, so item 1 holds only for someone the directory sends no employment for; an assignment's role is `manager` where the person leads the unit, and the person's own role says that they are a manager, which they are too when people report to them; and the grant, the fingerprint, the context and the actor carry the assignments whenever they say more than the unit and the role, where items 2 to 5 say \"more than one\"",
       "date": "2026-11-20",
       "area": "identity, integrations"
     },
@@ -1713,6 +1713,33 @@
       "status": "accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question; item 3 amended 2026-11-24, finding `BL-15` of the baseline review: the connector protocol's viewer script is served with the notices of every package it bundles, not Scalar's alone, each at the version the script holds, and one package Clew's install does not hold, `unist-util-find-after`, credited from a kept text)",
       "date": "2026-11-23",
       "area": "platform"
+    },
+    {
+      "key": "D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to",
+      "number": 147,
+      "path": "docs/decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md",
+      "title": "D147 · An employment is a row of its own and names the person it reports to",
+      "status": "provisional (Max Eriksson, 2026-11-25: build the storage first, then the line that reads it; accepted once a provisioner has pushed managers from a real directory and the people it names have used Personal); items 1 to 8 are built; item 9 was decided on 2026-11-27 and is built as [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md)",
+      "date": "2026-11-25",
+      "area": "identity"
+    },
+    {
+      "key": "D148-a-unit-carries-the-identifiers-other-systems-know-it-by",
+      "number": 148,
+      "path": "docs/decisions/D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md",
+      "title": "D148 · A unit carries the identifiers other systems know it by",
+      "status": "provisional (Max Eriksson, product owner, 2026-11-27: the unit carries its keys to other systems, the directory pushes them and a connected system is told them; the shape below is this build's choice; accepted once a provisioner has pushed identifiers from a real directory and a connector has answered a real system with one)",
+      "date": "2026-11-27",
+      "area": "identity"
+    },
+    {
+      "key": "D149-a-manager-is-who-leads-a-unit-or-is-reported-to",
+      "number": 149,
+      "path": "docs/decisions/D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md",
+      "title": "D149 · A manager is who leads a unit or is reported to",
+      "status": "provisional (Max Eriksson, product owner, 2026-11-27, with the four answers under \"Decided\"; accepted once a provisioner has pushed a real directory and the people it makes managers have used Personal and a unit's page)",
+      "date": "2026-11-27",
+      "area": "identity, integrations"
     }
   ],
   "documents": [
@@ -1917,6 +1944,7 @@
         "What a person gets",
         "A card when a request waits on the person",
         "Reporting a fault (`POB_WRITES=create`)",
+        "What a unit's agreements cost (`POB_COST_IDENTIFIER`)",
         "How a status becomes a state",
         "The access log",
         "Configuration",
@@ -2652,6 +2680,24 @@
     {
       "path": "docs/decisions/D146-clew-is-licensed-under-the-agpl-as-eneo-is.md",
       "title": "D146 · Clew is licensed under the AGPL, as Eneo is",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md",
+      "title": "D147 · An employment is a row of its own and names the person it reports to",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md",
+      "title": "D148 · A unit carries the identifiers other systems know it by",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md",
+      "title": "D149 · A manager is who leads a unit or is reported to",
       "category": "decision-history",
       "headings": []
     },
@@ -3559,6 +3605,7 @@
       "category": "maintainer-guide",
       "headings": [
         "Waiting for the product owner",
+        "Who reports to whom (D147)",
         "After the redesign on one pattern (D126)",
         "Handing a conversation to another system's assistant (D125)",
         "Records whose status needs a look",

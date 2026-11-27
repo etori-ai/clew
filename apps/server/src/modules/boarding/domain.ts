@@ -122,33 +122,6 @@ export function layerApplies(
       return layer.value !== null && person.employments.some(e => e.employmentType === layer.value);
   }
 }
-/**
- * D99's line upwards, as the people module walks it for `above`: from each unit the person is assigned to (from the unit
- * above, where they lead it) up to the nearest unit somebody leads, its leaders. A cycle ends the walk. Pure, and shared by
- * both directory adapters, so the two walk alike.
- */
-export function lineUpwards(
-  assignments: ReadonlyArray<{ unitId: string; role: 'manager' | 'employee' }>,
-  parents: ReadonlyMap<string, string | null>,
-  leadersOf: (unitId: string) => string[],
-): string[] {
-  const found = new Set<string>();
-  for (const a of assignments) {
-    const seen = new Set<string>();
-    for (
-      let at: string | null | undefined = a.role === 'manager' ? parents.get(a.unitId) : a.unitId;
-      at && !seen.has(at);
-      at = parents.get(at)
-    ) {
-      seen.add(at);
-      const leads = leadersOf(at);
-      if (!leads.length) continue;
-      for (const id of leads) found.add(id);
-      break;
-    }
-  }
-  return [...found].sort();
-}
 const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
 /** The layers that apply to a person, in the order their items are assembled: by condition (`CONDITION_ORDER`), then name. */
 export function applyingLayers<L extends Pick<LayerRecord, 'id' | 'condition' | 'value' | 'name'>>(

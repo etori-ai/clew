@@ -1,4 +1,4 @@
-import type { Position } from '@clew/contracts';
+import type { Position, UnitIdentifier } from '@clew/contracts';
 import type {
   Assignment,
   DerivedUnit,
@@ -6,6 +6,7 @@ import type {
   GroupCapabilityRule,
   GroupRelationRule,
   GroupRecord,
+  HeldUnit,
   Membership,
   Placement,
   TreeUnit,
@@ -18,10 +19,12 @@ import type {
 export interface UserReads {
   capabilities(personId: string): Promise<string[]>;
   /**
-   * The active people placed on the unit, each with the role they hold there, whatever unit they act in: one read over
-   * the provisioning store for either adapter (`directoryUsecases`).
+   * The active people of the reader's organisation who belong to the unit or lead it, each with the role they hold
+   * there, whatever unit they act in: one read over the provisioning store for either adapter (`directoryUsecases`).
+   * A unit id is asked within the reader's organisation and never alone: a person another organisation holds on a
+   * unit of the same id is nobody's colleague here. Nobody for a reader the directory does not hold.
    */
-  directory(unitId: string): Promise<Array<{ id: string; name: string; role: string }>>;
+  directory(unitId: string, readerId: string): Promise<Array<{ id: string; name: string; role: string }>>;
   /**
    * The person's provisioned user name (D96 item 8: what another system keys a row on); null for an unknown person or
    * one provisioned without one.
@@ -76,6 +79,12 @@ export interface LeaverChange {
   personId: string;
   organisationId: string;
   at: string;
+  /**
+   * On a deactivation: whom the person reported to when they left (D147), by id, as the reporting line reads it: the
+   * active people of the organisation their employments named, without anyone who named them back. Read before the
+   * change is applied, so a write that deactivates a person and clears their employments in one says them still.
+   */
+  managers?: readonly string[];
 }
 /**
  * What a change of a person's `active` means to a domain that keeps data about them (D68: a person is deactivated,
@@ -130,6 +139,8 @@ export interface ProvisionTx {
    * other's change. Callers lock several people in id order, so two transactions never wait on each other.
    */
   lockPerson(id: string): Promise<{ id: string; organisationId: string } | undefined>;
+  /** The organisation a person is of, read without holding them; undefined for nobody. */
+  organisationOf(personId: string): Promise<string | undefined>;
   /**
    * Holds these people for the rest of the transaction, as `lockPerson` holds one, in one pass in id order and a few
    * thousand a statement; an id that names nobody is passed over. A group write holds everyone it touches or derives
@@ -170,10 +181,26 @@ export interface ProvisionTx {
   unitLabels(ids: readonly string[], organisationId: string): Promise<Record<string, string>>;
   /** Upsert by id, one per assignment, before the assignments that reference them; the label is the derived one. */
   writeUnits(organisationId: string, units: readonly DerivedUnit[]): Promise<void>;
-  replaceAssignments(personId: string, assignments: readonly Assignment[]): Promise<void>;
   /**
-   * The projection as stored; `relations` (D121) present only when the person holds one, `assignments` (D135) only when
-   * they hold more than one assignment.
+   * The person belongs to exactly these units and leads exactly these (D149), written over what was held. The
+   * two are kept apart: a unit is in one list, the other or both, and each has a row from `writeUnits`.
+   */
+  replaceUnits(personId: string, held: { belongs: readonly string[]; leads: readonly string[] }): Promise<void>;
+  /**
+   * Whether somebody reports to the person (D149): an active person of the organisation other than themselves
+   * has a current employment that names them, and no employment of the person names that one back. Two who name each
+   * other are neither's report, as the reporting line reads it (`reportingOf`).
+   */
+  hasReports(organisationId: string, personId: string): Promise<boolean>;
+  /**
+   * The people of the organisation with a current employment on the unit, by id and each once, a deactivated person
+   * among them. An employment places a person on its unit (D149), so a write of the unit's group reaches them
+   * as it reaches its members.
+   */
+  employedOn(organisationId: string, unitId: string): Promise<string[]>;
+  /**
+   * The projection as stored; `relations` (D121) present only when the person holds one, `assignments` (D135) unless
+   * the person's one unit and role say it all.
    */
   grant(
     personId: string,
@@ -292,7 +319,9 @@ export interface ProvisionTx {
   insertGroup(record: GroupRecord): Promise<void>;
   updateGroup(
     id: string,
-    fields: Partial<Pick<GroupRecord, 'externalId' | 'label' | 'parentUnitId'>> & { updatedAt: string },
+    fields: Partial<Pick<GroupRecord, 'externalId' | 'label' | 'parentUnitId' | 'unitIdentifiers'>> & {
+      updatedAt: string;
+    },
   ): Promise<void>;
   /** Removes the group and its memberships; its group-capability rows stay (D85). */
   deleteGroup(id: string): Promise<void>;
@@ -315,11 +344,40 @@ export interface ProvisionTx {
    * many match in all. A `count` of 0 counts and reads no rows.
    */
   searchUsers(organisationId: string, search: UserSearch, page: Page): Promise<Listed<UserRecord>>;
-  assignmentsOf(personId: string): Promise<Array<{ unitId: string; unitLabel: string; role: Assignment['role'] }>>;
+  /** Every unit the person belongs to or leads, each once with its label, by unit id (`HeldUnit`). */
+  assignmentsOf(personId: string): Promise<Array<HeldUnit & { unitLabel: string }>>;
   /**
-   * Personal (D94, D99): everyone assigned to each of the units, under the unit's id, with their role on it and by
-   * person id; a unit nobody is assigned to is absent. With `organisationId`, that organisation's people only. The use
-   * case sorts and excludes the reader.
+   * D147: who the people of the organisation name as manager on their current employments, a pair for each person and
+   * manager, each once, by person id and then manager id. With `personIds`, of those people only. The manager is named
+   * as stored: a deactivated one, or one of another organisation by a row written before the check, is among them.
+   */
+  managersNamed(
+    organisationId: string,
+    personIds?: readonly string[],
+  ): Promise<Array<{ personId: string; managerId: string }>>;
+  /**
+   * D147: the people of the organisation with a current employment that names `managerId`, by person id, each once:
+   * with the units of those employments in the employments' order, each once, and the units they lead themselves, by
+   * unit id. A deactivated person is among them with `enabled` false, as `unitPeople` gives them; the use case decides.
+   */
+  reportsTo(
+    organisationId: string,
+    managerId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      userName: string | null;
+      email: string | null;
+      enabled: boolean;
+      unitIds: string[];
+      leads: string[];
+    }>
+  >;
+  /**
+   * Administration › Organisation (D99): everyone who belongs to or leads each of the units, under the unit's id, with
+   * their role on it and whether they belong to it (`HeldUnit`), by person id; a unit with nobody is absent. With
+   * `organisationId`, that organisation's people only. The use case sorts.
    */
   unitPeople(
     unitIds: readonly string[],
@@ -333,6 +391,7 @@ export interface ProvisionTx {
         userName: string | null;
         email: string | null;
         role: Assignment['role'];
+        belongs: boolean;
         enabled: boolean;
       }>
     >
@@ -343,8 +402,14 @@ export interface ProvisionTx {
   /** Nodes of the organisation's tree, optionally narrowed to the named ids, in unit id order. */
   unitTree(organisationId: string, ids?: readonly string[]): Promise<TreeUnit[]>;
   /**
-   * Every person of the organisation with each unit they are assigned to, by person id and then unit id; a person
-   * assigned to none is one row with `unitId` and `role` null.
+   * What other systems know these units by (D148): the identifiers on each unit's `unit:` group in the organisation, as
+   * the directory sent them and in its order, by unit id. A unit that carries none, and an id that names no unit of the
+   * organisation, are absent.
+   */
+  unitIdentifiers(organisationId: string, unitIds: readonly string[]): Promise<Map<string, UnitIdentifier[]>>;
+  /**
+   * Every person of the organisation with each unit they belong to or lead, by person id and then unit id; a person
+   * with none is one row with `unitId` and `role` null.
    */
   placements(organisationId: string): Promise<Placement[]>;
   /** Whether an identity binding exists for the person, with any issuer. */

@@ -20,6 +20,9 @@ import {
   byUnitId,
   RELATION_GRANTS,
   PROVISIONED_KEY_LENGTH,
+  UNIT_IDENTIFIER_LIMIT,
+  UNIT_IDENTIFIER_TYPE_LENGTH,
+  UNIT_IDENTIFIER_VALUE_LENGTH,
   checkContract,
   isCapability,
   isRelationGrant,
@@ -28,10 +31,12 @@ import {
   type RelationGrant,
   type DirectoryPhone,
   type Employment,
+  type ManagerGap,
   type OrganisationOverview,
   type OrganisationUnit,
   type Position,
   type Role,
+  type UnitIdentifier,
   type UserStatus,
 } from '@clew/contracts';
 import {
@@ -93,6 +98,10 @@ export interface GroupRelationRule {
   groupExternalId: string;
   relation: string;
 }
+/**
+ * One of a person's units with their role there (D149): `manager` where they lead the unit, `employee` where
+ * they belong to it without leading it.
+ */
 export interface Assignment {
   unitId: string;
   role: Role;
@@ -111,10 +120,11 @@ export interface GrantAssignment extends Assignment {
   unitLabel: string;
 }
 /**
- * The grant projection: the primary assignment with its label, the capabilities, the relations to people by grant
- * (`auth_access_grant`), and every assignment when the person holds more than one (D135). `relations` is present only
- * when the person holds one (D121), sorted; `assignments` only when there are two or more, sorted by unit id, the
- * primary among them.
+ * The grant projection (`auth_access_grant`): the unit the person acts as with its label, whether they are a manager,
+ * the capabilities, the relations to people by grant, and their assignments. `role` is `manager` when somebody reports
+ * to them or they lead a unit (D149); it does not say that they lead `unitId`. `relations` is present only when
+ * the person holds one (D121), sorted. `assignments` is every unit they belong to or lead with their role there (D135),
+ * sorted by unit id, and absent only when there is one and it says what `unitId` and `role` already say.
  */
 export interface Grant {
   unitId: string;
@@ -125,15 +135,22 @@ export interface Grant {
   assignments?: GrantAssignment[];
 }
 export interface Derived {
-  /** Every unit the person is assigned to, sorted by unit id. */
+  /** Every unit the person belongs to or leads, sorted by unit id. */
   units: DerivedUnit[];
-  /** Every assignment, one per unit, sorted by unit id. */
+  /** The units the person belongs to, by unit id: where they are employed, and the `unit:` groups they are in. */
+  belongs: string[];
+  /** The units the person leads, by unit id: the `unit-manager:` groups they are in. */
+  leads: string[];
+  /** One for each of those units, sorted by unit id: `manager` where they lead it, `employee` where they only belong. */
   assignments: Assignment[];
   /**
-   * The primary assignment: manager before employee, then the lowest unit id. It is the `unitId` and `role` a connector
-   * is told and decides who reaches a connector; the others travel beside it (D135).
+   * The unit the person acts as, with their role on it (D149): the unit of their first employment; for a person
+   * the directory sends no employment for, a unit they lead before one they are placed on, then the lowest unit id
+   * (D135). Its unit is the grant's `unitId`, and decides who reaches a connector; the others travel beside it.
    */
   active: Assignment | undefined;
+  /** Whether the person is a manager: somebody reports to them, or they lead a unit (D149). */
+  role: Role;
   capabilities: Capability[];
   /** D121: the relations the person's groups give by grant, sorted; empty for nearly everyone. */
   relations: RelationGrant[];
@@ -143,9 +160,19 @@ export interface Derived {
   positions: Position[];
 }
 /**
- * The order of unit ids decides the primary assignment (D101 item 8): `byUnitId` from the contracts, the comparator the
+ * What the directory says of a person beyond the groups they are in (D149): the units of their current
+ * employments, in the directory's order and only those the organisation holds, and whether an active person reports to
+ * them. Both are read when the person is derived, and neither is worked out from the tree.
+ */
+export interface Standing {
+  employed: readonly string[];
+  reports: boolean;
+}
+/**
+ * The unit a person acts as when the directory sends no employment for them (D135, D101 item 8): a unit they lead
+ * before one they are placed on, then the lowest unit id by `byUnitId` from the contracts, the comparator the
  * authorization fingerprint orders assignments by too, so `Skola` comes before `förskola`, `z` before `ä` and `10`
- * before `9`. Both adapters reach the primary unit through this one derivation.
+ * before `9`. Both adapters reach it through this one derivation.
  */
 export function activeOf(assignments: readonly Assignment[]): Assignment | undefined {
   return [...assignments].sort(
@@ -153,25 +180,33 @@ export function activeOf(assignments: readonly Assignment[]): Assignment | undef
   )[0];
 }
 /**
- * `knownLabels` names units the person manages without a `unit:` membership of their own (a manager who is not also
- * listed as an employee), from the unit table; a unit known nowhere is labelled by its id.
+ * `knownLabels` names units the person leads or is employed on without a `unit:` membership of their own, from the
+ * unit table and the unit groups; a unit known nowhere is labelled by its id.
+ *
+ * Three facts are kept apart and none is worked out from another (D147 items 6 and 9). A person **belongs** to the
+ * units of their current employments, and to any unit whose `unit:` group they are in: the group is how a directory
+ * that sends no employments says it, and how a placement away from the job is said. They **lead** the units whose
+ * `unit-manager:` group they are in. And somebody **reports** to them when an employment names them. They are a manager
+ * when they lead a unit or somebody reports to them, and the unit they act as is the one they are employed on.
  */
 export function deriveAuthority(
   memberships: readonly Membership[],
   rules: readonly GroupCapabilityRule[],
   knownLabels: Readonly<Record<string, string>> = {},
   relationRules: readonly GroupRelationRule[] = [],
+  standing: Standing = { employed: [], reports: false },
 ): Derived {
-  const roles = new Map<string, Role>(),
+  const leads = new Set<string>(),
+    belongs = new Set<string>(standing.employed),
     labels = new Map<string, string>(),
     capabilities = new Set<Capability>(),
     held = new Set(memberships.map(m => m.externalId));
   let isProtected = false;
   for (const m of memberships) {
     const key = readScimGroupKey(m.externalId);
-    if (key?.prefix === MANAGER_KEY) roles.set(key.value, 'manager');
+    if (key?.prefix === MANAGER_KEY) leads.add(key.value);
     else if (key?.prefix === UNIT_KEY) {
-      if (roles.get(key.value) !== 'manager') roles.set(key.value, 'employee');
+      belongs.add(key.value);
       labels.set(key.value, m.label);
     } else if (key?.prefix === CAPABILITY_KEY) {
       if (isCapability(key.value)) capabilities.add(key.value);
@@ -183,30 +218,40 @@ export function deriveAuthority(
   const related = new Set<RelationGrant>();
   for (const row of relationRules)
     if (held.has(row.groupExternalId) && isRelationGrant(row.relation)) related.add(row.relation);
-  const assignments = [...roles.entries()]
-    .map(([unitId, role]) => ({ unitId, role }))
+  // One row a unit: `manager` where they lead it, whether or not they also belong to it; `employee` where they only belong.
+  const assignments = [...new Set([...belongs, ...leads])]
+    .map((unitId): Assignment => ({ unitId, role: leads.has(unitId) ? 'manager' : 'employee' }))
     .sort((a, b) => byUnitId(a.unitId, b.unitId));
-  const active = activeOf(assignments),
+  // The unit they act as: where they are employed, first employment first. A directory that sends no employment for the
+  // person leaves the choice to the groups, as before (D135).
+  const employedOn = standing.employed[0],
+    active = employedOn !== undefined ? assignments.find(a => a.unitId === employedOn) : activeOf(assignments),
+    role: Role = leads.size > 0 || standing.reports ? 'manager' : 'employee',
     sorted = [...capabilities].sort(),
     relations = RELATION_GRANTS.filter(r => related.has(r)),
-    labelOf = (unitId: string) => labels.get(unitId) ?? knownLabels[unitId] ?? unitId;
+    labelOf = (unitId: string) => labels.get(unitId) ?? knownLabels[unitId] ?? unitId,
+    // Left out only when there is one unit and its role is the person's own: then `unitId` and `role` say it all.
+    plain = assignments.length === 1 && assignments[0]!.role === role;
   return {
     units: assignments.map(a => ({ id: a.unitId, label: labelOf(a.unitId) })),
+    belongs: [...belongs].sort(byUnitId),
+    leads: [...leads].sort(byUnitId),
     assignments,
     active,
+    role,
     capabilities: sorted,
     relations,
     protected: isProtected,
     grant: active && {
       unitId: active.unitId,
       unitLabel: labelOf(active.unitId),
-      role: active.role,
+      role,
       capabilities: sorted,
       ...(relations.length ? { relations } : {}),
-      // D135: a person with one assignment has a grant as before; with more, every one rides on it.
-      ...(assignments.length > 1
-        ? { assignments: assignments.map(a => ({ unitId: a.unitId, unitLabel: labelOf(a.unitId), role: a.role })) }
-        : {}),
+      // D135: every unit rides on the grant with the role there, unless the one unit and the role above say it all.
+      ...(plain
+        ? {}
+        : { assignments: assignments.map(a => ({ unitId: a.unitId, unitLabel: labelOf(a.unitId), role: a.role })) }),
     },
     positions: derivePositions(memberships),
   };
@@ -272,13 +317,24 @@ export interface TreeUnit {
   label: string;
   parentId: string | null;
 }
-/** One person on one unit, or a person on none (`unitId` and `role` null). */
+/**
+ * One of a person's units as the store holds it (D149): `role` is `manager` where they lead the unit, and
+ * `belongs` says whether they are of it, by an employment or its `unit:` group. Someone who leads a unit they are
+ * employed elsewhere than is its manager and does not belong to it; one who only belongs is an `employee`.
+ */
+export interface HeldUnit {
+  unitId: string;
+  role: Role;
+  belongs: boolean;
+}
+/** One person on one unit, as `HeldUnit` says it, or a person on none (`unitId` and `role` null, `belongs` false). */
 export interface Placement {
   personId: string;
   name: string;
   enabled: boolean;
   unitId: string | null;
   role: Role | null;
+  belongs: boolean;
 }
 export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
 /**
@@ -320,14 +376,45 @@ export function branchOf(tree: readonly TreeUnit[], unitId: string): string[] {
  */
 export const leadsUnit = (p: { role: Role | null; enabled: boolean }) => p.enabled && p.role === 'manager';
 /**
+ * D147: whom a person reports to, of the pairs the employments name. `active` is who may be a manager: a deactivated
+ * person is nobody's. Someone the person names who names the person back is not their manager either: a chain that
+ * comes round is neither's line, as Personal's list reads it. The answer is the people who do manage the person, those
+ * the chain comes round with (`round`), and why nobody manages them where nobody does: no employment names a manager, everyone named is deactivated, or everyone named
+ * who is active names the person back.
+ */
+export function reportingOf(
+  active: ReadonlySet<string>,
+  named: ReadonlyArray<{ personId: string; managerId: string }>,
+) {
+  const byPerson = new Map<string, Set<string>>();
+  for (const { personId, managerId } of named)
+    if (managerId !== personId) byPerson.set(personId, (byPerson.get(personId) ?? new Set()).add(managerId));
+  return (personId: string): { managers: string[]; round: string[]; gap?: ManagerGap } => {
+    const all = [...(byPerson.get(personId) ?? [])],
+      working = all.filter(id => active.has(id)),
+      round = working.filter(id => byPerson.get(id)?.has(personId)),
+      managers = working.filter(id => !round.includes(id));
+    const gap: ManagerGap | undefined = !all.length
+      ? 'none'
+      : !working.length
+        ? 'inactive'
+        : !managers.length
+          ? 'round'
+          : undefined;
+    return { managers, round, ...(gap ? { gap } : {}) };
+  };
+}
+/**
  * The tree an administrator reads. A unit people are assigned to without a `unit:` group is drawn as a root that was
  * not pushed, named as the unit table knows it; a parent that names no node is read as no parent, so every node is
- * drawn. Deactivated people are left out of every count.
+ * drawn. Deactivated people are left out of every count. `named` is who the
+ * organisation's people name as manager (D147), from which a unit says how many of its people report to nobody.
  */
 export function organisationOf(
   tree: readonly TreeUnit[],
   placements: readonly Placement[],
   knownLabels: Readonly<Record<string, string>> = {},
+  named: ReadonlyArray<{ personId: string; managerId: string }> = [],
 ): OrganisationOverview {
   const nodes = new Map<string, TreeUnit & { pushed: boolean }>();
   for (const unit of tree) nodes.set(unit.id, { ...unit, pushed: true });
@@ -341,9 +428,11 @@ export function organisationOf(
   };
   const managers = new Map<string, Array<{ id: string; name: string }>>(),
     placed = new Map<string, number>();
+  // D149: who leads a unit and who belongs to it are counted apart. Someone who leads a unit they are employed
+  // elsewhere than is its manager and is counted where they belong.
   for (const p of active) {
     if (p.unitId === null) continue;
-    placed.set(p.unitId, (placed.get(p.unitId) ?? 0) + 1);
+    if (p.belongs) placed.set(p.unitId, (placed.get(p.unitId) ?? 0) + 1);
     if (leadsUnit(p)) managers.set(p.unitId, [...(managers.get(p.unitId) ?? []), { id: p.personId, name: p.name }]);
   }
   // Each placement counts on its unit and on every unit above it, a person once however many units of the branch they
@@ -351,20 +440,21 @@ export function organisationOf(
   const branch = new Map<string, Set<string>>();
   for (const p of active) {
     const seen = new Set<string>();
-    for (let at = p.unitId; at !== null && !seen.has(at); at = parentOf(at)) {
+    for (let at = p.belongs ? p.unitId : null; at !== null && !seen.has(at); at = parentOf(at)) {
       seen.add(at);
       branch.set(at, (branch.get(at) ?? new Set()).add(p.personId));
     }
   }
-  const lineOf = (id: string): OrganisationUnit['line'] => {
-    if (managers.get(id)?.length) return 'own';
-    const seen = new Set([id]);
-    for (let at = parentOf(id); at !== null && !seen.has(at); at = parentOf(at)) {
-      if (managers.get(at)?.length) return 'above';
-      seen.add(at);
-    }
-    return 'none';
-  };
+  // D147: who reports to nobody, of the active people with a unit. Counted on each unit they belong to or lead, as
+  // the unit's list of people shows them, and once for the organisation.
+  const reporting = reportingOf(new Set(active.map(p => p.personId)), named),
+    unmanaged = new Map<string, Set<string>>(),
+    without = new Set<string>();
+  for (const p of active) {
+    if (p.unitId === null || !reporting(p.personId).gap) continue;
+    unmanaged.set(p.unitId, (unmanaged.get(p.unitId) ?? new Set()).add(p.personId));
+    without.add(p.personId);
+  }
   const placedPeople = new Set(active.filter(p => p.unitId !== null).map(p => p.personId));
   return {
     units: [...nodes.values()]
@@ -375,11 +465,14 @@ export function organisationOf(
         managers: (managers.get(n.id) ?? []).sort((a, b) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id)),
         placed: placed.get(n.id) ?? 0,
         branch: branch.get(n.id)?.size ?? 0,
-        line: lineOf(n.id),
+        // The tree passes no line on (D147): a unit is led by its own managers or by nobody.
+        line: managers.get(n.id)?.length ? ('own' as const) : ('none' as const),
+        unmanaged: unmanaged.get(n.id)?.size ?? 0,
         pushed: n.pushed,
       }))
       .sort((a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId)),
     unplaced: new Set(active.filter(p => !placedPeople.has(p.personId)).map(p => p.personId)).size,
+    unmanaged: without.size,
   };
 }
 
@@ -414,6 +507,11 @@ export interface GroupRecord {
   label: string;
   /** D99: on a `unit:` group, the unit id of the node above it in the organisation tree; null on a root and on any other group. */
   parentUnitId: string | null;
+  /**
+   * D148: on a `unit:` group, what other systems know the unit by, as the directory sent them and in its order; empty
+   * on any other group.
+   */
+  unitIdentifiers: UnitIdentifier[];
   createdAt: string;
   updatedAt: string;
 }
@@ -431,6 +529,8 @@ export interface GroupFields {
   label: string;
   /** D99: the unit id of the parent, from the unit extension; null when the group carries none. */
   parent: string | null;
+  /** D148: what other systems know the unit by, from the unit extension; empty when the group carries none. */
+  identifiers: UnitIdentifier[];
   members: string[];
 }
 
@@ -553,8 +653,10 @@ const CONTACT_NAMES: Names = { value: true, type: true, primary: true, display: 
     employmentType: true,
     startDate: true,
     employmentPercentage: true,
+    managerId: true,
   },
   MEMBER_NAMES: Names = { value: true, display: true, $ref: true, type: true },
+  IDENTIFIER_NAMES: Names = { type: true, value: true },
   NAME_NAMES: Names = { formatted: true, givenName: true, familyName: true };
 const USER_NAMES: Names = {
   schemas: true,
@@ -794,7 +896,7 @@ function distinctEntries<T>(rows: T[], key: (row: T) => string): T[] {
 }
 const phoneKey = (row: DirectoryPhone) => JSON.stringify([row.type.toLowerCase(), row.value]);
 const employmentKey = (row: Employment) =>
-  JSON.stringify([row.unitId, row.title, row.employmentType, row.startDate, row.employmentPercentage]);
+  JSON.stringify([row.unitId, row.title, row.employmentType, row.startDate, row.employmentPercentage, row.managerId]);
 const EMPLOYMENTS = SCIM.employment + ':employments';
 /** The employments of a body or of a patch value: a list, or the one entry by itself. */
 function employmentList(value: unknown): Employment[] {
@@ -807,9 +909,15 @@ function employmentList(value: unknown): Employment[] {
       startDate = checkContract(EmploymentSchema.properties.startDate, row.startDate) ? row.startDate : undefined,
       employmentPercentage = checkContract(EmploymentSchema.properties.employmentPercentage, row.employmentPercentage)
         ? row.employmentPercentage
-        : undefined;
+        : undefined,
+      // D147: who the employment reports to, by the id of their User resource. Null or empty is no manager; anything
+      // else must be a string, since a manager Clew cannot read would be stored as none while the answer said stored.
+      managerId =
+        row.managerId === undefined || row.managerId === null || row.managerId === ''
+          ? undefined
+          : asString(row.managerId, EMPLOYMENTS + '.managerId');
     if (row.unitId === undefined || row.unitId === '') {
-      if (!title && !employmentType && !startDate && employmentPercentage === undefined) return [];
+      if (!title && !employmentType && !startDate && employmentPercentage === undefined && !managerId) return [];
       throw new ScimError(
         400,
         `An employment needs a 'unitId': the id of the unit, which is what follows '${UNIT_KEY}' in the externalId of its group. A title that belongs to no unit is sent as the user's 'title'.`,
@@ -823,6 +931,7 @@ function employmentList(value: unknown): Employment[] {
         ...(employmentType ? { employmentType } : {}),
         ...(startDate ? { startDate } : {}),
         ...(employmentPercentage !== undefined ? { employmentPercentage } : {}),
+        ...(managerId ? { managerId } : {}),
       },
     ];
   });
@@ -939,12 +1048,19 @@ export const unitGroupOf = (externalId: string | null | undefined): string | und
 };
 const UNIT_EXTENSION = SCIM.unit.toLowerCase();
 /**
- * What a name aims at in the unit extension (D99), without regard to case as a schema URN is: the extension as a
- * whole (its value is an object with `parent`), its `parent` attribute, or nothing.
+ * What a name aims at in the unit extension (D99, D148), without regard to case as a schema URN is: the extension as
+ * a whole (its value is an object with `parent`, `identifiers` or both), one of the two attributes, or nothing. A path
+ * into the list of identifiers (a filter, a sub-attribute) is `within`: an entry has no id to be picked by, so the list
+ * is sent whole, and such a path is refused where it stands rather than ignored as an attribute Clew does not hold.
  */
-const unitExtensionTarget = (name: string): 'extension' | 'parent' | undefined => {
+const unitExtensionTarget = (name: string): 'extension' | 'parent' | 'identifiers' | 'within' | undefined => {
   const key = name.trim().toLowerCase();
-  return key === UNIT_EXTENSION ? 'extension' : key === UNIT_EXTENSION + ':parent' ? 'parent' : undefined;
+  if (key === UNIT_EXTENSION) return 'extension';
+  if (key === UNIT_EXTENSION + ':parent') return 'parent';
+  if (key === UNIT_EXTENSION + ':identifiers') return 'identifiers';
+  return /^identifiers[.[]/.test(key.slice(UNIT_EXTENSION.length + 1)) && key.startsWith(UNIT_EXTENSION + ':')
+    ? 'within'
+    : undefined;
 };
 /**
  * A `parent` named without the extension's URN. On any other group it is an attribute Clew does not hold. On a unit
@@ -954,6 +1070,71 @@ const unitExtensionTarget = (name: string): 'extension' | 'parent' | undefined =
 const isBareParent = (name: string) => name.trim().toLowerCase() === 'parent';
 const bareParent = () => new ScimError(400, `Use '${SCIM.unit}:parent' for the parent of a unit.`, 'invalidPath');
 const PARENT = SCIM.unit + ':parent';
+const IDENTIFIERS = SCIM.unit + ':identifiers';
+/** D148: `identifiers` named without the extension's URN, refused on a unit group for the reason a bare `parent` is. */
+const isBareIdentifiers = (name: string) => /^identifiers(?:[.[]|$)/.test(name.trim().toLowerCase());
+const bareIdentifiers = () => new ScimError(400, `Use '${IDENTIFIERS}' for the identifiers of a unit.`, 'invalidPath');
+const identifiersWhole = (path: string) =>
+  new ScimError(
+    400,
+    `Path '${path}' is not supported: send the whole list of identifiers to '${IDENTIFIERS}'.`,
+    'invalidPath',
+  );
+/**
+ * One part of an identifier (D148). It is a key another system is asked by, so it is stored exactly or not at all, as a
+ * group's key is (D96): text in composed form (NFC), without space at either end and without a control character.
+ * Cleaned instead, it would be stored as another key while the answer said stored. That holds for a part sent
+ * decomposed too: composed here, it would no longer be the text the other system holds, and a system that compares
+ * the two exactly would find no match. It is refused, and the source sends it composed.
+ */
+const identifierPart = (value: unknown, name: 'type' | 'value', length: number): string => {
+  const path = `${IDENTIFIERS}.${name}`;
+  if (value === undefined) need(path);
+  const text = asString(value, path);
+  if (text !== text.normalize('NFC'))
+    throw new ScimError(
+      400,
+      `Attribute '${path}' needs text in composed form (NFC). It was sent decomposed, and composed by Clew it would be stored as another text than the one sent. The group was not stored.`,
+      'invalidValue',
+    );
+  if (text !== text.trim() || /\p{Cc}/u.test(text) || Array.from(text).length > length)
+    throw new ScimError(
+      400,
+      `Attribute '${path}' needs text of at most ${length} characters, with no space at either end and no control character. The group was not stored.`,
+      'invalidValue',
+    );
+  return text;
+};
+const identifierKey = (row: UnitIdentifier) => JSON.stringify([row.type, row.value]);
+const identifiersWithin = (rows: UnitIdentifier[]): UnitIdentifier[] => {
+  if (rows.length > UNIT_IDENTIFIER_LIMIT)
+    throw new ScimError(
+      400,
+      `Attribute '${IDENTIFIERS}' carries at most ${UNIT_IDENTIFIER_LIMIT} entries. The group was not stored.`,
+      'invalidValue',
+    );
+  return rows;
+};
+/**
+ * D148: the identifiers of a body or of a patch value: a list, or the one entry by itself. `null`, and a `null` entry,
+ * are no identifier; the same entry twice is kept once, in the order the directory sent them.
+ */
+export function unitIdentifierList(value: unknown): UnitIdentifier[] {
+  if (value === undefined || value === null) return [];
+  const rows = (Array.isArray(value) ? value : [value]).flatMap(item => {
+    if (item === null || item === undefined) return [];
+    const row = asObject(plain(item, IDENTIFIER_NAMES, 'dropped'), IDENTIFIERS);
+    return [
+      {
+        type: identifierPart(row.type, 'type', UNIT_IDENTIFIER_TYPE_LENGTH),
+        value: identifierPart(row.value, 'value', UNIT_IDENTIFIER_VALUE_LENGTH),
+      },
+    ];
+  });
+  return identifiersWithin(distinctEntries(rows, identifierKey));
+}
+export const sameIdentifiers = (a: readonly UnitIdentifier[], b: readonly UnitIdentifier[]) =>
+  a.length === b.length && a.every((row, i) => identifierKey(row) === identifierKey(b[i]!));
 /**
  * The parent a client sent, as a unit id. It is the `externalId` of the parent's `unit:` group, written as exactly as
  * a key is (D96), and text Clew can hold as every stored attribute is (`asString`, naming the parent): a NUL in it once
@@ -972,17 +1153,37 @@ export function parentUnitOf(value: unknown): string | null {
   return id;
 }
 /**
- * The extension's object, whose one attribute is read without regard to case, as every attribute name is. In a body an
- * object without `parent` names no parent. In a patch's `add` or `replace` (`op`) it is an operation without a value
- * (RFC 7644 §3.5.2): read as no parent, it once made a unit a root with a 200. `parent: null` is the way to make a unit
- * a root.
+ * The extension's object, whose attributes are read without regard to case, as every attribute name is. What it
+ * answers is what the object says: `parent` and `identifiers` are each absent when the object leaves them out.
+ *
+ * In a body the object is the whole of it, so the caller reads an absent `parent` as a root and absent `identifiers`
+ * as none. In a patch's `add` or `replace` (`op`) only what the object names is set (RFC 7644 §3.5.2: the
+ * sub-attributes given), and an object that names neither is an operation without a value: read as no parent, it once
+ * made a unit a root with a 200. `parent: null` is the way to make a unit a root, `identifiers: null` the way to take
+ * its identifiers away, and `null` for the object both.
  */
-const parentInExtension = (value: unknown, path: string | undefined, op?: 'add' | 'replace') => {
-  if (value === undefined || value === null) return null;
+const unitExtension = (
+  value: unknown,
+  path: string | undefined,
+  op?: 'add' | 'replace',
+): { parent?: string | null; identifiers?: UnitIdentifier[] | null } => {
+  if (value === undefined || value === null) return { parent: null, identifiers: null };
   const extension = asObject(value, path),
-    name = Object.keys(extension).find(key => key.toLowerCase() === 'parent');
-  if (name === undefined && op) throw noValue(op, path, 'parent');
-  return parentUnitOf(name === undefined ? undefined : extension[name]);
+    named = (attribute: string) => Object.keys(extension).find(key => key.toLowerCase() === attribute),
+    parent = named('parent'),
+    identifiers = named('identifiers');
+  if (parent === undefined && identifiers === undefined && op)
+    throw new ScimError(
+      400,
+      `Operation '${op}' on '${path ?? SCIM.unit}' requires a value for 'parent' or 'identifiers'.`,
+      'invalidValue',
+    );
+  return {
+    ...(parent !== undefined ? { parent: parentUnitOf(extension[parent]) } : {}),
+    ...(identifiers !== undefined
+      ? { identifiers: extension[identifiers] === null ? null : unitIdentifierList(extension[identifiers]) }
+      : {}),
+  };
 };
 /** The ids a `members` value names: a list of objects with a `value`, or of the ids themselves. */
 const memberIds = (value: unknown): string[] =>
@@ -1006,12 +1207,17 @@ const memberIds = (value: unknown): string[] =>
 export function groupFields(body: unknown, current?: Pick<GroupFields, 'externalId'>): GroupFields {
   const input = asResource(body, GROUP_NAMES, 'Group');
   const externalId = optional(input.externalId, 'externalId') ?? (current ? current.externalId : need('externalId'));
-  if (unitGroupOf(externalId) !== undefined && Object.keys(input).some(isBareParent)) throw bareParent();
-  const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name) === 'extension');
+  if (unitGroupOf(externalId) !== undefined) {
+    if (Object.keys(input).some(isBareParent)) throw bareParent();
+    if (Object.keys(input).some(isBareIdentifiers)) throw bareIdentifiers();
+  }
+  const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name) === 'extension'),
+    said = unitExtension(extension?.[1], SCIM.unit);
   return {
     externalId,
     label: asString(input.displayName ?? need('displayName'), 'displayName'),
-    parent: parentInExtension(extension?.[1], SCIM.unit),
+    parent: said.parent ?? null,
+    identifiers: said.identifiers ?? [],
     members: [...new Set(memberIds(input.members))],
   };
 }
@@ -1061,6 +1267,13 @@ export function assertAcceptedParent(fields: GroupFields): void {
       `A parent is carried by a '${UNIT_KEY}' group only; '${fields.externalId ?? fields.label}' is not one (D99).`,
     );
   if (unit === fields.parent) throw refusedKey(`The unit '${unit}' cannot be its own parent (D99).`);
+}
+/** D148: identifiers say what other systems know a unit by, so only a `unit:` group carries them. */
+export function assertAcceptedIdentifiers(fields: GroupFields): void {
+  if (fields.identifiers.length && unitGroupOf(fields.externalId) === undefined)
+    throw refusedKey(
+      `Identifiers are carried by a '${UNIT_KEY}' group only; '${fields.externalId ?? fields.label}' is not one (D148).`,
+    );
 }
 /**
  * Whether placing `unit` under `parent` would close a cycle: true when `unit` is `parent` or stands above it. `above`
@@ -1548,10 +1761,11 @@ export function applyUserPatch(
 }
 /**
  * PATCH on a group: `members` added, removed (by path filter or by value list) or replaced; the name and external id
- * replaced; the external id removed; the unit extension's `parent` set or removed (D99), by its schema-qualified path
- * or as the extension's object in a path-less value. A group whose key stops being a `unit:` key stops being a node,
- * so the parent it had goes with the key; a parent the patch itself names is kept, and refused where it stands.
- * Anything else is not held and is ignored, a read-only attribute as for a user.
+ * replaced; the external id removed; the unit extension's `parent` set or removed (D99) and its `identifiers` set,
+ * added to or removed as a list (D148), each by its schema-qualified path or in the extension's object. A group whose
+ * key stops being a `unit:` key stops being a node, so the parent and the identifiers it had go with the key; what the
+ * patch itself names is kept, and refused where it stands. Anything else is not held and is ignored, a read-only
+ * attribute as for a user.
  */
 export function applyGroupPatch(
   current: GroupFields,
@@ -1561,7 +1775,16 @@ export function applyGroupPatch(
   let members = new Set(current.members),
     next = { ...current },
     placed = false,
-    bare = false;
+    identified = false,
+    bare: 'parent' | 'identifiers' | undefined;
+  /** D148: the list is replaced, or added to as a list; an entry has no id, so there is nothing else to aim at. */
+  const setIdentifiers = (sent: UnitIdentifier[], op: 'add' | 'replace', cleared: boolean) => {
+    next.identifiers =
+      op === 'add' && !cleared
+        ? identifiersWithin(distinctEntries([...next.identifiers, ...sent], identifierKey))
+        : sent;
+    identified = true;
+  };
   /** `add` and `replace` on `members` say who: with `null`, a `replace` would empty the group. */
   const named = (value: unknown, path: string) => {
     if (value === null)
@@ -1576,10 +1799,21 @@ export function applyGroupPatch(
     if (value === undefined) throw noValue(op, path);
     const key = coreKey(path, 'group'),
       extension = unitExtensionTarget(path);
-    if (isBareParent(key)) bare = true;
-    else if (extension) {
-      next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path, op);
+    if (isBareParent(key)) bare ??= 'parent';
+    else if (isBareIdentifiers(key)) bare ??= 'identifiers';
+    else if (extension === 'within') throw identifiersWhole(path);
+    else if (extension === 'parent') {
+      next.parent = parentUnitOf(value);
       placed = true;
+    } else if (extension === 'identifiers') setIdentifiers(unitIdentifierList(value), op, value === null);
+    else if (extension) {
+      const said = unitExtension(value, path, op);
+      if (said.parent !== undefined) {
+        next.parent = said.parent;
+        placed = true;
+      }
+      // `null`, for the list or for the whole extension, takes the identifiers away whatever the operation.
+      if (said.identifiers !== undefined) setIdentifiers(said.identifiers ?? [], op, said.identifiers === null);
     } else if (pathless && (key === GROUP_URN || key === GROUP_URN + ':')) {
       for (const [name, inner] of Object.entries(asObject(value, path))) setAttribute(name, inner, op, true);
     } else if (key === 'members') {
@@ -1628,9 +1862,32 @@ export function applyGroupPatch(
       if (key === 'members') {
         if (operation.value === undefined || operation.value === null) members.clear();
         else for (const member of memberIds(operation.value)) members.delete(member);
-      } else if (isBareParent(key)) bare = true;
-      else if (unitExtensionTarget(path)) next.parent = null;
-      else if (key === 'externalid') next.externalId = null;
+      } else if (isBareParent(key)) bare ??= 'parent';
+      else if (isBareIdentifiers(key)) bare ??= 'identifiers';
+      else if (unitExtensionTarget(path)) {
+        const target = unitExtensionTarget(path);
+        if (target === 'within') throw identifiersWhole(path);
+        // An entry has no id to be removed by: the list is cleared, or sent again as what remains.
+        if (target === 'identifiers' && operation.value !== undefined && operation.value !== null)
+          throw new ScimError(
+            400,
+            `A remove on '${path}' takes no value: it clears the list. To take one identifier away, replace the list with those that remain.`,
+            'invalidValue',
+          );
+        // The whole extension is removed whole or not at all: a value would be read as "take this away", and what the
+        // operation does is make the unit a root and clear every identifier.
+        if (target === 'extension' && operation.value !== undefined && operation.value !== null)
+          throw new ScimError(
+            400,
+            `A remove on '${path}' takes no value: it makes the unit a root and clears its identifiers. To take one identifier away, replace '${path}:identifiers' with those that remain.`,
+            'invalidValue',
+          );
+        if (target !== 'identifiers') next.parent = null;
+        if (target !== 'parent') {
+          next.identifiers = [];
+          identified = true;
+        }
+      } else if (key === 'externalid') next.externalId = null;
       else if (key === 'displayname') throw required(path);
       else if (isReadOnly(key, 'group')) throw readOnly(path);
       continue;
@@ -1640,8 +1897,11 @@ export function applyGroupPatch(
       for (const [name, value] of Object.entries(asObject(operation.value, undefined)))
         setAttribute(name, value, op, true);
   }
-  if (bare && unitGroupOf(next.externalId) !== undefined) throw bareParent();
-  if (!placed && unitGroupOf(next.externalId) === undefined) next.parent = null;
+  if (bare && unitGroupOf(next.externalId) !== undefined) throw bare === 'parent' ? bareParent() : bareIdentifiers();
+  if (unitGroupOf(next.externalId) === undefined) {
+    if (!placed) next.parent = null;
+    if (!identified) next.identifiers = [];
+  }
   return { ...next, members: [...members] };
 }
 export function userResource(
@@ -1675,13 +1935,21 @@ export function groupResource(
   members: ReadonlyArray<{ id: string; name: string }>,
   base: string,
 ): ScimGroup {
+  const unit = record.parentUnitId || record.unitIdentifiers.length;
   return {
-    schemas: record.parentUnitId ? [SCIM.group, SCIM.unit] : [SCIM.group],
+    schemas: unit ? [SCIM.group, SCIM.unit] : [SCIM.group],
     id: record.id,
     ...(record.externalId ? { externalId: record.externalId } : {}),
     displayName: record.label,
     members: members.map(m => ({ value: m.id, display: m.name, $ref: `${base}/Users/${m.id}` })),
-    ...(record.parentUnitId ? { [SCIM.unit]: { parent: UNIT_KEY + record.parentUnitId } } : {}),
+    ...(unit
+      ? {
+          [SCIM.unit]: {
+            ...(record.parentUnitId ? { parent: UNIT_KEY + record.parentUnitId } : {}),
+            ...(record.unitIdentifiers.length ? { identifiers: record.unitIdentifiers } : {}),
+          },
+        }
+      : {}),
     meta: {
       resourceType: 'Group',
       created: record.createdAt,
@@ -1827,10 +2095,18 @@ export const schemaDocuments = (base: string) => [
           attribute('unitId', 'string', { required: true, caseExact: true }),
           attribute('title', 'string'),
           attribute('employmentType', 'string', { description: "The source's label for the form of employment." }),
-          attribute('startDate', 'string', { description: 'First calendar day of this employment, YYYY-MM-DD.' }),
+          attribute('startDate', 'string', {
+            description:
+              'First calendar day of this employment in YYYY-MM-DD format, with a year from 0001 through 9999.',
+          }),
           attribute('employmentPercentage', 'decimal', {
             description:
               'Percentage of full-time hours for this employment. Send a JSON number from 0 to 100 inclusive without a percent sign. Use 50 for half time.',
+          }),
+          attribute('managerId', 'string', {
+            caseExact: true,
+            description:
+              "The Clew-assigned 'id' of the manager's SCIM User in the same organisation. Match the source's 'externalId' to that User before sending the employment. A user cannot name themselves as manager.",
           }),
         ],
       }),
@@ -1842,12 +2118,29 @@ export const schemaDocuments = (base: string) => [
     id: SCIM.unit,
     name: 'Unit',
     description:
-      'The place of a unit: group in the organisation tree (D99). Carried by a unit: group only; a tree is pushed from the root down and removed from the leaves up.',
+      'The place of a unit: group in the organisation tree (D99) and what other systems know the unit by (D148). Carried by a unit: group only; a tree is pushed from the root down and removed from the leaves up.',
     attributes: [
       attribute('parent', 'string', {
         caseExact: true,
         description:
           'The externalId of the unit group above this one, unit:<unitId>; absent on a root. It must exist in the same organisation and may not close a cycle.',
+      }),
+      attribute('identifiers', 'complex', {
+        multiValued: true,
+        description:
+          "What other systems know the unit by, such as the code an economy system books its costs on. The list is sent whole: an entry has no id to be changed by. Stored exactly as sent and told to a connected system whose capability asks for the entry's type.",
+        subAttributes: [
+          attribute('type', 'string', {
+            required: true,
+            caseExact: true,
+            description: "The directory's own word for the kind of identifier, such as ansvar. At most 64 characters.",
+          }),
+          attribute('value', 'string', {
+            required: true,
+            caseExact: true,
+            description: 'The identifier as the other system writes it. At most 256 characters.',
+          }),
+        ],
       }),
     ],
     meta: { resourceType: 'Schema', location: `${base}/Schemas/${SCIM.unit}` },

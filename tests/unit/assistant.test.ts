@@ -421,6 +421,28 @@ describe('the model path only reads, and falls back when the provider fails', ()
       objects: [],
     });
     expect(twins).toContain('Kim, chef på Kansli och chef på Kansli.');
+    // D149: `chef` is said of a unit the person leads. Somebody people report to who leads no unit is an employee on
+    // their unit with personnel responsibility, and one who leads a unit from another is an employee where they work.
+    const said = (assignments: Array<{ unitId: string; unitLabel: string; role: 'manager' | 'employee' }>) =>
+      systemPrompt({
+        name: 'Karin',
+        role: 'manager',
+        unitId: 'k-1',
+        unitLabel: 'Kansliet',
+        assignments,
+        now: new Date(now),
+        week: 45,
+        objects: [],
+      });
+    expect(said([{ unitId: 'k-1', unitLabel: 'Kansliet', role: 'employee' }])).toContain(
+      'Karin, medarbetare på Kansliet, med personalansvar.',
+    );
+    expect(
+      said([
+        { unitId: 'k-1', unitLabel: 'Kansliet', role: 'employee' },
+        { unitId: 's-1', unitLabel: 'Skolan', role: 'manager' },
+      ]),
+    ).toContain('Karin, medarbetare på Kansliet och chef på Skolan.');
     expect(prompt).toContain('vecka 45');
     expect(prompt).toContain('Du tittar på');
     expect(prompt).toContain('Ärende "Attestera 3 fakturor, 37 050 kr" (Ekonomisystemet');

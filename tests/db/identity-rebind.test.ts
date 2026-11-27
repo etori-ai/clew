@@ -1,9 +1,10 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { and, eq, inArray, like, sql } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { RebindRefused, rebindIdentity, resolveSubject, signIn } from '../../packages/db/src/auth';
+import { waitForBlockedTransaction } from './wait-for-blocked-transaction';
 
 /**
  * An operator's rebind (Q8 of the 2026-11-12 users review, amending D68 item 6), the transaction behind
@@ -226,14 +227,7 @@ test('a release overlapping a subject replacement reports and audits the subject
     await tx.delete(schema.identityBindings).where(binding);
     await tx.insert(schema.identityBindings).values({ issuer, personId, subject: 'replacement' });
     replaced.resolve();
-    // Observe contention on this exact transaction before committing, regardless of which statement is waiting.
-    for (let n = 0; n < 150; n++) {
-      const [lock] = await tx.execute<{ waiting: boolean }>(sql`
-        select exists (select 1 from pg_locks where not granted and pg_backend_pid() = any(pg_blocking_pids(pid))) as waiting`);
-      if (lock?.waiting) return;
-      await Bun.sleep(10);
-    }
-    throw new Error('The release did not reach the held repair');
+    await waitForBlockedTransaction(tx);
   });
   const releasing = replaced.promise.then(() =>
     rebindIdentity('operator:cli', { issuer, personId, subject: null, operator }),

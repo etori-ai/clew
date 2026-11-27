@@ -9,14 +9,21 @@ import { join } from 'node:path';
 import { generateKeyPair, exportPKCS8 } from 'jose';
 import { connectorAuthority } from '../src/connectors/authority';
 
+// The actor as Clew publishes it (D149): a manager is told the units they lead, and a fixture answers for those.
 const manager = {
   id: 'hillevi',
   name: 'Hillevi Berg',
   unitId: 'unit-skola',
   unitLabel: 'Skolan',
   role: 'manager' as const,
+  leads: [{ unitId: 'unit-skola', unitLabel: 'Skolan' }],
 };
-const outside = { ...manager, id: 'outside', unitId: 'other-unit' };
+const outside = {
+  ...manager,
+  id: 'outside',
+  unitId: 'other-unit',
+  leads: [{ unitId: 'other-unit', unitLabel: 'Skolan' }],
+};
 const secret = 'runtime-fixture-transport';
 const feedKey = 'runtime-fixture-feed';
 

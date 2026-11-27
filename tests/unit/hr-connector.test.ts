@@ -5,7 +5,7 @@ import { checkConnector } from '../../packages/connectors/src/check';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as hrManifest } from '../../connectors/hr/connector.mjs';
 import { memoryState } from '../../connectors/hr/state.mjs';
-import { assertionFor, testAuthority, testJwks } from '../connector-authority';
+import { assertionFor, signedRequest, testAuthority, testJwks } from '../connector-authority';
 import { ThreadDraftSchema } from '../../packages/connectors/src/protocol';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -234,6 +234,134 @@ describe('the HR fixture connector', () => {
     expect((await registry.run<Rows>(mixed, 'hr.person', { keys: ['amir.pettersson', 'anna'] })).rows).toHaveLength(1);
     // One assignment: the cards are as they were, with no unit on them.
     expect((await registry.scan(hillevi)).every(d => d.subjects === undefined)).toBe(true);
+  });
+  test("the conformance check asks as a manager who leads another unit than the one they are employed on, and fails a source that gives them the manager's cards for the unit they are only employed on (D149)", async () => {
+    // The check's unit is the school here, so its manager has cards to compare with.
+    const { connectorFetch } = stack({ unitMap: { 'unit-check': 'unit-skola' } });
+    const sign = (key: string) => assertionFor('hr', key);
+    const check = (fetch: FetchLike) =>
+      checkConnector({
+        key: secret,
+        url: 'http://hr',
+        id: 'hr',
+        assert: sign(secret),
+        assertForeign: sign('another-secret-entirely'),
+        fetch,
+      });
+    const right = await check(connectorFetch);
+    expect(right.findings.filter(f => f.level === 'fail')).toEqual([]);
+    expect(right.findings.map(f => f.text)).toContain(
+      'scan as a manager who leads another unit: 0 drafts, none for the unit the person is only employed on',
+    );
+    expect(JSON.stringify(right)).toContain(
+      'En chef som är anställd på en enhet och leder en annan får inga chefsärenden för enheten där personen bara är anställd.',
+    );
+    // A source that takes the role with the unit to mean that the person leads it: the scan it is sent is rewritten to
+    // say so, and signed again as Clew signs it, so the fixture answers as such a source would.
+    const pairing: FetchLike = async (input, init) => {
+      if (!String(input).endsWith('/clew/scan')) return connectorFetch(input, init);
+      const body = JSON.parse(String(init?.body)) as { actor: Actor };
+      const actor: Actor =
+        body.actor.role === 'manager'
+          ? { ...body.actor, leads: [{ unitId: body.actor.unitId, unitLabel: body.actor.unitLabel }] }
+          : body.actor;
+      const text = JSON.stringify({ ...body, actor });
+      return connectorFetch(input, {
+        ...init,
+        body: text,
+        headers: {
+          ...(init?.headers as Record<string, string>),
+          authorization: 'Bearer ' + (await sign(secret)(actor, [], { path: '/clew/scan', body: text })),
+        },
+      });
+    };
+    const wrong = await check(pairing);
+    expect(wrong.ok).toBe(false);
+    expect(wrong.findings.filter(f => f.level === 'fail').map(f => f.text)).toEqual([
+      expect.stringMatching(
+        /^scan as a manager who leads another unit: hr:\S+(, hr:\S+)* is the manager's card for the unit the person is only employed on; read the actor's leads, never role with unitId$/,
+      ),
+    ]);
+    expect(JSON.stringify(wrong)).toContain(
+      'Vilka enheter en chef leder står i aktörens leads, inte i role och unitId.',
+    );
+  });
+  test('what a manager leads is the units the actor names, never the role with the unit they are employed on (D149)', async () => {
+    const { registry, service } = stack();
+    const school = await registry.scan(hillevi);
+    expect(school.length).toBeGreaterThan(0);
+    // Employed on the school, which she does not lead, and leading the finance department: `role` says that she is a
+    // manager and `unitId` where she is employed, and neither says what she leads.
+    const away: Actor = {
+      ...hillevi,
+      assignments: [
+        { unitId: 'unit-ekonomi', unitLabel: 'Ekonomiavdelningen', role: 'manager' },
+        { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' },
+      ],
+    };
+    // The department's one card, naming it, and none of the school's, which are its own manager's.
+    expect((await registry.scan(away)).map(d => [d.topic, d.subjects])).toEqual([
+      ['hr:leave:hr:leave:8101', [{ entity: 'unit', key: 'unit-ekonomi' }]],
+    ]);
+    expect((await registry.run<Rows<{ ref: string }>>(away, 'hr.leaveRequests', {})).rows.map(r => r.ref)).toEqual([
+      'hr:leave:8101',
+    ]);
+    const people = (await registry.run<Rows<{ person: string }>>(away, 'hr.absenceOverview', {})).rows.map(
+      r => r.person,
+    );
+    expect(people.sort()).toEqual(['amir.pettersson', 'birgitta.sjoberg', 'leila.andersson']);
+    // The school's people are not hers to read about or decide for.
+    expect((await registry.run<Rows>(away, 'hr.person', { keys: ['anna', 'amir.pettersson'] })).rows).toHaveLength(1);
+    const decided = await registry.run<Result>(
+      away,
+      'hr.decideLeave',
+      { refs: ['hr:leave:7781', 'hr:leave:8101'], decision: 'approve' },
+      { operationId: 'op-leads-elsewhere' },
+    );
+    expect(decided.rows.map(r => r.outcome)).toEqual(['failed', 'done']);
+    // The figure is a led unit's, and the system holds none for the department: never the school's.
+    expect((await registry.areas(away)).find(a => a.id === 'employees')?.figure ?? null).toBeNull();
+    // Who is at work is asked of the unit she leads, where nobody is scheduled: never the school's roster.
+    type OnDuty = { date: string; onDuty: string[]; absent: unknown[] };
+    expect((await registry.run<OnDuty>(hillevi, 'hr.whoIsOn', {})).onDuty.length).toBeGreaterThan(0);
+    expect(await registry.run<OnDuty>(away, 'hr.whoIsOn', {})).toEqual({ date: '2026-11-04', onDuty: [], absent: [] });
+    // A manager because people report to her, who leads no unit: answered for no unit at all.
+    const reportedTo: Actor = {
+      ...hillevi,
+      assignments: [{ unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' }],
+    };
+    expect(await registry.scan(reportedTo)).toEqual([]);
+    expect(await registry.run<Rows>(reportedTo, 'hr.leaveRequests', {})).toEqual({ rows: [] });
+    expect(await registry.run<Rows>(reportedTo, 'hr.absenceOverview', {})).toEqual({ rows: [] });
+    expect((await registry.run<Rows>(reportedTo, 'hr.person', { keys: ['anna'] })).rows).toEqual([]);
+    expect((await registry.areas(reportedTo)).find(a => a.id === 'employees')?.figure ?? null).toBeNull();
+    // Leading no unit, such a manager keeps the cards that are their own: Hassan's delegation is his to renew whether
+    // or not somebody reports to him. Only a unit's cards follow from leading it.
+    const hassanWithReports: Actor = {
+      ...hassan,
+      role: 'manager',
+      assignments: [{ unitId: hassan.unitId, unitLabel: hassan.unitLabel, role: 'employee' }],
+    };
+    const own = (await registry.scan(hassan)).map(d => d.topic);
+    expect(own).toContain('hr:delegation:hr:deleg:301');
+    expect((await registry.scan(hassanWithReports)).map(d => d.topic)).toEqual(own);
+    // The source reads the list and nothing else: an actor signed as a manager of the school with no `leads` at all, as
+    // no Clew sends one, is answered for no unit. The role with the unit is never taken to mean that she leads it.
+    const bare = await service.handle(
+      await signedRequest('http://hr/clew/scan', { id: 'hr', actor: hillevi, body: {}, key: secret }),
+    );
+    expect(((await bare.json()) as { drafts: ThreadDraft[] }).drafts).toEqual([]);
+    const led = await service.handle(
+      await signedRequest('http://hr/clew/scan', {
+        id: 'hr',
+        actor: { ...hillevi, leads: [{ unitId: 'unit-skola', unitLabel: 'Skönsmons skola' }] },
+        body: {},
+        key: secret,
+      }),
+    );
+    expect(((await led.json()) as { drafts: ThreadDraft[] }).drafts.map(d => d.topic)).toEqual(
+      school.map(d => d.topic),
+    );
   });
   test('the figures and the reads follow the role: names for the manager, "En kollega" for an employee', async () => {
     const { registry } = stack();

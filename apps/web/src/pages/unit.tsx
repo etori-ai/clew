@@ -61,30 +61,24 @@ import {
 import { KeyFigureTiles } from '../components/people/unit-figures';
 import { PageFrame } from '../components/shell/page-frame';
 import { entityPageSubject } from '../components/conversation/page-conversation';
+import { lageUnit } from '../user-units';
 
 /** The page's heading when the unit cannot be read, in the browser's tab too. */
 const FAILED_TITLE = 'Enheten kunde inte läsas';
 
 /**
- * Whether the reader manages the unit and how many people it has: the people the reader may ask about come in one group
- * per unit they manage (`GET /api/entities/person`), so the unit's group says both. A manager whose list could not be
- * read still gets the count, saying so; anyone else gets none.
+ * How many of the reader's people the unit has: the people the reader may ask about come in one group per unit of their
+ * list (`GET /api/entities/person`), and a unit is on that list when somebody employed on it reports to the reader. The
+ * group says nothing of whether the reader leads the unit (D149): how the reader stands to it is the unit's own
+ * `relation`. A manager whose list could not be read still gets the count, saying so; anyone else gets none.
  */
 function useStaffCount(user: SessionUser, id: string) {
   const read = useQuery(entityListQuery('person'));
   const group = read.data?.groups.find(g => g.id === id);
-  const manages = group
-    ? true
-    : read.isError
-      ? user.role === 'manager'
-        ? null
-        : false
-      : read.isPending
-        ? null
-        : false;
+  const listed = group ? true : read.isError ? (user.role === 'manager' ? null : false) : read.isPending ? null : false;
   // `null`: not known yet, or not known at all (the list failed for a manager).
-  const shown = manages === true || (manages === null && user.role === 'manager');
-  return { read, manages, shown, count: group?.entities.length };
+  const shown = listed === true || (listed === null && user.role === 'manager');
+  return { read, listed, shown, count: group?.entities.length };
 }
 type StaffCount = ReturnType<typeof useStaffCount>;
 
@@ -136,9 +130,11 @@ function StaffValue({ count, read }: { count: number | undefined; read: UseQuery
 
 /**
  * The details rail of a unit's page (D112 item 5): "Detaljer", what the directory (Katalogen) says of the unit that the
- * page has: that it is a unit, the reader's role on it, for a unit the reader manages how many people it has, with the
- * way to Personal as a link, and the units under it whose managers report to the reader (D117), each a link to its
- * page with this one as the way back. A unit below the reader says so as the role. The unit above is not drawn.
+ * page has: that it is a unit, the reader's role on it, how many of the reader's people it has, with the way to
+ * Personal as a link, and the units under it whose managers report to the reader (D117), each a link to its page with
+ * this one as the way back. The role is how the reader stands to the unit (`relation`, D149): "Chef" only of a unit
+ * they lead, never because somebody on it reports to them. On a unit they do not lead the count is said as the people
+ * who report to them. A unit below the reader says so as the role. The unit above is not drawn.
  */
 function UnitDetails({ staff, detail, here }: { staff: StaffCount; detail: EntityDetail; here: string }) {
   const below = detail.below ?? [];
@@ -154,11 +150,9 @@ function UnitDetails({ staff, detail, here }: { staff: StaffCount; detail: Entit
               <Text>Enhetens chef rapporterar till dig</Text>
             </MetadataListItem>
           ) : (
-            staff.manages !== null && (
-              <MetadataListItem label="Din roll">
-                <Text>{staff.manages ? 'Chef' : 'Medarbetare'}</Text>
-              </MetadataListItem>
-            )
+            <MetadataListItem label="Din roll">
+              <Text>{detail.relation === 'manages' ? 'Chef' : 'Medarbetare'}</Text>
+            </MetadataListItem>
           )}
           {below.length > 0 && (
             <MetadataListItem label="Enheter under">
@@ -172,12 +166,12 @@ function UnitDetails({ staff, detail, here }: { staff: StaffCount; detail: Entit
             </MetadataListItem>
           )}
           {staff.shown && (
-            <MetadataListItem label="Personal">
+            <MetadataListItem label={detail.relation === 'manages' ? 'Personal' : 'Rapporterar till dig'}>
               <StaffValue count={staff.count} read={staff.read} />
             </MetadataListItem>
           )}
         </MetadataList>
-        {staff.manages === true && (
+        {staff.listed === true && (
           <HStack>
             <Link href="/staff" weight="semibold" isStandalone>
               Öppna Personal
@@ -515,8 +509,9 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
       // The unit's key figures from its sources (D117), each source's value large with its state, after Läget.
       const tiles = <KeyFigureTiles answers={answers} />;
       sections = [
-        // Läget is the reader's own unit's: the areas' figures are the session's (D54).
-        ...(id === user.unitId ? [{ key: 'laget', node: <UnitFigures from={here} /> }] : []),
+        // Läget is the reader's own unit's: the areas' figures are the session's (D54), said of the unit they lead
+        // (`lageUnit`, D149).
+        ...(id === lageUnit(user).unitId ? [{ key: 'laget', node: <UnitFigures from={here} /> }] : []),
         ...(answers.some(a => !!rowOf(a)) ? [{ key: 'key-figures', node: tiles }] : []),
         ...(detail.cards.length > 0
           ? [

@@ -1079,7 +1079,7 @@ true
 
 #### `assignments`
 
-Whether the connector takes the actor's `assignments` (D135): every unit of a person who holds more than one, each with the role they have there. Without it the actor never carries them, and the connector answers for `unitId` and `role` alone.
+Whether the connector takes the actor's `assignments` (D135, D149): the person's units, each with the role they have there, sent when they say more than `unitId` and `role` do. Without it the actor never carries them. Which units a manager leads is the actor's `leads` either way, sent to every connector: a connector answers a manager for those units, and never for `unitId` because `role` is `manager`.
 
 - Type: boolean
 - optional
@@ -1792,6 +1792,14 @@ Example:
   "manages"
 ]
 ```
+
+#### `capabilities[].unit.identifiers`
+
+The types of unit identifier this capability reads (D148), spelled as the directory sends them, such as `["ansvar"]`. For every unit the call names, Clew sends the identifiers of these types the directory pushed with the unit, in `about.identifiers`, and none of any other type. Omitted means the capability is told none.
+
+- Type: array of string
+- optional
+- Constraints: 1 to 10 items; no duplicates; each 1 to 64 characters
 
 #### `capabilities[].follows`
 

@@ -78,7 +78,7 @@ describe('/scim/v2', () => {
     ]);
     const unit = await call('GET', '/Schemas/urn:clew:params:scim:schemas:extension:unit:2.0:Group');
     expect(unit.status).toBe(200);
-    expect((await unit.json()).attributes.map((a: { name: string }) => a.name)).toEqual(['parent']);
+    expect((await unit.json()).attributes.map((a: { name: string }) => a.name)).toEqual(['parent', 'identifiers']);
   });
   test('a tree is pushed over HTTP: a unit under its parent, a parent that is missing refused, a unit with units below it kept (D99)', async () => {
     const { call } = app();

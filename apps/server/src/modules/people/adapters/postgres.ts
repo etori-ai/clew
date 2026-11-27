@@ -2,6 +2,7 @@ import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL, 
 import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
+import type { Employment } from '@clew/contracts';
 import { ERASED, unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
 import type { ErasureTx, LeaverChange, LeaversTx, ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
@@ -75,6 +76,41 @@ export const postgresUserReads = (db: () => Database = database): Omit<UserReads
     return row?.enabled;
   },
 });
+/**
+ * A person's employments as the record carries them (D147): the rows of `auth_employment` in the directory's order,
+ * each with only what it holds, so the list reads as the one that was written. The tables are named in full because the
+ * list is read inside a select of the person, whose own `title` would otherwise be taken for the employment's.
+ */
+const employmentsOf = sql<Employment[]>`coalesce((
+  select jsonb_agg(
+    jsonb_strip_nulls(jsonb_build_object(
+      'unitId', job.unit_id,
+      'title', job.title,
+      'employmentType', job.employment_type,
+      'startDate', job.start_date,
+      'employmentPercentage', job.employment_percentage,
+      'managerId', job.manager_id
+    )) order by job.position)
+  from auth_employment job
+  where job.person_id = auth_person.id
+), '[]'::jsonb)`;
+/** Replaces the person's employments with the list as sent, in its order. */
+const writeEmployments = async (tx: Transaction, personId: string, list: readonly Employment[]) => {
+  await tx.delete(schema.employments).where(eq(schema.employments.personId, personId));
+  if (!list.length) return;
+  await tx.insert(schema.employments).values(
+    list.map((job, position) => ({
+      personId,
+      position,
+      unitId: job.unitId,
+      managerId: job.managerId ?? null,
+      title: job.title ?? null,
+      employmentType: job.employmentType ?? null,
+      startDate: job.startDate ?? null,
+      employmentPercentage: job.employmentPercentage ?? null,
+    })),
+  );
+};
 const userColumns = {
   id: schema.people.id,
   organisationId: schema.people.organisationId,
@@ -83,7 +119,7 @@ const userColumns = {
   name: schema.people.name,
   email: schema.people.email,
   phoneNumbers: schema.people.phoneNumbers,
-  employments: schema.people.employments,
+  employments: employmentsOf,
   title: schema.people.title,
   enabled: schema.people.enabled,
   createdAt: schema.people.createdAt,
@@ -95,6 +131,7 @@ const groupColumns = {
   externalId: schema.groups.externalId,
   label: schema.groups.label,
   parentUnitId: schema.groups.parentUnitId,
+  unitIdentifiers: schema.groups.unitIdentifiers,
   createdAt: schema.groups.createdAt,
   updatedAt: schema.groups.updatedAt,
 };
@@ -146,6 +183,11 @@ const groupColumn = { externalId: schema.groups.externalId, label: schema.groups
 /** How many membership rows one statement writes or removes. */
 const MEMBER_BATCH = 5000;
 /**
+ * A person's units from the two tables that hold them (D149): a row for each unit they belong to and one for each
+ * they lead. A reader groups them into one a unit, `manager` where they lead it and `belongs` where they are of it.
+ */
+const heldUnits = sql`select person_id, unit_id, false as leads from auth_assignment union all select person_id, unit_id, true as leads from auth_unit_lead`;
+/**
  * D100: the people list's search as conditions on `auth_person`, and the group picker's (D85) on `auth_group`. A word is
  * matched as written, so `%` and `_` in it are escaped; in the composed form (NFC) on both sides, so a word or a value
  * stored decomposed is the same letters as a composed one (L12); and without regard to case as a user name is compared
@@ -169,15 +211,30 @@ function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
         folded(sql`${schema.people.email}`, pattern),
         folded(sql`${schema.people.title}`, pattern),
         // D114: the titles of the person's employments, which the list shows before the core title.
-        sql`exists (select 1 from jsonb_array_elements(${schema.people.employments}) as job where ${folded(sql`job->>'title'`, pattern)})`,
+        sql`exists (select 1 from auth_employment job where job.person_id = ${schema.people.id} and ${folded(sql`job.title`, pattern)})`,
       );
     }),
+    // D149: a unit somebody leads is theirs as its manager, and one they belong to without leading it as an
+    // employee; a unit alone is either.
     search.unitIds || search.role
-      ? personHas(
-          sql`${schema.assignments}`,
-          eq(schema.assignments.personId, schema.people.id),
-          search.unitIds ? inArray(schema.assignments.unitId, [...search.unitIds]) : undefined,
-          search.role ? eq(schema.assignments.role, search.role) : undefined,
+      ? or(
+          search.role === 'employee'
+            ? undefined
+            : personHas(
+                sql`${schema.unitLeads}`,
+                eq(schema.unitLeads.personId, schema.people.id),
+                search.unitIds ? inArray(schema.unitLeads.unitId, [...search.unitIds]) : undefined,
+              ),
+          search.role === 'manager'
+            ? undefined
+            : personHas(
+                sql`${schema.assignments}`,
+                eq(schema.assignments.personId, schema.people.id),
+                search.unitIds ? inArray(schema.assignments.unitId, [...search.unitIds]) : undefined,
+                search.role === 'employee'
+                  ? sql`not exists (select 1 from ${schema.unitLeads} where ${schema.unitLeads.personId} = ${schema.assignments.personId} and ${schema.unitLeads.unitId} = ${schema.assignments.unitId})`
+                  : undefined,
+              ),
         )
       : undefined,
     search.status === 'disabled'
@@ -365,12 +422,50 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
           // The organisation too: a row left by another organisation's unit that is gone is taken over whole (D101).
           .onConflictDoUpdate({ target: schema.units.id, set: { label: u.label, organisationId } });
     },
-    async replaceAssignments(personId, assignments) {
+    async replaceUnits(personId, held) {
       await tx.delete(schema.assignments).where(eq(schema.assignments.personId, personId));
-      if (assignments.length)
-        await tx
-          .insert(schema.assignments)
-          .values(assignments.map(a => ({ personId, unitId: a.unitId, role: a.role })));
+      await tx.delete(schema.unitLeads).where(eq(schema.unitLeads.personId, personId));
+      const belongs = [...new Set(held.belongs)],
+        leads = [...new Set(held.leads)];
+      if (belongs.length) await tx.insert(schema.assignments).values(belongs.map(unitId => ({ personId, unitId })));
+      if (leads.length) await tx.insert(schema.unitLeads).values(leads.map(unitId => ({ personId, unitId })));
+    },
+    async organisationOf(personId) {
+      // A NUL is nobody's id, and PostgreSQL refuses to compare one.
+      if (personId.includes('\u0000')) return undefined;
+      const [row] = await tx
+        .select({ organisationId: schema.people.organisationId })
+        .from(schema.people)
+        .where(eq(schema.people.id, personId));
+      return row?.organisationId;
+    },
+    async employedOn(organisationId, unitId) {
+      // A NUL names no unit, and PostgreSQL refuses to compare one.
+      if (unitId.includes('\u0000')) return [];
+      const rows = await tx
+        .selectDistinct({ id: schema.employments.personId })
+        .from(schema.employments)
+        .innerJoin(schema.people, eq(schema.people.id, schema.employments.personId))
+        .where(and(eq(schema.employments.unitId, unitId), eq(schema.people.organisationId, organisationId)))
+        .orderBy(schema.employments.personId);
+      return rows.map(row => row.id);
+    },
+    async hasReports(organisationId, personId) {
+      // A NUL is nobody's id, and PostgreSQL refuses to compare one.
+      if (personId.includes('\u0000')) return false;
+      const [row] = await tx.execute<{ found: boolean }>(sql`
+        select exists (
+          select 1 from auth_employment job
+          join auth_person report on report.id = job.person_id
+          where job.manager_id = ${personId}
+            and report.organisation_id = ${organisationId}
+            and report.enabled
+            and report.id <> ${personId}
+            and not exists (
+              select 1 from auth_employment own where own.person_id = ${personId} and own.manager_id = report.id
+            )
+        ) as found`);
+      return row?.found === true;
     },
     async grant(personId) {
       const [row] = await tx
@@ -385,13 +480,13 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
         .from(schema.accessGrants)
         .where(eq(schema.accessGrants.personId, personId));
       if (!row) return undefined;
-      // As the memory store holds it: `relations` only when the person holds one (D121), `assignments` only when they
-      // hold more than one (D135).
+      // As the memory store holds it: `relations` only when the person holds one (D121), `assignments` unless the
+      // person's one unit and role say it all (D135, D149).
       const { relations, assignments, ...rest } = row;
       return {
         ...rest,
         ...(relations.length ? { relations } : {}),
-        ...(assignments.length > 1 ? { assignments } : {}),
+        ...(assignments.length ? { assignments } : {}),
       };
     },
     async writeGrant(personId, grant) {
@@ -588,11 +683,13 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
       return found;
     },
     async readUser(organisationId, id, lock) {
-      const query = tx
-        .select(userColumns)
-        .from(schema.people)
-        .where(and(eq(schema.people.id, id), eq(schema.people.organisationId, organisationId)));
-      const [row] = await (lock ? query.for(ROW_LOCK) : query);
+      const where = and(eq(schema.people.organisationId, organisationId), eq(schema.people.id, id));
+      if (lock) {
+        // After waiting for a writer, the next statement sees the employments it committed with the person.
+        const [held] = await tx.select({ id: schema.people.id }).from(schema.people).where(where).for(ROW_LOCK);
+        if (!held) return undefined;
+      }
+      const [row] = await tx.select(userColumns).from(schema.people).where(where);
       return row && userRecord(row);
     },
     async findUser(by, value) {
@@ -618,14 +715,16 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
         : [];
       return { total: counted?.total ?? 0, rows: rows.map(userRecord) };
     },
-    async insertUser(record) {
+    async insertUser({ employments, ...record }) {
       await tx.insert(schema.people).values({
         ...record,
         createdAt: new Date(record.createdAt),
         updatedAt: new Date(record.updatedAt),
       });
+      await writeEmployments(tx, record.id, employments);
     },
-    async updateUser(id, { updatedAt, ...fields }) {
+    async updateUser(id, { updatedAt, employments, ...fields }) {
+      if (employments !== undefined) await writeEmployments(tx, id, employments);
       await tx
         .update(schema.people)
         .set({
@@ -799,34 +898,95 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
       return { total: counted?.total ?? 0, rows: rows.map(userRecord) };
     },
     async assignmentsOf(personId) {
-      return tx
-        .select({ unitId: schema.assignments.unitId, unitLabel: schema.units.label, role: schema.assignments.role })
-        .from(schema.assignments)
-        .innerJoin(schema.units, eq(schema.units.id, schema.assignments.unitId))
-        .where(eq(schema.assignments.personId, personId))
-        .orderBy(schema.assignments.unitId);
+      if (personId.includes('\u0000')) return [];
+      return [
+        ...(await tx.execute<{ unitId: string; unitLabel: string; role: 'manager' | 'employee'; belongs: boolean }>(sql`
+          select held.unit_id as "unitId", unit.label as "unitLabel",
+            case when bool_or(held.leads) then 'manager' else 'employee' end as role,
+            bool_or(not held.leads) as belongs
+          from (${heldUnits}) held
+          join auth_unit unit on unit.id = held.unit_id
+          where held.person_id = ${personId}
+          group by held.unit_id, unit.label
+          order by held.unit_id`)),
+      ];
     },
-    async unitPeople(unitIds, organisationId) {
-      if (!unitIds.length) return {};
+    async managersNamed(organisationId, personIds) {
+      if (personIds && !personIds.length) return [];
+      const pairs: Array<{ personId: string; managerId: string }> = [];
+      const ids = personIds ? [...new Set(personIds)].filter(id => !id.includes('\u0000')) : [undefined];
+      for (let at = 0; at < ids.length; at += MEMBER_BATCH) {
+        const slice = personIds ? (ids.slice(at, at + MEMBER_BATCH) as string[]) : undefined;
+        const rows = await tx
+          .selectDistinct({ personId: schema.employments.personId, managerId: schema.employments.managerId })
+          .from(schema.employments)
+          .innerJoin(schema.people, eq(schema.people.id, schema.employments.personId))
+          .where(
+            and(
+              eq(schema.people.organisationId, organisationId),
+              isNotNull(schema.employments.managerId),
+              slice ? inArray(schema.employments.personId, slice) : undefined,
+            ),
+          );
+        for (const row of rows) if (row.managerId) pairs.push({ personId: row.personId, managerId: row.managerId });
+      }
+      const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+      return pairs.sort((a, b) => byCodeUnit(a.personId, b.personId) || byCodeUnit(a.managerId, b.managerId));
+    },
+    async reportsTo(organisationId, managerId) {
       const rows = await tx
         .select({
-          unitId: schema.assignments.unitId,
           id: schema.people.id,
           name: schema.people.name,
           userName: schema.people.userName,
           email: schema.people.email,
-          role: schema.assignments.role,
           enabled: schema.people.enabled,
+          unitId: schema.employments.unitId,
         })
-        .from(schema.assignments)
-        .innerJoin(schema.people, eq(schema.people.id, schema.assignments.personId))
-        .where(
-          and(
-            inArray(schema.assignments.unitId, [...unitIds]),
-            organisationId === undefined ? undefined : eq(schema.people.organisationId, organisationId),
-          ),
-        )
-        .orderBy(schema.people.id);
+        .from(schema.employments)
+        .innerJoin(schema.people, eq(schema.people.id, schema.employments.personId))
+        .where(and(eq(schema.employments.managerId, managerId), eq(schema.people.organisationId, organisationId)))
+        .orderBy(sql`${schema.people.id} collate "C"`, schema.employments.position);
+      const found = new Map<string, Awaited<ReturnType<ProvisionTx['reportsTo']>>[number]>();
+      for (const { unitId, ...person } of rows) {
+        const held = found.get(person.id) ?? { ...person, unitIds: [], leads: [] };
+        if (!held.unitIds.includes(unitId)) held.unitIds.push(unitId);
+        found.set(person.id, held);
+      }
+      const ids = [...found.keys()];
+      for (let at = 0; at < ids.length; at += MEMBER_BATCH)
+        for (const row of await tx
+          .select({ personId: schema.unitLeads.personId, unitId: schema.unitLeads.unitId })
+          .from(schema.unitLeads)
+          .where(inArray(schema.unitLeads.personId, ids.slice(at, at + MEMBER_BATCH)))
+          .orderBy(sql`${schema.unitLeads.unitId} collate "C"`))
+          found.get(row.personId)!.leads.push(row.unitId);
+      return [...found.values()];
+    },
+    async unitPeople(unitIds, organisationId) {
+      if (!unitIds.length) return {};
+      // A NUL names no unit, and PostgreSQL refuses to compare one.
+      const asked = [...new Set(unitIds)].filter(id => !id.includes('\u0000'));
+      if (!asked.length) return {};
+      const rows = await tx.execute<{
+        unitId: string;
+        id: string;
+        name: string;
+        userName: string | null;
+        email: string | null;
+        role: 'manager' | 'employee';
+        belongs: boolean;
+        enabled: boolean;
+      }>(sql`
+        select held.unit_id as "unitId", person.id, person.name, person.user_name as "userName", person.email,
+          case when bool_or(held.leads) then 'manager' else 'employee' end as role,
+          bool_or(not held.leads) as belongs, person.enabled
+        from (${heldUnits}) held
+        join auth_person person on person.id = held.person_id
+        where held.unit_id in ${asked}
+          ${organisationId === undefined ? sql`` : sql`and person.organisation_id = ${organisationId}`}
+        group by held.unit_id, person.id
+        order by person.id`);
       const byUnit: Awaited<ReturnType<ProvisionTx['unitPeople']>> = {};
       for (const { unitId, ...person } of rows) (byUnit[unitId] ??= []).push(person);
       return byUnit;
@@ -861,19 +1021,45 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
         .orderBy(schema.groups.externalId);
       return nodesOf(rows).map(r => ({ id: r.id, label: r.label, parentId: r.parentUnitId }));
     },
+    async unitIdentifiers(organisationId, unitIds) {
+      // A NUL names no unit, and PostgreSQL refuses to compare one.
+      const ids = [...new Set(unitIds)].filter(id => id && !id.includes('\u0000'));
+      if (!ids.length) return new Map();
+      const rows = await tx
+        .select({ externalId: schema.groups.externalId, unitIdentifiers: schema.groups.unitIdentifiers })
+        .from(schema.groups)
+        .where(
+          and(
+            eq(schema.groups.organisationId, organisationId),
+            inArray(
+              schema.groups.externalId,
+              ids.map(id => UNIT_KEY + id),
+            ),
+          ),
+        );
+      return new Map(
+        nodesOf(rows).flatMap(r => (r.unitIdentifiers.length ? [[r.id, r.unitIdentifiers] as const] : [])),
+      );
+    },
     async placements(organisationId) {
-      return tx
-        .select({
-          personId: schema.people.id,
-          name: schema.people.name,
-          enabled: schema.people.enabled,
-          unitId: schema.assignments.unitId,
-          role: schema.assignments.role,
-        })
-        .from(schema.people)
-        .leftJoin(schema.assignments, eq(schema.assignments.personId, schema.people.id))
-        .where(eq(schema.people.organisationId, organisationId))
-        .orderBy(schema.people.id, schema.assignments.unitId);
+      return [
+        ...(await tx.execute<{
+          personId: string;
+          name: string;
+          enabled: boolean;
+          unitId: string | null;
+          role: 'manager' | 'employee' | null;
+          belongs: boolean;
+        }>(sql`
+          select person.id as "personId", person.name, person.enabled, held.unit_id as "unitId",
+            case when held.unit_id is null then null when bool_or(held.leads) then 'manager' else 'employee' end as role,
+            coalesce(bool_or(not held.leads), false) as belongs
+          from auth_person person
+          left join (${heldUnits}) held on held.person_id = person.id
+          where person.organisation_id = ${organisationId}
+          group by person.id, held.unit_id
+          order by person.id, held.unit_id`)),
+      ];
     },
     async bound(personId) {
       const [row] = await tx

@@ -33,23 +33,35 @@ export function relationUsecases(deps: RelationDeps) {
    * report, and only where `admits` lets that relation through; never as a colleague or a registrar's. Someone with a
    * user name is answered by it in `key`, the key the capability reads, so Clew's own records may name them by id
    * (D122, a card's action); someone without one is answered by the id.
+   *
+   * For units, `identifiers` names the types of unit identifier the capability reads (D148): each unit the reader may
+   * ask about is answered with what the directory pushed of those types, and of no other; without it nothing is read.
    */
   async function relate(
     actor: Actor,
     entity: EntityKind,
     keys: readonly string[],
     admits: readonly Relation[],
-    options: { ids?: boolean } = {},
+    options: { ids?: boolean; identifiers?: readonly string[] } = {},
   ): Promise<Related[]> {
     if (!keys.length || !admits.length) return [];
     const reader = await deps.reader(actor);
     if (!reader || reader.id !== actor.id) return [];
     const reach = await deps.directory.reach(reader);
-    if (entity === 'unit')
-      return keys.flatMap(asked => {
+    if (entity === 'unit') {
+      const related = keys.flatMap((asked): Related[] => {
         const relation = isKey('unit', asked) ? unitRelation(reach, asked) : undefined;
         return relation && admits.includes(relation) ? [{ asked, key: asked, relation }] : [];
       });
+      const types = options.identifiers ?? [];
+      if (!types.length || !related.length) return related;
+      // Only for the units the reader may ask about, and only the types the capability reads.
+      const known = await deps.directory.unitIdentifiers(reader, [...new Set(related.map(r => r.key))]);
+      return related.map(r => {
+        const identifiers = (known.get(r.key) ?? []).filter(i => types.includes(i.type));
+        return identifiers.length ? { ...r, identifiers } : r;
+      });
+    }
     // Who holds the names that are neither the reader's own nor a report's, read once for every key, and only when a
     // colleague, or a registrar's, may be asked about.
     const own = (asked: string) =>

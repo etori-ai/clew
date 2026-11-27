@@ -8,6 +8,7 @@ import {
   type ThreadDraft,
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { nameManagers } from '../named-managers';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
@@ -16,6 +17,7 @@ import { SUBJECT_ERASED, subjectCards, subjectErasure } from '../../apps/server/
 import type { ThreadStore } from '../../apps/server/src/threads/model';
 import { memoryPersonKeys } from '../person-keys';
 import { refreshScan } from '../refresh-scan';
+import { hold, unitsHeld } from '../held-units';
 
 /**
  * "Behöver dig" on a person and "Just nu" on the list (D97 items 5 and 6) as the person meets them: a source's scan pushes
@@ -46,7 +48,7 @@ function directory() {
       createdAt: T0,
       updatedAt: T0,
     });
-    s.assignments.set(p.id, [...(s.assignments.get(p.id) ?? []), { unitId, role }]);
+    hold(s, p.id, [...(unitsHeld(s, p.id) ?? []), { unitId, role }]);
     s.grants.set(p.id, { unitId, unitLabel: s.units.get(unitId)!.label, role, capabilities: [] });
   };
   s.units.set('unit-skola', { organisationId: 'poc', label: 'Bergsåkers skola' });
@@ -88,6 +90,8 @@ function directory() {
       },
     };
   };
+  // D147: who reports to whom is said on the employments, as a directory says it.
+  nameManagers(store.state);
   return { staff, persona, state: s, add: person };
 }
 

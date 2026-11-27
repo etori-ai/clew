@@ -69,10 +69,13 @@ export const unitRef = (unit: DirectoryUnit): EntityRef => ({
 export const askable = <P extends DirectoryPerson>(person: P): person is P & { userName: string } =>
   !!personKey(person);
 
-/** The units the reader manages or belongs to, each once, by label in Swedish order. */
+/**
+ * The units the reader leads or belongs to, each once, by label in Swedish order: their assignments and nothing else. A
+ * unit that only holds one of their reports is not theirs (D147: who reports to a person says nothing of the unit).
+ */
 export function readerUnits(reach: Reach): DirectoryUnit[] {
   const units = new Map<string, DirectoryUnit>();
-  for (const u of [...reach.units, ...reach.managed])
+  for (const u of reach.units)
     if (isKey('unit', u.unitId) && !units.has(u.unitId))
       units.set(u.unitId, { unitId: u.unitId, unitLabel: u.unitLabel });
   return [...units.values()].sort(
@@ -80,27 +83,41 @@ export function readerUnits(reach: Reach): DirectoryUnit[] {
   );
 }
 /**
- * The units below the reader that they follow up (D117): the units led by the managers who report to a unit the reader
- * manages (D99's reporting line), each once, with the reader's unit it reports to; never one of `own`, by default every
- * unit the reader manages or belongs to, as the entity list groups them.
+ * The units below the reader that they follow up (D117): the units led by the managers who report to the reader (D147),
+ * each once; never one of `own`, by default every unit the reader leads or belongs to, as the entity list groups them.
+ * `under` is the reader's own unit that manager is employed on, where they are: the unit's page lists the unit below
+ * there and the unit below leads back to it. A manager employed elsewhere, on the unit they lead for one, gives none:
+ * the unit is below the reader, and under no unit of theirs.
  */
 export function unitsBelow(
   reach: Reach,
   own: ReadonlySet<string> = new Set(readerUnits(reach).map(u => u.unitId)),
-): Array<DirectoryUnit & { under: string }> {
-  const found = new Map<string, DirectoryUnit & { under: string }>();
+): Array<DirectoryUnit & { under?: string }> {
+  const found = new Map<string, DirectoryUnit & { under?: string }>();
   for (const unit of reach.managed)
-    for (const person of unit.people)
-      for (const b of person.below ?? [])
+    for (const person of unit.people) {
+      // Someone who also manages the reader is not their report (`reportsTo`), so what they lead is not below. Neither
+      // is what a deactivated report is still listed as leading: a leaver left in a unit's manager group leads nobody
+      // (D99 item 4), and the reader follows up no unit through them. The row stays on Personal, marked as it is.
+      if (reach.above.includes(person.id) || !person.enabled) continue;
+      // The units this report leads: the one they are listed under, where they lead it, and the others (`below`).
+      for (const b of [
+        ...(person.role === 'manager' ? [{ ...unit, role: 'manager' as const }] : []),
+        ...(person.below ?? []),
+      ])
         if (b.role === 'manager' && isKey('unit', b.unitId) && !own.has(b.unitId) && !found.has(b.unitId))
-          found.set(b.unitId, { unitId: b.unitId, unitLabel: b.unitLabel, under: unit.unitId });
+          found.set(b.unitId, {
+            unitId: b.unitId,
+            unitLabel: b.unitLabel,
+            ...(own.has(unit.unitId) ? { under: unit.unitId } : {}),
+          });
+    }
   return [...found.values()].sort(
     (a, b) => a.unitLabel.localeCompare(b.unitLabel, 'sv') || a.unitId.localeCompare(b.unitId),
   );
 }
-/** Whether the reader manages this unit of theirs: it is on their cards, or they hold a manager's role on it. */
-const manages = (reach: Reach, unitId: string) =>
-  reach.managed.some(u => u.unitId === unitId) || reach.units.some(u => u.unitId === unitId && u.role === 'manager');
+/** Whether the reader leads this unit of theirs: they hold a manager's role on it. */
+const manages = (reach: Reach, unitId: string) => reach.units.some(u => u.unitId === unitId && u.role === 'manager');
 const below = (reach: Reach): DirectoryUnit[] =>
   unitsBelow(reach).map(({ unitId, unitLabel }) => ({ unitId, unitLabel }));
 /** The units of the list (D117): the reader's own, managed or placed on, then the ones below, each once. */
@@ -137,7 +154,7 @@ export interface ReportRow {
   name: string;
   userName: string;
   title?: string;
-  /** The units the reader manages that list them, by label in the list's order. */
+  /** The units they are listed under, which are the units of their employments, by label in the list's order. */
   unit: string;
 }
 /**
@@ -181,48 +198,38 @@ export function listedKeys(kind: EntityKind, reach: Reach): Listed[] {
         if (askable(p) && !listed.has(p.id)) listed.set(p.id, { key: p.id, sourceKey: p.userName });
   return [...listed.values()];
 }
-/** A person found on a unit the reader manages, with that unit; `placed` is false for someone who reports from below. */
+/** A person on the reader's list with the unit they are listed under, which is the unit of their employment. */
 export interface Managed {
   person: DirectoryPerson & { userName: string };
   unit: DirectoryUnit;
   placed: boolean;
 }
 /**
- * A person on a unit the reader manages, by Clew's key (their id), with the unit of the first card in the list's order
- * that they are placed on, else of the first they report to from below (D99 item 4). Someone who reports from below is
- * not on that unit, so it does not say where they work.
+ * A person on the reader's list, by Clew's key (their id), with the unit of the first card in the list's order that
+ * holds them. Everyone listed is employed on the unit they are listed under (D147), so `placed` is always true.
  */
 export function managedPerson(reach: Reach, id: string): Managed | undefined {
-  let fromBelow: Managed | undefined;
   for (const unit of reach.managed)
     for (const person of unit.people)
-      if (askable(person) && person.id === id) {
-        const found = { person, unit: { unitId: unit.unitId, unitLabel: unit.unitLabel }, placed: !person.below };
-        if (found.placed) return found;
-        fromBelow ??= found;
-      }
-  return fromBelow;
+      if (askable(person) && person.id === id)
+        return { person, unit: { unitId: unit.unitId, unitLabel: unit.unitLabel }, placed: true };
+  return undefined;
 }
 /**
- * Whether someone on a unit the reader manages reports to the reader (D99 item 4, D117): placed there without a
- * manager's role, reporting to it from below (the managers of the nearest led units below, and the people of units
- * nobody leads in between), or leading it beside the reader while their line runs to a unit above that the reader leads
- * (`lineReports`). Never someone who manages the reader (`above`), never a co-manager whose line runs elsewhere, and
- * never someone whose role there the directory did not say. Personal lists more than this; who may be asked about as a
- * report is exactly this.
+ * Whether someone on the reader's list reports to the reader (D147): everyone on it does, since the list is the people
+ * whose employments name the reader as manager and leaves out anyone who also manages the reader (`above`), which only
+ * a chain of managers that comes round can give. Asked all the same wherever a person is taken for a report, so that a
+ * list built some other way cannot make a manager of somebody's own manager.
  */
-export const reportsTo = (reach: Pick<Reach, 'above' | 'lineReports'>, person: ReachPerson) =>
-  !reach.above.includes(person.id) &&
-  (person.below !== undefined || person.role === 'employee' || reach.lineReports.includes(person.id));
+export const reportsTo = (reach: Pick<Reach, 'above'>, person: { id: string }) => !reach.above.includes(person.id);
 /**
- * The units the reader manages, each with only the people on it who report to the reader (`reportsTo`): exactly the
- * `managed` relation (D99 item 4, D117), never a co-manager whose line runs elsewhere nor anyone who manages the reader,
- * though Personal lists them. For a domain of Clew's own that works with a manager's reports through a port of its own
- * (the competence module's `Staff`), bound in composition, since a module never imports another. A unit keeps its place
- * when nobody on it reports to the reader: the reader still manages it.
+ * The units of the reader's list, each with only the people on it who report to the reader (`reportsTo`): exactly the
+ * `managed` relation (D147, D117). For a domain of Clew's own that works with a manager's reports through a port of its
+ * own (the competence module's `Staff`), bound in composition, since a module never imports another. A unit keeps its
+ * place when nobody on it reports to the reader.
  */
 export function reportsByUnit<P extends ReachPerson, U extends DirectoryUnit & { people: readonly P[] }>(
-  reach: Pick<Reach, 'above' | 'lineReports'> & { managed: readonly U[] },
+  reach: Pick<Reach, 'above'> & { managed: readonly U[] },
 ): Array<Omit<U, 'people'> & { people: P[] }> {
   return reach.managed.map(unit => ({ ...unit, people: unit.people.filter(p => reportsTo(reach, p)) }));
 }

@@ -231,7 +231,7 @@ describe('a refused read is nothing to show (D96 item 9)', () => {
     expect(refused(new ApiError(400, 'Inget system för utvecklingssamtal är anslutet just nu.'))).toBe(true);
     // A talks read switched off, or of a connector that leaves the person out, answers as an unknown one (D23).
     expect(refused(new ApiError(404, 'Okänd förmåga.'))).toBe(true);
-    expect(refused(new ApiError(403, 'Sidan Personal är för den som är chef för en enhet.'))).toBe(true);
+    expect(refused(new ApiError(403, 'Sidan Personal är för den som är chef.'))).toBe(true);
     expect(refused(new ApiError(400, 'Utvecklingssamtal svarade inte som väntat.'))).toBe(false);
     expect(refused(new ApiError(503, 'Något gick fel. Försök igen.'))).toBe(false);
     expect(refused(new Error('Session unavailable'))).toBe(false);

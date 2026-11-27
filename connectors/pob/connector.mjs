@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
 import { ACCOUNT_PATTERN, createTokenVerifier } from './identity.mjs';
 import {
+  COST_CODE,
   FIXTURE_PROBLEM_MEMO,
   SourceUnavailable,
   createFixtureCases,
@@ -20,12 +21,14 @@ import {
   holds,
   plainText,
   resolved,
+  toSourceAgreement,
   toSourceCase,
 } from './cases.mjs';
 import {
   CONNECTOR,
   DEFAULT_AUDIENCE,
   DEFAULT_SOURCE,
+  KEYS_MAX,
   REQUEST_AREA,
   createManifest,
   errandRefParts,
@@ -50,6 +53,15 @@ const stateOrder = ['waiting-on-me', 'new', 'active', 'waiting-on-others', 'clos
 const shortDate = new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short', timeZone: 'Europe/Stockholm' });
 const DESCRIPTION_LIMIT = 4000;
 const PERSON_TTL = 300_000;
+/**
+ * What a code is where the installation has not said (`costs.codePattern`): the port's own bound, `COST_CODE`. An
+ * identifier of the right type that is shorter, longer or anything else is not a code here: a one-character prefix
+ * would read as nearly every account in the system. An installation's own pattern is asked besides the bound and never
+ * in its place.
+ */
+export const DEFAULT_COST_CODE = COST_CODE.source;
+/** What only needs the person proven, and nothing of theirs in POB: a read about a unit asks for no person's records. */
+const WITHOUT_PERSON = new Set(['pob.unitCosts']);
 const PERSON_LIMIT = 2000;
 const TITLE_LIMIT = 80;
 
@@ -88,12 +100,24 @@ export function createConnector({
   problemMemo = FIXTURE_PROBLEM_MEMO,
   caseLink,
   writes = [],
+  costs,
   create = fixtureCreate,
   urgentNote,
   now = () => Date.now(),
   log = line => console.log(JSON.stringify(line)),
 } = {}) {
-  const manifest = createManifest({ audience, source: sourceLabel, writes });
+  // The cost read (D148) is on when the installation has said which of the directory's unit identifiers the service
+  // desk books costs on. `amountLabel` is set only where it has also said which field of an agreement holds an amount.
+  // A code passes the port's bound and the installation's own pattern, both: the pattern narrows what a code is and
+  // cannot widen it, so no configuration makes a short identifier a prefix of other units' accounts.
+  const ownCostCode = costs ? new RegExp(costs.codePattern ?? DEFAULT_COST_CODE) : undefined;
+  const isCostCode = value => typeof value === 'string' && COST_CODE.test(value) && ownCostCode.test(value);
+  const manifest = createManifest({
+    audience,
+    source: sourceLabel,
+    writes,
+    ...(costs ? { costs: { identifier: costs.identifier, amountLabel: costs.amountLabel } } : {}),
+  });
   const verify = createVerifier({ secret, jwks, clewUrl: process.env.CLEW_URL ?? '' }, CONNECTOR);
   const verifyToken = createTokenVerifier({ ...identity, audience, now });
   const types = new Set(caseTypes);
@@ -443,6 +467,65 @@ export function createConnector({
     };
   }
 
+  /**
+   * What the agreements booked on each of these units cost (D148). The service desk is asked with the connector's own
+   * account, which can read every agreement, so what stands between a person and another unit's costs is here, in
+   * order:
+   *   - how the person stands to the unit is Clew's word, read from the body its assertion binds, and only a unit the
+   *     person leads (`manages`) is answered. Clew sends no other, and this does not rest on that;
+   *   - the code the costs are booked on is the directory's, sent by Clew in the same body: the identifiers of the one
+   *     type this installation configured. A unit without one, or with one that is no code, is no row. Nothing is ever
+   *     worked out from the unit's id or its name;
+   *   - POB is asked for the accounts that begin with the code, and every agreement that comes back is compared with
+   *     the code again, so a filter POB ignored or matched loosely cannot add another unit's agreements.
+   * A unit with several codes is the sum of them, each agreement counted once. An answer that was cut would look like
+   * a whole sum, so then this system has no answer.
+   */
+  if (costs)
+    capabilities['pob.unitCosts'] = async (input, { account, about }) => {
+      const keys = Array.isArray(input.keys) ? [...new Set(input.keys.filter(key => typeof key === 'string'))] : [];
+      if (keys.length > KEYS_MAX) throw new Invalid('För många enheter i en fråga.');
+      const told = about && typeof about === 'object' && about.entity === 'unit' ? about : {};
+      const of = (map, key) => (map && typeof map === 'object' && Object.hasOwn(map, key) ? map[key] : undefined);
+      const rows = [];
+      for (const key of keys) {
+        if (of(told.relations, key) !== 'manages') continue;
+        const known = of(told.identifiers, key);
+        const codes = [
+          ...new Set(
+            (Array.isArray(known) ? known : [])
+              .filter(i => i && i.type === costs.identifier && isCostCode(i.value))
+              .map(i => i.value),
+          ),
+        ];
+        if (!codes.length) continue;
+        const answers = await Promise.all(codes.map(code => source.agreements(code)));
+        if (answers.some(answer => answer?.complete !== true)) throw new SourceUnavailable('The answer was cut.');
+        const found = new Map();
+        answers.forEach((answer, i) => {
+          for (const raw of answer.agreements ?? []) {
+            const agreement = toSourceAgreement(raw);
+            if (agreement && agreement.account.startsWith(codes[i])) found.set(agreement.id, agreement);
+          }
+        });
+        const agreements = [...found.values()];
+        const row = { key, agreements: agreements.length };
+        if (costs.amountLabel && agreements.length) {
+          const priced = agreements.filter(agreement => agreement.amount !== undefined);
+          row.amount = Math.round(priced.reduce((sum, agreement) => sum + agreement.amount, 0) * 100) / 100;
+          if (priced.length < agreements.length)
+            row.note =
+              priced.length === 0
+                ? 'Inget av avtalen har ett belopp.'
+                : `${agreements.length - priced.length} av avtalen saknar belopp och är inte med i summan.`;
+        }
+        rows.push(row);
+      }
+      // Which units were asked about is the person's own organisation; which were answered says nothing more.
+      say({ event: 'unit-costs', account, outcome: 'shown', asked: keys.length, rows: rows.length });
+      return { rows };
+    };
+
   /** One card: a request that waits for the person's own answer. Its text is the row's, never the title. */
   function draftOf({ errand, shown }) {
     return {
@@ -554,8 +637,12 @@ export function createConnector({
 
     try {
       const account = await identify(actor, request.headers.get('x-clew-delegated-token'));
-      const found = await personFor(account);
       const input = body && typeof body.input === 'object' && body.input ? body.input : {};
+      // A read about a unit asks POB for nothing of the person's, so their records there are not looked up for it: a
+      // person POB does not know, or knows twice, still leads their unit.
+      if (WITHOUT_PERSON.has(name))
+        return jsonResponse({ output: await capability(input, { account, about: body?.about }) });
+      const found = await personFor(account);
       const operationId = request.headers.get('x-clew-operation-id') ?? undefined;
       return jsonResponse({
         output: await capability(input, { account, found, person: resolved(found), operationId }),

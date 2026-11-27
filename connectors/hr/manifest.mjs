@@ -612,7 +612,9 @@ export const manifest = {
   source: 'Personalsystemet',
   uses: [],
   scan: true,
-  // D135: a manager of several units is answered for each of them (`managedUnits` in connector.mjs).
+  // A manager is answered for each unit they lead, which the actor's `leads` says to every connector (D149). The
+  // assignments are taken besides (D135), to tell someone with several units, whose cards then name the unit they are
+  // about (`several` in connector.mjs).
   assignments: true,
   facts: [{ kind: ABSENCE_FACT, title: 'Sjukfrånvaro', attributes: AbsenceAttributes }],
   areas: [

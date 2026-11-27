@@ -9,6 +9,7 @@ import {
   type Connector,
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { nameManagers } from '../named-managers';
 import { personErasureUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
 import { entityActionUsecases } from '../../apps/server/src/modules/entities/actions';
@@ -23,6 +24,7 @@ import { InputError } from '../../apps/server/src/context';
 import { fixtureConnectors } from '../fixture-connectors';
 import { memoryPersonKeys } from '../person-keys';
 import { startedDecision, startedTopic, takesStarted } from '../../apps/server/src/threads/domain';
+import { hold } from '../held-units';
 
 /**
  * An action about a person, started from the person's menu without the model (D97, D8): the real registry with small
@@ -52,7 +54,7 @@ function directory(userNames: Record<string, string> = {}) {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set(id, [{ unitId, role }]);
+    hold(s, id, [{ unitId, role }]);
     s.grants.set(id, { unitId, unitLabel: s.units.get(unitId)!.label, role, capabilities: [] });
   };
   s.units.set('unit-skola', { organisationId: 'poc', label: 'Bergsåkers skola' });
@@ -84,6 +86,8 @@ function directory(userNames: Record<string, string> = {}) {
       authorize: async () => ({ version }),
     };
   };
+  // D147: who reports to whom is said on the employments, as a directory says it.
+  nameManagers(store.state);
   return { staff: staffUsecases({ store }), persona, state: s, store };
 }
 
@@ -569,7 +573,9 @@ describe('an action about a person, started from the menu', () => {
     const cards = subjectErasure({ store: w.store, clock, people: memoryPersonKeys(w.people.state) });
     expect(await cards.eraseSubject(operator, { entity: 'person', key: 'anna' })).toMatchObject({ cards: 1, rows: 1 });
     const record = personErasureUsecases({ store: w.people.store, clock });
-    expect(await record.erasePerson(operator, 'anna')).toMatchObject({ erased: { fields: 3 } });
+    // Four fields held something: her name, user name and external id, and the employment that names Hillevi (D147).
+    expect(await record.erasePerson(operator, 'anna')).toMatchObject({ erased: { fields: 4 } });
+    expect(w.people.state.users.get('anna')!.employments).toEqual([]);
     // Her record holds no user name: neither her id nor the name she had resolves to anyone, so no name can be sent.
     const keys = memoryPersonKeys(w.people.state);
     expect(await keys.userName('anna')).toBeNull();

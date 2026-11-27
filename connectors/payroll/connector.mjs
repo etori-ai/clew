@@ -47,8 +47,17 @@ export function createConnector({
   if (!FAULTS.includes(fault)) throw new Error(`FIXTURE_FAULT must be one of ${FAULTS.filter(Boolean).join(', ')}`);
   const verify = createVerifier({ secret, jwks, clewUrl, fetch: fetchImpl }, CONNECTOR);
   const today = () => dateIn(clock());
-  const unitOf = actor => unitMap[actor.unitId] ?? actor.unitId;
-  const staff = actor => employees.filter(e => e.unitId === unitOf(actor));
+  // The units the person leads (D149), as Clew signs them into the actor of every manager: `leads`. `role` says only
+  // that the person is a manager, which someone people report to is without leading a unit, and `unitId` is the unit
+  // they are employed on, which need not be one they lead. The reads answer for the staff of the units in `leads`.
+  const ledUnits = actor =>
+    (Array.isArray(actor.leads) ? actor.leads : [])
+      .filter(u => u && typeof u.unitId === 'string' && u.unitId)
+      .map(u => unitMap[u.unitId] ?? u.unitId);
+  const staff = actor => {
+    const units = ledUnits(actor);
+    return employees.filter(e => units.includes(e.unitId));
+  };
   const requirePerson = (actor, person) => {
     if (!staff(actor).some(e => e.ref === person)) throw new Denied('Du saknar behörighet för medarbetaren.');
   };

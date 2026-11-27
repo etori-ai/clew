@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { decodeJwt } from 'jose';
-import type { AuthenticatedContext } from '../../packages/contracts/src/index';
+import { checkContract, type AuthenticatedContext } from '../../packages/contracts/src/index';
+import { CallRequestSchema } from '../../packages/connectors/src/protocol';
 import {
   CapabilityError,
   Registry,
@@ -21,6 +22,7 @@ import { manifestProblems } from '../../packages/connectors/src/remote';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { connectorProblems } from '../../packages/connectors/src/validation';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { nameManagers } from '../named-managers';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
@@ -35,6 +37,7 @@ import { competenceConnector } from '../../apps/server/src/modules/competence/ca
 import { competenceUsecases } from '../../apps/server/src/modules/competence/usecases';
 import { reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { testAuthority, testJwks } from '../connector-authority';
+import { hold } from '../held-units';
 
 /** What `POST /api/connectors/call` answers for a refusal (`routes/connector-callback.ts`): the protocol's code. */
 const refusal = (error: unknown) =>
@@ -65,6 +68,7 @@ function directory() {
   const unit = (id: string, label: string, parent: string | null, organisationId = ORG) => {
     s.units.set(id, { organisationId, label });
     s.groups.set('g-' + id, {
+      unitIdentifiers: [],
       id: 'g-' + id,
       organisationId,
       externalId: 'unit:' + id,
@@ -94,7 +98,7 @@ function directory() {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set(id, placements);
+    hold(s, id, placements);
     const first = placements[0]!;
     s.grants.set(id, {
       unitId: first.unitId,
@@ -157,6 +161,8 @@ function directory() {
     reader: async actor => (s.users.get(actor.id)?.enabled ? persona(actor.id) : undefined),
     holders: memoryPersonKeys(s).holders,
   });
+  // D147: who reports to whom is said on the employments, as a directory says it.
+  nameManagers(store.state);
   return { persona, staff, relations, state: s };
 }
 
@@ -220,7 +226,7 @@ function sources(seen: Seen[]) {
     view: list(open),
     run: record(name, rows),
   });
-  const unitRead = (name: string, admits?: Array<'manages' | 'member'>): Capability => ({
+  const unitRead = (name: string, admits?: Array<'manages' | 'member'>, identifiers?: string[]): Capability => ({
     name,
     kind: 'read',
     title: name,
@@ -228,7 +234,9 @@ function sources(seen: Seen[]) {
     model: false,
     scope: {},
     about: { entity: 'unit' },
-    ...(admits ? { unit: { admits } } : {}),
+    ...(admits || identifiers
+      ? { unit: { ...(admits ? { admits } : {}), ...(identifiers ? { identifiers } : {}) } }
+      : {}),
     input: keysInput,
     output: rowsOutput,
     view: list(),
@@ -281,6 +289,9 @@ function sources(seen: Seen[]) {
       { ...personRead('src.flagEffect'), input: personInput(true) },
       unitRead('src.unit'),
       unitRead('src.units', ['manages', 'member']),
+      // D148: a read that asks what the economy system knows each unit by, and one that asks for two types.
+      unitRead('src.costs', ['manages', 'member'], ['ansvar']),
+      unitRead('src.figures', undefined, ['qlik', 'ansvar']),
     ],
   };
   // Clew's own domains: a composite that asks the source as the same person through `clew.call`, a read that takes a
@@ -420,7 +431,9 @@ describe('the rule, resolved from the directory', () => {
       { asked: 'boss', key: 'boss', relation: 'colleague' },
     ]);
     expect(await people.relations.relate(hillevi, 'person', ['cohead', 'director', 'boss'], ['managed'])).toEqual([]);
-    // Personal is unchanged: it lists everyone placed on the unit she manages.
+    // Personal lists those whose employments name her (D147), so no co-manager of the unit is on it. Nor is Boss,
+    // though his employment on the school names her: he also manages her, and where a chain of managers comes round
+    // neither is on the other's list.
     const entities = entityUsecases({
       directory: people.staff,
       sources: { reads: async () => [], actions: async () => [] },
@@ -430,7 +443,10 @@ describe('the rule, resolved from the directory', () => {
     const listed = (await entities.list(people.persona('hillevi'), 'person')).groups.flatMap(g =>
       g.entities.map(e => e.key),
     );
-    expect(listed).toEqual(expect.arrayContaining(['cohead', 'director', 'boss', 'anna', 'olle']));
+    expect(listed).toEqual(expect.arrayContaining(['anna', 'olle']));
+    expect(listed).not.toContain('boss');
+    expect(listed).not.toContain('cohead');
+    expect(listed).not.toContain('director');
     // And the opened page says how she stands to each, by the same rule.
     expect((await entities.detail(people.persona('hillevi'), 'person', 'cohead'))?.relation).toBe('colleague');
     expect((await entities.detail(people.persona('hillevi'), 'person', 'director'))?.relation).toBe('colleague');
@@ -488,7 +504,9 @@ describe('the rule, resolved from the directory', () => {
   });
   test('a unit led by a manager who reports to the caller is below: one level down, never upward, and only where admitted', async () => {
     const { people } = world();
-    // Olle leads Fritids directly below the school Hillevi leads, so he reports to her (D99) and Fritids is below her.
+    // Olle leads Fritids and reports to Hillevi, so Fritids is below her. So is Ekonomi, which Petra leads: her
+    // employment on the school names Hillevi, and where in the tree the unit stands says nothing (D147). Förvaltningen
+    // is not, though Boss is on her list: he also manages her, so he is not her report.
     const hillevi = actorOf(people.persona('hillevi'));
     expect(
       await people.relations.relate(
@@ -500,6 +518,7 @@ describe('the rule, resolved from the directory', () => {
     ).toEqual([
       { asked: 'unit-skola', key: 'unit-skola', relation: 'manages' },
       { asked: 'unit-fritids', key: 'unit-fritids', relation: 'below' },
+      { asked: 'unit-ekonomi', key: 'unit-ekonomi', relation: 'below' },
     ]);
     // A read that does not admit `below` (the default admits `manages` alone) is not asked about it.
     expect(await people.relations.relate(hillevi, 'unit', ['unit-fritids'], ['manages'])).toEqual([]);
@@ -571,6 +590,17 @@ describe('the rule, resolved from the directory', () => {
       'src.flagEffect': ['person', false, ['person'], ['managed'], false],
       'src.unit': ['unit', true, [], ['manages'], false],
       'src.units': ['unit', true, [], ['manages', 'member'], false],
+      'src.costs': ['unit', true, [], ['manages', 'member'], false],
+      'src.figures': ['unit', true, [], ['manages'], false],
+    });
+    // D148: the identifier types a read about a unit declared, and none for any other capability.
+    expect(
+      Object.fromEntries(
+        [...namedInputs(src!)].flatMap(([name, n]) => (n.identifiers.length ? [[name, n.identifiers]] : [])),
+      ),
+    ).toEqual({
+      'src.costs': ['ansvar'],
+      'src.figures': ['qlik', 'ansvar'],
     });
     expect(named(core!)).toEqual({
       'core.points': ['person', false, ['person'], ['managed'], true],
@@ -669,6 +699,18 @@ describe('the loader holds every input that names someone to a plain string', ()
     expect(manifestProblems(manifest([{ ...person, view: list(), unit: { admits: ['manages'] } }]), 'src')).toEqual([
       expect.stringContaining('unit belongs to a capability about a unit'),
     ]);
+    // D148: a read about a unit may name the identifier types it reads, each spelled as the directory sends it.
+    expect(
+      manifestProblems(manifest([{ ...unit, unit: { identifiers: ['ansvar', 'kostnadsställe'] } }]), 'src'),
+    ).toEqual([]);
+    expect(manifestProblems(manifest([{ ...unit, unit: { identifiers: [' ansvar'] } }]), 'src')).toEqual([
+      expect.stringContaining('must be spelled as the directory sends it'),
+    ]);
+    for (const identifiers of [[], ['ansvar', 'ansvar'], [''], ['a'.repeat(65)], [7]])
+      expect(manifestProblems(manifest([{ ...unit, unit: { identifiers } }]), 'src')).not.toEqual([]);
+    expect(manifestProblems(manifest([{ ...person, view: list(), unit: { identifiers: ['ansvar'] } }]), 'src')).toEqual(
+      [expect.stringContaining('unit belongs to a capability about a unit')],
+    );
     // Clew's id is never sent to a connector: a manifest cannot take a person by id.
     expect(
       manifestProblems(
@@ -796,6 +838,89 @@ describe('/api/cap: a read asked with keys the browser chose', () => {
     expect(w.seen.map(s => s.about)).toEqual([
       { entity: 'unit', relations: { 'unit-ekonomi': 'manages' } },
       { entity: 'unit', relations: { 'unit-ekonomi': 'manages', 'unit-skola': 'member' } },
+    ]);
+  });
+  test('a unit read that declares identifier types is told what the directory sent of those types, for the units it is sent and no other (D148)', async () => {
+    const w = world();
+    const groups = w.people.state.groups;
+    const identify = (unitId: string, unitIdentifiers: Array<{ type: string; value: string }>) =>
+      groups.set('g-' + unitId, { ...groups.get('g-' + unitId)!, unitIdentifiers });
+    identify('unit-ekonomi', [
+      { type: 'ansvar', value: '11110000' },
+      { type: 'qlik', value: 'ORG-7' },
+      { type: 'ansvar', value: '11110001' },
+    ]);
+    identify('unit-skola', [{ type: 'qlik', value: 'ORG-9' }]);
+    // A unit Petra may not ask about, and one of another organisation: nothing of either is read or told.
+    identify('unit-omsorg', [{ type: 'ansvar', value: '99990000' }]);
+    identify('unit-annan', [{ type: 'ansvar', value: '88880000' }]);
+    const keys = ['unit-ekonomi', 'unit-skola', 'unit-omsorg', 'unit-annan'];
+    await w.cap('petra', 'src.costs', { keys });
+    await w.cap('petra', 'src.figures', { keys });
+    await w.cap('petra', 'src.units', { keys });
+    expect(w.seen.map(s => s.about)).toEqual([
+      // Both values of the type, in the directory's order; the school has none of it, so it is absent from the map.
+      {
+        entity: 'unit',
+        relations: { 'unit-ekonomi': 'manages', 'unit-skola': 'member' },
+        identifiers: {
+          'unit-ekonomi': [
+            { type: 'ansvar', value: '11110000' },
+            { type: 'ansvar', value: '11110001' },
+          ],
+        },
+      },
+      {
+        entity: 'unit',
+        relations: { 'unit-ekonomi': 'manages' },
+        identifiers: {
+          'unit-ekonomi': [
+            { type: 'ansvar', value: '11110000' },
+            { type: 'qlik', value: 'ORG-7' },
+            { type: 'ansvar', value: '11110001' },
+          ],
+        },
+      },
+      // A read that declares no type is told none, whatever the units carry.
+      { entity: 'unit', relations: { 'unit-ekonomi': 'manages', 'unit-skola': 'member' } },
+    ]);
+    // The resolver reads nothing it was not asked for, and answers only the types named.
+    const petra = actorOf(w.people.persona('petra'));
+    expect(await w.people.relations.relate(petra, 'unit', keys, ['manages', 'member'])).toEqual([
+      { asked: 'unit-ekonomi', key: 'unit-ekonomi', relation: 'manages' },
+      { asked: 'unit-skola', key: 'unit-skola', relation: 'member' },
+    ]);
+    expect(
+      await w.people.relations.relate(petra, 'unit', keys, ['manages'], { identifiers: ['qlik', 'okänd'] }),
+    ).toEqual([
+      {
+        asked: 'unit-ekonomi',
+        key: 'unit-ekonomi',
+        relation: 'manages',
+        identifiers: [{ type: 'qlik', value: 'ORG-7' }],
+      },
+    ]);
+  });
+  test('a resolver that answers a type the capability never declared is not believed (D148)', async () => {
+    const seen: Seen[] = [];
+    const registry = new Registry({
+      relations: async (_actor, _entity, keys) =>
+        keys.map(key => ({
+          asked: key,
+          key,
+          relation: 'manages' as const,
+          identifiers: [
+            { type: 'ansvar', value: '1' },
+            { type: 'lön', value: '2' },
+          ],
+        })),
+    });
+    for (const c of sources(seen)) registry.register({ uses: ['*'], ...c }).govern(c.id, openGovernance());
+    await registry.run(actorOf(directory().persona('petra')), 'src.costs', { keys: ['unit-ekonomi'] });
+    await registry.run(actorOf(directory().persona('petra')), 'src.unit', { keys: ['unit-ekonomi'] });
+    expect(seen.map(s => s.about?.identifiers)).toEqual([
+      { 'unit-ekonomi': [{ type: 'ansvar', value: '1' }] },
+      undefined,
     ]);
   });
   test('a core capability that takes ids answers a report by id, given the user name where there is one; nothing else is reached by id', async () => {
@@ -1254,9 +1379,27 @@ describe('a remote connector is told the relation, bound to the request', () => 
       },
     ],
   };
+  /** D148: a read about a unit that asks what the economy system knows the unit by. */
+  const costs = {
+    name: 'remote.costs',
+    kind: 'read',
+    title: 'Kostnader',
+    description: 'x',
+    model: false,
+    scope: {},
+    about: { entity: 'unit' },
+    unit: { admits: ['manages', 'member'], identifiers: ['ansvar'] },
+    input: {
+      type: 'object',
+      properties: { keys: { type: 'array', items: { type: 'string' }, maxItems: 200 } },
+      required: ['keys'],
+    },
+    output: rowsOutput,
+    view: list(),
+  };
   const secret = 'remote-transport-key-remote';
   /** The service verifies Clew's assertion with the verifier every connector in the repository carries, bound to the request. */
-  async function remote(vouch?: RelationResolver) {
+  async function remote(vouch?: RelationResolver, extra: unknown[] = []) {
     const authority = await testAuthority();
     const verify = createVerifier({ secret, jwks: testJwks }, 'remote');
     const told: Array<{
@@ -1273,7 +1416,7 @@ describe('a remote connector is told the relation, bound to the request', () => 
         return Response.json({ error: { code: 'denied', message: 'Ogiltigt behörighetsbevis.' } }, { status: 401 });
       const body = (await request.json()) as { input: Record<string, unknown>; about?: unknown };
       told.push({ input: body.input, about: body.about, claims: decodeJwt(token), bearer: token.length });
-      const output = request.url.endsWith('/remote.person')
+      const output = /\/remote\.(person|costs)$/.test(request.url)
         ? { rows: (body.input.keys as string[]).map(key => ({ key, state: 'Bokat' })) }
         : { person: body.input.person ?? null };
       return Response.json({ output });
@@ -1287,7 +1430,7 @@ describe('a remote connector is told the relation, bound to the request', () => 
     const registry = vouch ? new Registry({ relations: vouch }) : w.registry;
     registry
       .register(
-        remoteConnector(parseManifest(manifest, 'remote'), {
+        remoteConnector(parseManifest({ ...manifest, capabilities: [...manifest.capabilities, ...extra] }, 'remote'), {
           url: 'http://remote',
           key: secret,
           assert: (actor, chain, binding) => authority.assert('remote', actor, ['src.notes'], chain, binding),
@@ -1321,6 +1464,71 @@ describe('a remote connector is told the relation, bound to the request', () => 
     );
     expect(call!.claims.about).toBeUndefined();
     expect(decodeJwt(call!.claims.callback as string).about).toBeUndefined();
+  });
+  test("a unit read's body carries the identifiers beside the relations, as the published request says, and the bearer none of them (D148)", async () => {
+    const w = await remote(undefined, [costs]);
+    const groups = w.people.state.groups;
+    groups.set('g-unit-ekonomi', {
+      ...groups.get('g-unit-ekonomi')!,
+      unitIdentifiers: [
+        { type: 'ansvar', value: '11110000' },
+        { type: 'qlik', value: 'ORG-7' },
+      ],
+    });
+    await w.cap('petra', 'remote.costs', { keys: ['unit-ekonomi', 'unit-skola', 'unit-omsorg'] });
+    const [call] = w.told;
+    expect(call!.input).toEqual({ keys: ['unit-ekonomi', 'unit-skola'] });
+    expect(call!.about).toEqual({
+      entity: 'unit',
+      relations: { 'unit-ekonomi': 'manages', 'unit-skola': 'member' },
+      identifiers: { 'unit-ekonomi': [{ type: 'ansvar', value: '11110000' }] },
+    });
+    const body = JSON.parse(await w.requests[0]!.clone().text());
+    expect(checkContract(CallRequestSchema, body)).toBe(true);
+    // Bound by the body's digest like the relations; never signed into the header a second time.
+    expect(JSON.stringify(call!.claims)).not.toContain('11110000');
+  });
+  test('a unit whose id is a name of the language’s own, such as `__proto__`, is told with its relation and its identifiers like any other', async () => {
+    // A directory's unit id is any text. On an ordinary object `__proto__` is the prototype's setter: the relation
+    // would be dropped, the identifiers would become the object's prototype, and neither would be in the body the
+    // assertion binds, so a source would refuse the unit's own leader.
+    const odd = ['__proto__', 'constructor', 'toString', 'hasOwnProperty'];
+    const vouch: RelationResolver = async (_actor, entity, keys, admits) =>
+      entity === 'unit' && admits.includes('manages')
+        ? keys
+            .filter(key => odd.includes(key))
+            .map(key => ({
+              asked: key,
+              key,
+              relation: 'manages' as const,
+              identifiers: [{ type: 'ansvar', value: '1111' + key.length }],
+            }))
+        : [];
+    const w = await remote(vouch, [costs]);
+    expect(await w.cap('petra', 'remote.costs', { keys: [...odd, 'unit-skola'] })).toEqual({
+      rows: odd.map(key => ({ key, state: 'Bokat' })),
+    });
+    const text = await w.requests[0]!.clone().text();
+    const body = JSON.parse(text) as { input: { keys: string[] }; about: Record<string, Record<string, unknown>> };
+    expect(body.input.keys).toEqual(odd);
+    // Each key is the dictionary's own entry in what was sent, and no other key is there.
+    for (const part of ['relations', 'identifiers'] as const)
+      expect(Object.getOwnPropertyNames(body.about[part]!).sort()).toEqual([...odd].sort());
+    for (const key of odd) {
+      expect(Object.getOwnPropertyDescriptor(body.about.relations!, key)?.value).toBe('manages');
+      expect(Object.getOwnPropertyDescriptor(body.about.identifiers!, key)?.value).toEqual([
+        { type: 'ansvar', value: '1111' + key.length },
+      ]);
+    }
+    expect(text).toContain('"__proto__":"manages"');
+    expect(checkContract(CallRequestSchema, body)).toBe(true);
+    // A key nobody vouched for is not sent and has no entry, whatever the language has under that name.
+    const none = await remote(async () => [], [costs]);
+    expect(await none.cap('petra', 'remote.costs', { keys: odd })).toEqual({ rows: [] });
+    expect(none.told.map(call => call.input)).toEqual([{ keys: [] }]);
+    const sent = JSON.parse(await none.requests[0]!.clone().text()) as { about: { relations: object } };
+    expect(Object.getOwnPropertyNames(sent.about.relations)).toEqual([]);
+    expect(sent.about).not.toHaveProperty('identifiers');
   });
   test('the assertion cannot be replayed: not as it was sent, with another body or on another capability', async () => {
     const w = await remote();
@@ -1507,7 +1715,9 @@ describe('an approved write about a person (executions, D45 and D117)', () => {
     });
     const hillevi = people.persona('hillevi');
     const move = (id: string) => {
-      people.state.assignments.set(id, [{ unitId: 'unit-omsorg', role: 'employee' }]);
+      // The directory moves the employment too, and with it whom the person reports to (D147).
+      people.state.users.set(id, { ...people.state.users.get(id)!, employments: [{ unitId: 'unit-omsorg' }] });
+      hold(people.state, id, [{ unitId: 'unit-omsorg', role: 'employee' }]);
       people.state.grants.set(id, {
         unitId: 'unit-omsorg',
         unitLabel: 'Hemtjänsten',

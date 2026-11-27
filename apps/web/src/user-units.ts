@@ -1,4 +1,4 @@
-import type { SessionUser, Thread } from '@clew/contracts';
+import { ledUnits, type SessionUser, type Thread } from '@clew/contracts';
 
 /**
  * A person with several assignments (D135): the units they hold, named as the session names them. Every function here
@@ -12,6 +12,19 @@ export function heldUnits(user: Held) {
   if (!all || all.length < 2) return undefined;
   const primary = all.find(a => a.unitId === user.unitId);
   return primary ? [primary, ...all.filter(a => a !== primary)] : [...all];
+}
+
+/**
+ * The unit Läget is said of (D54, D149): a unit the person leads, the one they are employed on when they lead
+ * it and otherwise the first of those they lead. Someone who leads none has the unit they are employed on: an
+ * employee's figures are their own, and so are those of a manager people report to who leads no unit.
+ */
+export function lageUnit(user: Pick<SessionUser, 'unitId' | 'unitLabel' | 'role' | 'assignments'>): {
+  unitId: string;
+  unitLabel: string;
+} {
+  const led = ledUnits(user);
+  return led.find(u => u.unitId === user.unitId) ?? led[0] ?? { unitId: user.unitId, unitLabel: user.unitLabel };
 }
 
 /**

@@ -164,8 +164,9 @@ beforeEach(async () => {
   now = new Date('2026-11-13T09:00:00.000Z');
   n = 0;
   logged = [];
-  // Karin leads the team: Anna, Bo, Cia and Dan report to her; Gun, her own manager, is placed on the team too and
-  // leads the unit above it, so Personal would list her and `reportsByUnit` does not. Olle leads the school with Eve.
+  // Karin leads the team: the employments of Anna, Bo, Cia and Dan name her, so they report to her (D147). Gun is her
+  // own manager and has an employment on the team that names Karin, a chain that comes round: Personal lists her and
+  // `reportsByUnit` does not. Olle leads the school, and Eve's employment names him.
   reaches = new Map([
     [
       'karin',
@@ -180,12 +181,11 @@ beforeEach(async () => {
               reach('bo', 'Bo Berg', 'bo.b'),
               reach('cia', 'Cia Carlsson', 'cia.c'),
               reach('dan', 'Dan Dahl', null),
-              { ...reach('gun', 'Gun Chef', 'gun.c'), role: 'manager' },
+              reach('gun', 'Gun Chef', 'gun.c'),
             ],
           },
         ],
         above: ['gun'],
-        lineReports: [],
       },
     ],
     [
@@ -194,7 +194,6 @@ beforeEach(async () => {
         units: [{ unitId: 'u-skola', unitLabel: 'Skolan', role: 'manager' }],
         managed: [{ unitId: 'u-skola', unitLabel: 'Skolan', people: [reach('eve', 'Eve Ek', 'eve.e')] }],
         above: [],
-        lineReports: [],
       },
     ],
     [
@@ -203,24 +202,25 @@ beforeEach(async () => {
         units: [{ unitId: 'u-far', unitLabel: 'Långt bort', role: 'manager' }],
         managed: [{ unitId: 'u-far', unitLabel: 'Långt bort', people: [reach('xavier', 'Xavier Ytter', 'xavier.y')] }],
         above: [],
-        lineReports: [],
       },
     ],
   ]);
-  // The directory: Karin leads the team, Olle the school, Gun home care above the team; the rest are placed.
+  // The directory: Karin leads the team, Olle the school, Gun home care above the team; the rest are placed. Whom each
+  // reports to is what their employments name (D147), which the places only happen to agree with: Karin's names Gun,
+  // and Gun's names Karin, the chain that comes round.
   directory = memoryBoardingDirectory({
     units: [
       ...TREE.map(u => ({ ...u, organisationId: ORG, label: LABELS[u.id]! })),
       { id: 'u-far', parentId: null, organisationId: ORG2, label: 'Långt bort' },
     ],
     people: [
-      member('karin', 'u-team', 'manager'),
+      member('karin', 'u-team', 'manager', ['gun']),
       member('olle', 'u-skola', 'manager'),
-      member('gun', 'u-hemtjanst', 'manager'),
-      ...['anna', 'bo', 'cia', 'dan'].map(id => member(id, 'u-team')),
-      member('eve', 'u-skola'),
-      member('zed', 'u-far', 'manager', ORG2),
-      member('xavier', 'u-far', 'employee', ORG2),
+      member('gun', 'u-hemtjanst', 'manager', ['karin']),
+      ...['anna', 'bo', 'cia', 'dan'].map(id => member(id, 'u-team', 'employee', ['karin'])),
+      member('eve', 'u-skola', 'employee', ['olle']),
+      member('zed', 'u-far', 'manager', [], ORG2),
+      member('xavier', 'u-far', 'employee', ['zed'], ORG2),
     ],
   });
   const people: Array<[string, string, string | null]> = [
@@ -253,14 +253,21 @@ beforeEach(async () => {
   await boarding.seedLayers('operator:test', ORG2, layerRows());
 });
 const at = () => now.toISOString();
-/** A person as the directory places them: on one unit, with a role there. */
-const member = (id: string, unitId: string, role: 'manager' | 'employee' = 'employee', organisationId = ORG) => ({
+/** A person as the directory has them: on one unit, with a role there, and the managers their employments name (D147). */
+const member = (
+  id: string,
+  unitId: string,
+  role: 'manager' | 'employee' = 'employee',
+  managerIds: string[] = [],
+  organisationId = ORG,
+) => ({
   id,
   organisationId,
   enabled: true,
   assignments: [{ unitId, role }],
   positionCodes: [],
   employments: [],
+  managerIds,
 });
 /** The people module's leavers port telling boarding, as composition binds it, in a transaction of the store's. */
 const leave = (personId: string, kind: 'deactivated' | 'reactivated' = 'deactivated') =>
@@ -492,7 +499,8 @@ describe('starting a plan', () => {
 
   test('refused for someone the manager does not manage, for a second open plan, for their own manager, and for anyone who manages no one', async () => {
     await forbidden(start(olle), 'Personen finns inte bland dem du är chef för.');
-    // Gun is placed on Karin's team but leads the unit above it: she is Karin's manager, never her report (D99, D117).
+    // Gun has an employment that names Karin, but Karin's own names Gun: she is Karin's manager, never her report
+    // (D147, D117).
     await forbidden(start(karin, { personId: 'gun' }), 'Personen finns inte bland dem du är chef för.');
     await forbidden(
       start(asAnna, { personId: 'bo' }),
@@ -742,12 +750,14 @@ describe('reading plans', () => {
     const { id } = await start(karin, { personId: 'bo', event: 'leaving', anchorOn: '2026-12-31', buddyId: null });
     const [talk, keys] = itemsOf(id);
     // Karin hands the team over to Olle while Bo is still active: Olle manages the plan, and Karin keeps only the
-    // item she owns, as its owner.
+    // item she owns, as its owner. The directory says the handover on the employments, which name Olle now (D147);
+    // that he leads the team would not make him anybody's manager.
     const karins = reaches.get('karin')!;
     reaches.set('olle', karins);
     reaches.delete('karin');
     directory.setPerson(member('olle', 'u-team', 'manager'));
     directory.setPerson(member('karin', 'u-skola', 'employee'));
+    for (const id of ['anna', 'bo', 'cia', 'dan']) directory.setPerson(member(id, 'u-team', 'employee', ['olle']));
     expect((await boarding.plan(olle, id)).plan.access).toBe('manager');
     const asOwner = await boarding.plan(karin, id);
     expect(asOwner.plan.access).toBe('owner');
@@ -792,6 +802,22 @@ describe('reading plans', () => {
     expect(store.state.plans.get(id)).toMatchObject({ heldAt: null, heldBy: [] });
     expect(store.audit().at(-1)).toMatchObject({ action: 'boarding.plan_released', subject: 'plan:' + id });
     expect((await boarding.plan(olle, id)).plan.access).toBe('manager');
+    // The people module says whom the leaver reported to, as its reporting line read them before the change (D147):
+    // what it says is who holds the plan, whatever the directory would answer afterwards. Nobody, for a leaver whose
+    // only manager named them back, or whose employments were cleared with the deactivation and name nobody now.
+    for (const managers of [['karin'], []]) {
+      await store.transaction(tx =>
+        boardingLeavers(tx, directory).deactivated({
+          actor: 'provisioner:test',
+          personId: 'bo',
+          organisationId: ORG,
+          at: at(),
+          managers,
+        }),
+      );
+      expect(store.state.plans.get(id)).toMatchObject({ heldBy: managers });
+      expect(store.audit().at(-1)).toMatchObject({ action: 'boarding.plan_held', details: { holders: managers } });
+    }
   });
 
   test('with nothing recorded at the deactivation (the hook is best effort), the manager who started the plan holds it', async () => {
@@ -832,12 +858,19 @@ describe('reading plans', () => {
   });
 
   test('one read says whom the place applies to: the reports’ plans, the reader’s own apart from them, and whether they manage (D124 item 12)', async () => {
-    // Gun leads home care with Karin on it, so Karin reports to her: Karin is both a manager and someone with a plan.
+    // Gun leads home care, where nobody reports to her, and Karin's employment on the team names her, so Karin is listed
+    // under the team she leads (D147): Karin is both a manager and someone with a plan.
     reaches.set('gun', {
       units: [{ unitId: 'u-hemtjanst', unitLabel: 'Hemtjänst', role: 'manager' }],
-      managed: [{ unitId: 'u-hemtjanst', unitLabel: 'Hemtjänst', people: [reach('karin', 'Karin Chef', 'karin.c')] }],
+      managed: [
+        { unitId: 'u-hemtjanst', unitLabel: 'Hemtjänst', people: [] },
+        {
+          unitId: 'u-team',
+          unitLabel: 'Teamet',
+          people: [{ ...reach('karin', 'Karin Chef', 'karin.c'), role: 'manager' }],
+        },
+      ],
       above: [],
-      lineReports: [],
     });
     const anna = await start();
     const karins = await start(gun, { personId: 'karin', event: 'leaving', anchorOn: '2026-12-31', buddyId: null });
@@ -1194,7 +1227,6 @@ describe('what the review asked for (D124, 2026-11-13)', () => {
         },
       ],
       above: [],
-      lineReports: [],
     });
     const audited = store.audit().length,
       calls = store.calls().length;

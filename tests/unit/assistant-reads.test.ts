@@ -21,6 +21,7 @@ import {
   type Connector,
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { nameManagers } from '../named-managers';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { memoryPersonKeys } from '../person-keys';
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
@@ -40,6 +41,7 @@ import { TOOL_REFUSED, type ModelGenerate } from '../../apps/server/src/assistan
 import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import { CARD_MARKS_MAX, cardRows, namedItems } from '../../apps/server/src/assistant/card';
 import { fixtureConnectors } from '../fixture-connectors';
+import { hold } from '../held-units';
 
 /**
  * The assistant reads Clew's own domains as the person who asks, never more (D122). Competence and the calendar are
@@ -55,9 +57,10 @@ const ORG = 'poc';
 type Placement = { unitId: string; role: 'manager' | 'employee' };
 
 /**
- * Bergsåkers skola is led by Hillevi and by Cohead, whose line runs elsewhere, so neither reports to the other. On the
- * school: Anna, Erik (`Erik.S`) and Maria. Olle leads Fritids below it, with Sven. Karin works in Ekonomi, and Regina
- * there holds Kompetenssökning by grant and manages nobody.
+ * Bergsåkers skola is led by Hillevi and by Cohead, and neither's employment names the other, so neither reports to the
+ * other. On the school: Anna, Erik (`Erik.S`) and Maria, whose employments name both. Olle leads Fritids and reports to
+ * both as well; Sven, on Fritids, reports to Olle. Karin works in Ekonomi, and Regina there holds Kompetenssökning by
+ * grant and manages nobody. Who reports to whom is written on the employments (D147) by `nameManagers`.
  */
 function directory() {
   const store = memoryProvisionStore(),
@@ -65,6 +68,7 @@ function directory() {
   const unit = (id: string, label: string, parent: string | null) => {
     s.units.set(id, { organisationId: ORG, label });
     s.groups.set('g-' + id, {
+      unitIdentifiers: [],
       id: 'g-' + id,
       organisationId: ORG,
       externalId: 'unit:' + id,
@@ -89,7 +93,7 @@ function directory() {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set(id, placements);
+    hold(s, id, placements);
     s.grants.set(id, {
       unitId: placements[0]!.unitId,
       unitLabel: s.units.get(placements[0]!.unitId)!.label,
@@ -138,6 +142,8 @@ function directory() {
     reader: async actor => persona(actor.id),
     holders: memoryPersonKeys(s).holders,
   });
+  // D147: who reports to whom is said on the employments, as a directory says it.
+  nameManagers(store.state);
   return { persona, staff, relations, state: s };
 }
 
@@ -300,8 +306,8 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
       logged.push(args);
     },
     // `run`, `handover` and `people` as composition binds them (AM-13): the registry as the person, with what the
-    // assistant says about the call, and the people Personal lists for the asker, co-managers included, by Clew's key
-    // and the user name a read takes (D115).
+    // assistant says about the call, and the people Personal lists for the asker, who are their reports (D147), by
+    // Clew's key and the user name a read takes (D115).
     units: async persona => assistantUnits(await d.staff.reach(persona)),
     ...assistantFunctions({ registry, people: { reach: d.staff.reach, userNameOf: personKey } }),
   };
@@ -424,8 +430,8 @@ describe('the assistant reads as the person who asks, never more (D122 item 5)',
       ['competence__holdings', { person: 'anna' }],
     ]);
     const { handed, audit, turn } = await w.ask('hillevi', 'Vilka av mina medarbetare saknar giltig HLR?');
-    // Her reports only (D99): not Sven (Olle's), Karin (another unit) or the co-head; each row as the view draws it, in
-    // words, with the key holdings takes (the row's `subject`) and no ref (`modelReading`).
+    // Her reports only (D147): not Sven (Olle's), Karin (another unit) or the co-head; each row as the view draws it,
+    // in words, with the key holdings takes (the row's `subject`) and no ref (`modelReading`).
     expect(handed[0]).toEqual({
       antal: 2,
       rader: [
@@ -520,7 +526,7 @@ describe('the assistant reads as the person who asks, never more (D122 item 5)',
     });
     expect(w.store.readLog()).toEqual([]);
   });
-  test('a manager is refused a co-manager, a report of a manager below and someone on another unit', async () => {
+  test('a manager is refused a co-manager, a report of one of her reports and someone on another unit', async () => {
     const w = await world([
       ['competence__holdings', { person: 'cohead' }],
       ['competence__holdings', { person: 'sven' }],
@@ -528,13 +534,14 @@ describe('the assistant reads as the person who asks, never more (D122 item 5)',
       ['competence__holdings', { person: 'olle' }],
     ]);
     const { handed, audit } = await w.ask('hillevi', 'Vad har Cecilia, Sven, Karin och Olle för kompetenser?');
-    // The prompt gives the user name of the one she manages (D115) and of nobody else; a key the model has from
-    // elsewhere, or guesses, is resolved by the registry all the same (D117).
-    expect(w.model.systems.at(-1)).toContain('"Olle" är Olle Ek på Bergsåkers skola, användarnamn olle.');
+    // The prompt gives the user name of the one she manages (D115) and of nobody else, on the unit of the employment
+    // that names her (D147): Fritids, not the school she leads. A key the model has from elsewhere, or guesses, is
+    // resolved by the registry all the same (D117).
+    expect(w.model.systems.at(-1)).toContain('"Olle" är Olle Ek på Fritids, användarnamn olle.');
     for (const other of ['cohead', 'sven', 'karin'])
       expect(w.model.systems.at(-1)).not.toContain('användarnamn ' + other);
     expect(handed.slice(0, 3)).toEqual([UNKNOWN, UNKNOWN, UNKNOWN]);
-    // Olle leads the unit below hers and reports to her (D99): his holdings, which are none.
+    // Olle leads Fritids and his employment names her as manager (D147): his holdings, which are none.
     expect(handed[3]).toEqual({ antal: 0, rader: [] });
     expect((audit.details as { reads: unknown[] }).reads).toEqual([
       { capability: 'competence.holdings', failed: true },

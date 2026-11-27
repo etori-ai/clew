@@ -1,4 +1,4 @@
-import { SCIM_EMPLOYMENT_SCHEMA, type DirectoryPhone, type Employment } from '@clew/contracts';
+import { SCIM_EMPLOYMENT_SCHEMA, type DirectoryPhone, type Employment, type UnitIdentifier } from '@clew/contracts';
 
 /**
  * The SCIM 2.0 contract Clew serves (RFC 7643, RFC 7644; D68): the names, the error and the resources it answers.
@@ -17,7 +17,10 @@ export const SCIM = {
   serviceProviderConfig: 'urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig',
   resourceType: 'urn:ietf:params:scim:schemas:core:2.0:ResourceType',
   schema: 'urn:ietf:params:scim:schemas:core:2.0:Schema',
-  /** D99: the extension a `unit:` group carries its place in the organisation tree in. Its one attribute is `parent`. */
+  /**
+   * The extension a `unit:` group carries its place in the organisation tree in (`parent`, D99) and what other systems
+   * know the unit by (`identifiers`, D148).
+   */
   unit: 'urn:clew:params:scim:schemas:extension:unit:2.0:Group',
 } as const;
 export const SCIM_CONTENT_TYPE = 'application/scim+json; charset=utf-8';
@@ -97,7 +100,10 @@ export interface ScimGroup {
   externalId?: string;
   displayName: string;
   members: Array<{ value: string; display: string; $ref: string }>;
-  /** D99: on a `unit:` group that has a unit above it; `parent` is that unit group's `externalId`. */
-  [SCIM.unit]?: { parent: string };
+  /**
+   * On a `unit:` group that has a unit above it or carries identifiers. `parent` is the `externalId` of the unit group
+   * above (D99); `identifiers` what other systems know the unit by (D148).
+   */
+  [SCIM.unit]?: { parent?: string; identifiers?: UnitIdentifier[] };
   meta: ScimMeta;
 }

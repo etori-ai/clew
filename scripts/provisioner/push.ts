@@ -7,7 +7,14 @@ import {
   reservedScimGroupKey,
 } from '../../packages/contracts/src/scim-group-key';
 import { ScimClientError, type ScimClient } from './client';
-import { fullName, type Directory, type DirectoryPerson } from './directory';
+import {
+  fullName,
+  type Directory,
+  type DirectoryIdentifier,
+  type DirectoryPerson,
+  type DirectoryUnit,
+  type Employment,
+} from './directory';
 
 /**
  * The synthetic provisioner (D68 item 7): reads a directory and pushes it to Clew's SCIM server, mapping the source's
@@ -56,6 +63,8 @@ export interface PlannedGroup {
   displayName: string;
   /** D99: on a `unit:` group below another, the `externalId` of the unit group above it. */
   parent?: string;
+  /** D148: on a `unit:` group, what other systems know the unit by, in the source's order; absent when it has none. */
+  identifiers?: DirectoryIdentifier[];
   members: string[];
   /**
    * Why the example does not write this unit or group itself, when the directory has it wrong: its parent is not
@@ -68,6 +77,12 @@ export interface PlannedGroup {
 export interface PlannedUser {
   externalId: string;
   body: ReturnType<typeof userBody>;
+  /**
+   * D147: for each employment of the body, in its order, the source's id of the person it reports to. The body itself
+   * carries no manager: Clew takes one by the `id` it gave that person, which the push knows once it has read or
+   * created them.
+   */
+  managers: Array<string | undefined>;
 }
 export interface Plan {
   users: PlannedUser[];
@@ -119,7 +134,11 @@ export function planPeople(directory: Directory): PlannedUser[] {
     directory.people.filter(p => p.active).map(p => nameKey(p.userName)),
     'an account name is one active person',
   );
-  return directory.people.map(p => ({ externalId: p.externalId, body: userBody(p) }));
+  return directory.people.map(p => ({
+    externalId: p.externalId,
+    body: userBody(p),
+    managers: (p.employments ?? []).map(job => job.manager),
+  }));
 }
 /**
  * The organisation and who is placed where (D68, D99): every unit as a node of the tree, from the root down, then the
@@ -130,6 +149,47 @@ export function planPeople(directory: Directory): PlannedUser[] {
  * unit whose parent the directory does not list, units that are each other's parents, a unit or a group an active
  * person names that the directory does not list, and the managers' group of such a unit.
  */
+/**
+ * D148: a unit's identifiers as Clew stores them: each entry once, in the source's order, in composed form (NFC). Clew
+ * takes one exactly as it is sent, so an entry it would refuse (a part that is empty, has space at either end or holds a
+ * control character, or is too long) is the source's to put right before anything is written, as a position code is.
+ */
+const IDENTIFIER_TYPE_LENGTH = 64,
+  IDENTIFIER_VALUE_LENGTH = 256,
+  IDENTIFIER_LIMIT = 50;
+function identifiersOf(unit: DirectoryUnit): DirectoryIdentifier[] {
+  const seen = new Set<string>(),
+    out: DirectoryIdentifier[] = [];
+  for (const sent of unit.identifiers ?? []) {
+    // Sent as the source holds it or not at all: a part that is no text, or text that is not in composed form (NFC),
+    // is not made into one here, since what Clew stored would then be another key than the source's own.
+    for (const [part, text, length] of [
+      ['type', sent.type as unknown, IDENTIFIER_TYPE_LENGTH],
+      ['value', sent.value as unknown, IDENTIFIER_VALUE_LENGTH],
+    ] as const)
+      if (
+        typeof text !== 'string' ||
+        !text ||
+        text !== text.normalize('NFC') ||
+        text !== text.trim() ||
+        /\p{Cc}/u.test(text) ||
+        Array.from(text).length > length
+      )
+        throw new Error(
+          `The unit '${unit.id}' has an identifier whose ${part} is not text, is empty, is not in composed form (NFC), has space around it, holds a control character or is longer than ${length} characters, which Clew refuses (D148). Nothing was written.`,
+        );
+    const row = { type: sent.type, value: sent.value };
+    const key = JSON.stringify([row.type, row.value]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  if (out.length > IDENTIFIER_LIMIT)
+    throw new Error(
+      `The unit '${unit.id}' has ${out.length} identifiers, and Clew takes at most ${IDENTIFIER_LIMIT} (D148). Nothing was written.`,
+    );
+  return out;
+}
 export function planOrganisation(directory: Directory): PlannedGroup[] {
   once(
     'the unit',
@@ -204,6 +264,8 @@ export function planOrganisation(directory: Directory): PlannedGroup[] {
   for (const unit of directory.units) {
     const node = group(UNIT_KEY + unit.id, unit.label);
     if (unit.parent !== undefined) node.parent = UNIT_KEY + unit.parent;
+    const identifiers = identifiersOf(unit);
+    if (identifiers.length) node.identifiers = identifiers;
     if (fault.has(unit.id)) node.refused = fault.get(unit.id);
   }
   for (const g of directory.groups) group(g.id, g.label);
@@ -273,7 +335,8 @@ export function plan(directory: Directory): Plan {
 const levelOf = (g: PlannedGroup, depth: ReadonlyMap<string, number>) =>
   g.externalId.startsWith(UNIT_KEY) ? (depth.get(g.externalId.slice(UNIT_KEY.length)) ?? 0) : Number.MAX_SAFE_INTEGER;
 function userBody(p: DirectoryPerson) {
-  const employments = p.employments ?? [];
+  // The manager travels beside the body (`PlannedUser.managers`), by the source's id for them.
+  const employments: Employment[] = (p.employments ?? []).map(({ manager: _manager, ...job }) => job);
   // Every employment travels in the extension with its own title, and Clew shows those. The core `title` is what a
   // source without employments sends; here a person with one employment carries the same title there too.
   const title = employments.length === 1 ? employments[0]!.title : undefined;
@@ -341,13 +404,29 @@ interface HeldGroup {
   externalId: string;
   displayName: string;
   parent?: string;
+  /** D148: what Clew holds of the unit's identifiers, in its order; empty when it holds none. */
+  identifiers: DirectoryIdentifier[];
 }
 const heldGroup = (g: any): HeldGroup => ({
   id: g.id,
   externalId: g.externalId,
   displayName: g.displayName,
   parent: g[SCIM_UNIT]?.parent,
+  identifiers: (g[SCIM_UNIT]?.identifiers ?? []).map((i: DirectoryIdentifier) => ({ type: i.type, value: i.value })),
 });
+/** The unit extension of a group that is created: the unit above it, what other systems know it by, or neither. */
+const unitExtension = (group: Pick<PlannedGroup, 'parent' | 'identifiers'>) =>
+  group.parent || group.identifiers?.length
+    ? {
+        schemas: [SCIM_GROUP, SCIM_UNIT],
+        [SCIM_UNIT]: {
+          ...(group.parent ? { parent: group.parent } : {}),
+          ...(group.identifiers?.length ? { identifiers: group.identifiers } : {}),
+        },
+      }
+    : {};
+const sameIdentifiers = (held: readonly DirectoryIdentifier[], planned: readonly DirectoryIdentifier[] = []) =>
+  held.length === planned.length && held.every((h, i) => h.type === planned[i]!.type && h.value === planned[i]!.value);
 const eq = (attribute: string, value: string) =>
   `?filter=${encodeURIComponent(`${attribute} eq "${value.replace(/(["\\])/g, '\\$1')}"`)}`;
 /**
@@ -584,10 +663,7 @@ async function reconcile(
       continue;
     }
     if (!found) {
-      const created = await create(key, {
-        ...(unit.parent ? { schemas: [SCIM_GROUP, SCIM_UNIT], [SCIM_UNIT]: { parent: unit.parent } } : {}),
-        displayName: unit.displayName,
-      });
+      const created = await create(key, { ...unitExtension(unit), displayName: unit.displayName });
       if (created === 'created') continue;
       if (!created) {
         absent.add(key);
@@ -605,10 +681,22 @@ async function reconcile(
           ? { op: 'replace', path: SCIM_UNIT + ':parent', value: unit.parent }
           : { op: 'remove', path: SCIM_UNIT + ':parent' },
       );
+    // D148: the list is sent whole, since an entry has no id to be changed by.
+    if (!sameIdentifiers(found.identifiers, unit.identifiers))
+      operations.push(
+        unit.identifiers?.length
+          ? { op: 'replace', path: SCIM_UNIT + ':identifiers', value: unit.identifiers }
+          : { op: 'remove', path: SCIM_UNIT + ':identifiers' },
+      );
     if (!operations.length) continue;
     try {
       await patch(client, '/Groups/' + found.id, operations);
-      listed.set(key, { ...found, displayName: unit.displayName, parent: unit.parent });
+      listed.set(key, {
+        ...found,
+        displayName: unit.displayName,
+        parent: unit.parent,
+        identifiers: unit.identifiers ?? [],
+      });
     } catch (error) {
       // Refused, it stays as it stands, and the people on it are placed all the same.
       if (!refusal(error)) throw error;
@@ -706,6 +794,26 @@ async function reconcile(
   };
   const rehires: Array<{ id: string; user: PlannedUser }> = [];
   /**
+   * D147: what a person is sent, with each employment's manager as the `id` Clew gave them. A manager Clew does not
+   * hold yet (somebody this run creates further on, or refuses) is left out for now; `namedManagers` remembers how
+   * many were named, so the pass after the people sends the employments again once more of them can be.
+   */
+  const namedManagers = new Map<string, number>();
+  const bodyOf = (user: PlannedUser): PlannedUser['body'] => {
+    const sent = user.body[SCIM_EMPLOYMENT_SCHEMA]?.employments;
+    if (!sent || !user.managers.some(Boolean)) return user.body;
+    let named = 0;
+    const employments = sent.map((job, n) => {
+      const source = user.managers[n],
+        managerId = source === undefined ? undefined : ids.get(source);
+      if (!managerId) return job;
+      named++;
+      return { ...job, managerId };
+    });
+    namedManagers.set(user.externalId, named);
+    return { ...user.body, [SCIM_EMPLOYMENT_SCHEMA]: { employments } };
+  };
+  /**
    * A person the read did not show, whom Clew holds after all, found by the source's id: sent to as to a row that was
    * read, and one who returns waits for the returners' step as they would have. Whether the request was sent now.
    */
@@ -716,7 +824,7 @@ async function reconcile(
       rehires.push({ id: found.id, user });
       return false;
     }
-    await client.request('PUT', '/Users/' + found.id, user.body);
+    await client.request('PUT', '/Users/' + found.id, bodyOf(user));
     return true;
   };
   /**
@@ -726,7 +834,7 @@ async function reconcile(
   const sendPerson = async (user: PlannedUser, id: string | undefined) => {
     try {
       if (id) {
-        await client.request('PUT', '/Users/' + id, user.body);
+        await client.request('PUT', '/Users/' + id, bodyOf(user));
       } else if (!user.body.active) {
         return;
       } else if (nowhere(user.externalId)) {
@@ -745,7 +853,7 @@ async function reconcile(
         const postedBefore = run.postedUsers.has(user.externalId);
         run.postedUsers.add(user.externalId);
         try {
-          const { body } = await client.request('POST', '/Users', user.body);
+          const { body } = await client.request('POST', '/Users', bodyOf(user));
           ids.set(user.externalId, body.id);
           options.log?.(`created ${user.body.userName}`);
         } catch (error) {
@@ -769,6 +877,25 @@ async function reconcile(
     const id = ids.get(user.externalId);
     if (id && disabled.has(id) && user.body.active) rehires.push({ id, user });
     else await sendPerson(user, id);
+  }
+  // The managers the step above could not name (D147): somebody this run created after the people who report to them.
+  // Now that everybody is written, those people's employments are sent again with the manager's id. A manager Clew
+  // still does not hold was refused above and is named there; the person stays without one until a later run.
+  for (const user of users) {
+    const before = namedManagers.get(user.externalId),
+      id = ids.get(user.externalId);
+    // Nobody is sent here who was not sent above, and somebody who waits to return is sent whole in the last step.
+    if (before === undefined || !id || rehires.some(r => r.id === id)) continue;
+    const employments = bodyOf(user)[SCIM_EMPLOYMENT_SCHEMA]?.employments;
+    if (!employments || (namedManagers.get(user.externalId) ?? 0) <= before) continue;
+    try {
+      await patch(client, '/Users/' + id, [
+        { op: 'replace', path: SCIM_EMPLOYMENT_SCHEMA + ':employments', value: employments },
+      ]);
+    } catch (error) {
+      if (!refusal(error)) throw error;
+      refusePerson(user, error.message);
+    }
   }
   // 4. Who is in which group, in two rounds. First everybody a group gains, in every group; then everybody a group
   // loses. A person who moves from one unit to another is in both for a moment and never in neither, so their grant
@@ -802,7 +929,7 @@ async function reconcile(
         continue;
       }
       const created = await create(key, {
-        ...(group.parent ? { schemas: [SCIM_GROUP, SCIM_UNIT], [SCIM_UNIT]: { parent: group.parent } } : {}),
+        ...unitExtension(group),
         displayName: group.displayName,
         members: asMembers(members),
       });

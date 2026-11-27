@@ -54,7 +54,10 @@ export {
   type Activity,
 } from './presentation';
 
-/** One of a person's assignments (D68): a unit they are placed on or manage, with its label and their role there. */
+/**
+ * One of a person's assignments (D68, D149): a unit they belong to or lead, with its label and their role there.
+ * `manager` says that they lead the unit; `employee` that they belong to it and do not lead it.
+ */
 export interface UserAssignment {
   unitId: string;
   unitLabel: string;
@@ -66,10 +69,15 @@ export interface SessionUser {
   name: string;
   unitId: string;
   unitLabel: string;
+  /**
+   * Whether the person is a manager (D149): somebody reports to them, or they lead a unit. It does not say that
+   * they lead `unitId`, which is the unit they act as, the one they are employed on: `ledUnits` says which they lead.
+   */
   role: 'manager' | 'employee';
   /**
-   * Every assignment the person holds, from their current grant, when there is more than one (D135); `unitId` and
-   * `role` are the primary one and it is among them. Absent for a person with one assignment.
+   * Every unit the person belongs to or leads, with their role on each, from their current grant (D135). Absent only
+   * when there is one and it says what `unitId` and `role` already say: one unit, which they lead exactly when `role`
+   * is `manager`. Read through `ledUnits`, never by pairing `role` with `unitId`.
    */
   assignments?: UserAssignment[];
 }
@@ -111,7 +119,8 @@ export interface AuthenticatedContext extends SessionUser {
 export const byUnitId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /**
  * A person's assignments as a stored grant holds them (D135), only those of a well-formed shape, in unit id order by
- * UTF-16 code unit (D101 item 8); absent when there are fewer than two, as for a person with one assignment.
+ * UTF-16 code unit (D101 item 8); absent when the grant holds none, as for a person whose one unit and role say it all
+ * (D149).
  */
 export function assignmentsOf(values: unknown): UserAssignment[] | undefined {
   if (!Array.isArray(values)) return undefined;
@@ -126,7 +135,21 @@ export function assignmentsOf(values: unknown): UserAssignment[] | undefined {
     )
     .map(v => ({ unitId: v.unitId, unitLabel: v.unitLabel, role: v.role }))
     .sort((a, b) => byUnitId(a.unitId, b.unitId));
-  return held.length > 1 ? held : undefined;
+  return held.length ? held : undefined;
+}
+/**
+ * The units a person leads (D149), by unit id order: the assignments where their role is `manager`. Without
+ * assignments the person has one unit, `unitId`, and leads it exactly when `role` is `manager`. The one place that
+ * turns a session into "which units does this person answer for": never pair `role` with `unitId` anywhere else, since
+ * someone people report to is a manager whether or not they lead the unit they are employed on.
+ */
+export function ledUnits(
+  user: Pick<SessionUser, 'unitId' | 'unitLabel' | 'role' | 'assignments'>,
+): Array<{ unitId: string; unitLabel: string }> {
+  const held = user.assignments?.length
+    ? user.assignments
+    : [{ unitId: user.unitId, unitLabel: user.unitLabel, role: user.role }];
+  return held.filter(a => a.role === 'manager').map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel }));
 }
 export const sessionUser = (c: SessionUser): SessionUser => ({
   id: c.id,
@@ -134,8 +157,9 @@ export const sessionUser = (c: SessionUser): SessionUser => ({
   unitId: c.unitId,
   unitLabel: c.unitLabel,
   role: c.role,
-  // D135: every unit of a person who holds more than one; `units` (D117) is the server's and never leaves.
-  ...(c.assignments && c.assignments.length > 1
+  // D135, D149: the person's units, when they say more than the unit and role above; `units` (D117) is the
+  // server's and never leaves.
+  ...(c.assignments?.length
     ? { assignments: c.assignments.map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel, role: a.role })) }
     : {}),
 });
@@ -2152,6 +2176,21 @@ export const PersonAccessSchema = object(
   "Who may be asked about (D117). Clew resolves the caller's relation to every person the input names from its own directory before the connector is called: a key in `keys` the caller may not ask about is left out of the call, and a call whose single key names such a person, or holds anything but a string there, is refused as an unknown capability is, so the answer never tells whether the person exists. The relation of each key sent travels in the request body's `about`, which the assertion binds. A capability about a person, a `<id>.commitments` read, a read a row of a section about a person opens with the row's `key` and an execute's effect read name a person whether or not they declare this, and each such input must be a plain string property of the input schema; without `admits` they admit `self` and `managed`.",
 );
 export type PersonAccess = Static<typeof PersonAccessSchema>;
+/**
+ * What another system knows a unit by (D148): the directory's own word for the kind of identifier, and the value, such
+ * as `{ type: 'ansvar', value: '11110000' }` for the code an economy system books the unit's costs on. A unit carries
+ * any number of them, several of one type too. They are pushed with the unit over SCIM, stored as sent and told to a
+ * connector whose capability asks for the type. Clew reads no meaning from one.
+ */
+export const UNIT_IDENTIFIER_TYPE_LENGTH = 64;
+export const UNIT_IDENTIFIER_VALUE_LENGTH = 256;
+/** The most identifiers one unit carries, as the other lists a directory sends for one resource (D114). */
+export const UNIT_IDENTIFIER_LIMIT = 50;
+export const UnitIdentifierSchema = object({
+  type: Type.String({ minLength: 1, maxLength: UNIT_IDENTIFIER_TYPE_LENGTH }),
+  value: Type.String({ minLength: 1, maxLength: UNIT_IDENTIFIER_VALUE_LENGTH }),
+});
+export type UnitIdentifier = Static<typeof UnitIdentifierSchema>;
 /** Who may be asked about through a capability about a unit (D117): the relations a caller may have to the unit. */
 export const UnitAccessSchema = object(
   {
@@ -2161,6 +2200,15 @@ export const UnitAccessSchema = object(
         uniqueItems: true,
         description:
           'The relations a caller may have to a unit this capability is asked about. Omitted means `["manages"]`.',
+      }),
+    ),
+    identifiers: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: UNIT_IDENTIFIER_TYPE_LENGTH }), {
+        minItems: 1,
+        maxItems: 10,
+        uniqueItems: true,
+        description:
+          'The types of unit identifier this capability reads (D148), spelled as the directory sends them, such as `["ansvar"]`. For every unit the call names, Clew sends the identifiers of these types the directory pushed with the unit, in `about.identifiers`, and none of any other type. Omitted means the capability is told none.',
       }),
     ),
   },
@@ -2425,7 +2473,11 @@ export const EntityCardSchema = object({
   kind: Type.Union([Type.Literal('act'), Type.Literal('proposal'), Type.Literal('fyi')]),
 });
 export type EntityCard = Static<typeof EntityCardSchema>;
-/** Employment data is descriptive. Unit memberships remain the authority for access. */
+/**
+ * A person's current employments. Unit memberships remain the authority for access, and the unit, the title and the
+ * other details only describe the job. `managerId` is a fact of its own (D147): the id of the person this employment
+ * reports to, as the directory says it, stored and not yet read by anything that decides who reports to whom.
+ */
 export const SCIM_EMPLOYMENT_SCHEMA = 'urn:clew:params:scim:schemas:extension:employment:2.0:User';
 const DirectoryPhoneSchema = object({ type: Type.String(), value: Type.String() });
 export type DirectoryPhone = Static<typeof DirectoryPhoneSchema>;
@@ -2433,15 +2485,22 @@ export const EmploymentSchema = object({
   unitId: Type.String(),
   title: Type.Optional(Type.String()),
   employmentType: Type.Optional(Type.String()),
-  startDate: Type.Optional(Type.String({ format: 'date', maxLength: 10 })),
+  // PostgreSQL's date starts the common era at year 0001.
+  startDate: Type.Optional(Type.String({ format: 'date', pattern: '^(?!0000-)', maxLength: 10 })),
   employmentPercentage: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
+  /** The id of the person this employment reports to: a user of the same organisation, never the person themselves. */
+  managerId: Type.Optional(Type.String()),
 });
 export type Employment = Static<typeof EmploymentSchema>;
+const { managerId: _employmentManager, ...shownEmployment } = EmploymentSchema.properties;
 const PersonProfileSchema = object({
   email: Type.Union([Type.String(), Type.Null()]),
   phoneNumbers: Type.Array(DirectoryPhoneSchema),
-  /** `unitLabel` is absent when the unit has been removed since the directory sent the employment. */
-  employments: Type.Array(object({ ...EmploymentSchema.properties, unitLabel: Type.Optional(Type.String()) })),
+  /**
+   * `unitLabel` is absent when the unit has been removed since the directory sent the employment. SCIM returns the
+   * manager to the organisation's provisioners. A person's profile omits it (D147).
+   */
+  employments: Type.Array(object({ ...shownEmployment, unitLabel: Type.Optional(Type.String()) })),
   title: Type.Union([Type.String(), Type.Null()]),
 });
 export type PersonProfile = Static<typeof PersonProfileSchema>;
@@ -4421,22 +4480,19 @@ export interface UserAdminRow {
   /** D121: the relations to people the person holds by grant, from the grant projection; empty when none. */
   relationGrants: RelationGrant[];
 }
-/** Personal (D94): a person on a unit the signed-in manager manages, as the page lists them. No token, no subject. */
+/** Personal (D94, D147): someone who reports to the signed-in manager, as the page lists them. No token, no subject. */
 export interface StaffPerson {
   id: string;
   name: string;
   userName: string | null;
   email: string | null;
-  /**
-   * The person's role on this unit, not their active one. For a person who reports here from a unit below (D99), the
-   * role they hold there: `manager` when they lead one of those units.
-   */
+  /** The person's role on the unit they are listed under, not their active one: `manager` where they lead it. */
   role: Role;
   enabled: boolean;
   /**
-   * D99: set for a person who is not assigned to this unit but reports to its manager through the tree: the units
-   * below it that they lead, or are placed on where nobody leads, by label in Swedish order. Absent for a person
-   * assigned to the unit itself.
+   * For Personal (D147): the other units this person leads, by label in Swedish order; absent for someone who leads
+   * none. For the `reports` of Administration › Organisation, who are placed on other units: the units they lead, or
+   * where they lead none the units of the employments that name one of the unit's leaders.
    */
   below?: Array<{ unitId: string; unitLabel: string; role: Role }>;
 }
@@ -4444,13 +4500,15 @@ export interface StaffUnit {
   unitId: string;
   unitLabel: string;
   /**
-   * The manager's reports through this unit (D99), by name in Swedish order: everyone assigned to the unit except the
-   * manager reading, then the managers of the nearest units below that have one, and the people placed on a unit
-   * below that nobody leads. Never the people those managers lead.
+   * The manager's reports under this unit (D147), by name in Swedish order: the people with a current employment on it
+   * that names the reader as manager, never the reader. Empty for a unit the reader leads where nobody reports to them.
    */
   people: StaffPerson[];
 }
-/** The units the manager manages, by label in Swedish order; the server refuses anyone who manages none. */
+/**
+ * The units of the manager's reports and the units the manager leads, by label in Swedish order; the server refuses
+ * someone who leads no unit and whom nobody reports to.
+ */
 export interface StaffOverview {
   units: StaffUnit[];
 }
@@ -4465,30 +4523,62 @@ export interface OrganisationUnit {
   parentId: string | null;
   /** The people who lead the unit, by name in Swedish order. */
   managers: Array<{ id: string; name: string }>;
-  /** How many people are assigned to the unit itself, its managers included. */
+  /** How many people belong to the unit itself. Whoever leads it is among them only if they belong to it too (D149). */
   placed: number;
-  /** How many people are assigned to the unit or to a unit below it, each person once. */
+  /** How many people belong to the unit or to a unit below it, each person once. */
   branch: number;
-  /** Who the people placed here report to: the unit's own managers, the managers of a unit above, or nobody. */
-  line: 'own' | 'above' | 'none';
+  /** Whether anybody leads the unit (D147): its own managers, or nobody. The tree passes no line on. */
+  line: 'own' | 'none';
+  /**
+   * D147: how many active people who belong to the unit or lead it report to nobody, because their employments name no
+   * manager, name only people who are deactivated, or name only people who report to them in turn.
+   */
+  unmanaged: number;
   /** False when people are assigned to the unit but no `unit:` group names it, so it has no name and no place. */
   pushed: boolean;
 }
 export interface OrganisationOverview {
   /** Every unit, by label in Swedish order; the tree is `parentId`. */
   units: OrganisationUnit[];
-  /** People who are provisioned and active but placed on no unit, so they can do nothing (D68). */
+  /** People who are provisioned and active but belong to no unit and lead none, so they can do nothing (D68). */
   unplaced: number;
+  /** D147: how many active people who belong to a unit or lead one report to nobody, each person once. */
+  unmanaged: number;
+}
+/**
+ * Why a person reports to nobody (D147): no employment of theirs names a manager (`none`), every manager named is
+ * deactivated (`inactive`), or everyone named reports to the person in turn, so neither is the other's report (`round`).
+ */
+export type ManagerGap = 'none' | 'inactive' | 'round';
+/** A person on a unit as Administration › Organisation lists them: with whom they report to, or why to nobody. */
+export interface OrganisationPerson extends StaffPerson {
+  /**
+   * The people the person reports to, by name in Swedish order: the active people their current employments name as
+   * manager, without anyone who names the person back.
+   */
+  managers: Array<{ id: string; name: string }>;
+  /**
+   * The active people the person names as manager who name the person back, by name in Swedish order: neither of two
+   * such people is the other's manager. Absent when there is none.
+   */
+  circle?: Array<{ id: string; name: string }>;
+  /** Set when the person reports to nobody; absent for a deactivated person, who reports to nobody anyway. */
+  gap?: ManagerGap;
+  /**
+   * D149: set when the person leads the unit and does not belong to it, being employed on another. They are
+   * listed as its manager and counted where they belong.
+   */
+  elsewhere?: true;
 }
 /** The people assigned to one unit, by name in Swedish order, as the tree shows them beside a selected unit. */
 export interface OrganisationUnitPeople {
   unitId: string;
   unitLabel: string;
-  people: StaffPerson[];
+  people: OrganisationPerson[];
   /**
-   * Who reports to the unit's managers from the units below it (D99 item 4), each with `below`, by name in Swedish
-   * order: the managers of the nearest units that have one, and the people placed on a unit below that nobody leads.
-   * Empty for a unit nobody leads, since the line passes through it.
+   * Who reports to the people who lead the unit without being placed on it (D147), by name in Swedish order: the
+   * people elsewhere whose employments name one of them as manager, each with `below`, the units they lead, or where
+   * they lead none the units of those employments. Empty for a unit nobody leads.
    */
   reports: StaffPerson[];
 }

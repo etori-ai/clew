@@ -29,7 +29,7 @@ import {
 import { readConfig } from '../../connectors/pob/config.mjs';
 import { listener } from '../../connectors/pob/http.mjs';
 import { verifyPersonToken } from '../../connectors/pob/identity.mjs';
-import { DEFAULT_FIELDS, createPobCases, fieldMap, instantIn } from '../../connectors/pob/pob.mjs';
+import { DEFAULT_FIELDS, agreementFieldMap, createPobCases, fieldMap, instantIn } from '../../connectors/pob/pob.mjs';
 import { errandRefPattern, requestRefPattern, manifest as pobManifest } from '../../connectors/pob/manifest.mjs';
 import { assertionFor, signedRequest, testJwks } from '../connector-authority';
 
@@ -1421,5 +1421,456 @@ describe('the HTTP listener', () => {
       }),
     );
     expect(unknown.status).toBe(404);
+  });
+});
+
+describe('what a unit’s agreements cost (D148)', () => {
+  const chef: Actor = { ...hillevi, role: 'manager' };
+  const ansvar = (value: string) => ({ type: 'ansvar', value });
+  type Told = { relation: 'manages' | 'member' | 'below'; identifiers?: Array<{ type: string; value: string }> };
+  /**
+   * Clew over a directory that says how the person stands to each unit and what the units are known by, and the
+   * connector with the cost read switched on. `asked` is every question put to the made-up POB.
+   */
+  function costs(units: Record<string, Told>, options: Parameters<typeof createConnector>[0] = {}) {
+    const lines: Line[] = [],
+      asked: string[] = [];
+    const base = options.source ?? createFixtureCases({ now });
+    const source: CaseSource = {
+      ...base,
+      person: account => (asked.push('person ' + account), base.person(account)),
+      agreements: code => (asked.push('agreements ' + code), base.agreements!(code)),
+    };
+    const pob = createConnector({
+      jwks: testJwks,
+      secret,
+      identity: { issuer, jwks: idp.jwks },
+      now,
+      log: line => lines.push(line),
+      costs: { identifier: 'ansvar', amountLabel: 'Avtalskostnad' },
+      ...options,
+      source,
+    });
+    const registry = new Registry({
+      relations: async (_actor, entity, keys, admits) =>
+        entity !== 'unit'
+          ? []
+          : keys.flatMap(key => {
+              const unit = units[key];
+              return unit && admits.includes(unit.relation)
+                ? [
+                    {
+                      asked: key,
+                      key,
+                      relation: unit.relation,
+                      ...(unit.identifiers ? { identifiers: unit.identifiers } : {}),
+                    },
+                  ]
+                : [];
+            }),
+    });
+    registry.register(
+      remoteConnector(parseManifest(pob.manifest, 'pob'), {
+        url: 'http://pob-connector',
+        key: secret,
+        assert: assertionFor('pob', secret),
+        fetch: (input, init) => pob.handle(new Request(input, init)),
+      }),
+    );
+    const read = async (who: Actor, keys: string[]) =>
+      (await registry.run<{ rows: Row[] }>(who, 'pob.unitCosts', { keys }, as(who.userName!))).rows;
+    return { pob, registry, read, asked, lines };
+  }
+  /** Straight to the connector, past Clew's own narrowing: what the connector does with a body it did not expect. */
+  const direct = async (pob: ReturnType<typeof createConnector>, body: unknown, token = true) =>
+    pob.handle(
+      await signedRequest('http://pob-connector/clew/capabilities/pob.unitCosts', {
+        id: 'pob',
+        actor: chef,
+        body,
+        key: secret,
+        label: secret,
+        ...(token ? { headers: { 'x-clew-delegated-token': await idp.token('hillevi') } } : {}),
+      }),
+    );
+
+  test('is declared only when the installation names the identifier: a read about a unit, for the one who leads it', () => {
+    const names = (manifest: unknown) => parseManifest(manifest, 'pob').capabilities.map(c => c.name);
+    expect(names(createManifest())).not.toContain('pob.unitCosts');
+    const parsed = parseManifest(
+      createManifest({ costs: { identifier: 'ansvar', amountLabel: 'Avtalskostnad' } }),
+      'pob',
+    );
+    const read = parsed.capabilities.find(c => c.name === 'pob.unitCosts')!;
+    expect(read).toMatchObject({
+      kind: 'read',
+      model: false,
+      scope: { roles: ['manager'] },
+      about: { entity: 'unit' },
+      unit: { admits: ['manages'], identifiers: ['ansvar'] },
+      view: { kind: 'list', title: 'amount' },
+    });
+    // Without a field that holds an amount there is no sum to show: the row is a count.
+    const counted = parseManifest(createManifest({ costs: { identifier: 'kostnadsställe' } }), 'pob').capabilities.find(
+      c => c.name === 'pob.unitCosts',
+    )!;
+    expect(counted.unit).toEqual({ admits: ['manages'], identifiers: ['kostnadsställe'] });
+    expect((counted.view as { title: string; fields: Array<{ key: string }> }).title).toBe('agreements');
+    expect((counted.view as { fields: Array<{ key: string }> }).fields.map(f => f.key)).toEqual(['agreements', 'note']);
+  });
+
+  test('answers the count and the sum for a unit the person leads, by the code the directory sent, and asks POB for nothing of the person', async () => {
+    const { read, asked, lines } = costs({
+      'unit-skola': { relation: 'manages', identifiers: [ansvar('11000000'), { type: 'qlik', value: 'ORG-1' }] },
+    });
+    expect(await read(chef, ['unit-skola'])).toEqual([{ key: 'unit-skola', agreements: 3, amount: 18540.5 }]);
+    expect(asked).toEqual(['agreements 11000000']);
+    expect(lines).toEqual([
+      expect.objectContaining({ event: 'unit-costs', account: 'hillevi', outcome: 'shown', asked: 1, rows: 1 }),
+    ]);
+    // Nothing of an agreement leaves the connector but the count and the sum: no id, no account.
+    expect(JSON.stringify(lines)).not.toContain('sla-');
+  });
+
+  test('a unit with two codes is the sum of both, each agreement once, and says so when an agreement has no amount', async () => {
+    const { read, asked } = costs({
+      'unit-skola': { relation: 'manages', identifiers: [ansvar('11000000'), ansvar('11000100'), ansvar('11000000')] },
+    });
+    expect(await read(chef, ['unit-skola'])).toEqual([
+      {
+        key: 'unit-skola',
+        agreements: 5,
+        amount: 25740.5,
+        note: '1 av avtalen saknar belopp och är inte med i summan.',
+      },
+    ]);
+    expect(asked).toEqual(['agreements 11000000', 'agreements 11000100']);
+  });
+
+  test('a unit whose id is `__proto__` is answered for the one who leads it, as any unit is', async () => {
+    // A computed key, so the fixture holds the unit as an entry of its own and not as the object's prototype.
+    const { read, asked } = costs({
+      ['__proto__']: { relation: 'manages' as const, identifiers: [ansvar('11000000')] },
+      constructor: { relation: 'member' as const, identifiers: [ansvar('11000100')] },
+    });
+    expect(await read(chef, ['__proto__', 'constructor'])).toEqual([
+      { key: '__proto__', agreements: 3, amount: 18540.5 },
+    ]);
+    expect(asked).toEqual(['agreements 11000000']);
+  });
+
+  test('a unit without a code, with another type only, with a code that is none, or with no agreements: no question that could name another unit', async () => {
+    const { read, asked } = costs({
+      'unit-utan': { relation: 'manages' },
+      'unit-annan-typ': { relation: 'manages', identifiers: [{ type: 'qlik', value: '11000000' }] },
+      // Too short to be a code: as a prefix it would read as nearly every account.
+      'unit-kort': { relation: 'manages', identifiers: [ansvar('11')] },
+      'unit-tecken': { relation: 'manages', identifiers: [ansvar('1100%0000'), ansvar('11000000.5750')] },
+      'unit-tom': { relation: 'manages', identifiers: [ansvar('55550000')] },
+    });
+    expect(await read(chef, ['unit-utan', 'unit-annan-typ', 'unit-kort', 'unit-tecken', 'unit-tom'])).toEqual([
+      { key: 'unit-tom', agreements: 0 },
+    ]);
+    expect(asked).toEqual(['agreements 55550000']);
+  });
+
+  test('a unit the person only belongs to, one they follow from above and one Clew does not know are never asked about', async () => {
+    const { read, asked } = costs({
+      'unit-skola': { relation: 'member', identifiers: [ansvar('11000000')] },
+      'unit-under': { relation: 'below', identifiers: [ansvar('11000100')] },
+    });
+    expect(await read(chef, ['unit-skola', 'unit-under', 'unit-okand'])).toEqual([]);
+    expect(asked).toEqual([]);
+    // And nobody without a manager's role reaches the read at all.
+    await expect(read(hillevi, ['unit-skola'])).rejects.toThrow();
+  });
+
+  test('the connector does not rest on Clew sending only what it admits: a body that says another relation, none, or nothing about units is answered with no row', async () => {
+    const { pob, asked } = costs({});
+    const identifiers = { 'unit-skola': [ansvar('11000000')] };
+    const bodies = [
+      {
+        input: { keys: ['unit-skola'] },
+        about: { entity: 'unit', relations: { 'unit-skola': 'member' }, identifiers },
+      },
+      { input: { keys: ['unit-skola'] }, about: { entity: 'unit', relations: { 'unit-skola': 'below' }, identifiers } },
+      { input: { keys: ['unit-skola'] }, about: { entity: 'unit', relations: {}, identifiers } },
+      {
+        input: { keys: ['unit-skola'] },
+        about: { entity: 'person', relations: { 'unit-skola': 'manages' }, identifiers },
+      },
+      { input: { keys: ['unit-skola'] }, about: { entity: 'unit', identifiers } },
+      { input: { keys: ['unit-skola'] } },
+      // The relation of another unit, and a key that is a property of every object.
+      {
+        input: { keys: ['unit-skola', 'constructor'] },
+        about: { entity: 'unit', relations: { 'unit-b': 'manages' }, identifiers },
+      },
+      { input: { keys: 'unit-skola' }, about: { entity: 'unit', relations: { 'unit-skola': 'manages' }, identifiers } },
+    ];
+    for (const body of bodies) {
+      const answer = await direct(pob, body);
+      expect(answer.status).toBe(200);
+      expect(await answer.json()).toEqual({ output: { rows: [] } });
+    }
+    expect(asked).toEqual([]);
+    // The body Clew sends for a unit the person leads is answered, so the refusals above are about the body.
+    const led = await direct(pob, {
+      input: { keys: ['unit-skola'] },
+      about: { entity: 'unit', relations: { 'unit-skola': 'manages' }, identifiers },
+    });
+    expect(await led.json()).toEqual({ output: { rows: [{ key: 'unit-skola', agreements: 3, amount: 18540.5 }] } });
+  });
+
+  test('needs the person’s own token like every read, and answers a person POB does not know or knows twice', async () => {
+    const { pob, asked } = costs({});
+    const body = {
+      input: { keys: ['unit-skola'] },
+      about: {
+        entity: 'unit',
+        relations: { 'unit-skola': 'manages' },
+        identifiers: { 'unit-skola': [ansvar('11000000')] },
+      },
+    };
+    const refused = await direct(pob, body, false);
+    expect(refused.status).toBe(403);
+    expect(asked).toEqual([]);
+    // Karin has two customer records in the made-up POB, which refuses her own errands; her unit's costs are not hers.
+    const twice = costs({ 'unit-skola': { relation: 'manages', identifiers: [ansvar('11000000')] } });
+    expect(await twice.read({ ...karin, role: 'manager' }, ['unit-skola'])).toHaveLength(1);
+    expect(twice.asked).toEqual(['agreements 11000000']);
+  });
+
+  test('an agreement POB answers for another account is not counted, and an answer that was cut is no answer', async () => {
+    const loose = (complete: boolean): CaseSource => ({
+      ...createFixtureCases({ now }),
+      agreements: async () => ({
+        agreements: [
+          { id: 'sla-1', account: '11000000.1', amount: 100 },
+          { id: 'sla-2', account: '22000000.1', amount: 900 },
+          { id: 'sla-3', account: ' 11000000.9', amount: 5 },
+          { id: 'sla-4', amount: 7 },
+          { account: '11000000.2', amount: 7 },
+          null,
+        ],
+        complete,
+      }),
+    });
+    const units = { 'unit-skola': { relation: 'manages' as const, identifiers: [ansvar('11000000')] } };
+    expect(await costs(units, { source: loose(true) }).read(chef, ['unit-skola'])).toEqual([
+      { key: 'unit-skola', agreements: 2, amount: 105 },
+    ]);
+    await expect(costs(units, { source: loose(false) }).read(chef, ['unit-skola'])).rejects.toThrow('svarar inte');
+    // A POB that does not answer is an outage, never an empty sum.
+    const down: CaseSource = {
+      ...createFixtureCases({ now }),
+      agreements: async () => {
+        throw new SourceUnavailable('POB did not answer.');
+      },
+    };
+    await expect(costs(units, { source: down }).read(chef, ['unit-skola'])).rejects.toThrow('svarar inte');
+  });
+
+  test('without a field that holds an amount the row is a count, and the installation’s own pattern says what a code is', async () => {
+    const units = {
+      'unit-skola': { relation: 'manages' as const, identifiers: [ansvar('11000000')] },
+      'unit-kort': { relation: 'manages' as const, identifiers: [ansvar('1100')] },
+    };
+    expect(await costs(units, { costs: { identifier: 'ansvar' } }).read(chef, ['unit-skola'])).toEqual([
+      { key: 'unit-skola', agreements: 3 },
+    ]);
+    const strict = costs(units, { costs: { identifier: 'ansvar', codePattern: '^[0-9]{8}$' } });
+    expect(await strict.read(chef, ['unit-skola', 'unit-kort'])).toEqual([{ key: 'unit-skola', agreements: 3 }]);
+    expect(strict.asked).toEqual(['agreements 11000000']);
+    // The default takes four characters, which is a short code above the lowest level: every account that begins so.
+    const loose = costs(units, { costs: { identifier: 'ansvar' } });
+    expect(await loose.read(chef, ['unit-kort'])).toEqual([{ key: 'unit-kort', agreements: 5 }]);
+  });
+
+  test('the installation’s pattern narrows what a code is and never widens it: a short code is asked of no source, by the connector or by the adapter', async () => {
+    // A pattern that takes one character, as a connector built by hand could be handed: the one-character identifier
+    // is a prefix of nearly every account, and would answer the school's leader with every other unit's agreements.
+    const units = {
+      'unit-ett': { relation: 'manages' as const, identifiers: [ansvar('1')] },
+      'unit-tre': { relation: 'manages' as const, identifiers: [ansvar('110')] },
+      'unit-skola': { relation: 'manages' as const, identifiers: [ansvar('11000000')] },
+    };
+    for (const codePattern of ['^[0-9]{1,8}$', '^[0-9]$', '^[A-Za-z0-9]{1,64}$']) {
+      const wide = costs(units, { costs: { identifier: 'ansvar', amountLabel: 'Avtalskostnad', codePattern } });
+      const answered = await wide.read(chef, ['unit-ett', 'unit-tre', 'unit-skola']);
+      // Only a code within the bound is asked for, and only where the pattern takes it too.
+      expect(wide.asked).toEqual(codePattern === '^[0-9]$' ? [] : ['agreements 11000000']);
+      expect(answered).toEqual(
+        codePattern === '^[0-9]$' ? [] : [{ key: 'unit-skola', agreements: 3, amount: 18540.5 }],
+      );
+    }
+    // The sources hold the same bound themselves, so a connector that asked would be refused: the made-up POB and
+    // POB's own API alike, before anything is sent.
+    const fixture = createFixtureCases({ now });
+    const sent: string[] = [];
+    const api = createPobCases({
+      url: 'https://pob.test/pobg6/api',
+      authorization: 'Basic bWFkZS11cA==',
+      userMatch: 'LoginName',
+      customerMatch: 'LoginName',
+      now,
+      fetch: (async (address: string) => {
+        sent.push(address);
+        return Response.json([]);
+      }) as never,
+    });
+    for (const code of ['1', '110', 'a'.repeat(33), '1100 000', '1100%', ''])
+      for (const source of [fixture, api])
+        await expect(source.agreements!(code)).rejects.toBeInstanceOf(SourceUnavailable);
+    expect(sent).toEqual([]);
+    expect((await fixture.agreements!('1100')).agreements).toHaveLength(5);
+  });
+
+  test('the configuration switches the read on by naming the identifier, and holds what stands beside it', () => {
+    const env = {
+      CLEW_CONNECTOR_SECRET: secret,
+      POB_ADAPTER: 'fixture',
+      POB_IDP_ISSUER: issuer,
+      POB_IDP_JWKS_URL: 'https://idp.test/certs',
+    };
+    expect(readConfig(env).costs).toBeUndefined();
+    // A compose file passes every variable, set or not: an empty one is no value.
+    expect(readConfig({ ...env, POB_COST_IDENTIFIER: '', POB_COST_CODE_PATTERN: '' }).costs).toBeUndefined();
+    expect(readConfig({ ...env, POB_COST_IDENTIFIER: 'ansvar' }).costs).toEqual({
+      identifier: 'ansvar',
+      amountLabel: 'Avtalskostnad',
+    });
+    expect(
+      readConfig({
+        ...env,
+        POB_COST_IDENTIFIER: 'kostnadsställe',
+        POB_COST_AMOUNT_LABEL: 'Kostnad per månad',
+        POB_COST_CODE_PATTERN: '^[0-9]{8}$',
+      }).costs,
+    ).toEqual({ identifier: 'kostnadsställe', amountLabel: 'Kostnad per månad', codePattern: '^[0-9]{8}$' });
+    for (const wrong of [' ansvar', 'ansvar ', 'a'.repeat(65), 'an\tsvar'])
+      expect(() => readConfig({ ...env, POB_COST_IDENTIFIER: wrong })).toThrow('POB_COST_IDENTIFIER');
+    expect(() => readConfig({ ...env, POB_COST_CODE_PATTERN: '^[0-9]{8}$' })).toThrow('without POB_COST_IDENTIFIER');
+    for (const pattern of ['[0-9]{8}', '^.*$', '^[0-9]{8}', '^[0-9]{8}$|^x$', '^(a+)+$'])
+      expect(() => readConfig({ ...env, POB_COST_IDENTIFIER: 'ansvar', POB_COST_CODE_PATTERN: pattern })).toThrow(
+        'POB_COST_CODE_PATTERN',
+      );
+    // The pattern narrows what a code is: one that takes a code of fewer than four characters is refused at start,
+    // since such a code would stand as a prefix of other units' accounts.
+    for (const pattern of ['^[0-9]$', '^[0-9]{1,8}$', '^[A-Z]{3}$', '^[0-9]{0,8}$', '^[a-z0-9]{2,}$', '^7[0-9]{2}$'])
+      expect(() => readConfig({ ...env, POB_COST_IDENTIFIER: 'ansvar', POB_COST_CODE_PATTERN: pattern })).toThrow(
+        'shorter than four characters',
+      );
+    for (const pattern of ['^[0-9]{4}$', '^[0-9]{4,8}$', '^7[0-9]{7}$', '^[A-Z]{2}[0-9]{6}$'])
+      expect(
+        readConfig({ ...env, POB_COST_IDENTIFIER: 'ansvar', POB_COST_CODE_PATTERN: pattern }).costs?.codePattern,
+      ).toBe(pattern);
+    expect(() => readConfig({ ...env, POB_COST_IDENTIFIER: 'ansvar', POB_AGREEMENT_PATH: '/sla' })).toThrow(
+      'api adapter only',
+    );
+    // With POB's own API there is a sum only where the installation has named the field that holds an amount.
+    const api = {
+      ...env,
+      POB_ADAPTER: 'api',
+      POB_URL: 'https://pob.test/pobg6/api',
+      POB_AUTHORIZATION: 'Basic bWFkZS11cA==',
+      POB_USER_MATCH: 'LoginName',
+      POB_CUSTOMER_MATCH: 'LoginName',
+      POB_STATUS_KINDS: '{"Open":"open"}',
+      POB_CASE_TYPES: '["Incident"]',
+      POB_COST_IDENTIFIER: 'ansvar',
+    };
+    const counted = readConfig(api);
+    expect(counted.costs).toEqual({ identifier: 'ansvar' });
+    expect(counted.pob).toMatchObject({
+      agreementFields: { id: 'Id', account: 'Account.Id', amount: '' },
+      agreementPath: '/sla',
+    });
+    const summed = readConfig({
+      ...api,
+      POB_AGREEMENT_FIELDS: '{"amount":"MonthlyPrice"}',
+      POB_AGREEMENT_PATH: '/agreement',
+    });
+    expect(summed.costs).toEqual({ identifier: 'ansvar', amountLabel: 'Avtalskostnad' });
+    expect(summed.pob).toMatchObject({ agreementFields: { amount: 'MonthlyPrice' }, agreementPath: '/agreement' });
+    expect(() => readConfig({ ...api, POB_COST_AMOUNT_LABEL: 'Kostnad' })).toThrow('names no amount');
+    expect(() => readConfig({ ...api, POB_AGREEMENT_FIELDS: '{"price":"X"}' })).toThrow('is not one of');
+    expect(() => readConfig({ ...api, POB_AGREEMENT_PATH: 'sla' })).toThrow('POB_AGREEMENT_PATH');
+    const { POB_COST_IDENTIFIER: _, ...off } = api;
+    expect(readConfig(off).pob).not.toHaveProperty('agreementFields');
+  });
+
+  test('the draft adapter asks POB for the accounts that begin with the code, compares each again, and reads an amount only where it is a number', async () => {
+    const calls: string[] = [];
+    const source = (answers: Record<string, unknown>, options: Parameters<typeof createPobCases>[0] = {}) =>
+      createPobCases({
+        url: 'https://pob.test/pobg6/api',
+        authorization: 'Basic bWFkZS11cA==',
+        userMatch: 'LoginName',
+        customerMatch: 'LoginName',
+        agreementFields: agreementFieldMap({ amount: 'Price' }),
+        now,
+        fetch: (async (address: string) => {
+          const url = new URL(address);
+          const key = url.pathname.replace('/pobg6/api', '') + '?' + decodeURIComponent(url.searchParams.toString());
+          calls.push(key);
+          const answer = answers[key];
+          if (answer === undefined) return new Response('', { status: 404 });
+          return typeof answer === 'number' ? new Response('x', { status: answer }) : Response.json(answer);
+        }) as never,
+        ...options,
+      });
+    const sla = (data: Record<string, unknown>) => ({ Type: 'Sla', Data: data });
+    const asked = '/sla?Filter=Account.Id=11000000%&limit=501';
+    const pob = source({
+      [asked]: [
+        // The account as a key written with its dot, as a referenced record, and with the amount as text.
+        sla({ Id: 1, 'Account.Id': '11000000.5750.100', Price: 1200 }),
+        sla({ Id: 2, Account: { Type: 'Account', Data: { Id: '11000000.6211' } }, Price: '349,50' }),
+        sla({ Id: 3, Account: { Id: '11000000.1' }, Price: null }),
+        sla({ Id: 4, 'Account.Id': '11000000.2', Price: 'enligt offert' }),
+        // A POB that matched loosely, or ignored the filter: another unit's agreement is not this unit's.
+        sla({ Id: 5, 'Account.Id': '22000000.5750', Price: 99999 }),
+      ],
+    });
+    expect(await pob.agreements!('11000000')).toEqual({
+      agreements: [
+        { id: '1', account: '11000000.5750.100', amount: 1200 },
+        { id: '2', account: '11000000.6211', amount: 349.5 },
+        { id: '3', account: '11000000.1' },
+        { id: '4', account: '11000000.2' },
+      ],
+      complete: true,
+    });
+    expect(calls).toEqual([asked]);
+    // Without a field for an amount none is read, whatever the agreement carries.
+    const counted = source(
+      { [asked]: [sla({ Id: 1, 'Account.Id': '11000000.1', Price: 5 })] },
+      { agreementFields: agreementFieldMap() },
+    );
+    expect((await counted.agreements!('11000000')).agreements).toEqual([{ id: '1', account: '11000000.1' }]);
+    // A full answer says there is more; an agreement that cannot be compared, and an answer that is no list, are an outage.
+    const full = source(
+      { [asked.replace('501', '3')]: [1, 2, 3].map(n => sla({ Id: n, 'Account.Id': '11000000.' + n })) },
+      { listLimit: 2 },
+    );
+    expect((await full.agreements!('11000000')).complete).toBe(false);
+    for (const answer of [[sla({ Id: 1 })], [sla({ 'Account.Id': '11000000.1' })], { Data: [] }, 500])
+      await expect(source({ [asked]: answer }).agreements!('11000000')).rejects.toThrow(SourceUnavailable);
+    // A code that could not stand in a filter is never sent, and the path is the installation's.
+    calls.length = 0;
+    for (const code of ['1100%', '11000000&x=1', '', '1100 0000'])
+      await expect(pob.agreements!(code)).rejects.toThrow(SourceUnavailable);
+    expect(calls).toEqual([]);
+    const elsewhere = source(
+      { '/agreement?Filter=Konto=11000000%&limit=501': [] },
+      {
+        agreementPath: '/agreement',
+        agreementFields: agreementFieldMap({ account: 'Konto' }),
+      },
+    );
+    expect(await elsewhere.agreements!('11000000')).toEqual({ agreements: [], complete: true });
+    expect(() => source({}, { agreementPath: 'https://elsewhere.test/sla' })).toThrow('POB_AGREEMENT_PATH');
+    expect(() => agreementFieldMap({ account: 'Account Id' })).toThrow('must be a field name');
   });
 });

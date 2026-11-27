@@ -1,6 +1,5 @@
 import { and, asc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
-import { lineUpwards } from '../domain';
 import {
   PlanTaken,
   type BoardingDirectory,
@@ -23,6 +22,7 @@ const {
   boardingPlanHolders: holders,
   boardingItems: items,
   people,
+  employments,
   audit,
   assignments,
   personPositions,
@@ -422,19 +422,26 @@ export function postgresBoardingDirectory(given?: Db): BoardingDirectory {
       const found = new Map<string, Pick<Report, 'unitIds' | 'positionCodes' | 'employments'>>();
       for (const slice of slices([...new Set(personIds)])) {
         for (const r of await db()
-          .select({ id: people.id, employments: people.employments })
+          .select({ id: people.id })
           .from(people)
           .where(and(inArray(people.id, slice), eq(people.organisationId, organisationId))))
-          found.set(r.id, {
-            unitIds: [],
-            positionCodes: [],
-            employments: r.employments.map(e => ({
-              ...(e.employmentType !== undefined ? { employmentType: e.employmentType } : {}),
-              ...(e.startDate !== undefined ? { startDate: e.startDate } : {}),
-            })),
-          });
+          found.set(r.id, { unitIds: [], positionCodes: [], employments: [] });
         const known = slice.filter(id => found.has(id));
         if (!known.length) continue;
+        // D147: the employments are rows of their own, read in the order the directory sent them.
+        for (const r of await db()
+          .select({
+            personId: employments.personId,
+            employmentType: employments.employmentType,
+            startDate: employments.startDate,
+          })
+          .from(employments)
+          .where(inArray(employments.personId, known))
+          .orderBy(employments.personId, employments.position))
+          found.get(r.personId)!.employments.push({
+            ...(r.employmentType !== null ? { employmentType: r.employmentType } : {}),
+            ...(r.startDate !== null ? { startDate: r.startDate } : {}),
+          });
         for (const r of await db()
           .select({ personId: assignments.personId, unitId: assignments.unitId })
           .from(assignments)
@@ -477,23 +484,17 @@ export function postgresBoardingDirectory(given?: Db): BoardingDirectory {
         .from(people)
         .where(and(eq(people.id, personId), eq(people.organisationId, organisationId)));
       if (!person) return [];
-      const own = await db()
-        .select({ unitId: assignments.unitId, role: assignments.role })
-        .from(assignments)
-        .where(eq(assignments.personId, personId));
-      if (!own.length) return [];
-      const parents = new Map((await tree(organisationId)).map(u => [u.id, u.parentId]));
-      // Every active leader of the organisation's units, read once; the walk upwards stops at the first unit led.
-      const leaders = new Map<string, string[]>();
-      for (const r of await db()
-        .select({ unitId: assignments.unitId, personId: assignments.personId })
-        .from(assignments)
-        .innerJoin(people, eq(people.id, assignments.personId))
-        .where(
-          and(eq(assignments.role, 'manager'), eq(people.enabled, true), eq(people.organisationId, organisationId)),
-        ))
-        if (r.personId !== personId) leaders.set(r.unitId, [...(leaders.get(r.unitId) ?? []), r.personId]);
-      return lineUpwards(own, parents, unitId => leaders.get(unitId) ?? []);
+      const named = await db()
+        .select({ managerId: employments.managerId })
+        .from(employments)
+        .where(eq(employments.personId, personId));
+      const ids = [...new Set(named.flatMap(r => (r.managerId && r.managerId !== personId ? [r.managerId] : [])))];
+      if (!ids.length) return [];
+      const active = await db()
+        .select({ id: people.id })
+        .from(people)
+        .where(and(inArray(people.id, ids), eq(people.enabled, true), eq(people.organisationId, organisationId)));
+      return active.map(r => r.id).sort();
     },
   };
 }

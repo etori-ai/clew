@@ -44,6 +44,12 @@ The tables can be menu tools (D40). An employee does not see the areas, and the 
 A unit whose headcount is below `QLIK_MIN_GROUP`, or unknown, is shown with a note and without rates. The model
 reads the aggregates in the tables and charts, never the reads about a unit.
 
+**A figure is one unit's.** Each of the three figures is about the unit Clew says Läget of: the unit the manager is
+employed on when they lead it, else the first they lead
+([D149](../../docs/decisions/D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md)). Where that unit has no value
+there is no figure: another unit's value is never shown under its heading. The tables and the reads about a unit
+answer for every unit the manager leads or follows up.
+
 **The tones are the organisation's.** Each figure's tone is `none` until the operator sets its rule (D82 item 7). The
 development stack sets big-boss-board's: sick leave good to 6.0 %, watch to 7.5 %, act above; the economy alert below
 budget in balance; HME over target from 75, watch from 70. Big-boss-board reads sick leave as a rolling twelve-month
@@ -51,8 +57,10 @@ rate and also alerts on a rise of more than 1.5 percentage points in three month
 and which one the source gives is not settled, so the rise rule is not built.
 
 **Open mode.** Without `QLIK_UNIT_MAP` the fixture has no map from Clew's units to the source's: a unit's name in the
-source is Clew's unit id, and every manager has made-up figures for their own unit, whatever the organisation tree,
-the same every time. The scope is the same as with a map: the reader's own unit, and the units Clew lists in the actor's
+source is Clew's unit id, and every manager has made-up figures for the units they lead, whatever the organisation
+tree, the same every time. The scope is the same as with a map: the units the reader leads (the actor's `leads`,
+[D149](../../docs/decisions/D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md)), never the
+unit they are only employed on (`unitId`), and the units Clew lists in the actor's
 `units` when the call has them (those of the managers who report to the reader, [D117](../../docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)); every other unit is no row. How Clew's units are mapped to
 the real source is not settled.
 

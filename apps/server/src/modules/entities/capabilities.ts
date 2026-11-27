@@ -39,7 +39,7 @@ export const reportsView: View = {
   kind: 'list',
   title: 'name',
   noun: { one: 'medarbetare', other: 'medarbetare' },
-  empty: 'Det finns ingen på enheterna du är chef för.',
+  empty: 'Ingen rapporterar till dig.',
   fields: [
     { key: 'name', label: 'Namn' },
     { key: 'title', label: 'Titel' },
@@ -66,7 +66,7 @@ export function reportCapabilities(
     title: 'Mina medarbetare',
     model: true,
     description:
-      'Medarbetarna på enheterna du är chef för, så som Personal listar dem: namn, användarnamn, titel när Clew har en, och enheten. Också den som är chef för enheten tillsammans med dig och chefer på enheter under dina som rapporterar till dig. Tar ingen indata. Inga uppgifter ur personalsystemet. Användarnamnet tar andra verktyg som person.',
+      'De som rapporterar till dig, så som Personal listar dem: namn, användarnamn, titel när Clew har en, och enheten de är anställda på. Också chefer som rapporterar till dig. Den som är chef för en enhet tillsammans med dig är inte med, om den inte rapporterar till dig. Tar ingen indata. Inga uppgifter ur personalsystemet. Användarnamnet tar andra verktyg som person.',
     input: ReportsInputSchema,
     output: ReportsOutputSchema,
     view: reportsView,

@@ -13,6 +13,7 @@ import {
 } from '../../apps/server/src/modules/people/domain';
 import { memberKey, memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { provisioningContract, type ProvisioningHarness } from '../provisioning-store-contract';
+import { unitsHeld } from '../held-units';
 
 /** The pure derivation (D68, D85) and the provisioning contract on the memory adapter. */
 describe('deriveAuthority', () => {
@@ -173,7 +174,7 @@ describe('deriveAuthority', () => {
   test('a unit key the SCIM boundary refuses gives nothing, also on a group stored before D96 refused it: the boundary and the derivation read a key one way', () => {
     const accepted = (externalId: string) => {
       try {
-        assertAcceptedKey({ externalId, label: 'Stored before D96', parent: null, members: [] });
+        assertAcceptedKey({ identifiers: [], externalId, label: 'Stored before D96', parent: null, members: [] });
         return true;
       } catch {
         return false;
@@ -308,6 +309,7 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
         });
       for (const g of seed.groups)
         s.groups.set(g.externalId, {
+          unitIdentifiers: [],
           id: g.externalId,
           organisationId: g.organisationId ?? 'org',
           parentUnitId: null,
@@ -337,7 +339,7 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
       return s.grants.get(id);
     },
     async assignments(id) {
-      return s.assignments.get(id) ?? [];
+      return unitsHeld(s, id) ?? [];
     },
     async unitLabel(id) {
       return s.units.get(id)?.label;

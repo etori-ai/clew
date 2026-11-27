@@ -435,13 +435,18 @@ function installationRead(
 export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransport): Connector {
   const source = manifest.source;
   const told = (clew: Clew) => (clew.about ? { about: clew.about } : {});
-  // D135: a person's assignments reach only a connector that says it takes them, so one built to refuse a property it
-  // does not know is never sent one. Left out of the body and the assertion alike.
-  const tell = (actor: Actor): Actor => (manifest.assignments ? actor : { ...actor, assignments: undefined });
-  const published = (actor: Actor) => actorOf(tell(actor));
-  const transport: RemoteTransport = manifest.assignments
-    ? given
-    : { ...given, assert: (actor, chain, binding) => given.assert(tell(actor), chain, binding) };
+  // The published actor is cut once, from the actor as the registry holds it, so what the person leads (D149)
+  // is worked out while their assignments are at hand. D135: the assignments themselves reach only a connector that
+  // says it takes them, so one built to refuse a property it does not know is never sent one. Left out of the body
+  // and the assertion alike.
+  const published = (actor: Actor): Actor => {
+    const { assignments, ...told } = actorOf(actor);
+    return manifest.assignments && assignments ? { ...told, assignments } : told;
+  };
+  const transport: RemoteTransport = {
+    ...given,
+    assert: (actor, chain, binding) => given.assert(published(actor), chain, binding),
+  };
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
     name: c.name,
     kind: c.kind,

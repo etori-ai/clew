@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { randomBytes } from 'node:crypto';
-import { eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import type { AuthenticatedContext, StaffOverview } from '../../packages/contracts/src/index';
 import { talkHolders, talkReports, talkStoreWithCards } from '../../apps/server/src/composition/talks';
@@ -128,6 +128,7 @@ afterAll(async () => {
   await db.delete(schema.threads).where(inArray(schema.threads.personId, [manager, employee]));
   await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, [manager, employee, ...assigned]));
   await db.delete(schema.assignments).where(inArray(schema.assignments.personId, assigned));
+  await db.delete(schema.unitLeads).where(inArray(schema.unitLeads.personId, assigned));
   await db.delete(schema.units).where(inArray(schema.units.id, [unitA, unitB]));
   await db
     .delete(schema.people)
@@ -322,7 +323,7 @@ describe('the talks module on Postgres through the composition store (D96)', () 
     expect((await talkHolders({ ...reader, id: `missing-${tag}` }, [`e2e.named.${tag}`, nameless])).size).toBe(0);
   });
 
-  test('whether an action point’s owner still manages the employee is read from their assignments and grant now (Q12)', async () => {
+  test('whether an action point’s owner still manages the employee is read from the employee’s employments now (Q12, D147)', async () => {
     const db = database();
     await db.insert(schema.people).values([
       { id: current, organisationId: ORG, name: 'Synthetic Nuvarande chef' },
@@ -334,12 +335,18 @@ describe('the talks module on Postgres through the composition store (D96)', () 
       { id: unitA, organisationId: ORG, label: 'Enhet A' },
       { id: unitB, organisationId: ORG, label: 'Enhet B' },
     ]);
-    // The deactivated manager keeps her assignment and grant: only her being active is gone.
+    // The deactivated manager keeps her assignment and grant: only her being active is gone. D149: each is of
+    // their unit, and the three managers lead theirs besides, which is a table of its own.
     await db.insert(schema.assignments).values([
-      { personId: current, unitId: unitA, role: 'manager' },
-      { personId: gone, unitId: unitA, role: 'manager' },
-      { personId: moved, unitId: unitB, role: 'manager' },
-      { personId: staffer, unitId: unitA, role: 'employee' },
+      { personId: current, unitId: unitA },
+      { personId: gone, unitId: unitA },
+      { personId: moved, unitId: unitB },
+      { personId: staffer, unitId: unitA },
+    ]);
+    await db.insert(schema.unitLeads).values([
+      { personId: current, unitId: unitA },
+      { personId: gone, unitId: unitA },
+      { personId: moved, unitId: unitB },
     ]);
     await db.insert(schema.accessGrants).values([
       { personId: current, unitId: unitA, unitLabel: 'Enhet A', role: 'manager', capabilities: [] },
@@ -347,19 +354,33 @@ describe('the talks module on Postgres through the composition store (D96)', () 
       { personId: moved, unitId: unitB, unitLabel: 'Enhet B', role: 'manager', capabilities: [] },
       { personId: staffer, unitId: unitA, unitLabel: 'Enhet A', role: 'employee', capabilities: [] },
     ]);
+    // D147: whom the employee reports to is said on her employments. The first names the current manager; the second
+    // names the deactivated one, who is nobody's manager for all that.
+    await db.insert(schema.employments).values([
+      { personId: staffer, position: 0, unitId: unitA, managerId: current },
+      { personId: staffer, position: 1, unitId: unitA, managerId: gone },
+    ]);
     const talkManages = async (managerId: string, employeeId: string) => (await talkReports(managerId)).has(employeeId);
     expect(await talkManages(current, staffer)).toBe(true);
-    // A manager moved to another unit, a deactivated one, someone unknown and the employee herself manage nobody here.
+    // A manager no employment of hers names, a deactivated one, someone unknown and the employee herself manage nobody
+    // here.
     expect(await talkManages(moved, staffer)).toBe(false);
     expect(await talkManages(gone, staffer)).toBe(false);
     expect(await talkManages(`nobody-${tag}`, staffer)).toBe(false);
     expect(await talkManages(staffer, staffer)).toBe(false);
     expect(await talkManages(current, current)).toBe(false);
-    // The moved manager comes back to the unit: she manages the employee again at once.
-    await db.insert(schema.assignments).values({ personId: moved, unitId: unitA, role: 'manager' });
+    // Leading the unit does not make her the employee's manager: who reports to whom is not read from who leads it.
+    await db.insert(schema.unitLeads).values({ personId: moved, unitId: unitA });
+    expect(await talkManages(moved, staffer)).toBe(false);
+    // The directory names her on the employment: she manages the employee at once, and the one before her no longer.
+    await db
+      .update(schema.employments)
+      .set({ managerId: moved })
+      .where(and(eq(schema.employments.personId, staffer), eq(schema.employments.position, 0)));
     expect(await talkManages(moved, staffer)).toBe(true);
+    expect(await talkManages(current, staffer)).toBe(false);
     // A deactivated employee is nobody's to manage.
     await db.update(schema.people).set({ enabled: false }).where(eq(schema.people.id, staffer));
-    expect(await talkManages(current, staffer)).toBe(false);
+    expect(await talkManages(moved, staffer)).toBe(false);
   });
 });

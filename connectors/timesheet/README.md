@@ -11,9 +11,13 @@ absent, and the figure "Vikarier i dag n" (D54), warn while a shift marked absen
 follows `hr:absence` with one execute step, `timesheet.markAbsence` for the day of the fact, which is deduplicated by
 Clew's operation id and read back through `timesheet.lookup`; `timesheet.unmarkAbsence` undoes it. Both writes answer
 for the unit's staff as the time system registers them (`staffOf` in `fixture.mjs`): anyone else is a failed row, and
-the follower's step names a shift of a unit the manager manages only. A manager of several units (D135; the manifest
-takes `assignments`, as [hr](../hr/README.md)'s does) gets the roster, the figure and the writes of every unit they
-manage, and nothing of one where they are an employee. The roster is the same ward the HR fixture schedules, generated
+the follower's step names a shift of a unit the manager leads only. The units are the actor's `leads`
+([D149](../../docs/decisions/D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md)), which
+Clew sends every connector for a manager: someone who leads several gets the roster and the writes of every one of
+them, nothing of a unit they are only employed on, and nothing at all when they lead none. The figure is one unit's:
+the unit they are employed on when they lead it, else the first they lead, which is the unit Clew says Läget of. The
+manifest
+does not take `assignments`, which it has no use for. The roster is the same ward the HR fixture schedules, generated
 for three weeks around the seed day, because a municipality's HR and time systems share the roster, not because the two
 services share code.
 

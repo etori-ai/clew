@@ -8,6 +8,7 @@ import {
   bigserial,
   boolean,
   date,
+  doublePrecision,
   timestamp,
   check,
   primaryKey,
@@ -22,7 +23,7 @@ import type {
   CompetenceSearchWindow,
   ConnectorAudience,
   DirectoryPhone,
-  Employment,
+  UnitIdentifier,
   InstallationTheme,
   LogoMediaType,
   ConnectorHealth,
@@ -52,7 +53,6 @@ export const people = pgTable(
     userName: text('user_name'),
     email: text('email'),
     phoneNumbers: jsonb('phone_numbers').$type<DirectoryPhone[]>().notNull().default([]),
-    employments: jsonb('employments').$type<Employment[]>().notNull().default([]),
     // D110: what the source calls the person's work, SCIM's `title`. Optional, shown and searched, never read for
     // authority.
     title: text('title'),
@@ -104,6 +104,8 @@ export const accessGrants = pgTable(
       .references(() => people.id),
     unitId: text('unit_id').notNull(),
     unitLabel: text('unit_label').notNull(),
+    // D149: whether the person is a manager, which is that somebody reports to them or they lead a unit. It
+    // does not say that they lead `unit_id`, the unit they act as: `auth_unit_lead` says which units they lead.
     role: text('role').$type<'manager' | 'employee'>().notNull(),
     capabilities: jsonb('capabilities').$type<string[]>().notNull(),
     version: integer('version').notNull().default(1),
@@ -113,8 +115,8 @@ export const accessGrants = pgTable(
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
-    // D135: every assignment with its unit's label, when the person holds more than one; empty otherwise. The primary
-    // one is `unit_id` and `role` above, and is among them.
+    // D135, D149: every unit the person belongs to or leads, with its label and `manager` where they lead it.
+    // Empty only when there is one and it says what `unit_id` and `role` above already say.
     assignments: jsonb('assignments')
       .$type<Array<{ unitId: string; unitLabel: string; role: 'manager' | 'employee' }>>()
       .notNull()
@@ -123,14 +125,51 @@ export const accessGrants = pgTable(
   t => [check('auth_grant_role', sql`${t.role} IN ('manager', 'employee')`)],
 );
 // What a provisioner pushes (D68) and what an administrator maps (D85). `auth_access_grant` above is the derived
-// projection of these tables: the primary assignment (manager before employee, then the lowest unit id), every
-// assignment when there is more than one (D135), and the capabilities the person's memberships give, written in the
-// same transaction as the change that moves them.
+// projection of these tables: the unit the person acts as (where they are employed), whether they are a manager, their
+// units (D135), and the capabilities the person's memberships give, written in the same transaction as the change
+// that moves them. Three facts about a person and the organisation are kept in two places and none is worked out from
+// another (D149): an employment (`auth_employment`) says which unit the person belongs to and whom they report
+// to, and `auth_unit_lead` says which units they lead.
 export const units = pgTable('auth_unit', {
   id: text('id').primaryKey(),
   organisationId: text('organisation_id').notNull(),
   label: text('label').notNull(),
 });
+/**
+ * A person's current employments (D114, D147), one row each, in the order the directory sent them. `unitId` is the id
+ * the unit's `unit:` group carries. It is checked when the list is written and kept when the unit is removed
+ * afterwards, and a unit nobody is placed on has no row in `auth_unit`, so it is no foreign key. `managerId` is the
+ * person the employment reports to: a person of the same organisation and never the person themselves, checked when
+ * the list is written. A manager who is deactivated or erased afterwards is still named, as other records name them.
+ */
+export const employments = pgTable(
+  'auth_employment',
+  {
+    // A person's row is never removed by the product (an erasure clears it and keeps the id); where one is, its
+    // employments go with it and nobody keeps it as a manager.
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    unitId: text('unit_id').notNull(),
+    managerId: text('manager_id').references(() => people.id, { onDelete: 'set null' }),
+    title: text('title'),
+    employmentType: text('employment_type'),
+    startDate: date('start_date', { mode: 'string' }),
+    employmentPercentage: doublePrecision('employment_percentage'),
+  },
+  t => [
+    primaryKey({ columns: [t.personId, t.position] }),
+    // Who reports to a person is asked by the manager's id.
+    index('auth_employment_manager').on(t.managerId),
+    check('auth_employment_not_own_manager', sql`${t.managerId} IS DISTINCT FROM ${t.personId}`),
+  ],
+);
+/**
+ * The units a person belongs to (D149), derived in the transaction that moves them: the units of their current
+ * employments that the organisation holds, and the units whose `unit:` group they are in, which is how a directory
+ * that sends no employments says it. It says nothing of who leads the unit: that is `auth_unit_lead`.
+ */
 export const assignments = pgTable(
   'auth_assignment',
   {
@@ -140,11 +179,28 @@ export const assignments = pgTable(
     unitId: text('unit_id')
       .notNull()
       .references(() => units.id),
-    role: text('role').$type<'manager' | 'employee'>().notNull(),
+  },
+  t => [primaryKey({ columns: [t.personId, t.unitId] })],
+);
+/**
+ * The units a person leads (D149), derived in the transaction that moves them from the `unit-manager:` groups
+ * they are in. Apart from where they belong: someone leads a unit whether or not they are employed on it, and whoever
+ * leads a unit answers for it, whoever its people report to.
+ */
+export const unitLeads = pgTable(
+  'auth_unit_lead',
+  {
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id),
   },
   t => [
     primaryKey({ columns: [t.personId, t.unitId] }),
-    check('auth_assignment_role', sql`${t.role} IN ('manager', 'employee')`),
+    // Who leads a unit is asked by the unit's id.
+    index('auth_unit_lead_unit').on(t.unitId),
   ],
 );
 /**
@@ -154,7 +210,9 @@ export const assignments = pgTable(
  * `displayName`). Meaning comes from D68's keys in `externalId` or a mapping row; a group without an external id is a
  * plain group. A `unit:` group is a node of the organisation tree (D99): `parentUnitId` is the unit id of the node above
  * it, null on a root and on every group that is not a `unit:` group. It names a unit id, not a row, because the parent
- * is another pushed group; the SCIM use case checks that it exists, under the tree's lock.
+ * is another pushed group; the SCIM use case checks that it exists, under the tree's lock. `unitIdentifiers` is what
+ * other systems know the unit by (D148), as the directory sent them and in its order, empty on every other group: a
+ * unit's own attribute, kept on the row a provisioner writes, so a unit nobody is placed on keeps them too.
  */
 export const groups = pgTable(
   'auth_group',
@@ -164,6 +222,7 @@ export const groups = pgTable(
     externalId: text('external_id'),
     label: text('label').notNull(),
     parentUnitId: text('parent_unit_id'),
+    unitIdentifiers: jsonb('unit_identifiers').$type<UnitIdentifier[]>().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1015,6 +1074,10 @@ export const changeSignals: ReadonlyArray<{ table: string; trigger: string; fn: 
     args: ['organisation'],
   },
   { table: 'auth_assignment', trigger: 'auth_assignment_changed', fn: 'clew_shared_changed', args: ['organisation'] },
+  { table: 'auth_unit_lead', trigger: 'auth_unit_lead_changed', fn: 'clew_shared_changed', args: ['organisation'] },
+  // An employment is written with its person, whose signal leaves out the time of change that moves with it: a new
+  // title or another manager named is a change of the employment's row alone (D147), so the table signals for itself.
+  { table: 'auth_employment', trigger: 'auth_employment_changed', fn: 'clew_shared_changed', args: ['organisation'] },
   { table: 'auth_position', trigger: 'auth_position_changed', fn: 'clew_shared_changed', args: ['organisation'] },
   {
     table: 'auth_person_position',

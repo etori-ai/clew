@@ -290,7 +290,7 @@ describe('current employments on a SCIM user', () => {
   const jobs = [
     { unitId: 'school', title: 'Lärare' },
     { unitId: 'school', title: 'Samordnare' },
-  ];
+  ] as const;
   /** The two units the employments of these tests are on: a unit is sent before an employment names it. */
   const units = async (group: ReturnType<typeof app>['group']) => ({
     school: await group({ externalId: 'unit:school', displayName: 'Skolan' }),
@@ -350,7 +350,7 @@ describe('current employments on a SCIM user', () => {
       ]) {
         const left = await patch(path, ...operations);
         expect(left).toMatchObject({ status: 200, body: { ...stored, active: false, displayName: 'User 1' } });
-        const row = store.state.audit.at(-1)!;
+        const row = [...store.state.audit].reverse().find(written => written.action.startsWith('scim.user.'))!;
         expect([row.action, row.subject, row.details]).toEqual([
           'scim.user.deactivated',
           'person:' + id,
@@ -358,9 +358,11 @@ describe('current employments on a SCIM user', () => {
         ]);
         await patch(path, { op: 'replace', path: 'active', value: true });
       }
+    // The person is of the unit by their employment alone (D149), so each deactivation takes their grant away
+    // and each return gives it back: a deactivated person's employment places nobody.
     expect(store.state.audit.slice(audited).map(row => row.action)).toEqual(
       Array(missing.length * 2)
-        .fill(['scim.user.deactivated', 'scim.user.reactivated'])
+        .fill(['scim.user.deactivated', 'grant.derived', 'scim.user.reactivated', 'grant.derived'])
         .flat(),
     );
     // An explicit null takes a list away, by its path and in the extension's object; so does a remove. (The URN holds
@@ -414,7 +416,7 @@ describe('current employments on a SCIM user', () => {
       await patch(path, { op: 'replace', path: 'active', value: true });
     }
     expect(store.state.audit.slice(audited).map(row => row.action)).toEqual(
-      Array(5).fill(['scim.user.deactivated', 'scim.user.reactivated']).flat(),
+      Array(5).fill(['scim.user.deactivated', 'grant.derived', 'scim.user.reactivated', 'grant.derived']).flat(),
     );
     // A filtered remove takes what its filter names; a remove with no value, or a value of null, takes the list.
     expect((await patch(path, { op: 'remove', path: 'phoneNumbers[type eq "mobile"]' })).body.phoneNumbers).toEqual([
@@ -463,6 +465,31 @@ describe('current employments on a SCIM user', () => {
     expect((await json('PUT', path, person(1, { [urn]: { employments: [base] } }))).body[urn].employments).toEqual([
       base,
     ]);
+  });
+  test('year zero is omitted on create, replacement and a patch that deactivates the person', async () => {
+    const { json, group, patch, person } = app();
+    await units(group);
+    const job = { unitId: 'school', title: 'Lärare' };
+    const sent = [
+      { ...job, startDate: '0000-01-01' },
+      { unitId: 'office', startDate: '0001-01-01' },
+    ];
+    const kept = [job, { unitId: 'office', startDate: '0001-01-01' }];
+    const body = person(1, { [urn]: { employments: sent } });
+    const created = await json('POST', '/Users', body);
+    expect(created.status).toBe(201);
+    const path = '/Users/' + created.body.id;
+    const replaced = await json('PUT', path, body);
+    const deactivated = await patch(
+      path,
+      { op: 'replace', path: field, value: sent },
+      { op: 'replace', path: 'active', value: false },
+    );
+    expect(replaced.status).toBe(200);
+    expect(deactivated).toMatchObject({ status: 200, body: { active: false } });
+    for (const result of [created, replaced, deactivated, await json('GET', path)]) {
+      expect(result.body[urn].employments).toEqual(kept);
+    }
   });
   test('each employment carries its own optional percentage of full time', async () => {
     const { create, group, json, patch, person } = app();
@@ -589,6 +616,112 @@ describe('current employments on a SCIM user', () => {
       /^An employment names 'theirs', which is no unit of this organisation\./,
     );
   });
+  test('an employment names its manager by the id of a user of the organisation (D147): it is told back as written and audited, and anyone else, the user themselves or a value that is no id is refused', async () => {
+    const { json, create, patch, person, group, store } = app();
+    await units(group);
+    const manager = await create(1),
+      held = [{ unitId: 'school', title: 'Lärare', managerId: manager }],
+      id = await create(2, { [urn]: { employments: held } }),
+      path = '/Users/' + id;
+    // Told back to the provisioner as it was written, beside the other details of the employment.
+    expect((await json('GET', path)).body[urn].employments).toEqual(held);
+    expect(store.state.users.get(id)?.employments).toEqual(held);
+    expect(
+      (await json('GET', '/Schemas/' + urn)).body.attributes[0].subAttributes.map((a: { name: string }) => a.name),
+    ).toContain('managerId');
+    // An empty or null manager is no manager, and two entries that differ only in their manager are two.
+    const none = [
+      { unitId: 'school', managerId: '' },
+      { unitId: 'office', managerId: null },
+    ];
+    expect((await patch(path, { op: 'replace', path: field, value: none })).body[urn].employments).toEqual([
+      { unitId: 'school' },
+      { unitId: 'office' },
+    ]);
+    const twice = [{ unitId: 'school', managerId: manager }, { unitId: 'school' }];
+    expect((await json('PUT', path, person(2, { [urn]: { employments: twice } }))).body[urn].employments).toEqual(
+      twice,
+    );
+    // A change of manager alone is a change of the list, audited as any other write of the user.
+    const count = store.state.audit.length;
+    expect((await patch(path, { op: 'replace', path: field, value: held })).body[urn].employments).toEqual(held);
+    expect(store.state.audit.slice(count)).toMatchObject([
+      { action: 'scim.user.patched', subject: 'person:' + id, details: { changed: ['employments'] } },
+    ]);
+    // The same list again changes nothing and writes no row.
+    await patch(path, { op: 'replace', path: field, value: held });
+    expect(store.state.audit).toHaveLength(count + 1);
+    // A manager who is deactivated afterwards is still named: the directory said so, and Clew clears nothing.
+    await json('DELETE', '/Users/' + manager);
+    expect((await json('GET', path)).body[urn].employments).toEqual(held);
+    // Another organisation's user is no user of this one.
+    store.state.provisioners.set('digest:other', { id: 'other', organisationId: 'other-org', label: 'Other' });
+    const theirs = (await json('POST', '/Users', person(8), 'Bearer other')).body.id as string;
+    const refusals: Array<[unknown[], RegExp]> = [
+      [
+        [{ unitId: 'school', managerId: 'nobody' }],
+        /^An employment names the manager 'nobody', which is no user of this organisation\. 'managerId' is the 'id' of the manager's User resource, .*\(D147\)\. The user was not stored\.$/,
+      ],
+      [[{ unitId: 'school', managerId: 'e-1' }], /^An employment names the manager 'e-1', which is no user/],
+      [
+        [
+          { unitId: 'school', managerId: 'nobody' },
+          { unitId: 'office', managerId: theirs },
+        ],
+        new RegExp(`^Employments name the managers 'nobody', '${theirs}', which are no users of this organisation\\.`),
+      ],
+      [[{ unitId: 'school', managerId: 7 }], /managerId/],
+    ];
+    for (const [employments, detail] of refusals)
+      for (const refused of [
+        await json('POST', '/Users', person(9, { [urn]: { employments } })),
+        await json('PUT', path, person(2, { [urn]: { employments } })),
+        await patch(path, { op: 'replace', path: field, value: employments }),
+      ]) {
+        expect(refused.status).toBe(400);
+        expect(refused.body.detail).toMatch(detail);
+      }
+    // Nobody is their own manager. On a create the user has no id yet, so the id sent names nobody.
+    for (const refused of [
+      await json('PUT', path, person(2, { [urn]: { employments: [{ unitId: 'school', managerId: id }] } })),
+      await patch(path, { op: 'add', path: field, value: [{ unitId: 'office', managerId: id }] }),
+    ]) {
+      expect(refused).toMatchObject({ status: 400, body: { scimType: 'invalidValue' } });
+      expect(refused.body.detail).toMatch(/^An employment names the user as their own manager\./);
+    }
+    // A manager with no unit says something Clew cannot place, as a title with none does.
+    expect((await patch(path, { op: 'replace', path: field, value: [{ managerId: manager }] })).body.detail).toMatch(
+      /^An employment needs a 'unitId'/,
+    );
+    // Nothing of the refusals was stored, and beside a deactivation the list is left as it was (D113).
+    expect((await json('GET', path)).body[urn].employments).toEqual(held);
+    expect(
+      await patch(
+        path,
+        { op: 'replace', path: field, value: [{ unitId: 'school', managerId: 'nobody' }] },
+        { op: 'replace', path: 'active', value: false },
+      ),
+    ).toMatchObject({ status: 200, body: { active: false, [urn]: { employments: held } } });
+    expect((await json('GET', '/Users?filter=' + encodeURIComponent('externalId eq "e-9"'))).body.totalResults).toBe(0);
+  });
+  test("the organisation's provisioners can read an employment's manager on a User and in a list", async () => {
+    const { json, create, group, store } = app();
+    await units(group);
+    const managerId = await create(1);
+    const employments = [{ unitId: 'school', managerId }];
+    const id = await create(2, { [urn]: { employments } });
+    store.state.provisioners.set('digest:peer', { id: 'peer', organisationId: 'org', label: 'Peer' });
+    store.state.provisioners.set('digest:other', { id: 'other', organisationId: 'other-org', label: 'Other' });
+
+    const path = '/Users/' + id;
+    const list = '/Users?filter=' + encodeURIComponent('externalId eq "e-2"');
+    expect((await json('GET', path, undefined, 'Bearer peer')).body[urn]?.employments).toEqual(employments);
+    expect((await json('GET', list, undefined, 'Bearer peer')).body.Resources[0]?.[urn]?.employments).toEqual(
+      employments,
+    );
+    expect((await json('GET', path, undefined, 'Bearer other')).status).toBe(404);
+    expect((await json('GET', list, undefined, 'Bearer other')).body.Resources).toEqual([]);
+  });
   test("'employments' without the extension's URN is refused and says how it is written, where it once answered 200 and stored nothing", async () => {
     const { json, create, patch, person, group } = app();
     await units(group);
@@ -628,21 +761,21 @@ describe('current employments on a SCIM user', () => {
   test('a unit removed afterwards does not stop the person’s other changes, and the profile shows the title without it', async () => {
     const { json, create, patch, person, group, store } = app();
     const { office } = await units(group);
+    const managerId = await create(2);
     const employments = [
-      jobs[0],
-      { unitId: 'office', title: 'Registrator' },
+      { ...jobs[0], managerId },
+      { unitId: 'office', title: 'Registrator', managerId },
       { unitId: 'office', employmentPercentage: 0 },
       { unitId: 'office' },
     ];
     const id = await create(1, { title: 'Katalogtitel', [urn]: { employments } });
     const path = '/Users/' + id;
-    await create(2);
     expect((await json('DELETE', '/Groups/' + office)).status).toBe(204);
     // The list did not change, so it is not asked about again: a rename goes through, and so does the daily PUT.
     expect((await patch(path, { op: 'replace', path: 'displayName', value: 'Renamed' })).status).toBe(200);
     expect((await json('PUT', path, person(1, { title: 'Katalogtitel', [urn]: { employments } }))).status).toBe(200);
     const reader = {
-      id: 'id-4',
+      id: managerId,
       organisationId: 'org',
       userName: 'user2',
       name: 'User 2',
@@ -650,14 +783,12 @@ describe('current employments on a SCIM user', () => {
     // A person is read by their id (D122).
     const seen = await staffUsecases({ store }).person(reader, id, true);
     // The employments carry the titles, so the core one is not shown beside them.
-    expect(seen?.profile).toMatchObject({
-      title: null,
-      employments: [
-        { ...jobs[0], unitLabel: 'Skolan' },
-        { unitId: 'office', title: 'Registrator' },
-        { unitId: 'office', employmentPercentage: 0 },
-      ],
-    });
+    expect(seen?.profile?.title).toBeNull();
+    expect(seen?.profile?.employments).toEqual([
+      { ...jobs[0], unitLabel: 'Skolan' },
+      { unitId: 'office', title: 'Registrator' },
+      { unitId: 'office', employmentPercentage: 0 },
+    ]);
   });
 });
 describe('a deactivation is never refused for what stands beside it (D113)', () => {
@@ -894,10 +1025,13 @@ describe('an add or replace without a value on a group (Q1)', () => {
         missing.push([{ op, path: attribute }, `Operation '${op}' on '${attribute}' requires a value.`]);
       missing.push([{ op }, `Operation '${op}' without a path requires a value.`]);
       // The extension's object that leaves `parent` out has no value for it, by the extension's path or path-less.
-      missing.push([{ op, path: UNIT, value: {} }, `Operation '${op}' on '${UNIT}' requires a value for 'parent'.`]);
+      missing.push([
+        { op, path: UNIT, value: {} },
+        `Operation '${op}' on '${UNIT}' requires a value for 'parent' or 'identifiers'.`,
+      ]);
       missing.push([
         { op, value: { [UNIT]: { other: 'x' } } },
-        `Operation '${op}' on '${UNIT}' requires a value for 'parent'.`,
+        `Operation '${op}' on '${UNIT}' requires a value for 'parent' or 'identifiers'.`,
       ]);
     }
     for (const [operation, detail] of missing) {

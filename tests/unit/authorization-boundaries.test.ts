@@ -15,6 +15,7 @@ import { connectorAuthority } from '../../apps/server/src/connectors/authority';
 import { bodyDigest, verifyAssertion } from '../../connectors/hello/verification.mjs';
 import { sessionEntryPoints } from '../../apps/server/src/session-entry-points';
 
+// A manager as the transport hands one to the authority: the published actor, with the units they lead (D149).
 const actor: Actor & { authorizationVersion: string } = {
   authorizationVersion: 'v1',
   id: 'person',
@@ -22,6 +23,15 @@ const actor: Actor & { authorizationVersion: string } = {
   role: 'manager',
   unitId: 'unit',
   unitLabel: 'Unit',
+  leads: [{ unitId: 'unit', unitLabel: 'Unit' }],
+};
+/**
+ * The actor of a callback grant: the person, never the units they lead or their assignments. Clew answers a callback
+ * from the person's current record, and what is signed twice is what makes a header too large (issue 64).
+ */
+const granted = (person: Actor) => {
+  const { leads: _leads, assignments: _assignments, ...rest } = actorOf(person);
+  return rest;
 };
 /** A request as Clew binds its assertion to it (D117): its route and body, signed and as the verifier reads them. */
 const bound = { path: '/clew/scan', body: '{}' };
@@ -62,7 +72,9 @@ describe('authorization and invocation boundaries', () => {
     const keys = await generateKeyPair('RS256', { extractable: true });
     const next = await connectorAuthority(await exportPKCS8(keys.privateKey), 'rotated', old.jwks.keys);
     const previousRequest = await old.assert('hello', actor, ['source.count']);
-    expect(await next.verify(decodeJwt(previousRequest).callback as string)).toMatchObject({ actor: actorOf(actor) });
+    const grant = await next.verify(decodeJwt(previousRequest).callback as string);
+    expect(grant.actor).toEqual(granted(actor));
+    expect(grant.actor).not.toHaveProperty('leads');
     const assertion = await next.assert('hello', actor, [], [], bound);
     expect(verifyAssertion(assertion, next.jwks, 'hello', Date.now(), received)).toEqual(actorOf(actor));
     expect(verifyAssertion(assertion, old.jwks, 'hello', Date.now(), received)).toBeNull();
@@ -321,10 +333,10 @@ describe('authorization and invocation boundaries', () => {
     const assertion = await authority.assert('hello', named, ['source.count'], [], bound);
     expect(decodeJwt(assertion).actor).toEqual(actorOf(named));
     expect(verifyAssertion(assertion, authority.jwks, 'hello', Date.now(), received)).toEqual(actorOf(named));
-    expect((await authority.verify(decodeJwt(assertion).callback as string)).actor).toEqual(actorOf(named));
+    expect((await authority.verify(decodeJwt(assertion).callback as string)).actor).toEqual(granted(named));
     const plain = await authority.assert('hello', actor, ['source.count']);
     expect(decodeJwt(plain).actor).not.toHaveProperty('userName');
-    expect((await authority.verify(decodeJwt(plain).callback as string)).actor).toEqual(actorOf(actor));
+    expect((await authority.verify(decodeJwt(plain).callback as string)).actor).toEqual(granted(actor));
     // An empty user name is no user name: neither cut into the actor nor signed.
     expect(actorOf({ ...actor, userName: '' })).not.toHaveProperty('userName');
     expect(decodeJwt(await authority.assert('hello', { ...actor, userName: '' })).actor).toEqual(actorOf(actor));

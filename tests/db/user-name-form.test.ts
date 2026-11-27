@@ -48,6 +48,7 @@ afterAll(async () => {
     await db.delete(schema.identityBindings).where(inArray(schema.identityBindings.personId, people));
     await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, people));
     await db.delete(schema.assignments).where(inArray(schema.assignments.personId, people));
+    await db.delete(schema.unitLeads).where(inArray(schema.unitLeads.personId, people));
     await db.delete(schema.audit).where(inArray(schema.audit.subject, actors));
     await db.delete(schema.authenticationAudit).where(inArray(schema.authenticationAudit.actor, actors));
     await db.delete(schema.people).where(inArray(schema.people.id, people));

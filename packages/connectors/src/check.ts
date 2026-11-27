@@ -18,6 +18,7 @@ import {
   type SourceErrorCode,
   Registry,
   UNKNOWN,
+  actorOf,
   namedInputs,
   openGovernance,
   type Actor,
@@ -78,6 +79,10 @@ export const UNKNOWN_KEY = 'clew-check-unknown-key';
 /** A read that needs input is not called by the check: its refusal of `{}` is the right answer, not a fault. This is the rule without a validator library. */
 const listsNothingRequired = (schema: object) =>
   !((schema as { required?: unknown }).required as unknown[] | undefined)?.length;
+/**
+ * The check's people as the published actor says them (D149): a manager carries the units they lead in `leads`, which
+ * is what a source reads to know them, and an employee carries none. The manager leads the unit they are employed on.
+ */
 export const CHECK_MANAGER: Actor = {
   id: 'check-manager',
   name: 'Kontroll Chef',
@@ -85,6 +90,7 @@ export const CHECK_MANAGER: Actor = {
   unitLabel: 'Kontrollenheten',
   role: 'manager',
   userName: 'check-manager',
+  leads: [{ unitId: 'unit-check', unitLabel: 'Kontrollenheten' }],
 };
 export const CHECK_EMPLOYEE: Actor = {
   id: 'check-employee',
@@ -104,6 +110,21 @@ export const CHECK_ASSIGNED: Actor = {
   assignments: [
     { unitId: 'unit-check', unitLabel: 'Kontrollenheten', role: 'manager' },
     { unitId: 'unit-check-second', unitLabel: 'Andra kontrollenheten', role: 'employee' },
+  ],
+};
+/**
+ * The check's manager as someone employed on one unit who leads another (D149): `unitId` is the check's unit, where
+ * they belong, and `leads` a unit no installation has either. `role` says only that the person is a manager and
+ * `unitId` where they are employed, so a source that pairs the two answers this person for a unit that is somebody
+ * else's to lead. It is sent to every connector with a scan: `leads` reaches them all, and the assignments only one
+ * whose manifest takes them.
+ */
+export const CHECK_LEADS_ELSEWHERE: Actor = {
+  ...CHECK_MANAGER,
+  leads: [{ unitId: 'unit-check-led', unitLabel: 'Ledda kontrollenheten' }],
+  assignments: [
+    { unitId: 'unit-check', unitLabel: 'Kontrollenheten', role: 'employee' },
+    { unitId: 'unit-check-led', unitLabel: 'Ledda kontrollenheten', role: 'manager' },
   ],
 };
 /**
@@ -787,7 +808,8 @@ export async function checkConnector(options: CheckOptions): Promise<
         signal: AbortSignal.timeout(10_000),
         headers: {
           'content-type': 'application/json',
-          authorization: 'Bearer ' + (await options.assert(CHECK_MANAGER, [], { path, body: text })),
+          // Signed as Clew signs a person: the published actor, with the units they lead.
+          authorization: 'Bearer ' + (await options.assert(actorOf(CHECK_MANAGER), [], { path, body: text })),
           ...(options.key ? { 'x-clew-connector-key': options.key } : {}),
         },
         body: text,
@@ -817,10 +839,10 @@ export async function checkConnector(options: CheckOptions): Promise<
         signal: AbortSignal.timeout(10_000),
         headers: {
           'content-type': 'application/json',
-          authorization: 'Bearer ' + (await options.assertForeign(CHECK_MANAGER)),
+          authorization: 'Bearer ' + (await options.assertForeign(actorOf(CHECK_MANAGER))),
           ...(options.key ? { 'x-clew-connector-key': options.key } : {}),
         },
-        body: JSON.stringify({ actor: CHECK_MANAGER, input: {} }),
+        body: JSON.stringify({ actor: actorOf(CHECK_MANAGER), input: {} }),
       });
       // Only the status is read: the answer is left unread, whatever its size.
       await r.body?.cancel().catch(() => undefined);
@@ -850,11 +872,14 @@ export async function checkConnector(options: CheckOptions): Promise<
   }
   if (manifest.scan) {
     const counts: string[] = [];
+    // The topics each of the two got, for the check of a manager who leads another unit below.
+    const topics = new Map<Role, Set<string>>();
     let same = true;
     for (const actor of people) {
       try {
         const drafts = await registry.scan(actor),
           twice = await registry.scan(actor);
+        topics.set(actor.role, new Set(drafts.map(d => d.topic)));
         ok(
           `scan as ${actor.role}: ${drafts.length} drafts${drafts.length ? ' (' + drafts.map(d => d.topic).join(', ') + ')' : ''}`,
         );
@@ -926,6 +951,69 @@ export async function checkConnector(options: CheckOptions): Promise<
           (error as Error).message,
         );
       }
+    // D149: a manager who is employed on one unit and leads another, for every connector with a scan: what a person
+    // leads is the actor's `leads`, and `role` with `unitId` says nothing of it. A card that names a unit names one of
+    // the person's own, and none is a card the manager of the unit they are only employed on gets and an employee of
+    // it does not, about that unit: that is the manager's card, given for a unit the person does not lead. A source
+    // that names no unit on its cards passes, and no unit of an installation can show more here.
+    const elsewhere = asInProduction(CHECK_LEADS_ELSEWHERE),
+      own = new Set(CHECK_LEADS_ELSEWHERE.assignments!.map(a => a.unitId)),
+      led = new Set(CHECK_LEADS_ELSEWHERE.leads!.map(u => u.unitId)),
+      asManager = topics.get('manager'),
+      asEmployee = topics.get('employee');
+    try {
+      const drafts = await registry.scan(elsewhere),
+        units = (d: (typeof drafts)[number]) => (d.subjects ?? []).filter(s => s.entity === 'unit').map(s => s.key),
+        stray = drafts.filter(d => units(d).some(key => !own.has(key))),
+        // Only where both of the two were scanned: without them nothing says whose card a topic is.
+        taken =
+          asManager && asEmployee
+            ? drafts.filter(
+                d =>
+                  units(d).some(key => own.has(key) && !led.has(key)) &&
+                  asManager.has(d.topic) &&
+                  !asEmployee.has(d.topic),
+              )
+            : [];
+      if (stray.length || taken.length) {
+        if (stray.length)
+          fail(
+            `scan as a manager who leads another unit: ${stray.map(d => d.topic).join(', ')} names a unit the person does not hold`,
+          );
+        if (taken.length)
+          fail(
+            `scan as a manager who leads another unit: ${taken.map(d => d.topic).join(', ')} is the manager's card for the unit the person is only employed on; read the actor's leads, never role with unitId`,
+          );
+        item(
+          'fail',
+          'surfaces',
+          'Ärenden',
+          stray.length
+            ? 'Ett ärende för en chef som leder en annan enhet än den där personen är anställd pekar på en enhet som personen inte har.'
+            : 'En chef som är anställd på en enhet och leder en annan får chefens ärenden för enheten där personen bara är anställd. Vilka enheter en chef leder står i aktörens leads, inte i role och unitId.',
+        );
+      } else {
+        ok(
+          `scan as a manager who leads another unit: ${drafts.length} drafts, none for the unit the person is only employed on`,
+        );
+        item(
+          'ok',
+          'surfaces',
+          'Ärenden',
+          'En chef som är anställd på en enhet och leder en annan får inga chefsärenden för enheten där personen bara är anställd.',
+        );
+      }
+    } catch (error) {
+      fail(`scan as a manager who leads another unit: ${(error as Error).message}`);
+      item(
+        'fail',
+        'surfaces',
+        'Ärenden',
+        'Genomgången misslyckades för en chef som leder en annan enhet än den där personen är anställd.',
+        undefined,
+        (error as Error).message,
+      );
+    }
   }
   // The shared header (D88): asked as both roles; the answer must be in the protocol's shape, or the holder's `denied`
   // (its 403), which is how it lists nothing for a person and Clew then draws its own. Its words stay out of the report

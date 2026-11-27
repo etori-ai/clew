@@ -16,8 +16,10 @@ import type { Capability } from '../../packages/contracts/src/scim-group-key';
  * own who reports to the administration's (the managers below the managers); an area between a department and its
  * units; the units people work in, each with its manager; and a group under a unit. The depth differs between
  * branches, as it does in an organisation: two administrations have their units directly under them. A unit names the
- * unit above it and nothing else. There is a department nobody leads, so the line passes through it, a unit that is
- * led from the one above it, a unit with two managers, and one unit pushed the flat way. Nothing in Clew reads this
+ * unit above it and nothing else. There is a department nobody leads, a unit with two managers, whose people are
+ * divided between them, two units led by the manager of another unit, who is pushed as theirs too, and a project leader
+ * two people report to who leads no unit (`WORK_LED`). Who reports to
+ * whom is said on each employment (D147, `withManagers`) and never follows from the tree. Nothing in Clew reads this
  * file; the provisioner does, and `scripts/auth-setup.ts` for the personas' accounts.
  */
 /**
@@ -41,12 +43,31 @@ export interface Employment {
   /** Of full time, from 0 to 100. */
   employmentPercentage?: number;
 }
+/**
+ * An employment as the source has it: what Clew is sent, and the manager by the source's own id for them. The push
+ * sends the manager as the `id` Clew gave that person (`managerId`), which a source cannot know before it has asked.
+ */
+export interface DirectoryEmployment extends Employment {
+  /** The `externalId` of the person this employment reports to (D147). Absent: the source names nobody. */
+  manager?: string;
+}
 export type { Capability };
+/**
+ * D148: what another system knows a unit by, as the source has it: the source's own word for the kind of identifier and
+ * the value, such as the code an economy system books the unit's costs on. Declared here, as the phone number is, so a
+ * copy of this folder type-checks outside Clew.
+ */
+export interface DirectoryIdentifier {
+  type: string;
+  value: string;
+}
 export interface DirectoryUnit {
   id: string;
   label: string;
   /** The unit above this one; absent on a root. */
   parent?: string;
+  /** D148: what other systems know the unit by. Sent whole with the unit; several of one type are several entries. */
+  identifiers?: DirectoryIdentifier[];
 }
 /** A plain directory group, as a directory would hold it: no meaning in Clew by itself. */
 export interface DirectoryGroup {
@@ -68,7 +89,7 @@ export interface DirectoryPerson {
   familyName: string;
   email: string;
   phoneNumbers?: DirectoryPhone[];
-  employments?: Employment[];
+  employments?: DirectoryEmployment[];
   /** The unit the person works in. */
   department: string;
   /** Whether the person manages that unit. */
@@ -117,8 +138,9 @@ interface UnitPlan extends DirectoryUnit {
   /** How many of the unit's own people manage it: one unless said. */
   managers?: number;
   /**
-   * The unit whose manager manages this one too, so nobody in it is a manager: the flat way, where the manager is
-   * pushed into both units' manager groups. The tree's way is a `parent` and no manager, as the fritidshem has.
+   * The unit whose manager manages this one too, so nobody in it is a manager: the manager is pushed into both
+   * units' manager groups. A unit nobody is pushed as the manager of is led by nobody, whatever stands above it in
+   * the tree (D147).
    */
   managedBy?: string;
 }
@@ -153,14 +175,15 @@ const UNITS: UnitPlan[] = [
     size: 6,
     parent: 'unit-forskolor',
   },
-  // Led from the school above it: nobody here is a manager, and the school's rektor is not pushed as one here either.
+  // Led by the rektor of the school above it, who is pushed as its manager too: nobody here is a manager. A unit
+  // nobody is pushed as the manager of is led by nobody, whatever stands above it in the tree (D147).
   {
     id: 'unit-fritidshem',
     label: 'Skönsmons fritidshem',
     area: 'utbildning',
     size: 4,
     parent: 'unit-skola-nacksta',
-    managers: 0,
+    managedBy: 'unit-skola-nacksta',
   },
   { id: 'unit-omsorg', label: 'Hemtjänst Centrum', area: 'omsorg', size: 14, parent: 'unit-hemtjanst' },
   { id: 'unit-omsorg-norr', label: 'Hemtjänst Norr', area: 'omsorg', size: 12, parent: 'unit-hemtjanst' },
@@ -242,6 +265,15 @@ const SECOND_EMPLOYMENT: Partial<Record<string, Employment>> = {
   'unit-bibliotek': { unitId: 'unit-kommunikation', title: 'Webbredaktör' },
   'unit-skola-haga': { unitId: 'unit-skola-nacksta', title: 'Lärare' },
   'unit-omsorg': { unitId: 'unit-omsorg-norr', title: 'Samordnare' },
+};
+/**
+ * D149: somebody people report to who leads no unit. On Gata och park a project leader leads the work of the two who
+ * build, and their employments name the project leader: a manager to Clew, with those two in Personal, who answers for
+ * no unit. The unit is led by its own manager, whom the project leader reports to like everyone else on it. `by` and
+ * `reports` are places among the unit's generated people.
+ */
+const WORK_LED: Partial<Record<string, { by: number; reports: readonly number[] }>> = {
+  'unit-gata': { by: 4, reports: [2, 6] },
 };
 const areaGroup = (area: Area) => 'ad:forvaltning-' + area;
 const GROUPS: DirectoryGroup[] = [
@@ -640,7 +672,8 @@ function generated(): DirectoryPerson[] {
   for (const unit of UNITS) {
     const placed = handwritten.filter(p => p.department === unit.id),
       managers = unit.managedBy || placed.some(p => p.manager) ? 0 : (unit.managers ?? 1),
-      alsoManages = UNITS.filter(u => u.managedBy === unit.id).map(u => u.id);
+      alsoManages = UNITS.filter(u => u.managedBy === unit.id).map(u => u.id),
+      first = people.length;
     for (let n = 0; n < unit.size - placed.length; n++, k++) {
       const named = unit.id === 'unit-skola' ? SCHOOL[n] : undefined,
         { givenName, familyName } = named ?? nameOf(k),
@@ -679,6 +712,16 @@ function generated(): DirectoryPerson[] {
               : [],
       });
     }
+    // Whoever leads the work of some of the unit's people is named on their employments, as a source says it.
+    const led = WORK_LED[unit.id],
+      leader = led && people[first + led.by];
+    if (led && leader)
+      for (const n of led.reports) {
+        const report = people[first + n],
+          job = report?.employments?.[0];
+        if (report && job)
+          report.employments = [{ ...job, manager: leader.externalId }, ...report.employments!.slice(1)];
+      }
   }
   return people;
 }
@@ -738,14 +781,69 @@ function newHire(today = new Date()): DirectoryPerson {
     capabilities: [],
   };
 }
+/**
+ * D147: who each employment reports to, as a source says it and never read from the tree by Clew. On a unit somebody
+ * leads, the people who do not lead it report to one of those who do, taken in turn, so a unit with two managers has
+ * its people divided between them. On a unit nobody leads they report to whoever leads the nearest unit above that
+ * anybody does, and so does a person who leads the unit themselves. Nobody reports to themselves, the municipality's
+ * own head reports to nobody, and an employment that already names its manager keeps it.
+ */
+function withManagers(people: DirectoryPerson[]): DirectoryPerson[] {
+  const leads = (p: DirectoryPerson, unitId: string) =>
+      p.active && ((p.manager && p.department === unitId) || !!p.alsoManages?.includes(unitId)),
+    leadersOf = (unitId: string, but: DirectoryPerson) => people.filter(p => p !== but && leads(p, unitId)),
+    above = (unitId: string) => {
+      const unit = UNITS.find(u => u.id === unitId);
+      return unit && parentOf(unit);
+    },
+    turn = new Map<string, number>();
+  const managerOf = (person: DirectoryPerson, unitId: string): string | undefined => {
+    const seen = new Set<string>();
+    for (
+      let at: string | undefined = leads(person, unitId) ? above(unitId) : unitId;
+      at && !seen.has(at);
+      at = above(at)
+    ) {
+      seen.add(at);
+      const found = leadersOf(at, person);
+      if (!found.length) continue;
+      // Only the unit's own people are divided between its managers: someone who reports past it takes the first.
+      const n = at === unitId ? (turn.get(at) ?? 0) : 0;
+      if (at === unitId) turn.set(at, n + 1);
+      return found[n % found.length]!.externalId;
+    }
+    return undefined;
+  };
+  return people.map(person => {
+    const employments = person.employments?.map(job => {
+      const manager = job.manager ?? managerOf(person, job.unitId);
+      return manager ? { ...job, manager } : job;
+    });
+    return employments ? { ...person, employments } : person;
+  });
+}
+/**
+ * D148: the code an economy system books a unit's costs on, as a source's master data carries it: eight digits, one
+ * for each unit people work on and none for a unit that is only a heading. Every tenth unit has two, as a few units of
+ * a real organisation do.
+ */
+const responsibilityCodes = (index: number): DirectoryIdentifier[] => {
+  const code = (n: number) => ({ type: 'ansvar', value: String(11000000 + index * 100 + n) });
+  return index % 10 === 9 ? [code(0), code(1)] : [code(0)];
+};
 export const developmentDirectory: Directory = {
   complete: true,
-  units: UNITS.map(unit => {
+  units: UNITS.map((unit, index) => {
     const parent = parentOf(unit);
-    return { id: unit.id, label: unit.label, ...(parent ? { parent } : {}) };
+    return {
+      id: unit.id,
+      label: unit.label,
+      ...(parent ? { parent } : {}),
+      ...(unit.size ? { identifiers: responsibilityCodes(index) } : {}),
+    };
   }),
   groups: GROUPS,
   positions: POSITIONS,
-  people: [...handwritten, ...generated(), newHire()].map(inArea).map(withPositions),
+  people: withManagers([...handwritten, ...generated(), newHire()].map(inArea).map(withPositions)),
 };
 export const fullName = (p: DirectoryPerson) => `${p.givenName} ${p.familyName}`;

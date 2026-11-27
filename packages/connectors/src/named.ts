@@ -27,6 +27,11 @@ export interface NamedInputs {
    * the capability by their user name. Never on a remote manifest: Clew's id is never sent to a connector.
    */
   ids: boolean;
+  /**
+   * The types of unit identifier a capability about a unit reads (`unit.identifiers`, D148), in the composed form the
+   * directory's are stored in; empty when it declares none, and always for a capability that names a person.
+   */
+  identifiers: readonly string[];
 }
 /** What the naming reads of a capability, whether a manifest's or an in-process one's. */
 export interface NamingCapability {
@@ -37,7 +42,7 @@ export interface NamingCapability {
   /** Either form (D97, D137); only the entity form names a person or a unit. */
   about?: { entity?: string; param?: string; record?: string };
   person?: { param?: string; admits?: readonly string[]; ids?: boolean };
-  unit?: { admits?: readonly string[] };
+  unit?: { admits?: readonly string[]; identifiers?: readonly string[] };
   effect?: string;
 }
 type Open = { capability?: unknown; params?: Record<string, unknown> };
@@ -81,6 +86,7 @@ export function namedInputs(connector: { id: string; capabilities: readonly Nami
           admits: (c.unit?.admits as UnitRelation[] | undefined) ?? STRICT_UNIT_RELATIONS,
           declared: !!c.unit?.admits,
           ids: false,
+          identifiers: [...new Set((c.unit?.identifiers ?? []).map(type => type.normalize('NFC')))],
         });
       continue;
     }
@@ -94,6 +100,7 @@ export function namedInputs(connector: { id: string; capabilities: readonly Nami
       admits: (c.person?.admits as PersonRelation[] | undefined) ?? STRICT_RELATIONS,
       declared: !!c.person?.admits,
       ids: !!c.person?.ids,
+      identifiers: [],
     });
   }
   // An effect read takes its execute's input (D112): it names what the execute names and admits no more than it does.
@@ -109,6 +116,8 @@ export function namedInputs(connector: { id: string; capabilities: readonly Nami
       admits: own?.declared ? both(own.admits, execute.admits) : execute.admits,
       declared: execute.declared || !!own?.declared,
       ids: !!own?.ids && execute.ids,
+      // What the effect read itself declared: it is told no more of a unit than it asked for.
+      identifiers: own?.identifiers ?? [],
     });
   }
   return out;

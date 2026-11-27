@@ -14,6 +14,7 @@ import {
 import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
 import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimStoreContract } from '../scim-store-contract';
+import { unitsHeld } from '../held-units';
 
 /** The SCIM server's use cases (RFC 7644, D68) on the memory adapter, and the pure patch and filter rules. */
 const BASE = 'https://clew.test/scim/v2';
@@ -658,7 +659,7 @@ describe('SCIM groups and derivation', () => {
     let before = derived().length;
     await members(skola, 'remove');
     expect(store.state.grants.get(a)).toBeUndefined();
-    expect(store.state.assignments.get(a) ?? []).toEqual([]);
+    expect(unitsHeld(store.state, a) ?? []).toEqual([]);
     await members(omsorg, 'add');
     expect(store.state.grants.get(a)).toEqual({
       unitId: 'omsorg',
@@ -675,7 +676,7 @@ describe('SCIM groups and derivation', () => {
     before = derived().length;
     await members(skola, 'add');
     expect(store.state.grants.get(a)).toMatchObject({ unitId: 'omsorg', capabilities: ['admin.users'] });
-    expect(store.state.assignments.get(a)).toHaveLength(2);
+    expect(unitsHeld(store.state, a)).toHaveLength(2);
     await members(omsorg, 'remove');
     expect(store.state.grants.get(a)).toMatchObject({ unitId: 'skola', capabilities: ['admin.users'] });
     expect(store.state.grants.get(a)?.assignments).toBeUndefined();
@@ -975,6 +976,7 @@ describe('SCIM groups and derivation', () => {
       ['old-2', 'position:ssk', 'Sjuksköterska'],
     ] as const)
       store.state.groups.set(id, {
+        unitIdentifiers: [],
         id,
         organisationId: 'sundsvall',
         externalId,
@@ -1004,6 +1006,7 @@ describe('SCIM groups and derivation', () => {
       ['old-ssk', 'position:ssk', 'Sjuksköterska', [c]],
     ] as const) {
       store.state.groups.set(id, {
+        unitIdentifiers: [],
         id,
         organisationId: 'sundsvall',
         externalId,
@@ -1070,6 +1073,7 @@ describe('SCIM groups and derivation', () => {
       a = (await scim.createUser(p, anna, BASE)).id;
     const T = '2026-11-01T00:00:00.000Z';
     inner.state.groups.set('old', {
+      unitIdentifiers: [],
       id: 'old',
       organisationId: 'sundsvall',
       externalId: 'position:usk',
@@ -1263,10 +1267,7 @@ describe('SCIM groups and derivation', () => {
           fn({
             ...tx,
             writeUnits: (organisationId, units) => (unitWrites++, tx.writeUnits(organisationId, units)),
-            replaceAssignments: (personId, assignments) => (
-              assignmentWrites++,
-              tx.replaceAssignments(personId, assignments)
-            ),
+            replaceUnits: (personId, units) => (assignmentWrites++, tx.replaceUnits(personId, units)),
           }),
         ),
     };
@@ -1410,7 +1411,7 @@ describe('SCIM patch and filter rules', () => {
     expect(() => applyUserPatch(fields, [{ op: 'replace', path: 'active', value: 'maybe' }])).toThrow('boolean');
   });
   test('group patches add, remove and replace members in every form the clients use', () => {
-    const g = { externalId: 'unit:a', label: 'A', parent: null, members: ['1', '2'] };
+    const g = { externalId: 'unit:a', label: 'A', parent: null, identifiers: [], members: ['1', '2'] };
     expect(applyGroupPatch(g, [{ op: 'add', path: 'members', value: [{ value: '3' }] }]).members).toEqual([
       '1',
       '2',
@@ -1424,6 +1425,7 @@ describe('SCIM patch and filter rules', () => {
       externalId: 'unit:a',
       label: 'B',
       parent: null,
+      identifiers: [],
       members: ['5'],
     });
     expect(applyGroupPatch(g, [{ op: 'remove', path: 'externalId' }]).externalId).toBeNull();

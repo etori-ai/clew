@@ -122,12 +122,17 @@ export function createConnector({
     return inflight.get(key);
   }
 
-  /** The Clew units the actor follows up (D117), their own first, each once, with their labels. */
+  /**
+   * The Clew units the actor answers for, each once, with their labels: the units they lead (`leads`, D149), first,
+   * then the units they follow up (`units`, D117). Never `unitId` because the role is manager: `role` says only that
+   * the person is a manager, which someone people report to is without leading a unit, and `unitId` is the unit they
+   * are employed on, which need not be one they lead.
+   */
   const followed = actor => {
     const seen = new Map();
-    if (actor.unitId) seen.set(actor.unitId, actor.unitLabel);
-    for (const u of Array.isArray(actor.units) ? actor.units : [])
-      if (u && typeof u.unitId === 'string' && u.unitId && !seen.has(u.unitId)) seen.set(u.unitId, u.unitLabel);
+    for (const list of [actor.leads, actor.units])
+      for (const u of Array.isArray(list) ? list : [])
+        if (u && typeof u.unitId === 'string' && u.unitId && !seen.has(u.unitId)) seen.set(u.unitId, u.unitLabel);
     return seen;
   };
   /** The source's units behind one Clew unit: in open mode the unit itself, else the map's names for it. */
@@ -136,8 +141,21 @@ export function createConnector({
     const units = unitMap[clewUnit];
     return Array.isArray(units) ? units : [];
   };
-  /** Every source unit the actor may see, their own unit's first. */
+  /** Every source unit the actor may see, those of the units they lead first. */
   const unitsOf = actor => [...new Set([...followed(actor).keys()].flatMap(sourceUnits))];
+  /**
+   * The source units behind the one Clew unit a figure is about (D54): the unit the person is employed on when they
+   * lead it, else the first they lead. It is the unit Clew says Läget of, so the figure and the heading over it are
+   * about the same unit. Someone who leads no unit has none, whatever units they follow up: those have their own
+   * pages and tables.
+   */
+  const figureUnits = actor => {
+    const led = (Array.isArray(actor.leads) ? actor.leads : [])
+      .filter(u => u && typeof u.unitId === 'string' && u.unitId)
+      .map(u => u.unitId);
+    const unit = led.includes(actor.unitId) ? actor.unitId : led[0];
+    return unit === undefined ? [] : sourceUnits(unit);
+  };
   /** What a unit is called in a row: in open mode the Clew unit's label as Clew sent it, else the source's name. */
   const nameOf = (actor, unit) => (open ? followed(actor).get(unit) || unit : unit);
   // A unit's ref: in open mode Clew's unit id itself, which is already in Clew's addresses; else a hash of its name in
@@ -295,7 +313,9 @@ export function createConnector({
       requireManager(actor);
       const unit = unitOfRef(actor, input.unit);
       const data = await read('read', unit ? [unit] : []);
-      const output = { unit: unit ? nameOf(actor, unit) : actor.unitLabel, rows: [], ...updated(data) };
+      // Without a unit to show, the name of the first unit the person answers for, else of the one they are employed on.
+      const unnamed = [...followed(actor).values()][0] || actor.unitLabel;
+      const output = { unit: unit ? nameOf(actor, unit) : unnamed, rows: [], ...updated(data) };
       if (!unit) return output;
       const periods = [...new Set(data.rows.filter(r => r.unit === unit).map(r => r.period))].sort().reverse();
       output.rows = periods.slice(0, 12).map(period => ({ ref: 'month:' + period, ...present(data, unit, period) }));
@@ -511,12 +531,15 @@ export function createConnector({
   };
 
   /**
-   * An area's figure (D54) for the first of the person's units with a value to show, opening the table of units.
-   * Without the rule for an area the number is the whole message, so its tone is none.
+   * An area's figure (D54) for one unit, the unit Clew says Läget of (`figureUnits`), opening the table of units: the
+   * first of that unit's own units in the source with a value to show, and no figure where it has none. Never another
+   * unit's value under this one's heading. Without the rule for an area the number is the whole message, so its tone
+   * is none.
    */
   async function figure(actor, area) {
     if (actor.role !== 'manager') return null;
-    const units = unitsOf(actor);
+    const units = figureUnits(actor);
+    if (!units.length) return null;
     if (area === 'sick-leave') {
       const data = await read('read', units);
       const latest = latestFor(data, units);

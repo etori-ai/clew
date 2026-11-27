@@ -1,9 +1,9 @@
 // Reads and checks the connector's configuration. Every error names its variable, so a wrong setting is found when the
 // connector starts and not when a person opens their errands. README.md has the full table.
 import { STATUS_KINDS } from './connector.mjs';
-import { FIXTURE_PROBLEM_MEMO, fixtureCaseTypes, fixtureCreate, fixtureStatusKinds } from './cases.mjs';
+import { COST_CODE, FIXTURE_PROBLEM_MEMO, fixtureCaseTypes, fixtureCreate, fixtureStatusKinds } from './cases.mjs';
 import { DEFAULT_AUDIENCE } from './manifest.mjs';
-import { fieldMap } from './pob.mjs';
+import { DEFAULT_AGREEMENT_PATH, agreementFieldMap, fieldMap } from './pob.mjs';
 import { readFileSync } from 'node:fs';
 
 function json(env, name) {
@@ -23,6 +23,22 @@ function address(env, name) {
   } catch {
     throw new Error(`${name} must be an address.`);
   }
+}
+/**
+ * Whether a pattern for a unit's code takes one shorter than the port's bound lets through (`COST_CODE`: four letters
+ * or digits at least). Tried against every code of one, two and three letters or digits, which is all there are, so
+ * the answer is exact for whatever form the pattern has.
+ */
+const CODE_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+function takesShortCode(pattern) {
+  for (const a of CODE_CHARACTERS) {
+    if (pattern.test(a)) return true;
+    for (const b of CODE_CHARACTERS) {
+      if (pattern.test(a + b)) return true;
+      for (const c of CODE_CHARACTERS) if (pattern.test(a + b + c)) return true;
+    }
+  }
+  return false;
 }
 
 export function readConfig(env = process.env) {
@@ -102,12 +118,76 @@ export function readConfig(env = process.env) {
   const caseLink = env.POB_CASE_LINK || undefined;
   if (caseLink && !/\{(id|number)\}/.test(caseLink)) throw new Error('POB_CASE_LINK must have {id} or {number} in it.');
 
+  // The cost read (D148) is on when the installation says which of the directory's unit identifiers the service desk
+  // books a unit's costs on. The type is the directory's own word, so there is nothing to default to.
+  // An empty value is no value: a compose file passes every variable, set or not.
+  const costIdentifier = env.POB_COST_IDENTIFIER || undefined;
+  if (
+    costIdentifier !== undefined &&
+    (costIdentifier !== costIdentifier.trim() ||
+      /\p{Cc}/u.test(costIdentifier) ||
+      Array.from(costIdentifier).length > 64)
+  )
+    throw new Error(
+      'POB_COST_IDENTIFIER must be the type of unit identifier as the directory sends it: at most 64 characters, ' +
+        'with no space at either end.',
+    );
+  for (const name of ['POB_COST_CODE_PATTERN', 'POB_COST_AMOUNT_LABEL', 'POB_AGREEMENT_FIELDS', 'POB_AGREEMENT_PATH'])
+    if (env[name] && !costIdentifier) throw new Error(`${name} is set without POB_COST_IDENTIFIER.`);
+  let codePattern;
+  if (env.POB_COST_CODE_PATTERN) {
+    codePattern = env.POB_COST_CODE_PATTERN;
+    // A code stands at the start of an account in a filter sent to POB, so the pattern is held to whole codes of
+    // letters and digits: anchored at both ends, and nothing in it that could let another character through.
+    if (!/^\^[A-Za-z0-9[\]{},-]{1,60}\$$/.test(codePattern))
+      throw new Error(
+        'POB_COST_CODE_PATTERN must be a pattern for a whole code of letters and digits, such as ^[0-9]{8}$.',
+      );
+    let own;
+    try {
+      own = new RegExp(codePattern);
+    } catch {
+      throw new Error('POB_COST_CODE_PATTERN is not a pattern.');
+    }
+    // The pattern narrows what a code is and never widens it: a code is at least four letters or digits whatever it
+    // says, since a shorter one is a prefix of other units' accounts. One that takes a shorter code is a mistake the
+    // installation is told at start, not a read that silently answers nothing. Every code of one to three characters
+    // is tried, which is all there are.
+    if (takesShortCode(own))
+      throw new Error(
+        `POB_COST_CODE_PATTERN takes a code shorter than four characters, which would read as other units' accounts. ` +
+          `A code is ${COST_CODE.source} and the pattern can only narrow that, such as ^[0-9]{8}$.`,
+      );
+  }
+  const agreementFields =
+    costIdentifier && api ? agreementFieldMap(json(env, 'POB_AGREEMENT_FIELDS') ?? {}) : undefined;
+  if (env.POB_AGREEMENT_FIELDS && !api) throw new Error('POB_AGREEMENT_FIELDS is read with the api adapter only.');
+  if (env.POB_AGREEMENT_PATH && !api) throw new Error('POB_AGREEMENT_PATH is read with the api adapter only.');
+  if (env.POB_AGREEMENT_PATH && !/^\/[A-Za-z0-9_/-]{1,80}$/.test(env.POB_AGREEMENT_PATH))
+    throw new Error('POB_AGREEMENT_PATH must be a path that begins with a slash, such as /sla.');
+  // A sum is shown only where there is an amount to add up: the made-up POB has one, a real one when its field is named.
+  const priced = costIdentifier && (!api || !!agreementFields.amount);
+  const amountLabel = priced ? (env.POB_COST_AMOUNT_LABEL || 'Avtalskostnad').trim() : undefined;
+  if (env.POB_COST_AMOUNT_LABEL && !priced)
+    throw new Error('POB_COST_AMOUNT_LABEL is set, but POB_AGREEMENT_FIELDS names no amount to sum.');
+  if (amountLabel !== undefined && (!amountLabel || amountLabel.length > 40))
+    throw new Error('POB_COST_AMOUNT_LABEL must be a label of at most 40 characters.');
+
   const port = Number(env.PORT ?? 4055);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT is not a port.');
 
   return {
     adapter,
-    ...(api ? { pob: readPob(env, insecureHosts) } : {}),
+    ...(api
+      ? {
+          pob: {
+            ...readPob(env, insecureHosts),
+            ...(agreementFields
+              ? { agreementFields, agreementPath: env.POB_AGREEMENT_PATH || DEFAULT_AGREEMENT_PATH }
+              : {}),
+          },
+        }
+      : {}),
     port,
     secret: env.CLEW_CONNECTOR_SECRET,
     audience,
@@ -119,6 +199,15 @@ export function readConfig(env = process.env) {
     problemMemo: env.POB_PROBLEM_MEMO || FIXTURE_PROBLEM_MEMO,
     caseLink,
     writes,
+    ...(costIdentifier
+      ? {
+          costs: {
+            identifier: costIdentifier.normalize('NFC'),
+            ...(amountLabel ? { amountLabel } : {}),
+            ...(codePattern ? { codePattern } : {}),
+          },
+        }
+      : {}),
     create: { caseType: create.caseType, category: create.category, groupId: create.groupId },
     urgentNote: env.POB_URGENT_NOTE || undefined,
   };

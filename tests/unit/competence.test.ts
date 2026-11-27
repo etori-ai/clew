@@ -10,7 +10,6 @@ import {
   type CompetenceHoldingRow,
   type CompetenceMatrixCell,
   type CompetenceMatrixOutput,
-  type StaffOverview,
   type StaffPerson,
 } from '../../packages/contracts/src/index';
 import { menuEligible, viewProblem, type Actor } from '../../packages/connectors/src/index';
@@ -34,6 +33,7 @@ import {
   coverageOf,
   deciding,
   endOf,
+  ledOf,
   COVERAGE_MIN_GROUP,
   showable,
   organisationOutcome,
@@ -49,6 +49,7 @@ import type {
   HoldingRecord,
   RequirementRecord,
   ShareTargetRecord,
+  StaffReach,
   TypeRecord,
 } from '../../apps/server/src/modules/competence/model';
 import {
@@ -61,6 +62,7 @@ import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { Registry } from '../registry';
 import { DEVELOPMENT_CATALOGUE, DEVELOPMENT_REQUIREMENTS } from '../../scripts/competence-development';
+import { hold } from '../held-units';
 
 /**
  * The competence module's use cases (D108) on the memory adapter, with a clock, ids and a staff port the test owns:
@@ -118,7 +120,16 @@ const asBo = personaOf('bo', 'employee', 'Bo Berg');
 
 let now: Date;
 let n: number;
-let staff: Map<string, StaffOverview>;
+let staff: Map<string, StaffReach>;
+/**
+ * A fixture's list as these tests have always meant one: every unit on a manager's list is a unit they lead. A test
+ * that means a unit which only holds one of the manager's reports says which units they lead (`leads`), as D149 keeps
+ * the two apart.
+ */
+const leading = (reach: StaffReach): StaffReach => ({
+  ...reach,
+  leads: reach.leads ?? reach.units.map(({ unitId, unitLabel }) => ({ unitId, unitLabel })),
+});
 let store: MemoryCompetenceStore;
 let competence: CompetenceUsecases;
 beforeEach(() => {
@@ -149,7 +160,7 @@ beforeEach(() => {
   });
   competence = competenceUsecases({
     store,
-    staff: async persona => staff.get(persona.id) ?? { units: [] },
+    staff: async persona => leading(staff.get(persona.id) ?? { units: [] }),
     clock: () => now,
     ids: () => 'id-' + ++n,
   });
@@ -1838,6 +1849,46 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       expect(await competence.aboutUnits(asAnna, ['u1'])).toEqual([]);
     });
 
+    test('a unit that only holds one of the reader’s reports is not theirs to read: its figures are for whoever leads it (D149)', async () => {
+      directory();
+      const { hlr } = await catalogue();
+      // Dan is employed on Enhet 3, which Olle leads, and his employment names Karin: the unit is on her list for him
+      // alone. She leads Enhet 1 and Enhet 2.
+      staff.set('boss', {
+        units: [...staff.get('boss')!.units, { unitId: 'u3', unitLabel: 'Enhet 3', people: [dan] }],
+        leads: [
+          { unitId: 'u1', unitLabel: 'Enhet 1' },
+          { unitId: 'u2', unitLabel: 'Enhet 2' },
+        ],
+      });
+      await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
+      await competence.addShareTarget(admin, { typeId: hlr, positionCode: USK, unitId: 'u3', minShare: 50 });
+      // The unit's own figures count its people, who are not hers: refused by the model's read and absent from the
+      // read about units, whatever she asks for.
+      const r = registry();
+      await expect(competence.coverage(boss, 'u3')).rejects.toThrow('Enheten finns inte bland dem du är chef för.');
+      await expect(r.run(actor(boss), 'competence.coverage', { unit: 'u3' })).rejects.toThrow();
+      expect((await competence.aboutUnits(boss, ['u1', 'u3'])).map(u => u.unitId)).toEqual(['u1']);
+      // Nor is Enhet 3's target set against hers as one of the units she reads.
+      expect((await competence.coverage(boss, 'u1')).targets).toEqual([]);
+      // Dan himself is her report: she registers what he holds and reads where he stands.
+      await competence.registerHolding(boss, 'dan', { typeId: hlr, issuedOn: '2026-02-10' });
+      expect((await competence.matrix(boss)).rows.map(row => row.personId)).toContain('dan');
+      expect((await competence.aboutPeople(boss, ['dan.d'])).rows.map(row => row.key)).toEqual(['dan.d']);
+      // Olle leads the unit and is answered for it.
+      expect(await competence.coverage(other, 'u3')).toMatchObject({ unitId: 'u3', unitLabel: 'Enhet 3' });
+      expect((await competence.aboutUnits(other, ['u3'])).map(u => [u.unitId, u.targets.length])).toEqual([['u3', 1]]);
+      // A binding that does not say which units a reader leads is answered for none (fail closed).
+      const silent = competenceUsecases({
+        store,
+        staff: async persona => staff.get(persona.id) ?? { units: [] },
+        clock: () => now,
+        ids: () => 'id-' + ++n,
+      });
+      await expect(silent.coverage(other, 'u3')).rejects.toThrow('Enheten finns inte bland dem du är chef för.');
+      expect(await silent.aboutUnits(other, ['u3'])).toEqual([]);
+    });
+
     test('others on the branch enter only a share target, from five people; a one-person requirement only for the reader’s own report; an organisation’s target once', async () => {
       directory();
       const { hot, hlr } = await catalogue();
@@ -2560,15 +2611,28 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
   });
 });
 
-describe("a manager's reports are D99's, not everyone Personal lists (D117 `managed`)", () => {
-  type Placement = { unitId: string; role: 'manager' | 'employee' };
+describe("a manager's reports are those whose employments name them, never someone who also manages them (D147, D117 `managed`)", () => {
+  /**
+   * Where the directory has a person: on a unit with a role there, and the managers their employment on it names, one
+   * employment for each (D147).
+   */
+  type Placement = { unitId: string; role: 'manager' | 'employee'; managers?: string[] };
+  const employmentsOf = (placements: Placement[]) =>
+    placements.flatMap(p => (p.managers ?? []).map(managerId => ({ unitId: p.unitId, managerId })));
+  const assignmentsOf = (placements: Placement[]) => placements.map(({ unitId, role }) => ({ unitId, role }));
   /**
    * The directory as the provisioner pushes it and the production binding reads it (`composition/competence.ts`): the
    * people module's staff use cases on their memory store, and the units each with the people `reportsByUnit` keeps.
-   * Bergsåkers skola, under Förvaltningen, is led by Hillevi and by Cohead; the Director leads Förvaltningen and is
-   * placed on the school as an employee; Anna and Erik work there.
+   * Bergsåkers skola, under Förvaltningen, is led by Hillevi and by Cohead, and the employments of both name the
+   * Director, who leads Förvaltningen. Anna and Erik work at the school and name Hillevi. So does an employment the
+   * Director has there: a chain of managers that comes round, which the directory may send.
    */
-  function world() {
+  function world(
+    more?: (directory: {
+      unit: (id: string, label: string, parent: string | null) => void;
+      person: (id: string, name: string, placements: Placement[]) => void;
+    }) => void,
+  ) {
     const T = '2026-11-10T08:00:00.000Z';
     const people = memoryProvisionStore(),
       s = people.state;
@@ -2576,6 +2640,7 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
     const unit = (id: string, label: string, parent: string | null) => {
       s.units.set(id, { organisationId: ORG, label });
       s.groups.set('g-' + id, {
+        unitIdentifiers: [],
         id: 'g-' + id,
         organisationId: ORG,
         externalId: 'unit:' + id,
@@ -2595,13 +2660,13 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
         name,
         email: null,
         phoneNumbers: [],
-        employments: [],
+        employments: employmentsOf(placements),
         title: null,
         enabled: true,
         createdAt: T,
         updatedAt: T,
       });
-      s.assignments.set(id, placements);
+      hold(s, id, assignmentsOf(placements));
       const first = placements[0]!;
       s.grants.set(id, {
         unitId: first.unitId,
@@ -2616,25 +2681,31 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
     unit('skola', 'Bergsåkers skola', 'top');
     person('director', 'Dir Direktör', [
       { unitId: 'top', role: 'manager' },
-      { unitId: 'skola', role: 'employee' },
+      { unitId: 'skola', role: 'employee', managers: ['hillevi'] },
     ]);
-    person('hillevi', 'Hillevi Holm', [{ unitId: 'skola', role: 'manager' }]);
-    person('cohead', 'Cohead Chef', [{ unitId: 'skola', role: 'manager' }]);
-    person('anna', 'Anna Ek', [{ unitId: 'skola', role: 'employee' }]);
-    person('erik', 'Erik Ström', [{ unitId: 'skola', role: 'employee' }]);
+    person('hillevi', 'Hillevi Holm', [{ unitId: 'skola', role: 'manager', managers: ['director'] }]);
+    person('cohead', 'Cohead Chef', [{ unitId: 'skola', role: 'manager', managers: ['director'] }]);
+    person('anna', 'Anna Ek', [{ unitId: 'skola', role: 'employee', managers: ['hillevi'] }]);
+    person('erik', 'Erik Ström', [{ unitId: 'skola', role: 'employee', managers: ['hillevi'] }]);
+    more?.({ unit, person });
     const staff = staffUsecases({ store: people });
     const competence = competenceUsecases({
       store: directoryStore,
-      staff: async persona => ({ units: reportsByUnit(await staff.reach(persona)) }),
+      // As composition binds it: the reports by unit, and apart from them the units the reader leads (D149).
+      staff: async persona => {
+        const reach = await staff.reach(persona);
+        return { units: reportsByUnit(reach), leads: ledOf(reach.units) };
+      },
       clock: () => now,
       ids: () => 'r-' + ++n,
     });
     return { staff, store: directoryStore, competence, hillevi: personaOf('hillevi', 'manager', 'Hillevi Holm') };
   }
 
-  test('a card goes to exactly those who may decide: two who lead a unit and the unit above it are not each other’s managers', async () => {
-    // Ada and Bea lead both Förvaltningen and the school under it; Eva works at the school. By the line upwards each of
-    // the two is above the other, and by the reports downwards neither is the other's report.
+  test('a card goes to exactly those who may decide: two whose employments name each other are not each other’s managers', async () => {
+    // Ada and Bea lead both Förvaltningen and the school under it, and the employment each has on the school names the
+    // other; Eva works at the school with an employment for each of them. Upwards each of the two is above the other,
+    // and downwards neither is the other's report: who reads the line stops where it comes round (D147).
     const T = '2026-11-10T08:00:00.000Z';
     const people = memoryProvisionStore(),
       s = people.state;
@@ -2645,6 +2716,7 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
     ] as const) {
       s.units.set(id, { organisationId: ORG, label });
       s.groups.set('g-' + id, {
+        unitIdentifiers: [],
         id: 'g-' + id,
         organisationId: ORG,
         externalId: 'unit:' + id,
@@ -2655,7 +2727,7 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
       });
       directoryStore.addUnit({ id, organisationId: ORG, label, parentId: parent });
     }
-    const placed = (id: string, name: string, placements: Array<{ unitId: string; role: 'manager' | 'employee' }>) => {
+    const placed = (id: string, name: string, placements: Placement[]) => {
       s.users.set(id, {
         id,
         organisationId: ORG,
@@ -2664,13 +2736,13 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
         name,
         email: null,
         phoneNumbers: [],
-        employments: [],
+        employments: employmentsOf(placements),
         title: null,
         enabled: true,
         createdAt: T,
         updatedAt: T,
       });
-      s.assignments.set(id, placements);
+      hold(s, id, assignmentsOf(placements));
       s.grants.set(id, {
         unitId: placements[0]!.unitId,
         unitLabel: s.units.get(placements[0]!.unitId)!.label,
@@ -2681,19 +2753,22 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
       for (const p of placements) directoryStore.assign(id, p.unitId);
       return personaOf(id, placements[0]!.role, name);
     };
-    const both = [
-      { unitId: 'top', role: 'manager' as const },
-      { unitId: 'skola', role: 'manager' as const },
+    const both = (manager: string): Placement[] => [
+      { unitId: 'top', role: 'manager' },
+      { unitId: 'skola', role: 'manager', managers: [manager] },
     ];
-    const ada = placed('ada', 'Ada Ledare', both),
-      bea = placed('bea', 'Bea Ledare', both),
-      eva = placed('eva', 'Eva Ek', [{ unitId: 'skola', role: 'employee' }]);
+    const ada = placed('ada', 'Ada Ledare', both('bea')),
+      bea = placed('bea', 'Bea Ledare', both('ada')),
+      eva = placed('eva', 'Eva Ek', [{ unitId: 'skola', role: 'employee', managers: ['ada', 'bea'] }]);
     const personas = new Map([ada, bea, eva].map(p => [p.id, p]));
     const staffOf = staffUsecases({ store: people });
     const c = competenceUsecases({
       store: directoryStore,
       // As composition binds them: the reports downwards, the line upwards, and a person from their grant.
-      staff: async persona => ({ units: reportsByUnit(await staffOf.reach(persona)) }),
+      staff: async persona => {
+        const reach = await staffOf.reach(persona);
+        return { units: reportsByUnit(reach), leads: ledOf(reach.units) };
+      },
       above: async persona => (await staffOf.reach(persona)).above.filter(id => id !== persona.id),
       personaOf: async id => personas.get(id),
       clock: () => now,
@@ -2704,8 +2779,8 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
       area: 'Säkerhet',
       kind: 'certificate',
     });
-    // The line says Ada is above Bea; Ada's reports do not hold Bea. Bea's registration would go to someone who is
-    // refused its decision, so nobody gets it, and the form says so.
+    // Bea's employment names Ada, so Ada is above Bea; Ada's reports do not hold Bea, whom Ada's own employment names.
+    // Bea's registration would go to someone who is refused its decision, so nobody gets it, and the form says so.
     expect((await staffOf.reach(bea)).above).toContain('ada');
     expect((await c.ownRegistrations(bea)).approver).toBe(false);
     await expect(c.registerOwn(bea, { typeId, issuedOn: '2026-01-10' })).rejects.toThrow(
@@ -2721,11 +2796,42 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
     expect(directoryStore.state.holdings.get(id)).toMatchObject({ state: 'valid', decidedBy: 'bea' });
   });
 
-  test('a co-manager and the reader’s own manager, though placed on the unit, are in no read and take no write', async () => {
+  test('somebody employed on another unit who reports to the reader puts that unit on her list and not among the units she reads figures for (D149)', async () => {
+    // Kansliet is led by Karl. Gun is employed there and her employment names Hillevi, who leads the school.
+    const w = world(({ unit, person }) => {
+      unit('kansli', 'Kansliet', 'top');
+      person('karl', 'Karl Kansli', [{ unitId: 'kansli', role: 'manager', managers: ['director'] }]);
+      person('gun', 'Gun Ek', [{ unitId: 'kansli', role: 'employee', managers: ['hillevi'] }]);
+      person('ove', 'Ove Ström', [{ unitId: 'kansli', role: 'employee', managers: ['karl'] }]);
+    });
+    const karl = personaOf('karl', 'manager', 'Karl Kansli');
+    // Personal lists Gun under the unit she is employed on, which is how the unit comes onto Hillevi's list.
+    expect((await w.staff.overview(w.hillevi)).units.map(u => [u.unitId, u.people.map(p => p.id).sort()])).toEqual([
+      ['skola', ['anna', 'erik']],
+      ['kansli', ['gun']],
+    ]);
+    const hlr = await w.competence.addType(admin, { name: 'HLR', area: 'Akut', kind: 'course' });
+    await w.competence.addRequirement(admin, { typeId: hlr, unitId: 'kansli' });
+    // Kansliet's coverage counts Ove too, who is Karl's: it is Karl's to read and never Hillevi's.
+    await expect(w.competence.coverage(w.hillevi, 'kansli')).rejects.toThrow(
+      'Enheten finns inte bland dem du är chef för.',
+    );
+    expect(await w.competence.aboutUnits(w.hillevi, ['kansli', 'skola'])).toEqual([]);
+    expect((await w.competence.coverage(karl, 'kansli')).requirements.map(r => [r.under, r.meeting])).toEqual([[1, 0]]);
+    // Gun is Hillevi's report: she is in her matrix, and what is required of her counts among Hillevi's own.
+    expect((await w.competence.matrix(w.hillevi)).rows.map(r => r.name)).toEqual(['Anna Ek', 'Erik Ström', 'Gun Ek']);
+    expect((await w.competence.summary(w.hillevi))?.reports).toBe(3);
+    // The school is hers to read, with nothing required on it.
+    expect((await w.competence.coverage(w.hillevi, 'skola')).requirements).toEqual([]);
+  });
+
+  test('a co-manager, whose employment names another, and the reader’s own manager, though an employment of theirs names the reader, are in no read and take no write', async () => {
     const w = world();
-    // Personal lists them: the fixture is shaped like the real directory.
+    // Personal lists whoever's employment names Hillevi, without anyone she reports to herself: the Director's
+    // employment on the school names her and hers names him, a chain that comes round, so he is not on her list. The
+    // co-manager is not on it either: placed on the school and leading it, she reports to the Director.
     const listed = (await w.staff.overview(w.hillevi)).units.flatMap(u => u.people.map(p => p.id));
-    expect(listed).toEqual(expect.arrayContaining(['cohead', 'director', 'anna', 'erik']));
+    expect(listed.sort()).toEqual(['anna', 'erik']);
 
     const hlr = await w.competence.addType(admin, { name: 'HLR', area: 'Akut', kind: 'course' });
     // Required of everyone placed on the school, the two managers included.
@@ -2793,7 +2899,7 @@ describe('a person registers their own certificate and the manager they report t
     store.addPerson({ id: 'third', organisationId: ORG, name: 'Tredje Chef', userName: 'third' });
     own = competenceUsecases({
       store,
-      staff: async persona => staff.get(persona.id) ?? { units: [] },
+      staff: async persona => leading(staff.get(persona.id) ?? { units: [] }),
       above: async persona => above.get(persona.id) ?? [],
       personaOf: async id => (store.state.persons.get(id)?.enabled === false ? undefined : granted.get(id)),
       clock: () => now,

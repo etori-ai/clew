@@ -1,6 +1,6 @@
 # D94 · A manager has a Personal section that lists the people on the units they manage
 
-**Status:** accepted, built 2026-11-09 (the destination, the read, the page; notes and the utvecklingssamtal are not decided here); item 2 amended by D99 (2026-11-10): Personal lists a manager's reports, which adds the managers directly below in the organisation tree · **Date:** 2026-11-09 · **Area:** product, identity
+**Status:** accepted, built 2026-11-09 (the destination, the read, the page; notes and the utvecklingssamtal are not decided here); item 2 amended by D99 (2026-11-10): Personal lists a manager's reports, which adds the managers directly below in the organisation tree; item 2 amended again by [D147](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) (2026-11-25, provisional): Personal lists the people whose employments name the reader as manager, under the unit of that employment · **Date:** 2026-11-09 · **Area:** product, identity
 
 **Decision.** A person who manages a unit has a destination of their own in the rail, **Personal**, under Verktyg,
 at `/staff`. It lists the people on the units they manage and nothing else yet.

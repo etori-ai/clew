@@ -65,11 +65,18 @@ describe('authorizationVersion', () => {
       { relations: ['registrar'] },
     );
   });
-  test('every assignment is authority when there are two or more: one leaves the value as it was, and a unit or a role on one changes it, in any order and whatever the labels (D135)', () => {
+  test('every assignment is authority: one that says what the unit and role already say leaves the value as it was, and a unit or a role on one changes it, in any order and whatever the labels (D135, D149)', () => {
     const before = version();
     const one = [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' as const }];
     expect(authorizationVersion({ ...access, grant: { ...access.grant, assignments: [] } })).toBe(before);
     expect(authorizationVersion({ ...access, grant: { ...access.grant, assignments: one } })).toBe(before);
+    // One unit that says something else is authority: a manager because people report to them, who leads no unit.
+    const reportedTo = [{ ...one[0]!, role: 'employee' as const }];
+    expect(authorizationVersion({ ...access, grant: { ...access.grant, assignments: reportedTo } })).not.toBe(before);
+    expect(authorityOf({ ...access, grant: { ...access.grant, assignments: reportedTo } })).toMatchObject({
+      role: 'manager',
+      assignments: [{ unitId: 'unit-skola', role: 'employee' }],
+    });
     const two = [...one, { unitId: 'unit-haga', unitLabel: 'Hagaskolan', role: 'employee' as const }];
     const both = authorizationVersion({ ...access, grant: { ...access.grant, assignments: two } });
     expect(both).not.toBe(before);

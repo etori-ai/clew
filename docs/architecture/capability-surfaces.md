@@ -63,7 +63,7 @@ A `propose` result is preparation, not permission to perform its suggested write
 |---|---|---|
 | `competence.holdings` | Offered | The reader's own holdings, or a report's with the report's user name as `person`. |
 | `competence.attention` | Offered (managers) | The requirements not met among the reader's reports (the product owner's definition of 2026-11-13, `competenceRequirementUnmet`): a type required of a report that is missing, has run out or soon runs out. A certificate nothing requires is not in it; its description tells the model to read the report's holdings (`competence.holdings`) for that. At most 500 rows, with `omitted` saying how many more there are. Each row carries the report's user name for a follow-up read. |
-| `competence.coverage` | Offered (managers) | Counts over the reader's reports on a unit they manage; names nobody. |
+| `competence.coverage` | Offered (managers) | Counts for a unit the reader leads and its branch; names nobody. A unit the reader does not lead is refused, also one where somebody who reports to them is employed ([D149](../decisions/D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md)). |
 | `competence.person`, `competence.unit` | Closed | Reads about an entity, for Personal and a unit's page; the loader holds every such read from the model (D97 item 7). |
 | `competence.approval` | Closed | Exists only for the page an approval's card opens. |
 | `calendar.today`, `.week`, `.day`, `.rooms`, `.freeTimes` | Offered | The reader's own calendar; `freeTimes` is also what a draft's meeting answer is planned from. |

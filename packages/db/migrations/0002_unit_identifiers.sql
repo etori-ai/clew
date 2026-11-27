@@ -1,0 +1,1 @@
+ALTER TABLE "auth_group" ADD COLUMN "unit_identifiers" jsonb DEFAULT '[]'::jsonb NOT NULL;

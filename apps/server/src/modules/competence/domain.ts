@@ -65,6 +65,15 @@ export const TYPE_AREA_MAX = 80;
 
 /** What another system knows a person by: the provisioned user name, or Clew's id when there is none. */
 export const personKey = (person: Pick<PersonRef, 'id' | 'userName'>) => person.userName ?? person.id;
+/**
+ * The units a reader leads, of the units the directory lists them on with their role there (D149): what the `Staff`
+ * port's `leads` is bound to. A unit they only belong to is not among them, and neither is one that only holds somebody
+ * who reports to them, which is on no such list at all.
+ */
+export const ledOf = (
+  units: ReadonlyArray<{ unitId: string; unitLabel: string; role: 'manager' | 'employee' }>,
+): Array<{ unitId: string; unitLabel: string }> =>
+  units.filter(unit => unit.role === 'manager').map(({ unitId, unitLabel }) => ({ unitId, unitLabel }));
 /** `holding:competence:<holding id>`. */
 export const holdingRef = (holdingId: string) => `holding:${COMPETENCE_CONNECTOR}:${holdingId}`;
 /**

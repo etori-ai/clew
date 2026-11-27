@@ -54,7 +54,7 @@ export function userCapabilities(reads: UserReads): Connector {
         }),
         scope: () => true,
         run: async actor => {
-          const rows = await reads.directory(actor.unitId);
+          const rows = await reads.directory(actor.unitId, actor.id);
           return { rows };
         },
       },

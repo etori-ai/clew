@@ -10,7 +10,12 @@ import {
   ScanRequestSchema,
 } from '../../packages/connectors/src/protocol';
 import { fetchManifest, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
-import { asInProduction, checkConnector } from '../../packages/connectors/src/check';
+import {
+  asInProduction,
+  checkConnector,
+  CHECK_LEADS_ELSEWHERE,
+  CHECK_MANAGER,
+} from '../../packages/connectors/src/check';
 import { createConnector as createHello } from '../../connectors/hello/connector.mjs';
 import { manifest as financeManifest } from '../../connectors/finance/connector.mjs';
 import { assertionFor, testJwks } from '../connector-authority';
@@ -91,6 +96,8 @@ describe('what leaves the process is the published actor (A1)', () => {
       unitLabel: 'Skönsmons skola',
       role: 'manager',
       userName: 'hillevi',
+      // D149: the units a manager leads are said with the actor, here the one unit she is employed on.
+      leads: [{ unitId: 'unit-skola', unitLabel: 'Skönsmons skola' }],
       groups: ['S-1-5-21-annan', GROUP],
     });
     expect(checkContract(ActorSchema, actorOf(member))).toBe(true);
@@ -169,14 +176,27 @@ describe('what leaves the process is the published actor (A1)', () => {
     expect(report.findings.filter(f => f.level === 'fail')).toEqual([]);
     expect(posted.length).toBeGreaterThan(0);
     expect(posted.every(p => p.valid)).toBe(true);
-    // Every person the check signs for is handed to the registry with the whole context, as the refresh and a connector's
-    // callback hand one: groups and session included.
+    // Every person the check asks as is handed to the registry with the whole context, as the refresh and a connector's
+    // callback hand one, groups and session included (`asInProduction`). What is signed is the published actor cut from
+    // it, with the units the person leads (D149), and nothing of the context reaches even the signer.
     expect(signed.length).toBeGreaterThan(0);
     for (const actor of signed) {
-      expect(actor).toMatchObject({ organisationId: 'check', groups: ['check-group'] });
-      expect(actor).toMatchObject({ principal: { id: 'person:' + actor.id, kind: 'person' } });
+      expect(actor).toEqual(actorOf(actor));
+      expect(checkContract(ActorSchema, actor)).toBe(true);
+      for (const kept of ['organisationId', 'groups', 'principal', 'sessionBinding'])
+        expect(actor).not.toHaveProperty(kept);
     }
-    expect(asInProduction(actorOf(member))).toMatchObject({ groups: ['check-group'] });
+    // Among them the manager who leads the check's unit and the one who is only employed on it and leads another.
+    const led = new Set(signed.filter(actor => actor.role === 'manager').map(actor => JSON.stringify(actor.leads)));
+    expect([...led].sort()).toEqual(
+      [CHECK_MANAGER.leads, CHECK_LEADS_ELSEWHERE.leads].map(leads => JSON.stringify(leads)).sort(),
+    );
+    expect(signed.some(actor => actor.role === 'employee' && actor.leads === undefined)).toBe(true);
+    expect(asInProduction(actorOf(member))).toMatchObject({
+      organisationId: 'check',
+      groups: ['check-group'],
+      principal: { id: 'person:' + member.id, kind: 'person' },
+    });
   });
 });
 

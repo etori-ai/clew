@@ -58,6 +58,11 @@ export interface ScimStoreHarness {
   withWritingLeavers(): { store: ProvisionStore; written(personId: string): Promise<string[]> };
 }
 const T = '2026-11-09T06:00:00.000Z';
+/** A fixture's rows as the store takes them (D149): the person is of each unit, and leads those they manage. */
+const unitsOf = (rows: readonly Assignment[]) => ({
+  belongs: rows.map(row => row.unitId),
+  leads: rows.filter(row => row.role === 'manager').map(row => row.unitId),
+});
 export const userRow = (id: string, organisationId: string, extra: Partial<UserRecord> = {}): UserRecord => ({
   id,
   organisationId,
@@ -79,6 +84,7 @@ export const groupRow = (id: string, organisationId: string, extra: Partial<Grou
   externalId: 'g:' + id,
   label: 'Group ' + id,
   parentUnitId: null,
+  unitIdentifiers: [],
   createdAt: T,
   updatedAt: T,
   ...extra,
@@ -179,6 +185,26 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.updateUser(a, { name: 'Renamed once more', updatedAt: '2026-11-09T10:00:00.000Z' });
         expect((await tx.readUser(p + '-org', a))?.employments).toEqual(jobs);
         expect((await tx.findUser('externalId', 'ext:' + a))?.employments).toEqual(jobs);
+        // D147: every detail of an employment is read as it was written, the manager among them, and an employment
+        // that holds only its unit reads as only its unit. Who names a person as manager is theirs to keep: a write
+        // of the manager's own record leaves it.
+        const detailed = [
+          {
+            unitId: 'school',
+            title: 'Lärare',
+            employmentType: 'Tillsvidare',
+            startDate: '2024-08-12',
+            employmentPercentage: 62.5,
+            managerId: b,
+          },
+          { unitId: 'office', managerId: c },
+          { unitId: 'office' },
+        ];
+        await tx.updateUser(a, { employments: detailed, updatedAt: '2026-11-09T10:30:00.000Z' });
+        await tx.updateUser(b, { name: 'A manager renamed', updatedAt: '2026-11-09T10:30:00.000Z' });
+        expect((await tx.readUser(p + '-org', a))?.employments).toEqual(detailed);
+        expect((await tx.listUsers(p + '-org', { startIndex: 1, count: 1 })).rows[0]?.employments).toEqual(detailed);
+        expect((await tx.readUser(p + '-org', b))?.employments).toEqual([]);
         await tx.updateUser(a, { employments: [], updatedAt: '2026-11-09T11:00:00.000Z' });
         expect((await tx.readUser(p + '-org', a))?.employments).toEqual([]);
       });
@@ -417,19 +443,149 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await tx.unitLabels([p + '-u1'], p + '-org')).toEqual({});
         expect(await tx.unitLabels([p + '-u1'], p + '-elsewhere')).toEqual({ [p + '-u1']: 'Annans enhet' });
         await tx.writeUnits(p + '-org', [{ id: p + '-u1', label: 'Enhet 1' }]);
-        await tx.replaceAssignments(a, [{ unitId: p + '-u1', role: 'manager' }]);
-        expect(await tx.assignmentsOf(a)).toEqual([{ unitId: p + '-u1', unitLabel: 'Enhet 1', role: 'manager' }]);
+        await tx.replaceUnits(a, unitsOf([{ unitId: p + '-u1', role: 'manager' }]));
+        expect(await tx.assignmentsOf(a)).toEqual([
+          { unitId: p + '-u1', unitLabel: 'Enhet 1', role: 'manager', belongs: true },
+        ]);
         // Personal (D94): the unit's people with their role on it, as the manager's page reads them.
         const person = { id: a, name: 'Name ' + a, userName: 'u:' + a, email: a + '@example.test', enabled: true };
-        expect(await tx.unitPeople([p + '-u1'])).toEqual({ [p + '-u1']: [{ ...person, role: 'manager' }] });
+        expect(await tx.unitPeople([p + '-u1'])).toEqual({
+          [p + '-u1']: [{ ...person, role: 'manager', belongs: true }],
+        });
         // A unit nobody is assigned to is absent, as is every unit when none is asked for.
         expect(await tx.unitPeople([p + '-nowhere'])).toEqual({});
         expect(await tx.unitPeople([])).toEqual({});
         // Within one organisation only when it is named: another organisation's people are not on the unit.
         expect(await tx.unitPeople([p + '-u1', p + '-nowhere'], p + '-org')).toEqual({
-          [p + '-u1']: [{ ...person, role: 'manager' }],
+          [p + '-u1']: [{ ...person, role: 'manager', belongs: true }],
         });
         expect(await tx.unitPeople([p + '-u1'], p + '-elsewhere')).toEqual({});
+        // D149: where a person belongs and what they lead are kept apart. Someone who leads a unit they do not
+        // belong to is its manager, and one of the people of the other unit only: each unit once, by unit id.
+        await tx.writeUnits(p + '-org', [{ id: p + '-u2', label: 'Enhet 2' }]);
+        await tx.replaceUnits(a, { belongs: [p + '-u2', p + '-u2'], leads: [p + '-u1'] });
+        expect(await tx.assignmentsOf(a)).toEqual([
+          { unitId: p + '-u1', unitLabel: 'Enhet 1', role: 'manager', belongs: false },
+          { unitId: p + '-u2', unitLabel: 'Enhet 2', role: 'employee', belongs: true },
+        ]);
+        expect(await tx.unitPeople([p + '-u1', p + '-u2'])).toEqual({
+          [p + '-u1']: [{ ...person, role: 'manager', belongs: false }],
+          [p + '-u2']: [{ ...person, role: 'employee', belongs: true }],
+        });
+        expect((await tx.placements(p + '-org')).filter(row => row.personId === a)).toEqual([
+          { personId: a, name: 'Name ' + a, enabled: true, unitId: p + '-u1', role: 'manager', belongs: false },
+          { personId: a, name: 'Name ' + a, enabled: true, unitId: p + '-u2', role: 'employee', belongs: true },
+        ]);
+        // Written over what was held: nothing is left of either list.
+        await tx.replaceUnits(a, { belongs: [], leads: [] });
+        expect(await tx.assignmentsOf(a)).toEqual([]);
+        expect(await tx.unitPeople([p + '-u1', p + '-u2'])).toEqual({});
+        await tx.replaceUnits(a, { belongs: [p + '-u1'], leads: [p + '-u1'] });
+        // D147: who reports to a manager is asked by the manager's id, within one organisation. Each report once and by
+        // id, with the units of the employments that name the manager in the list's order, each once, and the units the
+        // report leads themselves. A deactivated report is there with `enabled` false, for the use case to decide.
+        const boss = p + '-boss',
+          off = p + '-off',
+          other = p + '-other';
+        await tx.insertUser(userRow(boss, p + '-org'));
+        await tx.insertUser(
+          userRow(off, p + '-org', { enabled: false, employments: [{ unitId: 'office', managerId: boss }] }),
+        );
+        await tx.insertUser(userRow(other, p + '-elsewhere', { employments: [{ unitId: 'office', managerId: boss }] }));
+        await tx.updateUser(a, {
+          employments: [
+            { unitId: 'school', managerId: boss },
+            { unitId: 'office' },
+            { unitId: 'depot', title: 'Vaktmästare', managerId: boss },
+            { unitId: 'school', title: 'Samordnare', managerId: boss },
+          ],
+          updatedAt: T,
+        });
+        expect(await tx.reportsTo(p + '-org', boss)).toEqual([
+          { ...person, unitIds: ['school', 'depot'], leads: [p + '-u1'] },
+          {
+            id: off,
+            name: 'Name ' + off,
+            userName: 'u:' + off,
+            email: off + '@example.test',
+            enabled: false,
+            unitIds: ['office'],
+            leads: [],
+          },
+        ]);
+        expect((await tx.reportsTo(p + '-elsewhere', boss)).map(r => r.id)).toEqual([other]);
+        // Nobody's employment names these two, and the manager is never their own report.
+        expect(await tx.reportsTo(p + '-org', a)).toEqual([]);
+        expect(await tx.reportsTo(p + '-org', p + '-nobody')).toEqual([]);
+        // D149: whether somebody reports to a person, which is what makes them a manager with no unit to lead.
+        // An active person of the organisation whose employment names them does; nobody, and a person nobody names, do
+        // not.
+        // D149: who is employed on a unit, by id and each once however many employments name it, a deactivated
+        // person among them, and within one organisation.
+        expect(await tx.employedOn(p + '-org', 'school')).toEqual([a]);
+        expect(await tx.employedOn(p + '-org', 'office')).toEqual([a, off]);
+        expect(await tx.employedOn(p + '-elsewhere', 'office')).toEqual([other]);
+        expect(await tx.employedOn(p + '-org', p + '-nowhere')).toEqual([]);
+        expect(await tx.hasReports(p + '-org', boss)).toBe(true);
+        expect(await tx.hasReports(p + '-org', a)).toBe(false);
+        expect(await tx.hasReports(p + '-org', p + '-nobody')).toBe(false);
+        // A deactivated person is nobody's report until they are active again, and a person of another organisation is
+        // none in this one.
+        const [third, led, left] = [p + '-third', p + '-led', p + '-left'];
+        await tx.insertUser(userRow(led, third));
+        await tx.insertUser(
+          userRow(left, third, { enabled: false, employments: [{ unitId: 'office', managerId: led }] }),
+        );
+        expect(await tx.hasReports(third, led)).toBe(false);
+        await tx.updateUser(left, { enabled: true, updatedAt: T });
+        expect(await tx.hasReports(third, led)).toBe(true);
+        expect(await tx.hasReports(p + '-org', led)).toBe(false);
+        // Two who name each other are neither's report, as the reporting line reads it.
+        await tx.updateUser(led, { employments: [{ unitId: 'office', managerId: left }], updatedAt: T });
+        expect([await tx.hasReports(third, led), await tx.hasReports(third, left)]).toEqual([false, false]);
+        // D147: whom the organisation's people name as manager, a pair for each person and manager. The three
+        // employments of `a` that name the boss are one pair, and the one that names nobody is none. A deactivated
+        // person's pair is there, for the use case to decide, and another organisation's person is not.
+        expect(await tx.managersNamed(p + '-org')).toEqual([
+          { personId: a, managerId: boss },
+          { personId: off, managerId: boss },
+        ]);
+        // The manager is named as stored: the other organisation's person names one who is not of it.
+        expect(await tx.managersNamed(p + '-elsewhere')).toEqual([{ personId: other, managerId: boss }]);
+        // Of the people asked for only, each pair once however often a person is asked for, and within the
+        // organisation: an id does not reach another organisation's person, and one nobody holds gives nothing.
+        expect(await tx.managersNamed(p + '-org', [off, off, other, p + '-nobody'])).toEqual([
+          { personId: off, managerId: boss },
+        ]);
+        expect(await tx.managersNamed(p + '-org', [boss])).toEqual([]);
+        // No ids is nobody, not everybody: a caller hands over the managers it found, and may have found none.
+        expect(await tx.managersNamed(p + '-org', [])).toEqual([]);
+        // By person and then by manager, each compared character by character (an upper-case letter before a lower-case
+        // one), whatever order the employments stand in. A deactivated manager is among them, as stored.
+        const upper = p + '-Zed';
+        await tx.insertUser(userRow(upper, p + '-org', { employments: [{ unitId: 'office', managerId: boss }] }));
+        await tx.updateUser(boss, {
+          employments: [
+            { unitId: 'office', managerId: off },
+            { unitId: 'office', managerId: a },
+            { unitId: 'depot', managerId: upper },
+          ],
+          updatedAt: T,
+        });
+        expect(await tx.managersNamed(p + '-org')).toEqual([
+          { personId: upper, managerId: boss },
+          { personId: a, managerId: boss },
+          { personId: boss, managerId: upper },
+          { personId: boss, managerId: a },
+          { personId: boss, managerId: off },
+          { personId: off, managerId: boss },
+        ]);
+        expect(await tx.managersNamed(p + '-org', [boss, a])).toEqual([
+          { personId: a, managerId: boss },
+          { personId: boss, managerId: upper },
+          { personId: boss, managerId: a },
+          { personId: boss, managerId: off },
+        ]);
         expect(await tx.bound(a)).toBe(false);
       });
       await h.bind(a);
@@ -631,11 +787,14 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           { id: mid, label: 'Unit ' + mid },
           { id: leaf, label: 'Unit ' + leaf },
         ]);
-        await tx.replaceAssignments(a, [
-          { unitId: mid, role: 'manager' },
-          { unitId: leaf, role: 'employee' },
-        ]);
-        await tx.replaceAssignments(b, [{ unitId: leaf, role: 'employee' }]);
+        await tx.replaceUnits(
+          a,
+          unitsOf([
+            { unitId: mid, role: 'manager' },
+            { unitId: leaf, role: 'employee' },
+          ]),
+        );
+        await tx.replaceUnits(b, unitsOf([{ unitId: leaf, role: 'employee' }]));
       });
       await store.transaction(async tx => {
         expect(await tx.unitTree(org)).toEqual([
@@ -666,10 +825,10 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           [b, 'employee', false],
         ]);
         expect(await tx.placements(org)).toEqual([
-          { personId: a, name: 'Name ' + a, enabled: true, unitId: leaf, role: 'employee' },
-          { personId: a, name: 'Name ' + a, enabled: true, unitId: mid, role: 'manager' },
-          { personId: b, name: 'Name ' + b, enabled: false, unitId: leaf, role: 'employee' },
-          { personId: c, name: 'Name ' + c, enabled: true, unitId: null, role: null },
+          { personId: a, name: 'Name ' + a, enabled: true, unitId: leaf, role: 'employee', belongs: true },
+          { personId: a, name: 'Name ' + a, enabled: true, unitId: mid, role: 'manager', belongs: true },
+          { personId: b, name: 'Name ' + b, enabled: false, unitId: leaf, role: 'employee', belongs: true },
+          { personId: c, name: 'Name ' + c, enabled: true, unitId: null, role: null, belongs: false },
         ]);
         // A move is the parent on the group, and a root is no parent.
         await tx.updateGroup(p + '-g-' + leaf, { parentUnitId: root, updatedAt: '2026-11-09T07:00:00.000Z' });
@@ -677,6 +836,35 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.updateGroup(p + '-g-' + leaf, { parentUnitId: null, updatedAt: '2026-11-09T07:00:01.000Z' });
         expect((await tx.readGroup(org, p + '-g-' + leaf))?.parentUnitId).toBeNull();
         expect((await tx.childUnits(root)).map(u => u.id)).toEqual([mid]);
+      });
+    });
+    test("a unit's identifiers are kept as written, in their order, and read back by every read of the group (D148)", async () => {
+      const h = await make(),
+        p = h.prefix,
+        org = p + '-org',
+        unit = p + '-gata',
+        id = p + '-g-gata',
+        sent = [
+          { type: 'ansvar', value: '11110000' },
+          { type: 'qlik', value: 'ORG-714' },
+          { type: 'ansvar', value: '11110001' },
+        ];
+      await h.store.transaction(async tx => {
+        await tx.insertGroup(groupRow(id, org, { externalId: 'unit:' + unit, label: 'Gata', unitIdentifiers: sent }));
+        await tx.insertGroup(groupRow(p + '-g-plain', org, { externalId: 'ad:' + p, label: 'Plain' }));
+        expect((await tx.readGroup(org, id))?.unitIdentifiers).toEqual(sent);
+        expect((await tx.findGroup('externalId', 'unit:' + unit))?.unitIdentifiers).toEqual(sent);
+        const listed = await tx.listGroups(org, { startIndex: 1, count: 10 });
+        expect(listed.rows.find(g => g.id === id)?.unitIdentifiers).toEqual(sent);
+        // A group written without any holds an empty list, never null.
+        expect((await tx.readGroup(org, p + '-g-plain'))?.unitIdentifiers).toEqual([]);
+        // A write that names them replaces the list; one that does not leaves it.
+        await tx.updateGroup(id, { unitIdentifiers: [sent[1]!], updatedAt: '2026-11-27T07:00:00.000Z' });
+        expect((await tx.readGroup(org, id))?.unitIdentifiers).toEqual([sent[1]!]);
+        await tx.updateGroup(id, { label: 'Gata och park', updatedAt: '2026-11-27T07:00:01.000Z' });
+        expect((await tx.readGroup(org, id))?.unitIdentifiers).toEqual([sent[1]!]);
+        await tx.updateGroup(id, { unitIdentifiers: [], updatedAt: '2026-11-27T07:00:02.000Z' });
+        expect((await tx.readGroup(org, id))?.unitIdentifiers).toEqual([]);
       });
     });
     test('the people list is searched by word, unit, role, status and capability, in Swedish order and a page at a time (D100)', async () => {
@@ -708,12 +896,15 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           { id: u1, label: 'Enhet 1' },
           { id: u2, label: 'Enhet 2' },
         ]);
-        await tx.replaceAssignments(anna, [
-          { unitId: u1, role: 'manager' },
-          { unitId: u2, role: 'employee' },
-        ]);
-        await tx.replaceAssignments(zara, [{ unitId: u2, role: 'employee' }]);
-        await tx.replaceAssignments(ake, [{ unitId: u2, role: 'manager' }]);
+        await tx.replaceUnits(
+          anna,
+          unitsOf([
+            { unitId: u1, role: 'manager' },
+            { unitId: u2, role: 'employee' },
+          ]),
+        );
+        await tx.replaceUnits(zara, unitsOf([{ unitId: u2, role: 'employee' }]));
+        await tx.replaceUnits(ake, unitsOf([{ unitId: u2, role: 'manager' }]));
         await tx.writeGrant(anna, { unitId: u1, unitLabel: 'Enhet 1', role: 'manager', capabilities: ['admin.users'] });
         await tx.writeGrant(zara, { unitId: u2, unitLabel: 'Enhet 2', role: 'employee', capabilities: [] });
         await tx.writeGrant(ake, { unitId: u2, unitLabel: 'Enhet 2', role: 'manager', capabilities: [] });
@@ -779,6 +970,14 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         // Every part narrows further.
         expect(await found({ words: ['a'], unitIds: [u2], status: 'not-signed-in' })).toEqual([zara, ake]);
         expect(await found({ words: ['zara'], role: 'manager' })).toEqual([]);
+        // D149: someone who leads a unit they do not belong to is found on it as its manager, and as an
+        // employee only on the unit they belong to.
+        await tx.replaceUnits(zara, { belongs: [u2], leads: [u1] });
+        expect(await found({ unitIds: [u1] })).toEqual([anna, zara]);
+        expect(await found({ unitIds: [u1], role: 'manager' })).toEqual([anna, zara]);
+        expect(await found({ unitIds: [u1], role: 'employee' })).toEqual([]);
+        expect(await found({ unitIds: [u2], role: 'employee' })).toEqual([anna, zara]);
+        expect(await found({ role: 'manager' })).toEqual([anna, zara, ake]);
       });
     });
     test('positions are written by organisation and code, relabelled in place, held by a person as a whole set and removed with their holds (D108 item 5)', async () => {
@@ -943,13 +1142,15 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.writeUnits(org, units);
         for (const [id, name, placed, enabled] of people) {
           await tx.insertUser(userRow(id, org, { name, enabled }));
-          await tx.replaceAssignments(id, placed);
+          await tx.replaceUnits(id, unitsOf(placed));
           const active = id === leads ? placed[1]! : placed[0]!,
             unitLabel = units.find(unit => unit.id === active.unitId)!.label;
           await tx.writeGrant(id, { unitId: active.unitId, unitLabel, role: active.role, capabilities: [] });
         }
       });
-      const { directory } = directoryUsecases({ store });
+      const usecases = directoryUsecases({ store }),
+        // Asked by somebody of the organisation, as the capability asks with the reader.
+        directory = (unitId: string) => usecases.directory(unitId, here);
       // By name in Swedish order, Ö after the rest; the deactivated person is left out.
       expect(await directory(u2)).toEqual([
         { id: leads, name: 'Ali Leder', role: 'employee' },
@@ -963,6 +1164,41 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       ]);
       expect(await directory(u3)).toEqual([{ id: leads, name: 'Ali Leder', role: 'manager' }]);
       expect(await directory(p + '-nowhere')).toEqual([]);
+      // A unit id is asked within the reader's organisation. A person another organisation has on a unit of the same
+      // id is no colleague of theirs, and they are none of that person's; a reader nobody holds has no colleagues.
+      const [elsewhere, stranger] = [p + '-elsewhere', p + '-stranger'];
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(stranger, elsewhere, { name: 'Ada Annan' }));
+        await tx.replaceUnits(stranger, { belongs: [u2], leads: [] });
+        expect(await tx.organisationOf(stranger)).toBe(elsewhere);
+        expect(await tx.organisationOf(p + '-nobody')).toBeUndefined();
+      });
+      expect((await directory(u2)).map(row => row.id)).toEqual([leads, both, here, two]);
+      expect(await usecases.directory(u2, stranger)).toEqual([{ id: stranger, name: 'Ada Annan', role: 'employee' }]);
+      expect(await usecases.directory(u2, p + '-nobody')).toEqual([]);
+    });
+    test('a transaction that fails takes back its own writes and nobody else’s, though another began while it was open', async () => {
+      const { store, prefix: p } = await make();
+      const org = p + '-org',
+        [failed, kept] = [p + '-failed', p + '-kept'];
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => (release = resolve));
+      // The first writes a person, waits, and fails. The second begins meanwhile and writes another.
+      const first = store
+        .transaction(async tx => {
+          await tx.insertUser(userRow(failed, org));
+          await gate;
+          throw new Error('fails after its write');
+        })
+        .catch((error: unknown) => error);
+      const second = store.transaction(tx => tx.insertUser(userRow(kept, org)));
+      release();
+      expect(await first).toBeInstanceOf(Error);
+      await second;
+      await store.transaction(async tx => {
+        expect(await tx.readUser(org, failed)).toBeUndefined();
+        expect((await tx.readUser(org, kept))?.id).toBe(kept);
+      });
     });
     test('a locked person, people held at once and a locked group read as they do unlocked', async () => {
       const { store, prefix: p } = await make();
