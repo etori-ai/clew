@@ -237,11 +237,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
   ) : list.isPending || (first && detail.isPending) ? (
     <UnitsSkeleton />
   ) : !units.length ? (
-    <EmptyState
-      headingLevel={2}
-      title="Du följer inte upp någon enhet"
-      description="Här visas enheter du leder och enheter som leds av chefer som rapporterar till dig."
-    />
+    <EmptyState headingLevel={2} title="Du följer inte upp någon enhet" description="Dialogstödet är för chefer." />
   ) : (
     <>
       {summaryLine}

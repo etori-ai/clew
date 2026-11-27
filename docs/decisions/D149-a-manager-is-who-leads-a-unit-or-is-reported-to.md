@@ -82,11 +82,13 @@ and how many lead none and are reported to, and names anyone who leads a unit an
 - Nothing in the repository reads a directory's own record of who answers for a unit. A provisioner sends it as the
   `unit-manager:` group, and a mapping that derives it from who has reports on a unit says something else than the
   directory does.
-- The migration moves who leads what and leaves every grant as it was. Whether somebody is a manager because people
-  report to them, and the unit they act as, are derived the next time they are written or an employment that names
-  them is. Development data is seeded again.
-- Someone who leads a unit and belongs to none is counted among the people of no unit on Administration ›
-  Organisation. The check names them.
+- The migration moves who leads what and leaves every grant as it was. The unit a person acts as is derived the next
+  time they are written. Whether somebody is a manager because people report to them is derived then too, and by the
+  next write of anybody whose employment names them, a write that changes nothing included. Development data is seeded
+  again.
+- Someone who leads a unit and belongs to none is listed as the manager of the unit they lead on Administration ›
+  Organisation, and no unit's count of people holds them. They are not among those without a unit either, since they
+  have one to act as. The check names them.
 - The first employment is taken to be the main one. A directory that sends them in another order decides the unit the
   person acts as by that order.
 - Administration › Användare does not say of a person that they are a manager because people report to them: it shows

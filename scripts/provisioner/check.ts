@@ -246,8 +246,9 @@ export async function checkProvisioning(
     );
   // D147: who is a manager. Somebody who leads a unit is one, and so is somebody people report to who leads none.
   // The two are apart from where a person belongs: a unit may be led by someone who is employed on another, which is
-  // said here so that a directory that meant otherwise sees it. Somebody who leads a unit and belongs to none is
-  // counted among the people of no unit: their employment was not sent, or is on a unit the organisation does not hold.
+  // said here so that a directory that meant otherwise sees it. Somebody who leads a unit and belongs to none is the
+  // manager of that unit, and no unit's count of people holds them: their employment was not sent, or is on a unit the
+  // organisation does not hold.
   const reportedTo = new Set(
       placed.flatMap(u => [...namedBy(u)].filter(id => working.has(id) && !namedBy(working.get(id)!).has(u.id))),
     ),
@@ -265,7 +266,7 @@ export async function checkProvisioning(
   if (homeless.length)
     say(
       'warn',
-      `${plural(homeless.length, 'user leads', 'users lead')} a unit and ${homeless.length === 1 ? 'belongs' : 'belong'} to none, so ${homeless.length === 1 ? 'the user is' : 'they are'} counted among the people of no unit. Send the employment, or the unit: group for a directory that sends no employments: ${some(homeless.map(u => u.userName))}.`,
+      `${plural(homeless.length, 'user leads', 'users lead')} a unit and ${homeless.length === 1 ? 'belongs' : 'belong'} to none, so no unit's count of people holds ${homeless.length === 1 ? 'the user' : 'them'}. Send the employment, or the unit: group for a directory that sends no employments: ${some(homeless.map(u => u.userName))}.`,
     );
   const unnamed = managers.map(g => g.externalId!.slice(MANAGER_KEY.length)).filter(id => !named.has(id));
   if (unnamed.length)

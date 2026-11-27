@@ -135,6 +135,27 @@ describe('the incidents fixture connector', () => {
       (await registry.scan(hillevi)).map(d => d.topic),
     );
     expect((await registry.areas(leadsTheSchool)).find(a => a.id === 'work-environment')?.figure?.value).toBe('4');
+    // The figure is one unit's, the unit Clew says Läget of: the one she is employed on when she leads it, else the
+    // first she leads. Leading both, it is the school's when she is employed there and the department's when not.
+    const both = leadsTheSchool.assignments!.map(a => ({ ...a, role: 'manager' as const })),
+      figureOf = async (actor: Actor) =>
+        (await registry.areas(actor)).find(a => a.id === 'work-environment')?.figure?.value;
+    expect(await figureOf({ ...hillevi, assignments: both })).toBe('4');
+    expect(await figureOf({ ...leadsTheSchool, assignments: both })).toBe('0');
+    // Her list and cards are still those of every unit she leads.
+    expect((await registry.scan({ ...leadsTheSchool, assignments: both })).map(d => d.topic)).toEqual(
+      (await registry.scan(hillevi)).map(d => d.topic),
+    );
+    // Somebody people report to who leads no unit keeps what is their own: Hassan follows his own reports whether or
+    // not he is a manager.
+    const hassanWithReports: Actor = {
+      ...hassan,
+      role: 'manager',
+      assignments: [{ unitId: hassan.unitId, unitLabel: hassan.unitLabel, role: 'employee' }],
+    };
+    const own = (await registry.scan(hassan)).map(d => d.topic);
+    expect(own.some(topic => topic.startsWith('incidents:mine:'))).toBe(true);
+    expect((await registry.scan(hassanWithReports)).map(d => d.topic)).toEqual(own);
     expect((await registry.run<Result>(leadsTheSchool, 'incidents.withdraw', { refs: [ref] })).rows[0]!.outcome).toBe(
       'done',
     );

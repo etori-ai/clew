@@ -648,9 +648,11 @@ export function scimUsecases(deps: {
   /**
    * What a write of a person does to the managers their employments name (D149), given whom they named as an active
    * person before it and whom they name as one after it. Somebody no longer named may have no report left, and is
-   * derived. Somebody newly named has a report more: one who is a manager already stays one whatever else is true of
-   * them, so only one who is not is derived, which keeps a push of a large unit from deriving its manager once for each
-   * of its people. Somebody named before and after is as they were.
+   * derived. Somebody named now has this person as a report: one whose grant says manager already stays one whatever
+   * else is true of them, so only one whose grant does not is derived, which keeps a push of a large unit from
+   * deriving its manager once for each of its people. That is asked of everyone named now, also one named before, so a
+   * grant written before this rule is put right by the next write of anybody who names its person, a write that
+   * changes nothing included.
    */
   const deriveManagers = async (
     tx: ProvisionTx,
@@ -660,7 +662,7 @@ export function scimUsecases(deps: {
   ) => {
     const lost = before.filter(id => !after.includes(id)),
       gained: string[] = [];
-    for (const id of after) if (!before.includes(id) && (await tx.grant(id))?.role !== 'manager') gained.push(id);
+    for (const id of after) if ((await tx.grant(id))?.role !== 'manager') gained.push(id);
     await derivation.deriveAll(tx, actorOf(p), [...lost, ...gained]);
   };
   async function writeUser(

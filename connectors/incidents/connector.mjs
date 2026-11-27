@@ -43,13 +43,18 @@ export function createConnector({
   const own = actor => records().employees.find(e => e.personId === personOf(actor));
   // The units the person leads (D149), as Clew signs them into the actor of every manager: `leads`. `role` says only
   // that the person is a manager, which someone people report to is without leading a unit, and `unitId` is the unit
-  // they are employed on, which need not be one they lead. A manager's list, cards and figure answer for every unit
-  // in `leads`, and for no unit when the list is empty or absent.
+  // they are employed on, which need not be one they lead. A manager's list and cards answer for every unit in
+  // `leads`, and for no unit when the list is empty or absent.
   const ledUnits = actor =>
     (Array.isArray(actor.leads) ? actor.leads : [])
       .filter(u => u && typeof u.unitId === 'string' && u.unitId)
       .map(u => unitMap[u.unitId] ?? u.unitId);
   const managerOf = (actor, unitId) => ledUnits(actor).includes(unitId);
+  /**
+   * The one unit a figure is about (D54): the unit the person is employed on when they lead it, else the first they
+   * lead. It is the unit Clew says Läget of, so the figure and the heading over it are about the same unit.
+   */
+  const ledUnit = actor => (managerOf(actor, unitOf(actor)) ? unitOf(actor) : ledUnits(actor)[0]);
   /** Reports filed through Clew, the system's own records beside the seeded deviations. */
   const reports = () => state.get('reports', []);
   const openDeviations = unitId => records().deviations.filter(d => d.unitId === unitId && d.state !== 'closed');
@@ -178,8 +183,10 @@ export function createConnector({
           actions: [],
         });
     }
+    // The person's own reports, for whoever leads no unit: an employee, and a manager people report to who has no
+    // unit of their own to see them on.
     const me = own(actor);
-    if (me && actor.role === 'employee')
+    if (me && !ledUnits(actor).length)
       for (const d of records().deviations.filter(d => d.reportedBy === me.ref && d.state !== 'closed'))
         drafts.push({
           // The employee's own report is followed under the HR system's area for the person's day, as before the port.
@@ -200,14 +207,13 @@ export function createConnector({
   }
 
   function figure(actor, area) {
-    const units = ledUnits(actor);
-    if (area !== 'work-environment' || !units.length) return null;
-    // The figure (D54): the open incidents and reports of the units the person leads, alert while one has waited more
-    // than two weeks.
+    const unit = ledUnit(actor);
+    if (area !== 'work-environment' || !unit) return null;
+    // The figure (D54): the open incidents and reports of the unit, alert while one has waited more than two weeks.
     const cutoff = addDays(today(), -14);
-    const deviations = units.flatMap(openDeviations);
+    const deviations = openDeviations(unit);
     const older = deviations.filter(d => d.reportedAt.slice(0, 10) < cutoff).length;
-    const open = deviations.length + reports().filter(r => units.includes(r.unitId)).length;
+    const open = deviations.length + reports().filter(r => r.unitId === unit).length;
     return {
       label: 'Öppna tillbud',
       value: String(open),

@@ -101,11 +101,16 @@ export function createConnector({
     const own = costCentres(actor);
     return records().invoices.filter(i => own.includes(i.costCentre) && !done[i.ref]);
   };
-  /** The budget of the first of the manager's cost centres that has one. */
-  const budgetOf = actor =>
-    costCentres(actor)
-      .map(cc => records().budgets.find(b => b.costCentre === cc))
-      .find(Boolean);
+  /**
+   * The budget a figure and the budget view are about (D54): that of the unit the person is employed on when they lead
+   * it, else of the first unit they lead. It is the unit Clew says Läget of, so the figure and the heading over it are
+   * about the same unit. Someone who leads no unit, or a unit the system has no cost centre for, has none.
+   */
+  const budgetOf = actor => {
+    const led = ledUnits(actor),
+      own = [costCentreOf[led.includes(unitOf(actor)) ? unitOf(actor) : led[0]] ?? []].flat();
+    return records().budgets.find(b => own.includes(b.costCentre));
+  };
   const deviation = b => Math.round((1000 * (b.budget - b.forecast)) / b.budget) / 10;
   const invoice = (actor, ref) => {
     const inv = records().invoices.find(i => i.ref === ref && costCentres(actor).includes(i.costCentre));

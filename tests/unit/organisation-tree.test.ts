@@ -841,6 +841,8 @@ describe('Administration › Organisation (D99, D147)', () => {
   test('the tree with who leads each unit, how many are placed on it and below it, how many on it report to nobody, and what a push left wrong', async () => {
     const h = await organisation();
     const view = await h.organisation.overview(h.persona('karin', ['admin.users']));
+    // Karin and Nils lead a unit and belong to none: they are not without a unit, having one to act as, and no unit's
+    // count of people holds them (D149).
     expect(view.unplaced).toBe(0);
     expect(view.units.map(u => u.unitLabel)).toEqual([
       'Arkivet',

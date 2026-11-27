@@ -171,6 +171,15 @@ describe('the finance fixture connector', () => {
       ['finance:invoices', 3],
     ]);
     expect(await registry.run(leadsTheSchool, 'finance.budget', {})).toMatchObject({ label: 'Kostnadsställe KS-4410' });
+    // The figure is one unit's, the unit Clew says Läget of: the one she is employed on when she leads it. Leading the
+    // department too, it is the department's, for which the system holds no budget; the school's invoices are still
+    // hers to attest.
+    const leadsBoth: Actor = {
+      ...leadsTheSchool,
+      assignments: leadsTheSchool.assignments!.map(a => ({ ...a, role: 'manager' as const })),
+    };
+    expect((await registry.areas(leadsBoth)).find(a => a.id === 'budget')?.figure ?? null).toBeNull();
+    expect((await registry.scan(leadsBoth)).map(d => [d.topic, d.items?.length])).toEqual([['finance:invoices', 3]]);
   });
   test('the figure and the budget detail say where the cost centre stands', async () => {
     const { registry } = stack();

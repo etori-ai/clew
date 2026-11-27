@@ -27,5 +27,5 @@ WHERE a."role" = 'manager'
 ALTER TABLE "auth_assignment" DROP COLUMN "role";--> statement-breakpoint
 -- The change signal (D46), hand-written as every such trigger is: who leads a unit is drawn wherever the organisation is.
 CREATE CONSTRAINT TRIGGER auth_unit_lead_changed AFTER INSERT OR DELETE OR UPDATE ON public.auth_unit_lead DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.clew_shared_changed('organisation');
--- A grant is as it was. Whether somebody is a manager because people report to them, and the unit they act as, are
--- derived the next time they are written or an employment that names them is.
+-- A grant is as it was. The unit a person acts as is derived the next time they are written, and whether somebody is a
+-- manager because people report to them then or at the next write of anybody whose employment names them.

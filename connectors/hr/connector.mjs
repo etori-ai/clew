@@ -678,8 +678,10 @@ export function createConnector({
         });
       }
     }
+    // The person's own cards, for whoever leads no unit: an employee, and a manager people report to who has no unit
+    // of their own.
     const me = own(actor);
-    if (me && actor.role === 'employee') {
+    if (me && !managedUnits(actor).length) {
       const renewedMap = renewed();
       for (const d of records().delegations.filter(
         d => d.employee === me.ref && !renewedMap[d.ref] && daysBetween(day, d.expires) <= 30,

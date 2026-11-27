@@ -269,6 +269,35 @@ describe('a manager is who leads a unit or is reported to (D149)', () => {
     await h.employ('anna', ['kansli', 'david']);
     expect(h.audited(quiet)).toEqual([]);
   });
+  test('a grant written before the rule is put right by the next write of anybody who names its person, a write that changes nothing included', async () => {
+    const h = harness();
+    await h.unit('kansli', 'Kansliet');
+    await h.person('karin', ['kansli']);
+    await h.person('anna', ['kansli', 'karin']);
+    // As the migration leaves it: Karin is reported to, and her grant still says that she is an employee.
+    const stored = h.store.state.grants.get(h.id('karin'))!;
+    h.store.state.grants.set(h.id('karin'), {
+      unitId: stored.unitId,
+      unitLabel: stored.unitLabel,
+      role: 'employee',
+      capabilities: [],
+    });
+    const from = h.store.state.audit.length;
+    await h.employ('anna', ['kansli', 'karin']);
+    expect(h.audited(from)).toEqual([
+      [
+        'grant.derived',
+        'karin',
+        {
+          unitId: 'kansli',
+          role: 'manager',
+          capabilities: [],
+          assignments: 1,
+          placements: [{ unitId: 'kansli', role: 'employee' }],
+        },
+      ],
+    ]);
+  });
   test('two who name each other are neither the other’s report, so neither is a manager for it', async () => {
     const h = harness();
     await h.unit('kansli', 'Kansliet');

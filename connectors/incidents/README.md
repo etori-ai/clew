@@ -7,7 +7,9 @@ rest of the repository (D21); the shape is [hr](../hr/README.md)'s, with the sam
 (`PORT` is 4042, `FIXTURE_DB` defaults to `./incidents.sqlite`, there is no feed).
 
 A manager gets the area `work-environment` for the units they lead (the actor's `leads`, D149; never the unit they are
-only employed on, and no unit for a manager who leads none): the deviations as a list, the figure "Öppna tillbud n",
+only employed on, and no unit for a manager who leads none): the deviations as a list, the figure "Öppna tillbud n"
+of one of those units (the one they are employed on when they lead it, else the first they lead, which is the unit Clew
+says Läget of),
 alert while one is older than 14 days, opening the list (D54), and
 a card per deviation waiting on someone (the safety representative) and per report filed through Clew. An employee the
 system knows by person id sees their own reports and the deviations they reported, followed under the HR system's area

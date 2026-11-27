@@ -335,6 +335,16 @@ describe('the HR fixture connector', () => {
     expect(await registry.run<Rows>(reportedTo, 'hr.absenceOverview', {})).toEqual({ rows: [] });
     expect((await registry.run<Rows>(reportedTo, 'hr.person', { keys: ['anna'] })).rows).toEqual([]);
     expect((await registry.areas(reportedTo)).find(a => a.id === 'employees')?.figure ?? null).toBeNull();
+    // Leading no unit, such a manager keeps the cards that are their own: Hassan's delegation is his to renew whether
+    // or not somebody reports to him. Only a unit's cards follow from leading it.
+    const hassanWithReports: Actor = {
+      ...hassan,
+      role: 'manager',
+      assignments: [{ unitId: hassan.unitId, unitLabel: hassan.unitLabel, role: 'employee' }],
+    };
+    const own = (await registry.scan(hassan)).map(d => d.topic);
+    expect(own).toContain('hr:delegation:hr:deleg:301');
+    expect((await registry.scan(hassanWithReports)).map(d => d.topic)).toEqual(own);
     // The source reads the list and nothing else: an actor signed as a manager of the school with no `leads` at all, as
     // no Clew sends one, is answered for no unit. The role with the unit is never taken to mean that she leads it.
     const bare = await service.handle(

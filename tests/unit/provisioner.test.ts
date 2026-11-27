@@ -2135,6 +2135,31 @@ describe('the synthetic provisioner', () => {
         [{ unitId: 'skola', role: 'employee' }],
       ]);
     });
+    test('somebody who leads a unit and belongs to none is a manager with that unit to act as, and the check names them (D149)', async () => {
+      const { client, app, grantOf } = stack();
+      const chef = (
+        await client.request('POST', '/Users', {
+          externalId: 'e-chef',
+          userName: 'chef',
+          displayName: 'Chef',
+          emails: [{ value: 'chef@clew.test', type: 'work' }],
+        })
+      ).body.id as string;
+      await client.request('POST', '/Groups', { externalId: 'unit:skola', displayName: 'Skolan' });
+      await client.request('POST', '/Groups', {
+        externalId: 'unit-manager:skola',
+        displayName: 'Chefer',
+        members: [{ value: chef }],
+      });
+      // No employment and no unit group says where Chef belongs: the unit they lead is the one they act as.
+      expect(grantOf('chef')).toEqual({ unitId: 'skola', unitLabel: 'Skolan', role: 'manager', capabilities: [] });
+      const warnings = (await checkProvisioning('http://clew.local', client, (input, init) => app.request(input, init)))
+        .filter(f => f.level === 'warn')
+        .map(f => f.text);
+      expect(warnings).toContain(
+        "1 user leads a unit and belongs to none, so no unit's count of people holds the user. Send the employment, or the unit: group for a directory that sends no employments: chef.",
+      );
+    });
     test('a group whose key is written wrong, or names a capability the check does not know, gives what an administrator maps to it, and the check names a leaver still in one (D85, D96)', async () => {
       const { store, client, app, grantOf } = stack();
       const person = async (userName: string) =>
