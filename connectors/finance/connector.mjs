@@ -83,18 +83,32 @@ export function createConnector({
   const unitOf = actor => unitMap[actor.unitId] ?? actor.unitId;
   const personOf = actor => personMap[actor.id] ?? actor.id;
   const personKey = actor => unitOf(actor) + ':' + personOf(actor);
-  /** The cost centre a manager attests for: the unit's. A unit the system has no cost centre for sees nothing. */
-  const costCentre = actor => (actor.role === 'manager' ? costCentreOf[unitOf(actor)] : undefined);
+  // The units the person leads (D149), as Clew signs them into the actor of every manager: `leads`. `role` says only
+  // that the person is a manager, which someone people report to is without leading a unit, and `unitId` is the unit
+  // they are employed on, which need not be one they lead: its costs are its own manager's to attest.
+  const ledUnits = actor =>
+    (Array.isArray(actor.leads) ? actor.leads : [])
+      .filter(u => u && typeof u.unitId === 'string' && u.unitId)
+      .map(u => unitMap[u.unitId] ?? u.unitId);
+  /**
+   * The cost centres a manager attests for: those of the units they lead, in the order Clew names the units, each
+   * once. A unit the system has no cost centre for gives none, and someone who leads no unit sees nothing.
+   */
+  const costCentres = actor => [...new Set(ledUnits(actor).flatMap(unit => costCentreOf[unit] ?? []))];
   const approved = () => state.get('approved', {});
   const pending = actor => {
     const done = approved();
-    const cc = costCentre(actor);
-    return records().invoices.filter(i => i.costCentre === cc && !done[i.ref]);
+    const own = costCentres(actor);
+    return records().invoices.filter(i => own.includes(i.costCentre) && !done[i.ref]);
   };
-  const budgetOf = actor => records().budgets.find(b => b.costCentre === costCentre(actor));
+  /** The budget of the first of the manager's cost centres that has one. */
+  const budgetOf = actor =>
+    costCentres(actor)
+      .map(cc => records().budgets.find(b => b.costCentre === cc))
+      .find(Boolean);
   const deviation = b => Math.round((1000 * (b.budget - b.forecast)) / b.budget) / 10;
   const invoice = (actor, ref) => {
-    const inv = records().invoices.find(i => i.ref === ref && i.costCentre === costCentre(actor));
+    const inv = records().invoices.find(i => i.ref === ref && costCentres(actor).includes(i.costCentre));
     if (!inv) throw new Invalid('Fakturan finns inte.');
     return inv;
   };
@@ -227,8 +241,7 @@ export function createConnector({
     }),
     // The invoice as the person would see it in the economy system (D70): drawn from its lines, for the person's own cost centre only.
     'finance.preview': (actor, input) => {
-      const inv = records().invoices.find(i => i.ref === input.ref && i.costCentre === costCentre(actor));
-      if (!inv) throw new Invalid('Fakturan finns inte.');
+      const inv = invoice(actor, input.ref);
       return {
         title: `Faktura ${inv.ref.slice('finance:inv:'.length)} · ${inv.supplier}`,
         mediaType: 'image/svg+xml',
@@ -273,9 +286,9 @@ export function createConnector({
           })),
         };
       const done = approved();
-      const cc = costCentre(actor);
+      const own = costCentres(actor);
       const rows = input.refs.map(ref => {
-        const inv = records().invoices.find(i => i.ref === ref && i.costCentre === cc);
+        const inv = records().invoices.find(i => i.ref === ref && own.includes(i.costCentre));
         if (!inv) return { ref, label: 'Faktura', outcome: 'failed', detail: 'finns inte i ekonomisystemet' };
         if (done[ref])
           return {
@@ -332,12 +345,12 @@ export function createConnector({
         undoInput: { refs: rows.filter(r => r.outcome === 'done').map(r => r.ref) },
       };
     },
-    // The undo answers for the manager's cost centre as the attest it takes back does: another one's invoice is a failed row.
+    // The undo answers for the manager's cost centres as the attest it takes back does: another one's invoice is a failed row.
     'finance.unapprove': (actor, input) => {
       const done = approved();
-      const cc = costCentre(actor);
+      const own = costCentres(actor);
       const rows = input.refs.map(ref => {
-        if (!records().invoices.some(i => i.ref === ref && i.costCentre === cc))
+        if (!records().invoices.some(i => i.ref === ref && own.includes(i.costCentre)))
           return { ref, label: 'Faktura', outcome: 'failed', detail: 'finns inte i ekonomisystemet' };
         delete done[ref];
         return { ref, label: 'Faktura', outcome: 'done', detail: 'väntar igen i ekonomisystemet' };

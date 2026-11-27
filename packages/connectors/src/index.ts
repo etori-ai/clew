@@ -61,6 +61,7 @@ import {
   type SiteHeaderOutput,
   aboutEntity,
   aboutRecord,
+  ledUnits,
   type EntityAbout,
   type RecordAbout,
 } from '@clew/contracts';
@@ -116,9 +117,21 @@ export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | '
   userName?: string;
   /** The units the person follows up (D117), when the call has them. */
   units?: Array<{ unitId: string; unitLabel: string }>;
-  /** Every assignment of a person who holds more than one (D135); `unitId` and `role` are the primary one. */
+  /**
+   * The units the person leads (D149), as the published actor says them: set by `actorOf` for every manager,
+   * empty for one people report to who leads no unit. Read through `leadsOf`, never by pairing `role` with `unitId`:
+   * `role` says that the person is a manager, and `unitId` where they are employed.
+   */
+  leads?: Array<{ unitId: string; unitLabel: string }>;
+  /** The person's units with the role on each (D135), when they say more than `unitId` and `role` (`SessionUser`). */
   assignments?: UserAssignment[];
 };
+/**
+ * The units an actor leads (D149): what the published actor says, or, for an authenticated context that has not
+ * been published, what its assignments say (`ledUnits`). The one way a capability asks "which units does this person
+ * answer for".
+ */
+export const leadsOf = (actor: Actor): Array<{ unitId: string; unitLabel: string }> => actor.leads ?? ledUnits(actor);
 /** An actor with the provisioned groups the authenticated context carries (D68); a bare actor has none. */
 export type AudiencedActor = Actor & { groups?: readonly string[] };
 /**
@@ -133,7 +146,13 @@ export const actorOf = (persona: Actor): Actor => ({
   role: persona.role,
   ...(persona.userName ? { userName: persona.userName } : {}),
   ...(persona.units?.length ? { units: persona.units.map(u => ({ unitId: u.unitId, unitLabel: u.unitLabel })) } : {}),
-  ...(persona.assignments && persona.assignments.length > 1
+  // D149: said of every manager, so nothing downstream has to work out what a manager leads; an empty list is
+  // someone people report to who leads no unit. Worked out here, while the assignments are still at hand: a connector
+  // that does not take them (D135) is told what the person leads all the same.
+  ...(persona.role === 'manager' || leadsOf(persona).length
+    ? { leads: leadsOf(persona).map(u => ({ unitId: u.unitId, unitLabel: u.unitLabel })) }
+    : {}),
+  ...(persona.assignments?.length
     ? { assignments: persona.assignments.map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel, role: a.role })) }
     : {}),
 });

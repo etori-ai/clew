@@ -98,6 +98,10 @@ export interface GroupRelationRule {
   groupExternalId: string;
   relation: string;
 }
+/**
+ * One of a person's units with their role there (D149): `manager` where they lead the unit, `employee` where
+ * they belong to it without leading it.
+ */
 export interface Assignment {
   unitId: string;
   role: Role;
@@ -116,10 +120,11 @@ export interface GrantAssignment extends Assignment {
   unitLabel: string;
 }
 /**
- * The grant projection: the primary assignment with its label, the capabilities, the relations to people by grant
- * (`auth_access_grant`), and every assignment when the person holds more than one (D135). `relations` is present only
- * when the person holds one (D121), sorted; `assignments` only when there are two or more, sorted by unit id, the
- * primary among them.
+ * The grant projection (`auth_access_grant`): the unit the person acts as with its label, whether they are a manager,
+ * the capabilities, the relations to people by grant, and their assignments. `role` is `manager` when somebody reports
+ * to them or they lead a unit (D149); it does not say that they lead `unitId`. `relations` is present only when
+ * the person holds one (D121), sorted. `assignments` is every unit they belong to or lead with their role there (D135),
+ * sorted by unit id, and absent only when there is one and it says what `unitId` and `role` already say.
  */
 export interface Grant {
   unitId: string;
@@ -130,15 +135,22 @@ export interface Grant {
   assignments?: GrantAssignment[];
 }
 export interface Derived {
-  /** Every unit the person is assigned to, sorted by unit id. */
+  /** Every unit the person belongs to or leads, sorted by unit id. */
   units: DerivedUnit[];
-  /** Every assignment, one per unit, sorted by unit id. */
+  /** The units the person belongs to, by unit id: where they are employed, and the `unit:` groups they are in. */
+  belongs: string[];
+  /** The units the person leads, by unit id: the `unit-manager:` groups they are in. */
+  leads: string[];
+  /** One for each of those units, sorted by unit id: `manager` where they lead it, `employee` where they only belong. */
   assignments: Assignment[];
   /**
-   * The primary assignment: manager before employee, then the lowest unit id. It is the `unitId` and `role` a connector
-   * is told and decides who reaches a connector; the others travel beside it (D135).
+   * The unit the person acts as, with their role on it (D149): the unit of their first employment; for a person
+   * the directory sends no employment for, a unit they lead before one they are placed on, then the lowest unit id
+   * (D135). Its unit is the grant's `unitId`, and decides who reaches a connector; the others travel beside it.
    */
   active: Assignment | undefined;
+  /** Whether the person is a manager: somebody reports to them, or they lead a unit (D149). */
+  role: Role;
   capabilities: Capability[];
   /** D121: the relations the person's groups give by grant, sorted; empty for nearly everyone. */
   relations: RelationGrant[];
@@ -148,9 +160,19 @@ export interface Derived {
   positions: Position[];
 }
 /**
- * The order of unit ids decides the primary assignment (D101 item 8): `byUnitId` from the contracts, the comparator the
+ * What the directory says of a person beyond the groups they are in (D149): the units of their current
+ * employments, in the directory's order and only those the organisation holds, and whether an active person reports to
+ * them. Both are read when the person is derived, and neither is worked out from the tree.
+ */
+export interface Standing {
+  employed: readonly string[];
+  reports: boolean;
+}
+/**
+ * The unit a person acts as when the directory sends no employment for them (D135, D101 item 8): a unit they lead
+ * before one they are placed on, then the lowest unit id by `byUnitId` from the contracts, the comparator the
  * authorization fingerprint orders assignments by too, so `Skola` comes before `förskola`, `z` before `ä` and `10`
- * before `9`. Both adapters reach the primary unit through this one derivation.
+ * before `9`. Both adapters reach it through this one derivation.
  */
 export function activeOf(assignments: readonly Assignment[]): Assignment | undefined {
   return [...assignments].sort(
@@ -158,25 +180,33 @@ export function activeOf(assignments: readonly Assignment[]): Assignment | undef
   )[0];
 }
 /**
- * `knownLabels` names units the person manages without a `unit:` membership of their own (a manager who is not also
- * listed as an employee), from the unit table; a unit known nowhere is labelled by its id.
+ * `knownLabels` names units the person leads or is employed on without a `unit:` membership of their own, from the
+ * unit table and the unit groups; a unit known nowhere is labelled by its id.
+ *
+ * Three facts are kept apart and none is worked out from another (D147 items 6 and 9). A person **belongs** to the
+ * units of their current employments, and to any unit whose `unit:` group they are in: the group is how a directory
+ * that sends no employments says it, and how a placement away from the job is said. They **lead** the units whose
+ * `unit-manager:` group they are in. And somebody **reports** to them when an employment names them. They are a manager
+ * when they lead a unit or somebody reports to them, and the unit they act as is the one they are employed on.
  */
 export function deriveAuthority(
   memberships: readonly Membership[],
   rules: readonly GroupCapabilityRule[],
   knownLabels: Readonly<Record<string, string>> = {},
   relationRules: readonly GroupRelationRule[] = [],
+  standing: Standing = { employed: [], reports: false },
 ): Derived {
-  const roles = new Map<string, Role>(),
+  const leads = new Set<string>(),
+    belongs = new Set<string>(standing.employed),
     labels = new Map<string, string>(),
     capabilities = new Set<Capability>(),
     held = new Set(memberships.map(m => m.externalId));
   let isProtected = false;
   for (const m of memberships) {
     const key = readScimGroupKey(m.externalId);
-    if (key?.prefix === MANAGER_KEY) roles.set(key.value, 'manager');
+    if (key?.prefix === MANAGER_KEY) leads.add(key.value);
     else if (key?.prefix === UNIT_KEY) {
-      if (roles.get(key.value) !== 'manager') roles.set(key.value, 'employee');
+      belongs.add(key.value);
       labels.set(key.value, m.label);
     } else if (key?.prefix === CAPABILITY_KEY) {
       if (isCapability(key.value)) capabilities.add(key.value);
@@ -188,30 +218,40 @@ export function deriveAuthority(
   const related = new Set<RelationGrant>();
   for (const row of relationRules)
     if (held.has(row.groupExternalId) && isRelationGrant(row.relation)) related.add(row.relation);
-  const assignments = [...roles.entries()]
-    .map(([unitId, role]) => ({ unitId, role }))
+  // One row a unit: `manager` where they lead it, whether or not they also belong to it; `employee` where they only belong.
+  const assignments = [...new Set([...belongs, ...leads])]
+    .map((unitId): Assignment => ({ unitId, role: leads.has(unitId) ? 'manager' : 'employee' }))
     .sort((a, b) => byUnitId(a.unitId, b.unitId));
-  const active = activeOf(assignments),
+  // The unit they act as: where they are employed, first employment first. A directory that sends no employment for the
+  // person leaves the choice to the groups, as before (D135).
+  const employedOn = standing.employed[0],
+    active = employedOn !== undefined ? assignments.find(a => a.unitId === employedOn) : activeOf(assignments),
+    role: Role = leads.size > 0 || standing.reports ? 'manager' : 'employee',
     sorted = [...capabilities].sort(),
     relations = RELATION_GRANTS.filter(r => related.has(r)),
-    labelOf = (unitId: string) => labels.get(unitId) ?? knownLabels[unitId] ?? unitId;
+    labelOf = (unitId: string) => labels.get(unitId) ?? knownLabels[unitId] ?? unitId,
+    // Left out only when there is one unit and its role is the person's own: then `unitId` and `role` say it all.
+    plain = assignments.length === 1 && assignments[0]!.role === role;
   return {
     units: assignments.map(a => ({ id: a.unitId, label: labelOf(a.unitId) })),
+    belongs: [...belongs].sort(byUnitId),
+    leads: [...leads].sort(byUnitId),
     assignments,
     active,
+    role,
     capabilities: sorted,
     relations,
     protected: isProtected,
     grant: active && {
       unitId: active.unitId,
       unitLabel: labelOf(active.unitId),
-      role: active.role,
+      role,
       capabilities: sorted,
       ...(relations.length ? { relations } : {}),
-      // D135: a person with one assignment has a grant as before; with more, every one rides on it.
-      ...(assignments.length > 1
-        ? { assignments: assignments.map(a => ({ unitId: a.unitId, unitLabel: labelOf(a.unitId), role: a.role })) }
-        : {}),
+      // D135: every unit rides on the grant with the role there, unless the one unit and the role above say it all.
+      ...(plain
+        ? {}
+        : { assignments: assignments.map(a => ({ unitId: a.unitId, unitLabel: labelOf(a.unitId), role: a.role })) }),
     },
     positions: derivePositions(memberships),
   };
@@ -277,13 +317,24 @@ export interface TreeUnit {
   label: string;
   parentId: string | null;
 }
-/** One person on one unit, or a person on none (`unitId` and `role` null). */
+/**
+ * One of a person's units as the store holds it (D149): `role` is `manager` where they lead the unit, and
+ * `belongs` says whether they are of it, by an employment or its `unit:` group. Someone who leads a unit they are
+ * employed elsewhere than is its manager and does not belong to it; one who only belongs is an `employee`.
+ */
+export interface HeldUnit {
+  unitId: string;
+  role: Role;
+  belongs: boolean;
+}
+/** One person on one unit, as `HeldUnit` says it, or a person on none (`unitId` and `role` null, `belongs` false). */
 export interface Placement {
   personId: string;
   name: string;
   enabled: boolean;
   unitId: string | null;
   role: Role | null;
+  belongs: boolean;
 }
 export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
 /**
@@ -377,9 +428,11 @@ export function organisationOf(
   };
   const managers = new Map<string, Array<{ id: string; name: string }>>(),
     placed = new Map<string, number>();
+  // D149: who leads a unit and who belongs to it are counted apart. Someone who leads a unit they are employed
+  // elsewhere than is its manager and is counted where they belong.
   for (const p of active) {
     if (p.unitId === null) continue;
-    placed.set(p.unitId, (placed.get(p.unitId) ?? 0) + 1);
+    if (p.belongs) placed.set(p.unitId, (placed.get(p.unitId) ?? 0) + 1);
     if (leadsUnit(p)) managers.set(p.unitId, [...(managers.get(p.unitId) ?? []), { id: p.personId, name: p.name }]);
   }
   // Each placement counts on its unit and on every unit above it, a person once however many units of the branch they
@@ -387,13 +440,13 @@ export function organisationOf(
   const branch = new Map<string, Set<string>>();
   for (const p of active) {
     const seen = new Set<string>();
-    for (let at = p.unitId; at !== null && !seen.has(at); at = parentOf(at)) {
+    for (let at = p.belongs ? p.unitId : null; at !== null && !seen.has(at); at = parentOf(at)) {
       seen.add(at);
       branch.set(at, (branch.get(at) ?? new Set()).add(p.personId));
     }
   }
-  // D147: who reports to nobody, of the active people placed on a unit. Counted on each unit they are placed on, and
-  // once for the organisation.
+  // D147: who reports to nobody, of the active people with a unit. Counted on each unit they belong to or lead, as
+  // the unit's list of people shows them, and once for the organisation.
   const reporting = reportingOf(new Set(active.map(p => p.personId)), named),
     unmanaged = new Map<string, Set<string>>(),
     without = new Set<string>();

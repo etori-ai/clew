@@ -24,6 +24,7 @@ import { entityUsecases } from '../../apps/server/src/modules/entities/usecases'
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
 import type { DirectoryPerson, EntityBudget } from '../../apps/server/src/modules/entities/model';
 import { memoryPersonKeys } from '../person-keys';
+import { hold, unitsHeld } from '../held-units';
 
 /**
  * Entities (D97) as the person meets them: the real registry with small in-test sources that declare `about`, the
@@ -53,7 +54,7 @@ function directory(extra: { onSkola?: Person[] } = {}) {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set(p.id, [...(s.assignments.get(p.id) ?? []), { unitId, role }]);
+    hold(s, p.id, [...(unitsHeld(s, p.id) ?? []), { unitId, role }]);
     s.grants.set(p.id, { unitId, unitLabel: s.units.get(unitId)!.label, role, capabilities: [] });
   };
   s.units.set('unit-skola', { organisationId: 'poc', label: 'Bergsåkers skola' });
@@ -871,10 +872,7 @@ describe('the opened person or unit', () => {
     expect(kim?.entity.unit).toEqual({ id: 'unit-kok', label: 'Köket' });
     expect(await w.entities.detail(hillevi, 'unit', 'unit-kok')).toBeUndefined();
     // Placed on Köket as well, Hillevi belongs to it, and its page opens for her.
-    people.state.assignments.set('hillevi', [
-      ...people.state.assignments.get('hillevi')!,
-      { unitId: 'unit-kok', role: 'employee' },
-    ]);
+    hold(people.state, 'hillevi', [...unitsHeld(people.state, 'hillevi')!, { unitId: 'unit-kok', role: 'employee' }]);
     expect((await w.entities.detail(hillevi, 'person', 'kim'))?.entity.unit).toEqual({
       id: 'unit-kok',
       label: 'Köket',
@@ -890,10 +888,7 @@ describe('the opened person or unit', () => {
     people.node('unit-skola', 'Bergsåkers skola', null);
     people.node('unit-arkiv', 'Arkivet', null);
     people.node('unit-depa', 'Arkivdepån', 'unit-arkiv');
-    people.state.assignments.set('hillevi', [
-      ...people.state.assignments.get('hillevi')!,
-      { unitId: 'unit-arkiv', role: 'manager' },
-    ]);
+    hold(people.state, 'hillevi', [...unitsHeld(people.state, 'hillevi')!, { unitId: 'unit-arkiv', role: 'manager' }]);
     people.place({ id: 'sara', name: 'Sara Ek', userName: 'sara' }, 'unit-depa', 'manager');
     people.place({ id: 'sara', name: 'Sara Ek', userName: 'sara' }, 'unit-skola', 'employee');
     people.state.users.get('sara')!.employments = [
@@ -1353,7 +1348,7 @@ describe('the units below the reader (D117)', () => {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set('ingrid', [{ unitId: 'unit-grundskola', role: 'manager' }]);
+    hold(s, 'ingrid', [{ unitId: 'unit-grundskola', role: 'manager' }]);
     s.grants.set('ingrid', { unitId: 'unit-grundskola', unitLabel: 'Grundskola', role: 'manager', capabilities: [] });
     s.users.get('hillevi')!.employments = [{ unitId: employedOn, managerId: 'ingrid' }];
     return w.people.persona('ingrid');
@@ -1440,7 +1435,8 @@ describe('the units below the reader (D117)', () => {
       unitLabel: 'Grundskola',
       role: 'manager' as const,
     };
-    expect(actorOf(base)).toEqual(base);
+    // D149: a manager's actor says the units they lead; the units they follow up travel beside them.
+    expect(actorOf(base)).toEqual({ ...base, leads: [{ unitId: 'unit-grundskola', unitLabel: 'Grundskola' }] });
     const units = [
       { unitId: 'unit-grundskola', unitLabel: 'Grundskola' },
       { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola' },

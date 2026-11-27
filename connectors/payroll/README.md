@@ -6,8 +6,8 @@ does not (D55 item 8). A kind of system, not a product (D52). An independent Nod
 that imports nothing from the rest of the repository (D21); the shape is [hr](../hr/README.md)'s without writes (`PORT`
 is 4046; there is no store to speak of, no scan and no figure).
 
-A manager of the unit gets the area `payroll` with `payroll.absences`, the sick reports the nightly import has brought
-over, as a table. `payroll.absenceStatus` is the read a watch repeats: `registered` once the report for that person and
+A manager gets the area `payroll` with `payroll.absences`, the sick reports the nightly import has brought over for
+the staff of the units they lead (the actor's `leads`, D149; never the unit they are only employed on), as a table. `payroll.absenceStatus` is the read a watch repeats: `registered` once the report for that person and
 day has been imported, `pending` until then. `payroll.followAbsence` follows `hr:absence` with that one watch step,
 within a day.
 

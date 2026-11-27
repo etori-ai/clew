@@ -24,7 +24,17 @@ export declare function verifyAssertion(
   audience: string,
   now: number,
   binding: AssertionBinding,
-): { id: string; name: string; unitId: string; unitLabel: string; role: 'manager' | 'employee' } | null;
+): {
+  id: string;
+  name: string;
+  /** The unit the person is employed on; it need not be one they lead. */
+  unitId: string;
+  unitLabel: string;
+  /** Whether the person is a manager: they lead a unit, or people report to them. */
+  role: 'manager' | 'employee';
+  /** The units the person leads, on every manager's assertion and empty for one who leads none; absent for anyone else. */
+  leads?: Array<{ unitId: string; unitLabel: string }>;
+} | null;
 /** Whether the assertion is the installation's own for exactly this request (D119); `binding` is required. */
 export declare function verifyInstallationAssertion(
   token: string,

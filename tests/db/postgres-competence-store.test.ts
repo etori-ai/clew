@@ -37,6 +37,7 @@ afterAll(async () => {
     await db.delete(schema.audit).where(like(schema.audit.subject, '%:' + p + '%'));
     await db.delete(schema.connectors).where(like(schema.connectors.id, p + '%'));
     await db.delete(schema.assignments).where(like(schema.assignments.personId, p + '%'));
+    await db.delete(schema.unitLeads).where(like(schema.unitLeads.personId, p + '%'));
     await db.delete(schema.personPositions).where(like(schema.personPositions.personId, p + '%'));
     await db.delete(schema.groups).where(like(schema.groups.id, p + '%'));
     await db.delete(schema.units).where(like(schema.units.id, p + '%'));
@@ -124,7 +125,7 @@ competenceStoreContract('postgres', async () => {
           });
     },
     async place(personId, unitId) {
-      await database().insert(schema.assignments).values({ personId, unitId, role: 'employee' });
+      await database().insert(schema.assignments).values({ personId, unitId });
     },
   };
 });

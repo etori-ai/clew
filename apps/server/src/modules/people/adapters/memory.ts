@@ -3,11 +3,11 @@ import {
   bySwedish,
   ERASED,
   unitGroupOf,
-  type Assignment,
   type Grant,
   type GroupCapabilityRule,
   type GroupRelationRule,
   type GroupRecord,
+  type HeldUnit,
   type Placement,
   type UserRecord,
 } from '../domain';
@@ -30,7 +30,10 @@ export interface MemoryProvisionState {
   /** D121: a group gives its members a relation to people by grant. */
   groupRelations: Array<GroupRelationRule & { organisationId: string }>;
   units: Map<string, { organisationId: string; label: string }>;
-  assignments: Map<string, Assignment[]>;
+  /** The units each person belongs to, as `auth_assignment` holds them. */
+  assignments: Map<string, string[]>;
+  /** The units each person leads, as `auth_unit_lead` holds them. */
+  leads: Map<string, string[]>;
   /** `relations` (D121) only when the person holds one, as the projection stores it. */
   grants: Map<string, Omit<Grant, 'capabilities' | 'relations'> & { capabilities: string[]; relations?: string[] }>;
   /** D108 item 5: the organisations' positions, by the store's id; a code is unique within its organisation. */
@@ -82,6 +85,7 @@ export function memoryProvisionStore(
     groupRelations: [],
     units: new Map(),
     assignments: new Map(),
+    leads: new Map(),
     grants: new Map(),
     positions: new Map(),
     personPositions: new Map(),
@@ -119,6 +123,14 @@ export function memoryProvisionStore(
 /** The port of a transaction over one state: the store's own, or the copy a snapshot reads. */
 function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOptions) {
   const byId = <T extends { id: string }>(rows: T[]) => rows.sort((a, b) => a.id.localeCompare(b.id));
+  /** A person's units, each once and by unit id: where they belong and what they lead, read together (`HeldUnit`). */
+  const heldBy = (personId: string): HeldUnit[] => {
+    const belongs = new Set(state.assignments.get(personId)),
+      leads = new Set(state.leads.get(personId));
+    return [...new Set([...belongs, ...leads])]
+      .sort((a, b) => a.localeCompare(b))
+      .map(unitId => ({ unitId, role: leads.has(unitId) ? 'manager' : 'employee', belongs: belongs.has(unitId) }));
+  };
   const page = <T extends { id: string }>(rows: T[], p: { startIndex: number; count: number }) => ({
     total: rows.length,
     rows: byId(rows).slice(p.startIndex - 1, p.startIndex - 1 + p.count),
@@ -229,10 +241,25 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
     async writeUnits(organisationId, units) {
       for (const u of units) state.units.set(u.id, { organisationId, label: u.label });
     },
-    async replaceAssignments(personId, assignments) {
-      state.assignments.set(
-        personId,
-        assignments.map(a => ({ ...a })),
+    async replaceUnits(personId, held) {
+      state.assignments.set(personId, [...new Set(held.belongs)]);
+      state.leads.set(personId, [...new Set(held.leads)]);
+    },
+    async employedOn(organisationId, unitId) {
+      return [...state.users.values()]
+        .filter(u => u.organisationId === organisationId && u.employments.some(job => job.unitId === unitId))
+        .map(u => u.id)
+        .sort((a, b) => a.localeCompare(b));
+    },
+    async hasReports(organisationId, personId) {
+      const named = new Set(state.users.get(personId)?.employments.map(job => job.managerId));
+      return [...state.users.values()].some(
+        u =>
+          u.organisationId === organisationId &&
+          u.enabled &&
+          u.id !== personId &&
+          !named.has(u.id) &&
+          u.employments.some(job => job.managerId === personId),
       );
     },
     async grant(personId) {
@@ -249,7 +276,7 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
         ...rest,
         capabilities: [...grant.capabilities],
         ...(relations?.length ? { relations: [...relations] } : {}),
-        ...(assignments && assignments.length > 1 ? { assignments: assignments.map(a => ({ ...a })) } : {}),
+        ...(assignments?.length ? { assignments: assignments.map(a => ({ ...a })) } : {}),
       });
     },
     async positionsOf(personId) {
@@ -466,7 +493,7 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
               ),
             ) &&
             (!(search.unitIds || search.role) ||
-              (state.assignments.get(u.id) ?? []).some(
+              heldBy(u.id).some(
                 a => (!search.unitIds || search.unitIds.includes(a.unitId)) && (!search.role || a.role === search.role),
               )) &&
             (!search.status || search.status === status) &&
@@ -480,9 +507,7 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
       };
     },
     async assignmentsOf(personId) {
-      return (state.assignments.get(personId) ?? [])
-        .map(a => ({ unitId: a.unitId, unitLabel: state.units.get(a.unitId)?.label ?? a.unitId, role: a.role }))
-        .sort((a, b) => a.unitId.localeCompare(b.unitId));
+      return heldBy(personId).map(a => ({ ...a, unitLabel: state.units.get(a.unitId)?.label ?? a.unitId }));
     },
     async managersNamed(organisationId, personIds) {
       const asked = personIds && new Set(personIds),
@@ -509,20 +534,21 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
           email: u.email,
           enabled: u.enabled,
           unitIds: [...new Set(u.employments.filter(job => job.managerId === managerId).map(job => job.unitId))],
-          leads: (state.assignments.get(u.id) ?? [])
-            .filter(a => a.role === 'manager')
-            .map(a => a.unitId)
-            .sort(byCodeUnit),
+          leads: [...(state.leads.get(u.id) ?? [])].sort(byCodeUnit),
         }));
     },
     async unitPeople(unitIds, organisationId) {
       const byUnit: Awaited<ReturnType<ProvisionTx['unitPeople']>> = {};
-      for (const [personId, list] of [...state.assignments.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      const people = [...new Set([...state.assignments.keys(), ...state.leads.keys()])].sort((a, b) =>
+        a.localeCompare(b),
+      );
+      for (const personId of people) {
         const u = state.users.get(personId);
         if (!u || (organisationId !== undefined && u.organisationId !== organisationId)) continue;
         const person = { id: u.id, name: u.name, userName: u.userName, email: u.email, enabled: u.enabled };
-        for (const a of list)
-          if (unitIds.includes(a.unitId)) (byUnit[a.unitId] ??= []).push({ ...person, role: a.role });
+        for (const a of heldBy(personId))
+          if (unitIds.includes(a.unitId))
+            (byUnit[a.unitId] ??= []).push({ ...person, role: a.role, belongs: a.belongs });
       }
       return byUnit;
     },
@@ -557,10 +583,10 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
         .sort((a, b) => a.id.localeCompare(b.id))
         .flatMap((u): Placement[] => {
           const person = { personId: u.id, name: u.name, enabled: u.enabled },
-            held = [...(state.assignments.get(u.id) ?? [])].sort((a, b) => a.unitId.localeCompare(b.unitId));
+            held = heldBy(u.id);
           return held.length
-            ? held.map(a => ({ ...person, unitId: a.unitId, role: a.role }))
-            : [{ ...person, unitId: null, role: null }];
+            ? held.map(a => ({ ...person, ...a }))
+            : [{ ...person, unitId: null, role: null, belongs: false }];
         });
     },
     async bound(personId) {

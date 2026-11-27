@@ -206,6 +206,11 @@ const snapshot = async () => ({
     .select()
     .from(schema.assignments)
     .where(like(schema.assignments.personId, prefix + '%')),
+  // D149: what a person leads is a table of its own, beside where they belong.
+  leads: await db
+    .select()
+    .from(schema.unitLeads)
+    .where(like(schema.unitLeads.personId, prefix + '%')),
   employments: await db
     .select()
     .from(schema.employments)
@@ -270,6 +275,7 @@ afterAll(async () => {
     await db.delete(schema.sessions).where(inArray(schema.sessions.personId, people));
     await db.delete(schema.groupMembers).where(inArray(schema.groupMembers.personId, people));
     await db.delete(schema.assignments).where(inArray(schema.assignments.personId, people));
+    await db.delete(schema.unitLeads).where(inArray(schema.unitLeads.personId, people));
     await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, people));
   }
   await db.delete(schema.groups).where(like(schema.groups.id, prefix + '%'));
@@ -377,6 +383,9 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
       expect.objectContaining({ id: asa, userName: renamed.userName, externalId: renamed.externalId, active: false }),
     ]);
   expect(await signIn(issuerA, 'sub-y-' + prefix, claim, renamed.userName.toUpperCase())).toEqual({ personId: asa });
+  // D149: she led her unit too, which is a row of its own. Written as the derivation would have left it had a
+  // manager group named her: the same unit, so she still holds one.
+  await db.insert(schema.unitLeads).values({ personId: asa, unitId });
   // A user name in any case, and an id nobody holds, are nobody: refused, and nothing is written.
   const before = await snapshot();
   for (const key of [renamed.userName, first.userName.toUpperCase(), prefix + '-nobody'])
@@ -437,6 +446,9 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     [choir.id, erasedAt],
   ]);
   expect(after.assignments.map(a => a.personId)).toEqual([bo]);
+  // What she led is gone with where she belonged.
+  expect(before.leads).toEqual([{ personId: asa, unitId }]);
+  expect(after.leads).toEqual([]);
   // D147: her employments were rows of their own, and they are gone with the rest of her profile.
   expect(before.employments.some(row => row.personId === asa)).toBe(true);
   expect(after.employments.filter(row => row.personId === asa)).toEqual([]);

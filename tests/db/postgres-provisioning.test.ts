@@ -35,6 +35,7 @@ afterAll(async () => {
       );
       await db.delete(schema.groupMembers).where(inArray(schema.groupMembers.personId, people));
       await db.delete(schema.assignments).where(inArray(schema.assignments.personId, people));
+      await db.delete(schema.unitLeads).where(inArray(schema.unitLeads.personId, people));
       await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, people));
     }
     // D108 item 5: the positions of the run's organisations, and those whose code carries the prefix; holds go with them.
@@ -135,12 +136,24 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
         .where(eq(schema.accessGrants.personId, id));
       return row;
     },
+    // D149: where a person belongs and what they lead are two tables. Read together as the contract reads a
+    // person's units: one row a unit, `manager` where they lead it, by unit id as the memory harness orders them.
     async assignments(id) {
-      return db
-        .select({ unitId: schema.assignments.unitId, role: schema.assignments.role })
-        .from(schema.assignments)
-        .where(eq(schema.assignments.personId, id))
-        .orderBy(schema.assignments.unitId);
+      const belongs = await db
+          .select({ unitId: schema.assignments.unitId })
+          .from(schema.assignments)
+          .where(eq(schema.assignments.personId, id)),
+        leads = new Set(
+          (
+            await db
+              .select({ unitId: schema.unitLeads.unitId })
+              .from(schema.unitLeads)
+              .where(eq(schema.unitLeads.personId, id))
+          ).map(row => row.unitId),
+        );
+      return [...new Set([...belongs.map(row => row.unitId), ...leads])]
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(unitId => ({ unitId, role: leads.has(unitId) ? 'manager' : 'employee' }));
     },
     async unitLabel(id) {
       const [row] = await db.select({ label: schema.units.label }).from(schema.units).where(eq(schema.units.id, id));

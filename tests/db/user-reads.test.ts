@@ -34,6 +34,7 @@ const actors = userReadActors(prefix),
 const ids = [...actors.map(a => a.id), colleague.id, ...others.map(o => o.id)];
 afterAll(async () => {
   await database().delete(schema.assignments).where(inArray(schema.assignments.personId, ids));
+  await database().delete(schema.unitLeads).where(inArray(schema.unitLeads.personId, ids));
   await database().delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, ids));
   await database().delete(schema.people).where(inArray(schema.people.id, ids));
   await database()
@@ -66,12 +67,15 @@ userReadsContract('postgres', async () => {
     await tx
       .insert(schema.units)
       .values(actors.map(a => ({ id: a.unitId, organisationId: USER_READ_ORGANISATION, label: a.unitLabel })));
+    // D149: each is of the units the fixture places them on, and leads those it says they manage: two tables.
+    const placed = [
+      ...actors.map(a => ({ personId: a.id, unitId: a.unitId, role: a.role })),
+      ...colleague.placed.map(p => ({ personId: colleague.id, unitId: p.unitId, role: p.role })),
+    ];
+    await tx.insert(schema.assignments).values(placed.map(({ personId, unitId }) => ({ personId, unitId })));
     await tx
-      .insert(schema.assignments)
-      .values([
-        ...actors.map(a => ({ personId: a.id, unitId: a.unitId, role: a.role })),
-        ...colleague.placed.map(p => ({ personId: colleague.id, ...p })),
-      ]);
+      .insert(schema.unitLeads)
+      .values(placed.filter(p => p.role === 'manager').map(({ personId, unitId }) => ({ personId, unitId })));
     // The colleague's grant names the unit they lead, as the derivation writes it.
     await tx.insert(schema.accessGrants).values([
       ...actors.map(a => ({

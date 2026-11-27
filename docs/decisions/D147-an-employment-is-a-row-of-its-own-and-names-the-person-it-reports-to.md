@@ -1,6 +1,6 @@
 # D147 · An employment is a row of its own and names the person it reports to
 
-**Status:** provisional (Max Eriksson, 2026-11-25: build the storage first, then the line that reads it; accepted once a provisioner has pushed managers from a real directory and the people it names have used Personal); items 1 to 8 are built, item 9 is a proposal that waits for a decision and is built by nothing · **Date:** 2026-11-25 · **Area:** identity
+**Status:** provisional (Max Eriksson, 2026-11-25: build the storage first, then the line that reads it; accepted once a provisioner has pushed managers from a real directory and the people it names have used Personal); items 1 to 8 are built; item 9 was decided on 2026-11-27 and is built as [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md) · **Date:** 2026-11-25 · **Area:** identity
 
 **Decision.** Who a person reports to is a fact of the employment, sent by the directory. Clew stores it where the
 directory holds it and reads the reporting line from it, and from nothing else.
@@ -33,7 +33,8 @@ The storage:
 
 The line:
 
-6. **Three relations are kept apart.** That a person belongs to a unit (membership of the `unit:` group), that a person
+6. **Three relations are kept apart.** That a person belongs to a unit (an employment on it, or membership of the
+   `unit:` group; before [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md) the group alone), that a person
    leads a unit (membership of the `unit-manager:` group) and that a person reports to another (the employment's
    manager) are three facts from three places in the directory. None is worked out from another. A unit a person leads
    is theirs to read about and to follow up; a unit that only holds one of their reports is not. Where two of the facts
@@ -63,21 +64,15 @@ unit the reader leads has its card whether or not anybody on it reports to them.
 (`below`). The refusal is "Sidan Personal är för den som är chef.", for someone who leads no unit and whom nobody reports
 to.
 
-Proposed, and built by nothing:
+Decided on 2026-11-27 and recorded on its own:
 
-9. **Belonging and leading become two tables.** `auth_assignment` holds both in one row with a role, so a row that says
-   manager does not say whether the person works on the unit or only leads it. They are split, the unit a person acts
-   as is one they belong to, and being a manager follows from leading a unit or from having someone report to you.
-   It is a proposal and waits for a decision ([open questions](../maintainers/open-questions.md)): it changes the
-   primary assignment of
-   [D135](D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) item 1, and with it what every source
-   is told of a person and whom a scope and an audience reach.
+9. **Belonging and leading become two tables.** `auth_assignment` held both in one row with a role, so a row that said
+   manager did not say whether the person works on the unit or only leads it. They are split, the unit a person acts
+   as is the one they are employed on, and being a manager follows from leading a unit or from having someone report
+   to you. [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md) is the decision and says what was built.
 
 **Known limits.**
 
-- Being a manager still follows from leading a unit: the session's role, the rail and every scope that asks for
-  `manager` read the grant's role. Someone whose only claim is that people report to them is answered by
-  `staffUsecases` and reaches no page that shows it until item 9 is built.
 - A gap in the directory is shown and mended nowhere in Clew. When a manager is deactivated before the directory names
   another on the employments of the people who reported to them, those people are on nobody's list, a self-registered
   competence finds nobody to approve it, and a plan held for one of them who leaves is held by nobody, until the
@@ -128,8 +123,8 @@ and leaving; [D94](D94-a-manager-has-a-personal-section-listing-the-people-on-th
 `managed` and of the units below in both records numbered D117, which now rest on the employments. D99's tree, its
 moves and its rule that a manager works with their direct reports stand.
 
-**Would replace, if item 9 is decided.** D101 items 7 and 8 and D135 item 1 where they choose the unit a person acts as
-by the manager's role first.
+Item 9 replaces D101 items 7 and 8 and D135 item 1 where they choose the unit a person acts as by the manager's role
+first; [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md) says how.
 
 **Evidence.** The storage: `tests/unit/scim-as-clients-send-it.test.ts` (the manager told back, audited, refused and
 left beside a deactivation), `tests/scim-store-contract.ts` on both adapters, `tests/db/person-erase.test.ts`,

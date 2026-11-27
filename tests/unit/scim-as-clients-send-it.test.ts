@@ -350,7 +350,7 @@ describe('current employments on a SCIM user', () => {
       ]) {
         const left = await patch(path, ...operations);
         expect(left).toMatchObject({ status: 200, body: { ...stored, active: false, displayName: 'User 1' } });
-        const row = store.state.audit.at(-1)!;
+        const row = [...store.state.audit].reverse().find(written => written.action.startsWith('scim.user.'))!;
         expect([row.action, row.subject, row.details]).toEqual([
           'scim.user.deactivated',
           'person:' + id,
@@ -358,9 +358,11 @@ describe('current employments on a SCIM user', () => {
         ]);
         await patch(path, { op: 'replace', path: 'active', value: true });
       }
+    // The person is of the unit by their employment alone (D149), so each deactivation takes their grant away
+    // and each return gives it back: a deactivated person's employment places nobody.
     expect(store.state.audit.slice(audited).map(row => row.action)).toEqual(
       Array(missing.length * 2)
-        .fill(['scim.user.deactivated', 'scim.user.reactivated'])
+        .fill(['scim.user.deactivated', 'grant.derived', 'scim.user.reactivated', 'grant.derived'])
         .flat(),
     );
     // An explicit null takes a list away, by its path and in the extension's object; so does a remove. (The URN holds
@@ -414,7 +416,7 @@ describe('current employments on a SCIM user', () => {
       await patch(path, { op: 'replace', path: 'active', value: true });
     }
     expect(store.state.audit.slice(audited).map(row => row.action)).toEqual(
-      Array(5).fill(['scim.user.deactivated', 'scim.user.reactivated']).flat(),
+      Array(5).fill(['scim.user.deactivated', 'grant.derived', 'scim.user.reactivated', 'grant.derived']).flat(),
     );
     // A filtered remove takes what its filter names; a remove with no value, or a value of null, takes the list.
     expect((await patch(path, { op: 'remove', path: 'phoneNumbers[type eq "mobile"]' })).body.phoneNumbers).toEqual([

@@ -58,9 +58,10 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
   };
   // The person's directory user name is signed with the rest of the actor when they have one (D44, D97): the key a
   // connector knows them by; so are the units they follow up when the call has them (D117), and, on a request's
-  // assertion, every assignment of a person who holds more than one (D135). All optional, so a grant signed without them
-  // still verifies. The callback grant never carries the assignments: Clew answers a callback from the person's current
-  // record, and what is signed twice is what makes a header too large (issue 64).
+  // assertion, the units they lead (D149) and their assignments (D135), as the published actor carries them
+  // (`actorOf`: nothing is worked out here). All optional, so a grant signed without them still verifies. The callback
+  // grant carries neither: Clew answers a callback from the person's current record, and what is signed twice is
+  // what makes a header too large (issue 64).
   const sign = (audience: string, actor: Actor, claims: Record<string, unknown>, assignments = false) =>
     new SignJWT({
       actor: {
@@ -71,7 +72,10 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
         unitLabel: actor.unitLabel,
         ...(actor.userName ? { userName: actor.userName } : {}),
         ...(actor.units?.length ? { units: actor.units } : {}),
-        ...(assignments && actor.assignments && actor.assignments.length > 1
+        ...(assignments && actor.leads
+          ? { leads: actor.leads.map(u => ({ unitId: u.unitId, unitLabel: u.unitLabel })) }
+          : {}),
+        ...(assignments && actor.assignments?.length
           ? { assignments: actor.assignments.map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel, role: a.role })) }
           : {}),
       },

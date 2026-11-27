@@ -66,6 +66,7 @@ afterAll(async () => {
       await db.delete(schema.jobs).where(or(...ids.map(p => like(schema.jobs.id, `attention:automatic:${p}:%`))));
       await db.delete(schema.personPositions).where(inArray(schema.personPositions.personId, ids));
       await db.delete(schema.assignments).where(inArray(schema.assignments.personId, ids));
+      await db.delete(schema.unitLeads).where(inArray(schema.unitLeads.personId, ids));
     }
     await db.delete(schema.positions).where(like(schema.positions.id, prefix + '%'));
     await db.delete(schema.groups).where(like(schema.groups.id, prefix + '%'));
@@ -126,8 +127,11 @@ async function world() {
       employmentType: 'Tillsvidare',
       startDate: '2026-12-04',
     });
-  for (const p of people)
-    await db.insert(schema.assignments).values({ personId: id(p.key), unitId: id(p.unit), role: p.role });
+  // D149: each is of their unit, and the managers lead it besides: two tables.
+  for (const p of people) {
+    await db.insert(schema.assignments).values({ personId: id(p.key), unitId: id(p.unit) });
+    if (p.role === 'manager') await db.insert(schema.unitLeads).values({ personId: id(p.key), unitId: id(p.unit) });
+  }
   await db
     .insert(schema.positions)
     .values({ id: id('larare'), organisationId: org, code: id('larare'), label: 'Lärare' });
@@ -230,8 +234,10 @@ describe('introduction and leaving on what composition builds (D124)', () => {
     const { id } = await w.start();
     // Olle takes over Karin's team; Karin moves to the school.
     await w.db.delete(schema.assignments).where(eq(schema.assignments.personId, w.id('karin')));
-    await w.db.insert(schema.assignments).values({ personId: w.id('karin'), unitId: w.id('school'), role: 'employee' });
-    await w.db.insert(schema.assignments).values({ personId: w.id('olle'), unitId: w.id('team'), role: 'manager' });
+    await w.db.delete(schema.unitLeads).where(eq(schema.unitLeads.personId, w.id('karin')));
+    await w.db.insert(schema.assignments).values({ personId: w.id('karin'), unitId: w.id('school') });
+    await w.db.insert(schema.assignments).values({ personId: w.id('olle'), unitId: w.id('team') });
+    await w.db.insert(schema.unitLeads).values({ personId: w.id('olle'), unitId: w.id('team') });
     // D147: and the directory names him on the employments of the team, which is what says whom they report to.
     await w.db
       .update(schema.employments)

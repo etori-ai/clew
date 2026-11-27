@@ -109,10 +109,17 @@ async function organisationRules(tx: ProvisionTx, organisationId: string): Promi
  * with. Called by whatever changed a membership or such a row, inside that change's transaction, so the grant never lags the
  * fact that produced it: the person is locked before their memberships are read, and the rows are read after that lock
  * or under the organisation's hold on them. An unchanged grant writes no audit row; a changed one writes `grant.derived`
- * on the person with the new unit, role and capabilities, and the placements when there is more than one (D99, D135),
- * or `removed: true` when the person has no unit left (fail closed). A grant carries every assignment of a person who
- * holds more than one (D135), so no change of placements leaves it as it was. A `protected` key never reaches these
+ * on the person with the new unit, role and capabilities, and the placements when they say more than those (D99,
+ * D135), or `removed: true` when the person has no unit left (fail closed). A grant carries every unit the person
+ * belongs to or leads (D135), so no change of placements leaves it as it was. A `protected` key never reaches these
  * tables (D93), so the derived flag stays false and is never written to the audit row.
+ *
+ * Three facts are read and none is worked out from another (D149): the units of the person's employments, where
+ * they belong; the `unit-manager:` groups they are in, which units they lead; and whether an employment of somebody
+ * else names them, which makes them a manager with no unit to lead. The last is another person's fact, so whatever
+ * writes an employment derives the managers it names too (`withManagersHeld` and `writeUser` in the SCIM use cases).
+ * Whether an employment's unit is one the organisation holds is the unit group's fact, so a write of that group derives
+ * the people employed on the unit (`employedOnUnit`).
  */
 export function provisioningUsecases(deps: { store: ProvisionStore }) {
   async function deriveWithin(
@@ -129,28 +136,41 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     const memberships = await tx.memberships(personId),
       { rules, relationRules } =
         known?.organisationId === person.organisationId ? known : await organisationRules(tx, person.organisationId);
-    // Every unit the memberships name, as the unit table knows it: the label of a managed unit without a `unit:` group,
-    // and the comparison that lets an unchanged derivation write nothing (a reconciliation replays every person).
-    const named = [...new Set(memberships.flatMap(m => unitOfKey(m.externalId) ?? []))];
+    // D149: where the person is employed, in the directory's order and each unit once, and only on units the
+    // organisation holds. A unit removed since the employment was written places nobody (the check names it), and
+    // neither does an employment of somebody who is deactivated: a leaver taken out of their groups has no unit left
+    // and so no grant, as before employments placed anybody (fail closed).
+    const user = await tx.readUser(person.organisationId, personId),
+      jobs = user?.enabled ? [...new Set(user.employments.map(job => job.unitId))] : [],
+      nodes = jobs.length ? await tx.unitTree(person.organisationId, jobs) : [],
+      employed = jobs.filter(id => nodes.some(node => node.id === id));
+    // Every unit the memberships and the employments name, as the unit table knows it: the label of a led unit without
+    // a `unit:` group, and the comparison that lets an unchanged derivation write nothing (a reconciliation replays
+    // every person).
+    const named = [...new Set([...memberships.flatMap(m => unitOfKey(m.externalId) ?? []), ...employed])];
     const knownLabels = named.length ? await tx.unitLabels(named, person.organisationId) : {};
-    // A unit the person leads without being placed on it is named by its `unit:` group, which they are no member of.
-    // The unit table has no row for a unit nobody was assigned to before them, so without this read the head of a
-    // unit nobody else is placed on would carry the unit's id as its name (D101).
+    // A unit the person leads or is employed on without being in its `unit:` group is named by that group, which they
+    // are no member of. The unit table has no row for a unit nobody was assigned to before them, so without this read
+    // the head of a unit nobody else is placed on would carry the unit's id as its name (D101).
     const placedOn = new Set(memberships.flatMap(m => unitGroupOf(m.externalId) ?? [])),
-      pushedLabels: Record<string, string> = {};
+      pushedLabels: Record<string, string> = Object.fromEntries(nodes.map(node => [node.id, node.label]));
     for (const id of named) {
-      const node = placedOn.has(id) ? undefined : await tx.findGroup('externalId', UNIT_KEY + id);
+      const node = placedOn.has(id) || id in pushedLabels ? undefined : await tx.findGroup('externalId', UNIT_KEY + id);
       if (node) pushedLabels[id] = node.label;
     }
-    const derived = deriveAuthority(memberships, rules, { ...knownLabels, ...pushedLabels }, relationRules);
+    const derived = deriveAuthority(memberships, rules, { ...knownLabels, ...pushedLabels }, relationRules, {
+      employed,
+      reports: await tx.hasReports(person.organisationId, personId),
+    });
     const movedUnits = derived.units.filter(u => knownLabels[u.id] !== u.label);
     if (movedUnits.length) await tx.writeUnits(person.organisationId, movedUnits);
-    // Compared as a set: the store and the derivation need not order unit ids alike, and an order alone is no change.
+    // Compared as sets: the store and the derivation need not order unit ids alike, and an order alone is no change.
     const held = await tx.assignmentsOf(personId),
-      roleOn = new Map(held.map(a => [a.unitId, a.role])),
-      sameAssignments =
-        held.length === derived.assignments.length && derived.assignments.every(a => roleOn.get(a.unitId) === a.role);
-    if (!sameAssignments) await tx.replaceAssignments(personId, derived.assignments);
+      heldBelongs = held.filter(a => a.belongs).map(a => a.unitId),
+      heldLeads = held.filter(a => a.role === 'manager').map(a => a.unitId),
+      same = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every(id => b.includes(id));
+    if (!same(heldBelongs, derived.belongs) || !same(heldLeads, derived.leads))
+      await tx.replaceUnits(personId, { belongs: derived.belongs, leads: derived.leads });
     // Compared as stored, so a projection that still carries a name outside the closed list is rewritten.
     const before = await tx.grant(personId),
       heldRelations = grantRelations(before),
@@ -160,11 +180,11 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
         role: before.role,
         capabilities: [...before.capabilities].sort() as Capability[],
         ...(heldRelations.length ? { relations: heldRelations } : {}),
-        ...(before.assignments && before.assignments.length > 1 ? { assignments: before.assignments } : {}),
+        ...(before.assignments?.length ? { assignments: before.assignments } : {}),
       };
-    // D99: the history of who was assigned where is the audit rows. Since D135 the grant carries every assignment of a
-    // person who holds more than one, so a second unit, or a manager's role on one, changes the grant and is said on
-    // its row with the placements; no change of placements leaves the grant as it was.
+    // D99: the history of who was assigned where is the audit rows. Since D135 the grant carries the person's units,
+    // so a second unit, or a manager's role on one, changes the grant and is said on its row with the placements; no
+    // change of placements leaves the grant as it was.
     const regranted = !sameGrant(previous, derived.grant);
     if (regranted) {
       await tx.writeGrant(personId, derived.grant);
@@ -178,8 +198,8 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
               role: derived.grant.role,
               capabilities: derived.grant.capabilities,
               assignments: derived.assignments.length,
-              // D135: where the person is placed, when it is more than the one unit above.
-              ...(derived.assignments.length > 1
+              // D135: the person's units with the role on each, when they say more than the unit and role above.
+              ...(derived.grant.assignments
                 ? { placements: derived.assignments.map(a => ({ unitId: a.unitId, role: a.role })) }
                 : {}),
               // D121: said whenever the person held one before or holds one now, so its loss is on the row too.
@@ -249,6 +269,8 @@ export interface ScimQuery extends Projection {
   startIndex?: string;
   count?: string;
 }
+/** How many times a write of a person starts over when the managers it must hold changed under it (`withManagersHeld`). */
+const MANAGER_HOLD_TURNS = 3;
 /** A group change names the people it added or removed in its audit row up to this many; past it the count stands alone. */
 const NAMED_IN_AUDIT = 50;
 /**
@@ -342,6 +364,15 @@ export function scimUsecases(deps: {
   const managersOfUnit = (tx: ProvisionTx, externalId: string | null): Promise<string[]> => {
     const unit = unitGroupOf(externalId);
     return unit === undefined ? Promise.resolve([]) : tx.members(MANAGER_KEY + unit);
+  };
+  /**
+   * The people employed on the unit a `unit:` group names. An employment places them on the unit whether or not they
+   * are members of its group (D149), so a unit group that is new, renamed, given another key or removed
+   * re-derives them too: they carry the unit's label, and are of the unit only while the organisation holds it.
+   */
+  const employedOnUnit = (tx: ProvisionTx, p: Provisioner, externalId: string | null): Promise<string[]> => {
+    const unit = unitGroupOf(externalId);
+    return unit === undefined ? Promise.resolve([]) : tx.employedOn(p.organisationId, unit);
   };
   /**
    * A write of a `unit:` or `unit-manager:` group holds its unit first, under the key it had and the key it gets: the
@@ -576,16 +607,71 @@ export function scimUsecases(deps: {
       'invalidValue',
     );
   };
+  /** The managers a list of employments names, each once. A NUL is nobody's id, and PostgreSQL refuses to compare one. */
+  const managersIn = (employments: UserFields['employments']) =>
+    [...new Set(employments.flatMap(job => (job.managerId === undefined ? [] : [job.managerId])))].filter(
+      id => !id.includes('\u0000'),
+    );
+  /**
+   * A write of a person can move somebody else's grant (D149): whoever the person's employments name is a
+   * manager while the person is active and names them. So such a write holds the person together with every manager
+   * named before and after it, in id order as every writer takes people, before it writes anything, and derives those
+   * managers when it has written (`writeUser`). Whom to hold is read before anybody is held, so it is read again once
+   * they are: when a write that came between named somebody else, this one starts over, and after a few such turns it
+   * answers 409 for the client to send again.
+   */
+  const withManagersHeld = async <T>(
+    p: Provisioner,
+    id: string,
+    sentOf: (current: UserRecord) => UserFields,
+    write: (tx: ProvisionTx, current: UserRecord, sent: UserFields) => Promise<T>,
+  ): Promise<T> => {
+    const again = Symbol('again');
+    for (let turn = 0; turn < MANAGER_HOLD_TURNS; turn++) {
+      const done = await deps.store.transaction(async (tx): Promise<T | typeof again> => {
+        const seen = await userOr404(tx, p, id),
+          expected = new Set([...managersIn(seen.employments), ...managersIn(sentOf(seen).employments)]);
+        await tx.lockPeople([id, ...expected]);
+        const current = await userOr404(tx, p, id, true),
+          sent = sentOf(current);
+        return [...managersIn(current.employments), ...managersIn(sent.employments)].every(m => expected.has(m))
+          ? write(tx, current, sent)
+          : again;
+      });
+      if (done !== again) return done as T;
+    }
+    throw new ScimError(
+      409,
+      `User '${id}' was changed by other requests while this one was read. Nothing was stored: send the request again.`,
+    );
+  };
+  /**
+   * What a write of a person does to the managers their employments name (D149), given whom they named as an active
+   * person before it and whom they name as one after it. Somebody no longer named may have no report left, and is
+   * derived. Somebody newly named has a report more: one who is a manager already stays one whatever else is true of
+   * them, so only one who is not is derived, which keeps a push of a large unit from deriving its manager once for each
+   * of its people. Somebody named before and after is as they were.
+   */
+  const deriveManagers = async (
+    tx: ProvisionTx,
+    p: Provisioner,
+    before: readonly string[],
+    after: readonly string[],
+  ) => {
+    const lost = before.filter(id => !after.includes(id)),
+      gained: string[] = [];
+    for (const id of after) if (!before.includes(id) && (await tx.grant(id))?.role !== 'manager') gained.push(id);
+    await derivation.deriveAll(tx, actorOf(p), [...lost, ...gained]);
+  };
   async function writeUser(
     tx: ProvisionTx,
     p: Provisioner,
     current: UserRecord,
-    read: (held: UserFields) => UserFields,
+    sent: UserFields,
     action: string,
     base: string,
   ) {
     const held = fieldsOf(current),
-      sent = read(held),
       wrongUnit = isDeepStrictEqual(held.employments, sent.employments)
         ? undefined
         : ((await unknownUnits(tx, p, sent.employments)) ??
@@ -594,6 +680,7 @@ export function scimUsecases(deps: {
     if (wrongUnit && !saysInactive(sent)) throw wrongUnit;
     const fields = wrongUnit ? { ...sent, employments: held.employments } : sent,
       changed = changedKeys(held, fields),
+      flipped = current.enabled !== fields.enabled,
       at = now(),
       // Only what changed is checked and written. A row from before provisioning holds no `externalId`: a patch of
       // its name must not store the empty string as its id, nor be refused because another such row has none.
@@ -602,8 +689,7 @@ export function scimUsecases(deps: {
     if (changed.length) {
       // A flip of `active` is what an operator reads the audit for, whatever verb carried it (DELETE writes the same);
       // the verb travels in the details.
-      const flipped = current.enabled !== fields.enabled,
-        recorded = flipped ? (fields.enabled ? 'scim.user.reactivated' : 'scim.user.deactivated') : action;
+      const recorded = flipped ? (fields.enabled ? 'scim.user.reactivated' : 'scim.user.deactivated') : action;
       await tx.updateUser(current.id, { ...written, updatedAt: at });
       await tx.audit({
         actor: actorOf(p),
@@ -627,6 +713,14 @@ export function scimUsecases(deps: {
     }
     // Always: silent when nothing moved, and it heals a projection written before provisioning existed.
     await derivation.deriveWithin(tx, actorOf(p), current.id);
+    // D149: whoever the person named as manager while active, or names now, has a report fewer or more. They are held
+    // already (`withManagersHeld`).
+    await deriveManagers(
+      tx,
+      p,
+      current.enabled ? managersIn(held.employments) : [],
+      fields.enabled ? managersIn(fields.employments) : [],
+    );
     return userView(tx, { ...current, ...written, updatedAt: changed.length ? at : current.updatedAt }, base);
   }
   async function writeGroup(
@@ -692,7 +786,12 @@ export function scimUsecases(deps: {
               unit !== undefined && current.externalId === MANAGER_KEY + unit
                 ? []
                 : await managersOfUnit(tx, fields.externalId);
-          assigned = [...fields.members, ...managers];
+          // Whoever is employed on the unit it named, or names now, is of it only while a unit group names it.
+          const employed = [
+            ...(await employedOnUnit(tx, p, current.externalId)),
+            ...(await employedOnUnit(tx, p, fields.externalId)),
+          ];
+          assigned = [...fields.members, ...managers, ...employed];
           derive.people = [...before, ...assigned];
         }
       }
@@ -782,6 +881,10 @@ export function scimUsecases(deps: {
         const wrongUnit =
           (await unknownUnits(tx, p, fields.employments)) ?? (await unknownManagers(tx, p, fields.employments));
         if (wrongUnit) throw wrongUnit;
+        // D149: the managers the new person names are held before anything is written, in id order as every
+        // writer takes people; nobody else can hold the person, who is not there yet.
+        const managers = managersIn(fields.employments);
+        await tx.lockPeople(managers);
         const at = now(),
           record: UserRecord = {
             id: deps.ids(),
@@ -806,6 +909,8 @@ export function scimUsecases(deps: {
             at,
           });
         await derivation.deriveWithin(tx, actorOf(p), record.id);
+        // Each of them has a report more, and is a manager from now on if they were not.
+        await deriveManagers(tx, p, [], record.enabled ? managers : []);
         return userResource(record, [], base);
       }),
     getUser: (p: Provisioner, id: string, base: string, projection?: Projection) =>
@@ -826,36 +931,27 @@ export function scimUsecases(deps: {
         };
       }, SNAPSHOT),
     replaceUser: (p: Provisioner, id: string, body: unknown, base: string) =>
-      deps.store.transaction(async tx =>
-        writeUser(
-          tx,
-          p,
-          await userOr404(tx, p, id, true),
-          current => userFields(body, current),
-          'scim.user.replaced',
-          base,
-        ),
+      withManagersHeld(
+        p,
+        id,
+        current => userFields(body, fieldsOf(current)),
+        (tx, current, sent) => writeUser(tx, p, current, sent, 'scim.user.replaced', base),
       ),
-    patchUser: (p: Provisioner, id: string, body: unknown, base: string) =>
-      deps.store.transaction(async tx => {
-        const operations = patchOperations(body),
-          current = await userOr404(tx, p, id, true);
-        return writeUser(
-          tx,
-          p,
-          current,
-          fields => applyUserPatch(fields, operations, current.id),
-          'scim.user.patched',
-          base,
-        );
-      }),
+    patchUser: (p: Provisioner, id: string, body: unknown, base: string) => {
+      const operations = patchOperations(body);
+      return withManagersHeld(
+        p,
+        id,
+        current => applyUserPatch(fieldsOf(current), operations, current.id),
+        (tx, current, sent) => writeUser(tx, p, current, sent, 'scim.user.patched', base),
+      );
+    },
     /**
      * D68: a deleted user is deactivated, never erased. Idempotent. The leavers port hears of it in the same transaction
      * (D108 item 14), as it does of a deactivation by `PATCH` or `PUT`.
      */
     deleteUser: (p: Provisioner, id: string) =>
-      deps.store.transaction(async tx => {
-        const current = await userOr404(tx, p, id, true);
+      withManagersHeld(p, id, fieldsOf, async (tx, current) => {
         if (!current.enabled) return;
         const at = now();
         await tx.updateUser(id, { enabled: false, updatedAt: at });
@@ -867,6 +963,8 @@ export function scimUsecases(deps: {
         });
         await tx.leavers.deactivated({ actor: actorOf(p), personId: id, organisationId: current.organisationId, at });
         await derivation.deriveWithin(tx, actorOf(p), id);
+        // D149: whoever they named as manager has a report fewer.
+        await deriveManagers(tx, p, managersIn(current.employments), []);
       }),
     createGroup: (p: Provisioner, body: unknown, base: string): Promise<ScimGroup> =>
       deps.store.transaction(async tx => {
@@ -882,7 +980,11 @@ export function scimUsecases(deps: {
         await membersExist(tx, p, fields.members);
         const position = await positionOf(tx, p, fields);
         // Its members are touched; they and the managers of a unit it names are derived when it gives them something.
-        const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))],
+        const assigned = [
+            ...fields.members,
+            ...(await managersOfUnit(tx, fields.externalId)),
+            ...(await employedOnUnit(tx, p, fields.externalId)),
+          ],
           authority = assigned.length ? await authorityOf(tx, p, fields.externalId) : undefined,
           derive = authority?.gives ? { people: assigned, known: authority.known } : undefined,
           at = await heldAt(tx, fields.members, derive?.people),
@@ -977,10 +1079,12 @@ export function scimUsecases(deps: {
           if (below) throw new ScimError(409, `${below} The group was not removed.`);
         }
         await lockUnitsOf(tx, current.externalId);
-        // Its members' resources no longer list it; they are derived when it gave them something.
+        // Its members' resources no longer list it; they are derived when it gave them something, and so are the
+        // people employed on a unit it named, who are of the unit no more (D149).
         const members = (await tx.groupMembers(id)).map(m => m.id),
-          authority = members.length ? await authorityOf(tx, p, current.externalId) : undefined,
-          derive = authority?.gives ? { people: members, known: authority.known } : undefined,
+          reached = [...members, ...(await employedOnUnit(tx, p, current.externalId))],
+          authority = reached.length ? await authorityOf(tx, p, current.externalId) : undefined,
+          derive = authority?.gives ? { people: reached, known: authority.known } : undefined,
           at = await heldAt(tx, members, derive?.people);
         await tx.deleteGroup(id);
         await tx.audit({
@@ -1116,7 +1220,7 @@ export function usersAdminUsecases(deps: {
       positions: await tx.positionsOf(u.id),
       enabled: u.enabled,
       bound: await tx.bound(u.id),
-      assignments: await tx.assignmentsOf(u.id),
+      assignments: (await tx.assignmentsOf(u.id)).map(({ unitId, unitLabel, role }) => ({ unitId, unitLabel, role })),
       active: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel, role: grant.role } : null,
       capabilities: grant ? sorted(grant.capabilities) : [],
       relationGrants: grantRelations(grant),
@@ -1544,7 +1648,11 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
       above: string[];
     }> =>
       deps.store.transaction(async tx => {
-        const units = await tx.assignmentsOf(persona.id),
+        const units = (await tx.assignmentsOf(persona.id)).map(({ unitId, unitLabel, role }) => ({
+            unitId,
+            unitLabel,
+            role,
+          })),
           above = await managersOf(tx, persona.organisationId, persona.id);
         return {
           units,
@@ -1629,10 +1737,11 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
 export type StaffUsecases = ReturnType<typeof staffUsecases>;
 
 /**
- * D62's `people.directory`, "Vilka användare finns i min enhet?": the people placed on the unit, each with the role they
- * hold there, as Personal and Administration › Organisation read a unit (`unitPeople`, one read on either adapter). A
- * person on two units, a manager of two units and an employee who leads another unit are on each of their units,
- * though the grant names one (A4). A deactivated person is nobody's colleague to ask about. By name in Swedish order.
+ * D62's `people.directory`, "Vilka användare finns i min enhet?": the people who belong to the unit and whoever leads
+ * it, each with the role they hold there, as Administration › Organisation reads a unit (`unitPeople`, one read on
+ * either adapter). A person on two units, a manager of two units and an employee who leads another unit are on each of
+ * their units, though the grant names one (A4). A deactivated person is nobody's colleague to ask about. By name in
+ * Swedish order.
  * The unit is the reader's own: the capability passes the actor's, and its input names none. Nothing is written.
  */
 export function directoryUsecases(deps: { store: ProvisionStore }) {
@@ -1734,12 +1843,14 @@ export function organisationUsecases(deps: { store: ProvisionStore }) {
         return {
           unitId,
           unitLabel: node?.label ?? (await tx.unitLabels([unitId], organisationId))[unitId] ?? unitId,
-          people: people.sort(byName).map(p => {
+          people: people.sort(byName).map(({ belongs, ...p }) => {
             const line = reporting(p.id),
               named = (ids: readonly string[]) =>
                 ids.map(id => managers.get(id)!).sort((a, b) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id));
             return {
               ...p,
+              // D149: someone who leads the unit and is employed on another is its manager, not one of its people.
+              ...(belongs ? {} : { elsewhere: true as const }),
               managers: named(line.managers),
               ...(line.round.length ? { circle: named(line.round) } : {}),
               // A deactivated person reports to nobody anyway: the gap is said of those who work here.
@@ -1831,7 +1942,7 @@ export function personErasureUsecases(deps: { store: ProvisionStore; clock: () =
           memberships = await tx.removeMemberships(personId, at),
           assignments = (await tx.assignmentsOf(personId)).length,
           grants = (await tx.grant(personId)) ? 1 : 0;
-        if (assignments) await tx.replaceAssignments(personId, []);
+        if (assignments) await tx.replaceUnits(personId, { belongs: [], leads: [] });
         if (grants) await tx.writeGrant(personId, undefined);
         const bindings = await tx.removeBindings(personId),
           sessions = await tx.removeSessions(personId);

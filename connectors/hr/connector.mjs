@@ -67,11 +67,21 @@ export function createConnector({
   if (!state.get('records')) state.set('records', seed(today()));
   const records = () => state.get('records');
 
-  // Identity: the verified actor, translated to the HR system's own ids. The unit decides what a manager sees.
+  // Identity: the verified actor, translated to the HR system's own ids. The units a manager leads decide what they see.
   const unitOf = actor => unitMap[actor.unitId] ?? actor.unitId;
   const personOf = actor => personMap[actor.id] ?? actor.id;
   const own = actor => records().employees.find(e => e.personId === personOf(actor));
-  const managerOf = (actor, unitId) => actor.role === 'manager' && unitOf(actor) === unitId;
+  // The units the person leads (D149), as Clew signs them into the actor of every manager: `leads`. `role` says only
+  // that the person is a manager, which someone people report to is without leading a unit, and `unitId` is the unit
+  // they are employed on, which need not be one they lead. So nothing here pairs the two: a manager's reads and writes
+  // answer for every unit in `leads`, and for no unit when the list is empty or absent.
+  const managedUnits = actor =>
+    (Array.isArray(actor.leads) ? actor.leads : [])
+      .filter(u => u && typeof u.unitId === 'string' && u.unitId)
+      .map(u => ({ clew: u.unitId, unit: unitMap[u.unitId] ?? u.unitId }));
+  const managerOf = (actor, unitId) => managedUnits(actor).some(u => u.unit === unitId);
+  /** The one unit an answer about "the manager's unit" is about: the unit they are employed on when they lead it, else the first they lead. */
+  const ledUnit = actor => (managerOf(actor, unitOf(actor)) ? unitOf(actor) : managedUnits(actor)[0]?.unit);
   const personKey = actor => unitOf(actor) + ':' + personOf(actor);
   const nameOf = ref => records().employees.find(e => e.ref === ref)?.name ?? 'Medarbetare';
   /** The user name of the employee behind a ref, as `{ person }`, or nothing when the employee is not known. */
@@ -80,18 +90,12 @@ export function createConnector({
     return personId ? { person: personId } : {};
   };
   const staff = unitId => records().employees.filter(e => e.unitId === unitId);
-  // A person with several assignments (D135): Clew sends every one, each unit with the role the person has there, and
-  // `unitId` and `role` are the primary one. A manager's reads and writes answer for every unit they manage, and never
-  // for one where they are an employee. Without the list, the primary unit alone, as before.
-  const several = actor => Array.isArray(actor.assignments) && actor.assignments.length > 1;
-  const managedUnits = actor =>
-    several(actor)
-      ? actor.assignments
-          .filter(a => a.role === 'manager')
-          .map(a => ({ clew: a.unitId, unit: unitMap[a.unitId] ?? a.unitId }))
-      : actor.role === 'manager'
-        ? [{ clew: actor.unitId, unit: unitOf(actor) }]
-        : [];
+  // A person with more units than the one they act as (D135): they lead a unit other than the one they are employed
+  // on, or Clew sent their assignments and there is more than one. A card then says which of their units it is about.
+  // Someone whose one unit is `unitId` gets their cards as they were.
+  const several = actor =>
+    managedUnits(actor).some(u => u.clew !== actor.unitId) ||
+    (Array.isArray(actor.assignments) && actor.assignments.length > 1);
   const managedStaff = actor => managedUnits(actor).flatMap(u => staff(u.unit));
 
   const decided = () => state.get('leave-decisions', {});
@@ -220,7 +224,8 @@ export function createConnector({
     'hr.whoIsOn': actor => {
       const date = today();
       const me = own(actor);
-      const unitId = managerOf(actor, unitOf(actor)) ? unitOf(actor) : me?.unitId;
+      // The unit the person leads, or as an employee the unit the HR system has them on.
+      const unitId = ledUnit(actor) ?? me?.unitId;
       if (!unitId) return { date, onDuty: [], absent: [] };
       const manager = managerOf(actor, unitId);
       const shiftsToday = records().shifts.filter(s => s.date === date);
@@ -736,9 +741,11 @@ export function createConnector({
   const decimal = n => n.toFixed(1).replace('.', ',');
   // The figures (D54): one number per area, formatted here; Clew says the tone in its own words.
   function figure(actor, area) {
-    if (area === 'employees' && managerOf(actor, unitOf(actor))) {
-      const s = sickLeaveOf[unitOf(actor)];
-      if (!s || !staff(unitOf(actor)).length) return null;
+    // The figure is one unit's: a unit the person leads, never the unit they are only employed on.
+    const led = ledUnit(actor);
+    if (area === 'employees' && led) {
+      const s = sickLeaveOf[led];
+      if (!s || !staff(led).length) return null;
       return {
         label: 'Sjukfrånvaro',
         value: `${decimal(s.percent)} %`,

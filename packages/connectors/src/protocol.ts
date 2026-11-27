@@ -144,6 +144,13 @@ export const ActorSchema = object(
           "The units a manager follows up (D117): the ones they manage and those of the managers who report to them (D99), never one they are only placed on (D135). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone.",
       }),
     ),
+    leads: Type.Optional(
+      Type.Array(object({ unitId: Type.String({ minLength: 1, maxLength: 256 }), unitLabel: Type.String() }), {
+        maxItems: 50,
+        description:
+          'The units the person leads (D149): the ones they answer for, whoever on them reports to them. Sent on every call for a manager, to every connector, and empty for a manager who leads no unit, which is someone people report to. `role` says only that the person is a manager and `unitId` where they are employed, which need not be a unit they lead: a capability that answers for "the manager\'s unit" answers for these units and never pairs `role` with `unitId`. Absent for a person who is no manager, who leads none.',
+      }),
+    ),
     assignments: Type.Optional(
       Type.Array(
         object({
@@ -152,10 +159,10 @@ export const ActorSchema = object(
           role: RoleSchema,
         }),
         {
-          minItems: 2,
+          minItems: 1,
           maxItems: 50,
           description:
-            'Every assignment of a person who holds more than one (D135): each unit they are placed on or manage, with the role they have there. `unitId` and `role` above are the primary one and it is among them. Sent only to a connector whose manifest sets `assignments: true`, on every call for such a person; answer for each with its own role. Not `units`, which is whom a manager follows up. Absent means `unitId` and `role` alone.',
+            "The person's units with the role on each (D135, D149): every unit they belong to or lead, `manager` where they lead it and `employee` where they belong to it without leading it. `unitId` above is among them. Sent only to a connector whose manifest sets `assignments: true`, on every call for a person whose units say more than `unitId` and `role` do; answer for each with its own role. Not `units`, which is whom a manager follows up. Absent means one unit, `unitId`, which the person leads exactly when `leads` names it.",
         },
       ),
     ),

@@ -1,4 +1,5 @@
 import type { memoryProvisionStore } from '../apps/server/src/modules/people/adapters/memory';
+import { unitsHeld } from './held-units';
 
 type State = ReturnType<typeof memoryProvisionStore>['state'];
 const UNIT = 'unit:';
@@ -19,15 +20,13 @@ export function nameManagers(state: State): void {
   for (const group of state.groups.values())
     if (group.externalId?.startsWith(UNIT)) parents.set(group.externalId.slice(UNIT.length), group.parentUnitId);
   const leadersOf = (unitId: string, but: string) =>
-    [...state.assignments.entries()]
-      .filter(
-        ([id, held]) =>
-          id !== but && state.users.get(id)?.enabled && held.some(a => a.unitId === unitId && a.role === 'manager'),
-      )
+    [...state.leads.entries()]
+      .filter(([id, led]) => id !== but && state.users.get(id)?.enabled && led.includes(unitId))
       .map(([id]) => id)
       .sort();
-  for (const [personId, held] of state.assignments.entries()) {
-    const person = state.users.get(personId);
+  for (const personId of new Set([...state.assignments.keys(), ...state.leads.keys()])) {
+    const person = state.users.get(personId),
+      held = unitsHeld(state, personId);
     if (!person) continue;
     const employments = person.employments.map(job => ({ ...job }));
     for (const assignment of held) {

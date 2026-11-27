@@ -24,6 +24,7 @@ import { InputError } from '../../apps/server/src/context';
 import { fixtureConnectors } from '../fixture-connectors';
 import { memoryPersonKeys } from '../person-keys';
 import { startedDecision, startedTopic, takesStarted } from '../../apps/server/src/threads/domain';
+import { hold } from '../held-units';
 
 /**
  * An action about a person, started from the person's menu without the model (D97, D8): the real registry with small
@@ -53,7 +54,7 @@ function directory(userNames: Record<string, string> = {}) {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set(id, [{ unitId, role }]);
+    hold(s, id, [{ unitId, role }]);
     s.grants.set(id, { unitId, unitLabel: s.units.get(unitId)!.label, role, capabilities: [] });
   };
   s.units.set('unit-skola', { organisationId: 'poc', label: 'Bergsåkers skola' });

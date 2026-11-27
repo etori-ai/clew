@@ -127,6 +127,51 @@ describe('the finance fixture connector', () => {
     await expect(registry.run(hassan, 'finance.invoices', {})).rejects.toThrow(/behörighet/);
     expect(await registry.run(stranger, 'finance.invoices', {})).toEqual({ rows: [] });
   });
+  test('a manager attests for the cost centres of the units they lead, never for the unit they are only employed on (D149)', async () => {
+    const { registry } = stack();
+    const refs = ['finance:inv:55120', 'finance:inv:55121', 'finance:inv:55140'];
+    // `role` says that a person is a manager and `unitId` where they are employed, and neither says what they lead.
+    // Employed at the school, whose cost centre is its own manager's, and leading a unit the system has none for.
+    const employedThere: Actor = {
+      ...hillevi,
+      assignments: [
+        { unitId: 'unit-ekonomi', unitLabel: 'Ekonomiavdelningen', role: 'manager' },
+        { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' },
+      ],
+    };
+    // A manager because people report to her, who leads no unit.
+    const reportedTo: Actor = {
+      ...hillevi,
+      assignments: [{ unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' }],
+    };
+    for (const [n, actor] of [employedThere, reportedTo].entries()) {
+      expect(await registry.scan(actor)).toEqual([]);
+      expect(await registry.run(actor, 'finance.invoices', {})).toEqual({ rows: [] });
+      expect((await registry.areas(actor)).find(a => a.id === 'budget')?.figure ?? null).toBeNull();
+      await expect(registry.run(actor, 'finance.preview', { ref: refs[0] })).rejects.toThrow(/finns inte/);
+      const attested = await registry.run<Result>(
+        actor,
+        'finance.approve',
+        { refs, reviews: refs.map(ref => ({ ref, documentRevision: 'any' })) },
+        { operationId: 'not-hers-' + n },
+      );
+      expect(attested.rows.map(r => r.outcome)).toEqual(['failed', 'failed', 'failed']);
+    }
+    // Leading the school from an employment elsewhere, she attests for the school's cost centre as its manager does.
+    const leadsTheSchool: Actor = {
+      ...hillevi,
+      unitId: 'unit-ekonomi',
+      unitLabel: 'Ekonomiavdelningen',
+      assignments: [
+        { unitId: 'unit-ekonomi', unitLabel: 'Ekonomiavdelningen', role: 'employee' },
+        { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' },
+      ],
+    };
+    expect((await registry.scan(leadsTheSchool)).map(d => [d.topic, d.items?.length])).toEqual([
+      ['finance:invoices', 3],
+    ]);
+    expect(await registry.run(leadsTheSchool, 'finance.budget', {})).toMatchObject({ label: 'Kostnadsställe KS-4410' });
+  });
   test('the figure and the budget detail say where the cost centre stands', async () => {
     const { registry } = stack();
     const [budget] = await registry.areas(hillevi);

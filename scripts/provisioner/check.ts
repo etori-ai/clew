@@ -144,20 +144,28 @@ export async function checkProvisioning(
   // as Administration › Organisation reads the same tree.
   const activeIn = new Map<string, number>();
   for (const u of active) for (const g of u.groups ?? []) activeIn.set(g.value, (activeIn.get(g.value) ?? 0) + 1);
-  // A person is on a unit by a `unit:` or `unit-manager:` group whose key is written right; one written wrong places
-  // nobody, so a person whose only unit key is written wrong is named here too.
-  const places = new Set([...units, ...managers].map(g => g.id)),
-    unassigned = active.filter(u => !(u.groups ?? []).some(g => places.has(g.value)));
+  // A person belongs to a unit by an employment on it, or by its `unit:` group, and leads one by its `unit-manager:`
+  // group (D147), each with a key written right; one written wrong places nobody, and neither does an employment on a
+  // unit the organisation does not hold, so a person whose only unit is such a one is named here too.
+  const jobsOf = (u: UserRow) => u[EMPLOYMENT_EXTENSION]?.employments ?? [];
+  const unitIds = new Set(units.map(g => g.externalId!.slice(UNIT_KEY.length))),
+    unitOfGroup = new Map(units.map(g => [g.id, g.externalId!.slice(UNIT_KEY.length)])),
+    belongsTo = (u: UserRow) =>
+      new Set([
+        ...jobsOf(u).flatMap(job => (unitIds.has(job.unitId) ? [job.unitId] : [])),
+        ...(u.groups ?? []).flatMap(g => unitOfGroup.get(g.value) ?? []),
+      ]),
+    leading = new Set(managers.map(g => g.id)),
+    unassigned = active.filter(u => !belongsTo(u).size && !(u.groups ?? []).some(g => leading.has(g.value)));
   if (unassigned.length)
     say(
       'warn',
-      `${plural(unassigned.length, 'active user has', 'active users have')} no unit: or unit-manager: group and can do nothing in Clew: ${some(unassigned.map(u => u.userName))}.`,
+      `${plural(unassigned.length, 'active user has', 'active users have')} no employment on a unit and no unit: or unit-manager: group, and can do nothing in Clew: ${some(unassigned.map(u => u.userName))}.`,
     );
   else if (active.length) say('ok', 'Every active user is in a unit.');
   // A title Clew cannot read is left out and never refused (D110), so a mapping that sends none, or sends something
   // else in its place, shows here and nowhere else. A person's title is the titles of their employments, or the core
   // `title` (D114): what the user list shows.
-  const jobsOf = (u: UserRow) => u[EMPLOYMENT_EXTENSION]?.employments ?? [];
   const titled = active.filter(u => u.title || jobsOf(u).some(job => job.title)).length;
   if (active.length)
     say(
@@ -236,6 +244,29 @@ export async function checkProvisioning(
               : ''
           }`,
     );
+  // D147: who is a manager. Somebody who leads a unit is one, and so is somebody people report to who leads none.
+  // The two are apart from where a person belongs: a unit may be led by someone who is employed on another, which is
+  // said here so that a directory that meant otherwise sees it. Somebody who leads a unit and belongs to none is
+  // counted among the people of no unit: their employment was not sent, or is on a unit the organisation does not hold.
+  const reportedTo = new Set(
+      placed.flatMap(u => [...namedBy(u)].filter(id => working.has(id) && !namedBy(working.get(id)!).has(u.id))),
+    ),
+    leaders = active.filter(u => leads(u).length),
+    fromElsewhere = leaders.filter(u => leads(u).some(unit => !belongsTo(u).has(unit))),
+    reportedOnly = active.filter(u => reportedTo.has(u.id) && !leads(u).length),
+    homeless = leaders.filter(u => !belongsTo(u).size);
+  if (leaders.length || reportedOnly.length)
+    say(
+      'ok',
+      `${plural(leaders.length + reportedOnly.length, 'manager', 'managers')}: ${leaders.length} lead a unit${
+        fromElsewhere.length ? `, ${fromElsewhere.length} of them a unit they do not belong to` : ''
+      }${reportedOnly.length ? `, and ${reportedOnly.length} ${reportedOnly.length === 1 ? 'leads none and has' : 'lead none and have'} people who report to them` : ''}.`,
+    );
+  if (homeless.length)
+    say(
+      'warn',
+      `${plural(homeless.length, 'user leads', 'users lead')} a unit and ${homeless.length === 1 ? 'belongs' : 'belong'} to none, so ${homeless.length === 1 ? 'the user is' : 'they are'} counted among the people of no unit. Send the employment, or the unit: group for a directory that sends no employments: ${some(homeless.map(u => u.userName))}.`,
+    );
   const unnamed = managers.map(g => g.externalId!.slice(MANAGER_KEY.length)).filter(id => !named.has(id));
   if (unnamed.length)
     say(
@@ -309,7 +340,11 @@ export async function checkProvisioning(
   // follow up, as Administration › Organisation marks it. Whom its people report to is said on their employments and
   // counted above.
   const led = new Set(managers.filter(g => activeIn.get(g.id)).map(g => g.externalId!.slice(MANAGER_KEY.length)));
-  const leaderless = units.filter(g => activeIn.get(g.id) && !led.has(g.externalId!.slice(UNIT_KEY.length)));
+  const peopled = new Set(active.flatMap(u => [...belongsTo(u)]));
+  const leaderless = units.filter(g => {
+    const unit = g.externalId!.slice(UNIT_KEY.length);
+    return peopled.has(unit) && !led.has(unit);
+  });
   if (leaderless.length)
     say(
       'warn',

@@ -82,6 +82,63 @@ describe('the incidents fixture connector', () => {
       opens: { capability: 'incidents.deviations', title: 'Avvikelser och tillbud' },
     });
   });
+  test("a manager's list, cards and figure are those of the units they lead, never of the unit they are only employed on (D149)", async () => {
+    const { registry } = stack();
+    const school = (await registry.scan(hillevi)).map(d => d.topic);
+    expect(school.length).toBeGreaterThan(0);
+    const filed = await registry.run<Result>(
+      hassan,
+      'incidents.report',
+      { title: 'Trasig dörrstängare', text: 'Dörren till förrådet går inte att stänga.' },
+      { operationId: 'op-led' },
+    );
+    const ref = filed.rows[0]!.ref;
+    // `role` says that a person is a manager and `unitId` where they are employed, and neither says what they lead.
+    // Employed at the school and leading the finance department, where nothing is open; and a manager because people
+    // report to her, who leads no unit.
+    const employedThere: Actor = {
+      ...hillevi,
+      assignments: [
+        { unitId: 'unit-ekonomi', unitLabel: 'Ekonomiavdelningen', role: 'manager' },
+        { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' },
+      ],
+    };
+    const reportedTo: Actor = {
+      ...hillevi,
+      assignments: [{ unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' }],
+    };
+    for (const actor of [employedThere, reportedTo]) {
+      expect(await registry.scan(actor)).toEqual([]);
+      expect(await registry.run<Rows>(actor, 'incidents.deviations', {})).toEqual({ rows: [] });
+      // The school's report is its own manager's to take back.
+      const refused = await registry.run<Result>(actor, 'incidents.withdraw', { refs: [ref] });
+      expect(refused.rows[0]!.outcome).toBe('failed');
+    }
+    // The figure counts the units she leads: nothing open on the department, and no figure with no unit to lead.
+    expect((await registry.areas(employedThere)).find(a => a.id === 'work-environment')?.figure).toMatchObject({
+      value: '0',
+      comparison: 'inga öppna',
+      tone: 'ok',
+    });
+    expect((await registry.areas(reportedTo)).find(a => a.id === 'work-environment')?.figure ?? null).toBeNull();
+    // Leading the school from an employment elsewhere, she gets what its manager gets.
+    const leadsTheSchool: Actor = {
+      ...hillevi,
+      unitId: 'unit-ekonomi',
+      unitLabel: 'Ekonomiavdelningen',
+      assignments: [
+        { unitId: 'unit-ekonomi', unitLabel: 'Ekonomiavdelningen', role: 'employee' },
+        { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' },
+      ],
+    };
+    expect((await registry.scan(leadsTheSchool)).map(d => d.topic)).toEqual(
+      (await registry.scan(hillevi)).map(d => d.topic),
+    );
+    expect((await registry.areas(leadsTheSchool)).find(a => a.id === 'work-environment')?.figure?.value).toBe('4');
+    expect((await registry.run<Result>(leadsTheSchool, 'incidents.withdraw', { refs: [ref] })).rows[0]!.outcome).toBe(
+      'done',
+    );
+  });
   test('a report filed by an employee reaches the manager, runs once per operation id, and can be withdrawn by its reporter only', async () => {
     const { registry } = stack();
     const input = { title: 'Trasig dörrstängare', text: 'Dörren till förrådet går inte att stänga.' };

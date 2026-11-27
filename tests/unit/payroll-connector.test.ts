@@ -1,6 +1,6 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { type Actor } from '../../packages/connectors/src/index';
+import { actorOf, type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, httpFeed, manifest as payrollManifest } from '../../connectors/payroll/connector.mjs';
@@ -144,14 +144,53 @@ describe('the payroll fixture connector', () => {
       status: 'registered',
     });
     expect((await mapped.registry.run<{ rows: unknown[] }>(outside, 'payroll.absences', {})).rows).toHaveLength(1);
-    // Signed for `outside`, bound to this very body (D117): the body's actor is not who asks.
-    const body = JSON.stringify({ actor: hillevi, input: {} });
+    // D149: `role` says that a person is a manager and `unitId` where they are employed, and neither says what they
+    // lead. Employed at the school and leading another unit, or a manager because people report to her who leads no
+    // unit: the school's staff are not hers to read about.
+    const employedThere: Actor = {
+      ...hillevi,
+      assignments: [
+        { unitId: 'other-unit', unitLabel: 'Annan enhet', role: 'manager' },
+        { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' },
+      ],
+    };
+    const reportedTo: Actor = {
+      ...hillevi,
+      assignments: [{ unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' }],
+    };
+    for (const actor of [employedThere, reportedTo]) {
+      expect(await w.registry.run(actor, 'payroll.absences', {})).toEqual({ rows: [] });
+      await expect(w.registry.run(actor, 'payroll.absenceStatus', query)).rejects.toThrow('behörighet');
+      await expect(
+        w.registry.run(actor, 'payroll.followAbsence', {
+          fact: { kind: 'hr:absence', attributes: { person: row.person, from: row.from } },
+        }),
+      ).rejects.toThrow('behörighet');
+    }
+    // Leading the school from an employment elsewhere, she reads what its manager reads.
+    const leadsTheSchool: Actor = {
+      ...outside,
+      assignments: [
+        { unitId: 'other-unit', unitLabel: 'Annan enhet', role: 'employee' },
+        { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' },
+      ],
+    };
+    expect((await w.registry.run<{ rows: unknown[] }>(leadsTheSchool, 'payroll.absences', {})).rows).toHaveLength(1);
+    expect(await w.registry.run<Status>(leadsTheSchool, 'payroll.absenceStatus', query)).toMatchObject({
+      status: 'registered',
+    });
+    // Signed for `outside`, bound to this very body (D117): the body's actor is not who asks. Both are the published
+    // actor, each with the unit they lead, so the answer shows whose units were read.
+    const body = JSON.stringify({ actor: actorOf(hillevi), input: {} });
     const response = await w.connectorFetch('http://payroll/clew/capabilities/payroll.absences', {
       method: 'POST',
       headers: {
         authorization:
           'Bearer ' +
-          (await assertionFor('payroll', secret)(outside, [], { path: '/clew/capabilities/payroll.absences', body })),
+          (await assertionFor('payroll', secret)(actorOf(outside), [], {
+            path: '/clew/capabilities/payroll.absences',
+            body,
+          })),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },

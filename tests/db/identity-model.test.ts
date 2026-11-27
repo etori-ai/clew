@@ -22,6 +22,7 @@ afterAll(async () => {
     .delete(schema.groups)
     .where(like(schema.groups.externalId, prefix + '%'));
   await database().delete(schema.assignments).where(eq(schema.assignments.personId, lena));
+  await database().delete(schema.unitLeads).where(eq(schema.unitLeads.personId, lena));
   await database().delete(schema.units).where(inArray(schema.units.id, unitIds));
   await database().delete(schema.people).where(eq(schema.people.id, lena));
 });
@@ -39,10 +40,12 @@ test('a person holds several assignments, the units are listed by label, and a g
       { id: unitIds[0]!, organisationId: 'test', label: 'Zebra' },
       { id: unitIds[1]!, organisationId: 'test', label: 'Alpha' },
     ]);
+    // D149: where she belongs and what she leads are two tables. She is of both units, and leads the second.
     await tx.insert(schema.assignments).values([
-      { personId: lena, unitId: unitIds[0]!, role: 'employee' },
-      { personId: lena, unitId: unitIds[1]!, role: 'manager' },
+      { personId: lena, unitId: unitIds[0]! },
+      { personId: lena, unitId: unitIds[1]! },
     ]);
+    await tx.insert(schema.unitLeads).values({ personId: lena, unitId: unitIds[1]! });
     await tx
       .insert(schema.groups)
       .values({ id: group, organisationId: 'test', externalId: group, label: 'Any directory group' });
@@ -51,13 +54,18 @@ test('a person holds several assignments, the units are listed by label, and a g
       .insert(schema.groupCapabilities)
       .values({ organisationId: 'test', groupExternalId: group, capability: 'admin.users' });
   });
-  const held = await database().select().from(schema.assignments).where(eq(schema.assignments.personId, lena));
-  expect(held.map(a => a.role).sort()).toEqual(['employee', 'manager']);
+  const held = await database().select().from(schema.assignments).where(eq(schema.assignments.personId, lena)),
+    led = await database().select().from(schema.unitLeads).where(eq(schema.unitLeads.personId, lena));
+  expect(held.map(a => a.unitId).sort()).toEqual([...unitIds].sort());
+  expect(led.map(a => a.unitId)).toEqual([unitIds[1]!]);
   const listed = (await postgresUnits().list()).filter(u => unitIds.includes(u.id));
   expect(listed.map(u => u.label)).toEqual(['Alpha', 'Zebra']);
-  // A second assignment to the same unit is the same row, not a second one.
+  // A second assignment to the same unit is the same row, not a second one, and so is leading a unit twice.
   await expect(
-    database().insert(schema.assignments).values({ personId: lena, unitId: unitIds[0]!, role: 'manager' }).execute(),
+    database().insert(schema.assignments).values({ personId: lena, unitId: unitIds[0]! }).execute(),
+  ).rejects.toThrow();
+  await expect(
+    database().insert(schema.unitLeads).values({ personId: lena, unitId: unitIds[1]! }).execute(),
   ).rejects.toThrow();
   // Removing a group removes its memberships; the group-capability row stays for the group's return (D85).
   await database().delete(schema.groups).where(eq(schema.groups.id, group));

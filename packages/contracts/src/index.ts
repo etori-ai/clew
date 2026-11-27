@@ -54,7 +54,10 @@ export {
   type Activity,
 } from './presentation';
 
-/** One of a person's assignments (D68): a unit they are placed on or manage, with its label and their role there. */
+/**
+ * One of a person's assignments (D68, D149): a unit they belong to or lead, with its label and their role there.
+ * `manager` says that they lead the unit; `employee` that they belong to it and do not lead it.
+ */
 export interface UserAssignment {
   unitId: string;
   unitLabel: string;
@@ -66,10 +69,15 @@ export interface SessionUser {
   name: string;
   unitId: string;
   unitLabel: string;
+  /**
+   * Whether the person is a manager (D149): somebody reports to them, or they lead a unit. It does not say that
+   * they lead `unitId`, which is the unit they act as, the one they are employed on: `ledUnits` says which they lead.
+   */
   role: 'manager' | 'employee';
   /**
-   * Every assignment the person holds, from their current grant, when there is more than one (D135); `unitId` and
-   * `role` are the primary one and it is among them. Absent for a person with one assignment.
+   * Every unit the person belongs to or leads, with their role on each, from their current grant (D135). Absent only
+   * when there is one and it says what `unitId` and `role` already say: one unit, which they lead exactly when `role`
+   * is `manager`. Read through `ledUnits`, never by pairing `role` with `unitId`.
    */
   assignments?: UserAssignment[];
 }
@@ -111,7 +119,8 @@ export interface AuthenticatedContext extends SessionUser {
 export const byUnitId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /**
  * A person's assignments as a stored grant holds them (D135), only those of a well-formed shape, in unit id order by
- * UTF-16 code unit (D101 item 8); absent when there are fewer than two, as for a person with one assignment.
+ * UTF-16 code unit (D101 item 8); absent when the grant holds none, as for a person whose one unit and role say it all
+ * (D149).
  */
 export function assignmentsOf(values: unknown): UserAssignment[] | undefined {
   if (!Array.isArray(values)) return undefined;
@@ -126,7 +135,21 @@ export function assignmentsOf(values: unknown): UserAssignment[] | undefined {
     )
     .map(v => ({ unitId: v.unitId, unitLabel: v.unitLabel, role: v.role }))
     .sort((a, b) => byUnitId(a.unitId, b.unitId));
-  return held.length > 1 ? held : undefined;
+  return held.length ? held : undefined;
+}
+/**
+ * The units a person leads (D149), by unit id order: the assignments where their role is `manager`. Without
+ * assignments the person has one unit, `unitId`, and leads it exactly when `role` is `manager`. The one place that
+ * turns a session into "which units does this person answer for": never pair `role` with `unitId` anywhere else, since
+ * someone people report to is a manager whether or not they lead the unit they are employed on.
+ */
+export function ledUnits(
+  user: Pick<SessionUser, 'unitId' | 'unitLabel' | 'role' | 'assignments'>,
+): Array<{ unitId: string; unitLabel: string }> {
+  const held = user.assignments?.length
+    ? user.assignments
+    : [{ unitId: user.unitId, unitLabel: user.unitLabel, role: user.role }];
+  return held.filter(a => a.role === 'manager').map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel }));
 }
 export const sessionUser = (c: SessionUser): SessionUser => ({
   id: c.id,
@@ -134,8 +157,9 @@ export const sessionUser = (c: SessionUser): SessionUser => ({
   unitId: c.unitId,
   unitLabel: c.unitLabel,
   role: c.role,
-  // D135: every unit of a person who holds more than one; `units` (D117) is the server's and never leaves.
-  ...(c.assignments && c.assignments.length > 1
+  // D135, D149: the person's units, when they say more than the unit and role above; `units` (D117) is the
+  // server's and never leaves.
+  ...(c.assignments?.length
     ? { assignments: c.assignments.map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel, role: a.role })) }
     : {}),
 });
@@ -4499,15 +4523,15 @@ export interface OrganisationUnit {
   parentId: string | null;
   /** The people who lead the unit, by name in Swedish order. */
   managers: Array<{ id: string; name: string }>;
-  /** How many people are assigned to the unit itself, its managers included. */
+  /** How many people belong to the unit itself. Whoever leads it is among them only if they belong to it too (D149). */
   placed: number;
-  /** How many people are assigned to the unit or to a unit below it, each person once. */
+  /** How many people belong to the unit or to a unit below it, each person once. */
   branch: number;
   /** Whether anybody leads the unit (D147): its own managers, or nobody. The tree passes no line on. */
   line: 'own' | 'none';
   /**
-   * D147: how many active people placed on the unit report to nobody, because their employments name no manager, name
-   * only people who are deactivated, or name only people who report to them in turn.
+   * D147: how many active people who belong to the unit or lead it report to nobody, because their employments name no
+   * manager, name only people who are deactivated, or name only people who report to them in turn.
    */
   unmanaged: number;
   /** False when people are assigned to the unit but no `unit:` group names it, so it has no name and no place. */
@@ -4516,9 +4540,9 @@ export interface OrganisationUnit {
 export interface OrganisationOverview {
   /** Every unit, by label in Swedish order; the tree is `parentId`. */
   units: OrganisationUnit[];
-  /** People who are provisioned and active but placed on no unit, so they can do nothing (D68). */
+  /** People who are provisioned and active but belong to no unit and lead none, so they can do nothing (D68). */
   unplaced: number;
-  /** D147: how many active people placed on a unit report to nobody, each person once. */
+  /** D147: how many active people who belong to a unit or lead one report to nobody, each person once. */
   unmanaged: number;
 }
 /**
@@ -4540,6 +4564,11 @@ export interface OrganisationPerson extends StaffPerson {
   circle?: Array<{ id: string; name: string }>;
   /** Set when the person reports to nobody; absent for a deactivated person, who reports to nobody anyway. */
   gap?: ManagerGap;
+  /**
+   * D149: set when the person leads the unit and does not belong to it, being employed on another. They are
+   * listed as its manager and counted where they belong.
+   */
+  elsewhere?: true;
 }
 /** The people assigned to one unit, by name in Swedish order, as the tree shows them beside a selected unit. */
 export interface OrganisationUnitPeople {

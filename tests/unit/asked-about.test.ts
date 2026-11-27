@@ -37,6 +37,7 @@ import { competenceConnector } from '../../apps/server/src/modules/competence/ca
 import { competenceUsecases } from '../../apps/server/src/modules/competence/usecases';
 import { reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { testAuthority, testJwks } from '../connector-authority';
+import { hold } from '../held-units';
 
 /** What `POST /api/connectors/call` answers for a refusal (`routes/connector-callback.ts`): the protocol's code. */
 const refusal = (error: unknown) =>
@@ -97,7 +98,7 @@ function directory() {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set(id, placements);
+    hold(s, id, placements);
     const first = placements[0]!;
     s.grants.set(id, {
       unitId: first.unitId,
@@ -1674,7 +1675,7 @@ describe('an approved write about a person (executions, D45 and D117)', () => {
     const move = (id: string) => {
       // The directory moves the employment too, and with it whom the person reports to (D147).
       people.state.users.set(id, { ...people.state.users.get(id)!, employments: [{ unitId: 'unit-omsorg' }] });
-      people.state.assignments.set(id, [{ unitId: 'unit-omsorg', role: 'employee' }]);
+      hold(people.state, id, [{ unitId: 'unit-omsorg', role: 'employee' }]);
       people.state.grants.set(id, {
         unitId: 'unit-omsorg',
         unitLabel: 'Hemtjänsten',

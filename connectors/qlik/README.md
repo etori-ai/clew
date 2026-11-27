@@ -51,8 +51,10 @@ rate and also alerts on a rise of more than 1.5 percentage points in three month
 and which one the source gives is not settled, so the rise rule is not built.
 
 **Open mode.** Without `QLIK_UNIT_MAP` the fixture has no map from Clew's units to the source's: a unit's name in the
-source is Clew's unit id, and every manager has made-up figures for their own unit, whatever the organisation tree,
-the same every time. The scope is the same as with a map: the reader's own unit, and the units Clew lists in the actor's
+source is Clew's unit id, and every manager has made-up figures for the units they lead, whatever the organisation
+tree, the same every time. The scope is the same as with a map: the units the reader leads (the actor's `leads`,
+[D149](../../docs/decisions/D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md)), never the
+unit they are only employed on (`unitId`), and the units Clew lists in the actor's
 `units` when the call has them (those of the managers who report to the reader, [D117](../../docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)); every other unit is no row. How Clew's units are mapped to
 the real source is not settled.
 

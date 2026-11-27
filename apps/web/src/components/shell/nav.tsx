@@ -249,11 +249,13 @@ export function useNav({
     },
     // Kalender is drawn on its connector's signal, so a read of the calendar marks it (`CONNECTOR_PLACES`).
     ...(sees('calendar') ? [{ id: 'calendar', label: 'Kalender', href: '/calendar' }] : []),
-    // A manager's people and the unit's state (D94, D126); the server checks the assignments on every read.
+    // A manager's people and the unit's state (D94, D126); the server checks the assignments on every read. Läget is
+    // for a manager who follows up a unit: someone people report to who leads none, and whose reports lead none, has
+    // Personal alone once the list has answered (D149).
     ...(manager
       ? [
           { id: 'staff', label: 'Personal', href: '/staff' },
-          { id: 'units', label: 'Läget', href: lageHref },
+          ...(units && !followed.length ? [] : [{ id: 'units', label: 'Läget', href: lageHref }]),
         ]
       : []),
     { id: 'conversations', label: 'Samtal', href: '/conversations' },

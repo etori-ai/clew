@@ -119,15 +119,23 @@ export function buildTools(
 const roleWord = (role: 'manager' | 'employee') => (role === 'manager' ? 'chef' : 'medarbetare');
 const inWords = new Intl.ListFormat('sv', { type: 'conjunction' });
 /**
- * Where the person works, as the prompt says it: their role on their unit, or on each of their units when they hold more
- * than one (D135), the primary one first and every unit once by its id, two of the same name included: "chef på
- * Ekonomiavdelningen och chef på HR-avdelningen".
+ * Where the person works, as the prompt says it: their role on each of their units (D135), the one they act as first
+ * and every unit once by its id, two of the same name included: "chef på Ekonomiavdelningen och chef på
+ * HR-avdelningen". `chef` is said of a unit they lead and never of one they are only employed on (D149), so
+ * someone people report to who leads no unit is "medarbetare på Kansliet, med personalansvar". Without assignments the
+ * person has one unit, which they lead exactly when they are a manager.
  */
 function placements(ctx: Pick<PromptContext, 'unitId' | 'role' | 'unitLabel' | 'assignments'>) {
-  const primary = `${roleWord(ctx.role)} på ${ctx.unitLabel}`;
-  if (!ctx.assignments || ctx.assignments.length < 2) return primary;
-  const others = ctx.assignments.filter(a => a.unitId !== ctx.unitId).map(a => `${roleWord(a.role)} på ${a.unitLabel}`);
-  return inWords.format([primary, ...others]);
+  if (!ctx.assignments?.length) return `${roleWord(ctx.role)} på ${ctx.unitLabel}`;
+  const own = ctx.assignments.filter(a => a.unitId === ctx.unitId),
+    said = inWords.format(
+      [...own, ...ctx.assignments.filter(a => a.unitId !== ctx.unitId)].map(
+        a => `${roleWord(a.role)} på ${a.unitLabel}`,
+      ),
+    );
+  return ctx.role === 'manager' && !ctx.assignments.some(a => a.role === 'manager')
+    ? `${said}, med personalansvar`
+    : said;
 }
 export interface PromptContext {
   name: string;

@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**150 in force**: 99 accepted and 51 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
+**151 in force**: 99 accepted and 52 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -93,9 +93,10 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D121 · A sign-in follows the identity provider's session, and a sign-out there ends Clew's](D121-a-sign-in-follows-the-identity-providers-session.md) | 2026-11-12 | provisional |  |
 | [D122 · Clew keys its own records about a person by the person's id](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) | 2026-11-12 | provisional |  |
 | [D123 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) | 2026-11-12 | provisional |  |
-| [D135 · A person with several assignments sees the work of all of them, and a source is told every one](D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) | 2026-11-20 | provisional |  |
-| [D147 · An employment is a row of its own and names the person it reports to](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) | 2026-11-25 | provisional |  |
+| [D135 · A person with several assignments sees the work of all of them, and a source is told every one](D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) | 2026-11-20 | provisional | [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md) |
+| [D147 · An employment is a row of its own and names the person it reports to](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) | 2026-11-25 | provisional | [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md) |
 | [D148 · A unit carries the identifiers other systems know it by](D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md) | 2026-11-27 | provisional |  |
+| [D149 · A manager is who leads a unit or is reported to](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md) | 2026-11-27 | provisional |  |
 
 ## Platform
 

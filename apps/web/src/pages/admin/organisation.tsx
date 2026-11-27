@@ -701,8 +701,10 @@ function UnitSheet({
   );
   const placed = query.data?.people ?? [];
   const reports = query.data?.reports ?? [];
-  // Counted as the tree's row counts them: deactivated people are listed, with their mark, but are not among the placed.
-  const off = placed.filter(p => !p.enabled).length;
+  // Counted as the tree's row counts them: deactivated people are listed, with their mark, but are not among the
+  // placed, and neither is someone who leads the unit and is employed on another (D149).
+  const belonging = placed.filter(p => !p.elsewhere),
+    off = belonging.filter(p => !p.enabled).length;
   const leading = placed.filter(p => p.role === 'manager'),
     others = placed.filter(p => p.role !== 'manager'),
     leadingNames = leading.filter(p => p.enabled).map(p => p.name);
@@ -785,7 +787,7 @@ function UnitSheet({
               {placed.length > 0 && (
                 <HStack gap={2} vAlign="center" wrap="wrap">
                   <Text color="secondary" role="status">
-                    {`${people(placed.length - off)} på enheten${off ? ` och ${off} ${off === 1 ? 'avstängd' : 'avstängda'}` : ''}`}
+                    {`${people(belonging.length - off)} på enheten${off ? ` och ${off} ${off === 1 ? 'avstängd' : 'avstängda'}` : ''}`}
                   </Text>
                   {marks.map(m => (
                     <Badge key={m.label} variant={m.variant} label={m.label} />
@@ -808,7 +810,9 @@ function UnitSheet({
             unitLabel={title}
             members={leading}
             size="lg"
-            line={p => [reportsTo(p), p.email].filter(Boolean).join(DOT)}
+            line={p =>
+              [p.elsewhere ? 'Anställd på en annan enhet' : null, reportsTo(p), p.email].filter(Boolean).join(DOT)
+            }
             flag={p => (p.gap ? 'Utan chef' : undefined)}
           />
           <PeopleGroup

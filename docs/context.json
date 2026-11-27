@@ -1611,7 +1611,7 @@
       "number": 135,
       "path": "docs/decisions/D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md",
       "title": "D135 · A person with several assignments sees the work of all of them, and a source is told every one",
-      "status": "provisional (Oliver Borgström, 2026-11-20; accepted once a real directory has pushed people with more than one assignment and one connector that was not written for Clew answers for each of them); amended 2026-11-24 in the fixes of the review of batch 9 of the review of 2026-11-23: the time fixture declares `assignments: true` too and answers for every unit a person manages, as the HR fixture does, so \"Only the HR fixture\" under the build's limits reads \"Only the HR and time fixtures\"",
+      "status": "provisional (Oliver Borgström, 2026-11-20; accepted once a real directory has pushed people with more than one assignment and one connector that was not written for Clew answers for each of them); amended 2026-11-24 in the fixes of the review of batch 9 of the review of 2026-11-23: the time fixture declares `assignments: true` too and answers for every unit a person manages, as the HR fixture does, so \"Only the HR fixture\" under the build's limits reads \"Only the HR and time fixtures\"; amended 2026-11-27 by [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md): the unit a person acts as is the one they are employed on, so item 1 holds only for someone the directory sends no employment for; an assignment's role is `manager` where the person leads the unit, and the person's own role says that they are a manager, which they are too when people report to them; and the grant, the fingerprint, the context and the actor carry the assignments whenever they say more than the unit and the role, where items 2 to 5 say \"more than one\"",
       "date": "2026-11-20",
       "area": "identity, integrations"
     },
@@ -1719,7 +1719,7 @@
       "number": 147,
       "path": "docs/decisions/D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md",
       "title": "D147 · An employment is a row of its own and names the person it reports to",
-      "status": "provisional (Max Eriksson, 2026-11-25: build the storage first, then the line that reads it; accepted once a provisioner has pushed managers from a real directory and the people it names have used Personal); items 1 to 8 are built, item 9 is a proposal that waits for a decision and is built by nothing",
+      "status": "provisional (Max Eriksson, 2026-11-25: build the storage first, then the line that reads it; accepted once a provisioner has pushed managers from a real directory and the people it names have used Personal); items 1 to 8 are built; item 9 was decided on 2026-11-27 and is built as [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md)",
       "date": "2026-11-25",
       "area": "identity"
     },
@@ -1731,6 +1731,15 @@
       "status": "provisional (Max Eriksson, product owner, 2026-11-27: the unit carries its keys to other systems, the directory pushes them and a connected system is told them; the shape below is this build's choice; accepted once a provisioner has pushed identifiers from a real directory and a connector has answered a real system with one)",
       "date": "2026-11-27",
       "area": "identity"
+    },
+    {
+      "key": "D149-a-manager-is-who-leads-a-unit-or-is-reported-to",
+      "number": 149,
+      "path": "docs/decisions/D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md",
+      "title": "D149 · A manager is who leads a unit or is reported to",
+      "status": "provisional (Max Eriksson, product owner, 2026-11-27, with the four answers under \"Decided\"; accepted once a provisioner has pushed a real directory and the people it makes managers have used Personal and a unit's page)",
+      "date": "2026-11-27",
+      "area": "identity, integrations"
     }
   ],
   "documents": [
@@ -2683,6 +2692,12 @@
     {
       "path": "docs/decisions/D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md",
       "title": "D148 · A unit carries the identifiers other systems know it by",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md",
+      "title": "D149 · A manager is who leads a unit or is reported to",
       "category": "decision-history",
       "headings": []
     },

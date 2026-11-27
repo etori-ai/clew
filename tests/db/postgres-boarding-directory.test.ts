@@ -27,6 +27,7 @@ afterAll(async () => {
       await db.delete(schema.employments).where(inArray(schema.employments.personId, people));
       await db.delete(schema.personPositions).where(inArray(schema.personPositions.personId, people));
       await db.delete(schema.assignments).where(inArray(schema.assignments.personId, people));
+      await db.delete(schema.unitLeads).where(inArray(schema.unitLeads.personId, people));
     }
     await db.delete(schema.positions).where(like(schema.positions.id, p + '%'));
     await db.delete(schema.groups).where(like(schema.groups.id, p + '%'));
@@ -73,8 +74,15 @@ boardingDirectoryContract('postgres', async () => {
             managerId: managerId !== undefined && managerId !== person.id ? managerId : null,
           })),
         );
+      // D149: the seed's row says the person is on the unit, and leads it where the role is `manager`. Where a
+      // person belongs and what they lead are two tables.
       if (person.assignments.length)
-        await db.insert(schema.assignments).values(person.assignments.map(a => ({ personId: person.id, ...a })));
+        await db
+          .insert(schema.assignments)
+          .values(person.assignments.map(a => ({ personId: person.id, unitId: a.unitId })));
+      const led = person.assignments.filter(a => a.role === 'manager');
+      if (led.length)
+        await db.insert(schema.unitLeads).values(led.map(a => ({ personId: person.id, unitId: a.unitId })));
       for (const code of person.positionCodes) {
         const id = prefix + '-position-' + code;
         await db

@@ -25,6 +25,7 @@ import {
   type Employment,
 } from '../../scripts/provisioner/directory';
 import { plan, planOrganisation, push as reconcile, type PushOptions } from '../../scripts/provisioner/push';
+import { unitsHeld } from '../held-units';
 
 /**
  * Most tests here push the whole development directory, two hundred and fifty people in over a hundred groups, two or
@@ -339,7 +340,7 @@ describe('the synthetic provisioner', () => {
       unitLabel: 'Ekonomiavdelningen',
       role: 'manager',
     });
-    expect(store.state.assignments.get(ekonomiId(store, ekonomi.members[0]!))).toHaveLength(2);
+    expect(unitsHeld(store.state, ekonomiId(store, ekonomi.members[0]!))).toHaveLength(2);
     expect(grantOf(twoUnits.userName)).toMatchObject({ unitId: 'unit-bibliotek', role: 'employee' });
     const twoJobs = store.state.users.get(ekonomiId(store, twoUnits.externalId))!.employments;
     expect(twoJobs).toMatchObject([
@@ -439,7 +440,13 @@ describe('the synthetic provisioner', () => {
     // The users, appearance, competence and boarding key groups lose their only holder; Hillevi's manager group its
     // only manager.
     expect(summary).toMatchObject({ created: 0, replaced: 250, deactivated: 1, groupsRemoved: 5 });
-    expect(grantOf('hillevi')?.role).toBe('employee');
+    // Hillevi leads no unit any more, and is a manager still: the employments of her school's people name her, and
+    // whoever people report to is a manager whether or not they lead a unit (D149). Her grant says both.
+    expect(grantOf('hillevi')).toMatchObject({
+      unitId: 'unit-skola',
+      role: 'manager',
+      assignments: [{ unitId: 'unit-skola', role: 'employee' }],
+    });
     expect(grantOf('mikael')?.capabilities).toEqual(['admin.connectors']);
     const hassan = [...store.state.users.values()].find(u => u.userName === 'hassan')!;
     expect(hassan.enabled).toBe(false);
@@ -452,6 +459,41 @@ describe('the synthetic provisioner', () => {
     expect(remaining).not.toContain('capability:admin.users');
     expect(remaining).toContain('unit:unit-omsorg');
     expect(remaining).toHaveLength(120);
+    // When no employment names her either, she is nobody's manager: one unit, and an employee on it.
+    const unnamed: Directory = {
+      ...changed,
+      people: changed.people.map(p => ({
+        ...p,
+        employments: p.employments?.map(({ manager, ...job }) =>
+          manager === undefined || manager === 'dev:hillevi' ? job : { ...job, manager },
+        ),
+      })),
+    };
+    await push(client, unnamed);
+    expect(grantOf('hillevi')).toEqual({
+      unitId: 'unit-skola',
+      unitLabel: 'Bergsåkers skola',
+      role: 'employee',
+      capabilities: [],
+    });
+  });
+  test('somebody people report to who leads no unit is a manager, on the unit they are employed on and with no unit of their own (D149)', async () => {
+    const { client, grantOf } = stack();
+    await push(client, developmentDirectory);
+    // On Gata och park two people's employments name the project leader, who is no manager of the unit.
+    const unit = developmentDirectory.people.filter(p => p.department === 'unit-gata'),
+      named = new Set(unit.flatMap(p => p.employments?.map(job => job.manager) ?? [])),
+      leader = unit.find(p => !p.manager && named.has(p.externalId))!;
+    expect(unit.filter(p => p.employments?.some(job => job.manager === leader.externalId))).toHaveLength(2);
+    expect(grantOf(leader.userName)).toMatchObject({
+      unitId: 'unit-gata',
+      role: 'manager',
+      assignments: [{ unitId: 'unit-gata', unitLabel: 'Gata och park', role: 'employee' }],
+    });
+    // The unit's own manager leads it, and is a manager with one unit that says so: no list is needed.
+    const head = unit.find(p => p.manager)!;
+    expect(grantOf(head.userName)).toMatchObject({ unitId: 'unit-gata', role: 'manager' });
+    expect(grantOf(head.userName)).not.toHaveProperty('assignments');
   });
   test('a unit that moves in the directory moves in Clew, and units that leave it are removed from the leaves up (D99)', async () => {
     const { store, client } = stack();
@@ -609,8 +651,15 @@ describe('the synthetic provisioner', () => {
     // he would have had no unit, and so no grant, from the one write to the other.
     const moved: Directory = {
       ...developmentDirectory,
+      // The source moves the employment with the person, as it holds both: where a person belongs is read from it.
       people: developmentDirectory.people.map(p =>
-        p.userName === 'hassan' ? { ...p, department: 'unit-aldreboende-natt' } : p,
+        p.userName === 'hassan'
+          ? {
+              ...p,
+              department: 'unit-aldreboende-natt',
+              employments: p.employments?.map(job => ({ ...job, unitId: 'unit-aldreboende-natt' })),
+            }
+          : p,
       ),
     };
     const audited = store.state.audit.length;
@@ -634,7 +683,7 @@ describe('the synthetic provisioner', () => {
       },
       { unitId: 'unit-aldreboende-natt', role: 'employee', capabilities: [], assignments: 1 },
     ]);
-    expect(store.state.assignments.get(hassan)).toEqual([{ unitId: 'unit-aldreboende-natt', role: 'employee' }]);
+    expect(unitsHeld(store.state, hassan)).toEqual([{ unitId: 'unit-aldreboende-natt', role: 'employee' }]);
     // The groups are patched, the one he joins before the one he leaves.
     expect(
       store.state.audit
@@ -2038,18 +2087,19 @@ describe('the synthetic provisioner', () => {
         });
       for (const id of [chef, anna]) await titled(id);
       const employee = { unitId: 'skola', unitLabel: 'Skolan', role: 'employee' as const, capabilities: [] };
-      expect([grantOf('chef'), store.state.assignments.get(chef)]).toEqual([
+      expect([grantOf('chef'), unitsHeld(store.state, chef)]).toEqual([
         employee,
         [{ unitId: 'skola', role: 'employee' }],
       ]);
-      expect([grantOf('anna'), store.state.assignments.get(anna) ?? []]).toEqual([undefined, []]);
+      expect([grantOf('anna'), unitsHeld(store.state, anna) ?? []]).toEqual([undefined, []]);
       const check = async () =>
         (await checkProvisioning('http://clew.local', client, (input, init) => app.request(input, init))).filter(
           f => f.level !== 'ok' || f.text.includes('groups:'),
         );
       const counted =
           '3 groups: 1 unit, 0 unit-manager, 0 capability, 0 position, 0 plain (0 without an externalId) and 2 with a key written wrong.',
-        unplaced = '1 active user has no unit: or unit-manager: group and can do nothing in Clew: anna.',
+        unplaced =
+          '1 active user has no employment on a unit and no unit: or unit-manager: group, and can do nothing in Clew: anna.',
         harmless =
           "2 groups carry a key that is written wrong, so Clew reads them as plain groups, which give nobody anything unless an administrator maps them to a capability: 'unit-manager: skola', 'unit:skola '.";
       // Chef, the one person on a unit, was sent with no employment and leads nothing, since the managers' key is
@@ -2080,7 +2130,7 @@ describe('the synthetic provisioner', () => {
         schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
         Operations: [{ op: 'replace', path: 'active', value: true }],
       });
-      expect([grantOf('chef'), store.state.assignments.get(chef)]).toEqual([
+      expect([grantOf('chef'), unitsHeld(store.state, chef)]).toEqual([
         employee,
         [{ unitId: 'skola', role: 'employee' }],
       ]);
@@ -2517,6 +2567,10 @@ describe('the synthetic provisioner', () => {
       // D147: whom a person reports to is the manager an employment of theirs names. The head of an organisation
       // reports to nobody by right, so one person without a manager is no warning.
       '250 of 251 active users on a unit report to a manager their employment names. One reports to nobody, with no manager named, only a deactivated one, or one who names them back: yusuf.lundgren.',
+      // D149: who leads a unit, and that two of them lead a unit they do not belong to, which the directory means: the
+      // manager of one unit leads another too. The one who leads none is the project leader of Gata och park, whom two
+      // of its people report to.
+      '47 managers: 46 lead a unit, 2 of them a unit they do not belong to, and 1 leads none and has people who report to them.',
       // The area nobody is placed on has units below it, so it is a heading and not an emptied unit (D99).
       'The units form a tree: 1 root, 6 levels deep.',
       // D148: every unit people work on carries the code its costs are booked on; the heading nobody is on has none,
@@ -2592,7 +2646,7 @@ describe('the synthetic provisioner', () => {
     expect(store.state.audit.length).toBe(audited);
     expect(warned.filter(f => f.level === 'fail')).toEqual([]);
     expect(warned.filter(f => f.level === 'warn').map(f => f.text)).toEqual([
-      '1 active user has no unit: or unit-manager: group and can do nothing in Clew: lost.',
+      '1 active user has no employment on a unit and no unit: or unit-manager: group, and can do nothing in Clew: lost.',
       '1 employment names a unit that is no longer held. Send current employments for the affected users: lost (unit-closed).',
       // Counted as Administration › Organisation counts it, of the people placed on a unit: `lost` is on none and is
       // named above. The municipality's director heads the organisation and is named without being a warning; the

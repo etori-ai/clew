@@ -8,6 +8,7 @@ import {
 } from '../../apps/server/src/modules/people/usecases';
 import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
 import { refusingNul } from '../refusing-nul';
+import { hold } from '../held-units';
 
 /**
  * Administration › Användare (D85, D100): the overview, the people a page at a time with what narrows them, and the
@@ -109,8 +110,8 @@ function stack() {
     s.members.add(memberKey(g!, p!));
   s.units.set('unit-skola', { organisationId: 'poc', label: 'Bergsåkers skola' });
   s.units.set('unit-it', { organisationId: 'poc', label: 'IT' });
-  s.assignments.set('hillevi', [{ unitId: 'unit-skola', role: 'manager' }]);
-  s.assignments.set('mikael', [{ unitId: 'unit-it', role: 'employee' }]);
+  hold(s, 'hillevi', [{ unitId: 'unit-skola', role: 'manager' }]);
+  hold(s, 'mikael', [{ unitId: 'unit-it', role: 'employee' }]);
   s.grants.set('hillevi', { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager', capabilities: [] });
   s.grants.set('mikael', { unitId: 'unit-it', unitLabel: 'IT', role: 'employee', capabilities: [] });
   s.bindings.push({ issuer: 'https://idp.test/', subject: 'hillevi', personId: 'hillevi' });
@@ -290,7 +291,7 @@ describe('Användare', () => {
     });
     s.groups.set('g-skola', { ...s.groups.get('g-skola')!, parentUnitId: 'unit-forv' });
     s.units.set('unit-forv', { organisationId: 'poc', label: 'Förvaltningen' });
-    s.assignments.set('mikael', [
+    hold(s, 'mikael', [
       { unitId: 'unit-forv', role: 'manager' },
       { unitId: 'unit-it', role: 'employee' },
     ]);

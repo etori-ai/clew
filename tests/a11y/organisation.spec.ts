@@ -439,6 +439,48 @@ test.describe('organisation', () => {
         '3 personer på enheten och 2 avstängda',
       );
     });
+    test('someone who leads a unit and is employed on another is listed as its manager, said to be employed elsewhere, and not counted among its people (D149)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      // The unit's people as the fixture has them, and a second manager who leads it from another unit.
+      await page.route('**/api/admin/organisation/units/unit-skola', route =>
+        route.fulfill({
+          json: {
+            unitId: 'unit-skola',
+            unitLabel: 'Bergsåkers skola',
+            people: [
+              ...organisationPeople['unit-skola']!,
+              {
+                id: 'rut',
+                name: 'Rut Öst',
+                userName: 'rut.ost',
+                email: null,
+                role: 'manager',
+                enabled: true,
+                elsewhere: true,
+                managers: [{ id: 'mattias', name: 'Mattias Eriksson' }],
+              },
+            ],
+            reports: [],
+          },
+        }),
+      );
+      await open(page, '/admin/organisation?unit=unit-skola');
+      const people = page.getByRole('dialog', { name: 'Personer på Bergsåkers skola' });
+      // The count is of those who belong to the unit, as the tree's row counts them.
+      await expect(people.getByRole('status').filter({ hasText: 'personer' })).toHaveText(
+        '3 personer på enheten och 1 avstängd',
+      );
+      await expect(
+        people
+          .getByRole('list', { name: 'Chefer · Bergsåkers skola' })
+          .getByRole('listitem')
+          .filter({ hasText: 'Rut Öst' }),
+      ).toContainText('Anställd på en annan enhet');
+      await expectNoAxeViolations(page, { without: TREE_LABEL_RULE });
+    });
     test('an address that names a unit opens it over the tree with the units above it open, and a unit with nobody on it says so', async ({
       page,
       api,

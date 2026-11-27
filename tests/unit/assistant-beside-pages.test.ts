@@ -34,6 +34,7 @@ import {
 import { conversationList } from '../../apps/server/src/modules/conversations/domain';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { threadAccess } from '../../apps/server/src/threads/access';
+import { hold } from '../held-units';
 
 /**
  * The reads D141 rule 4 opens or adds for the pages the assistant is asked beside, that are not a domain's own module
@@ -100,7 +101,7 @@ function directory() {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set(id, placements);
+    hold(s, id, placements);
     s.grants.set(id, {
       unitId: placements[0]!.unitId,
       unitLabel: s.units.get(placements[0]!.unitId)!.label,
@@ -214,8 +215,8 @@ describe('people.reports: Personal’s list as a read (D141 rule 4)', () => {
   test('a manager who manages nobody any longer has an empty list, not a refusal', async () => {
     const w = world();
     // Leading no unit any longer is not it (D147): Sven's employment still names Olle, so Sven is still his report.
-    w.d.state.assignments.set('olle', [{ unitId: 'unit-fritids', role: 'employee' }]);
-    w.d.state.assignments.set('sven', []);
+    hold(w.d.state, 'olle', [{ unitId: 'unit-fritids', role: 'employee' }]);
+    hold(w.d.state, 'sven', []);
     expect((await w.read('olle')).rows).toEqual([{ name: 'Sven Berg', userName: 'sven', unit: 'Fritids' }]);
     // Once no employment names him he manages nobody; his session still has a manager's role, and the read answers.
     w.d.state.users.get('sven')!.employments = [];

@@ -42,17 +42,14 @@ export function createConnector({
   const personKey = actor => unitOf(actor) + ':' + personOf(actor);
   /** The days marked as absence through Clew, keyed by the operation that marked them. */
   const marked = () => state.get('absences', {});
-  // A person with several assignments (D135): Clew sends every one, each unit with the role the person has there, and
-  // `unitId` and `role` are the primary one. The roster, the figure and the unit rule of the writes cover every unit
-  // they manage, as the HR fixture's do, and never one where they are an employee. Without the list, the primary unit
-  // alone, as before.
-  const several = actor => Array.isArray(actor.assignments) && actor.assignments.length > 1;
+  // The units the person leads (D149), as Clew signs them into the actor of every manager: `leads`. `role` says only
+  // that the person is a manager, which someone people report to is without leading a unit, and `unitId` is the unit
+  // they are employed on, which need not be one they lead. The roster, the figure and the unit rule of the writes
+  // cover every unit in `leads`, as the HR fixture's do, and no unit when the list is empty or absent.
   const managedUnits = actor =>
-    several(actor)
-      ? actor.assignments.filter(a => a.role === 'manager').map(a => unitMap[a.unitId] ?? a.unitId)
-      : actor.role === 'manager'
-        ? [unitOf(actor)]
-        : [];
+    (Array.isArray(actor.leads) ? actor.leads : [])
+      .filter(u => u && typeof u.unitId === 'string' && u.unitId)
+      .map(u => unitMap[u.unitId] ?? u.unitId);
   /** Whether the person is on the staff of a unit the actor manages, as the time system registers it. */
   const inUnit = (actor, person) => managedUnits(actor).some(unit => (staffOf[unit] ?? []).includes(person));
   /** The person's shift on a day in a unit the actor manages; a shift in another unit is not theirs to see. */

@@ -17,7 +17,8 @@ import type { Capability } from '../../packages/contracts/src/scim-group-key';
  * units; the units people work in, each with its manager; and a group under a unit. The depth differs between
  * branches, as it does in an organisation: two administrations have their units directly under them. A unit names the
  * unit above it and nothing else. There is a department nobody leads, a unit with two managers, whose people are
- * divided between them, and two units led by the manager of another unit, who is pushed as theirs too. Who reports to
+ * divided between them, two units led by the manager of another unit, who is pushed as theirs too, and a project leader
+ * two people report to who leads no unit (`WORK_LED`). Who reports to
  * whom is said on each employment (D147, `withManagers`) and never follows from the tree. Nothing in Clew reads this
  * file; the provisioner does, and `scripts/auth-setup.ts` for the personas' accounts.
  */
@@ -264,6 +265,15 @@ const SECOND_EMPLOYMENT: Partial<Record<string, Employment>> = {
   'unit-bibliotek': { unitId: 'unit-kommunikation', title: 'Webbredaktör' },
   'unit-skola-haga': { unitId: 'unit-skola-nacksta', title: 'Lärare' },
   'unit-omsorg': { unitId: 'unit-omsorg-norr', title: 'Samordnare' },
+};
+/**
+ * D149: somebody people report to who leads no unit. On Gata och park a project leader leads the work of the two who
+ * build, and their employments name the project leader: a manager to Clew, with those two in Personal, who answers for
+ * no unit. The unit is led by its own manager, whom the project leader reports to like everyone else on it. `by` and
+ * `reports` are places among the unit's generated people.
+ */
+const WORK_LED: Partial<Record<string, { by: number; reports: readonly number[] }>> = {
+  'unit-gata': { by: 4, reports: [2, 6] },
 };
 const areaGroup = (area: Area) => 'ad:forvaltning-' + area;
 const GROUPS: DirectoryGroup[] = [
@@ -662,7 +672,8 @@ function generated(): DirectoryPerson[] {
   for (const unit of UNITS) {
     const placed = handwritten.filter(p => p.department === unit.id),
       managers = unit.managedBy || placed.some(p => p.manager) ? 0 : (unit.managers ?? 1),
-      alsoManages = UNITS.filter(u => u.managedBy === unit.id).map(u => u.id);
+      alsoManages = UNITS.filter(u => u.managedBy === unit.id).map(u => u.id),
+      first = people.length;
     for (let n = 0; n < unit.size - placed.length; n++, k++) {
       const named = unit.id === 'unit-skola' ? SCHOOL[n] : undefined,
         { givenName, familyName } = named ?? nameOf(k),
@@ -701,6 +712,16 @@ function generated(): DirectoryPerson[] {
               : [],
       });
     }
+    // Whoever leads the work of some of the unit's people is named on their employments, as a source says it.
+    const led = WORK_LED[unit.id],
+      leader = led && people[first + led.by];
+    if (led && leader)
+      for (const n of led.reports) {
+        const report = people[first + n],
+          job = report?.employments?.[0];
+        if (report && job)
+          report.employments = [{ ...job, manager: leader.externalId }, ...report.employments!.slice(1)];
+      }
   }
   return people;
 }

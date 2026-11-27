@@ -151,9 +151,11 @@ describe('the time-reporting fixture connector', () => {
     await registry.run(hillevi, 'timesheet.unmarkAbsence', { refs: [ref] }, { operationId: 'h2' });
     expect((await registry.run<Today>(hillevi, 'timesheet.today', {})).rows[0]!.absent).toBe(false);
   });
-  test('the unit rule covers every unit the actor manages, not the primary one alone, and never one where they are an employee (D135)', async () => {
+  test('the unit rule covers every unit the actor leads, not the one they are employed on alone, and never one where they are an employee (D135, D149)', async () => {
     const { registry } = stack();
-    // Karin's primary unit has no shifts here; she manages the school as well.
+    // The units are the actor's `leads`, which Clew sends every connector: this one does not take the assignments.
+    expect(timesheetManifest).not.toHaveProperty('assignments');
+    // Karin's own unit has no shifts here; she leads the school as well.
     const both: Actor = {
       ...karin,
       assignments: [
@@ -187,7 +189,7 @@ describe('the time-reporting fixture connector', () => {
       'hr:emp:1007',
       'hr:emp:1012',
     ]);
-    // Told only her primary unit, the source answers for it alone, as before.
+    // Leading her own unit alone, the source answers for it alone.
     const primary: Actor = { ...both };
     delete primary.assignments;
     const refused = await registry.run<Result>(
@@ -223,6 +225,35 @@ describe('the time-reporting fixture connector', () => {
     );
     expect(noShift.steps[0]!.detail).toBe('4 nov., ingen schemarad den dagen');
     expect((await registry.run<Today>(employeeThere, 'timesheet.today', {})).rows).toEqual([]);
+    // D149: `role` says that a person is a manager and `unitId` where they are employed, and neither says what they
+    // lead. Employed at the school and leading the finance department, the school's roster, figure and writes are
+    // not hers; a manager because people report to her, who leads no unit, is answered for no unit at all.
+    expect((await registry.run<Today>(hillevi, 'timesheet.today', {})).rows).toHaveLength(4);
+    const employedThere: Actor = {
+      ...hillevi,
+      assignments: [
+        { unitId: 'unit-ekonomi', unitLabel: 'Ekonomiavdelningen', role: 'manager' },
+        { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' },
+      ],
+    };
+    const reportedTo: Actor = {
+      ...hillevi,
+      assignments: [{ unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' }],
+    };
+    for (const [n, actor] of [employedThere, reportedTo].entries()) {
+      expect((await registry.run<Today>(actor, 'timesheet.today', {})).rows).toEqual([]);
+      // The department she leads has no shifts, which is said; with no unit to lead there is no figure. Never the school's.
+      expect((await registry.areas(actor)).find(a => a.id === 'staffing')?.figure ?? null).toEqual(
+        actor === employedThere ? { label: 'Inga pass i dag.', tone: 'none' } : null,
+      );
+      const refusedThere = await registry.run<Result>(
+        actor,
+        'timesheet.markAbsence',
+        { person: 'hr:emp:1005', date: '2026-11-04' },
+        { operationId: 'l' + n },
+      );
+      expect(refusedThere.rows.map(r => [r.outcome, r.detail])).toEqual([['failed', 'inte i din enhet']]);
+    }
   });
   test('a fact without a person or a day gives no step; a crash after the commit is found by the lookup', async () => {
     const { registry } = stack();

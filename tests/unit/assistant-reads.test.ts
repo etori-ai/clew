@@ -41,6 +41,7 @@ import { TOOL_REFUSED, type ModelGenerate } from '../../apps/server/src/assistan
 import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import { CARD_MARKS_MAX, cardRows, namedItems } from '../../apps/server/src/assistant/card';
 import { fixtureConnectors } from '../fixture-connectors';
+import { hold } from '../held-units';
 
 /**
  * The assistant reads Clew's own domains as the person who asks, never more (D122). Competence and the calendar are
@@ -92,7 +93,7 @@ function directory() {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set(id, placements);
+    hold(s, id, placements);
     s.grants.set(id, {
       unitId: placements[0]!.unitId,
       unitLabel: s.units.get(placements[0]!.unitId)!.label,

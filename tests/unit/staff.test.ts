@@ -4,6 +4,7 @@ import { ForbiddenError } from '../../apps/server/src/context';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { nameManagers } from '../named-managers';
+import { hold } from '../held-units';
 
 /**
  * Personal (D94, D147): what a manager sees of the people who report to them, under the unit of the employment that
@@ -55,18 +56,18 @@ function stack() {
   unit('unit-ekonomi', 'Ekonomiavdelningen');
   unit('unit-hr', 'HR-avdelningen');
   unit('unit-it', 'IT och digitalisering');
-  s.assignments.set('hillevi', [{ unitId: 'unit-skola', role: 'manager' }]);
-  s.assignments.set('anna', [{ unitId: 'unit-skola', role: 'employee' }]);
-  s.assignments.set('zara', [{ unitId: 'unit-skola', role: 'employee' }]);
-  s.assignments.set('orjan', [{ unitId: 'unit-skola', role: 'employee' }]);
-  s.assignments.set('bo', [{ unitId: 'unit-skola', role: 'employee' }]);
-  s.assignments.set('petra', [
+  hold(s, 'hillevi', [{ unitId: 'unit-skola', role: 'manager' }]);
+  hold(s, 'anna', [{ unitId: 'unit-skola', role: 'employee' }]);
+  hold(s, 'zara', [{ unitId: 'unit-skola', role: 'employee' }]);
+  hold(s, 'orjan', [{ unitId: 'unit-skola', role: 'employee' }]);
+  hold(s, 'bo', [{ unitId: 'unit-skola', role: 'employee' }]);
+  hold(s, 'petra', [
     { unitId: 'unit-ekonomi', role: 'manager' },
     { unitId: 'unit-hr', role: 'manager' },
   ]);
-  s.assignments.set('karin', [{ unitId: 'unit-ekonomi', role: 'manager' }]);
-  s.assignments.set('nils', [{ unitId: 'unit-hr', role: 'employee' }]);
-  s.assignments.set('mikael', [{ unitId: 'unit-it', role: 'employee' }]);
+  hold(s, 'karin', [{ unitId: 'unit-ekonomi', role: 'manager' }]);
+  hold(s, 'nils', [{ unitId: 'unit-hr', role: 'employee' }]);
+  hold(s, 'mikael', [{ unitId: 'unit-it', role: 'employee' }]);
   // Who reports to whom is on the employments (D147): each person placed on a unit names the one who leads it. Petra
   // and Karin lead Ekonomiavdelningen side by side and neither names the other; nobody leads IT, so Mikael names nobody.
   nameManagers(s);

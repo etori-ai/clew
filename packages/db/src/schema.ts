@@ -104,6 +104,8 @@ export const accessGrants = pgTable(
       .references(() => people.id),
     unitId: text('unit_id').notNull(),
     unitLabel: text('unit_label').notNull(),
+    // D149: whether the person is a manager, which is that somebody reports to them or they lead a unit. It
+    // does not say that they lead `unit_id`, the unit they act as: `auth_unit_lead` says which units they lead.
     role: text('role').$type<'manager' | 'employee'>().notNull(),
     capabilities: jsonb('capabilities').$type<string[]>().notNull(),
     version: integer('version').notNull().default(1),
@@ -113,8 +115,8 @@ export const accessGrants = pgTable(
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
-    // D135: every assignment with its unit's label, when the person holds more than one; empty otherwise. The primary
-    // one is `unit_id` and `role` above, and is among them.
+    // D135, D149: every unit the person belongs to or leads, with its label and `manager` where they lead it.
+    // Empty only when there is one and it says what `unit_id` and `role` above already say.
     assignments: jsonb('assignments')
       .$type<Array<{ unitId: string; unitLabel: string; role: 'manager' | 'employee' }>>()
       .notNull()
@@ -123,9 +125,11 @@ export const accessGrants = pgTable(
   t => [check('auth_grant_role', sql`${t.role} IN ('manager', 'employee')`)],
 );
 // What a provisioner pushes (D68) and what an administrator maps (D85). `auth_access_grant` above is the derived
-// projection of these tables: the primary assignment (manager before employee, then the lowest unit id), every
-// assignment when there is more than one (D135), and the capabilities the person's memberships give, written in the
-// same transaction as the change that moves them.
+// projection of these tables: the unit the person acts as (where they are employed), whether they are a manager, their
+// units (D135), and the capabilities the person's memberships give, written in the same transaction as the change
+// that moves them. Three facts about a person and the organisation are kept in two places and none is worked out from
+// another (D149): an employment (`auth_employment`) says which unit the person belongs to and whom they report
+// to, and `auth_unit_lead` says which units they lead.
 export const units = pgTable('auth_unit', {
   id: text('id').primaryKey(),
   organisationId: text('organisation_id').notNull(),
@@ -161,6 +165,11 @@ export const employments = pgTable(
     check('auth_employment_not_own_manager', sql`${t.managerId} IS DISTINCT FROM ${t.personId}`),
   ],
 );
+/**
+ * The units a person belongs to (D149), derived in the transaction that moves them: the units of their current
+ * employments that the organisation holds, and the units whose `unit:` group they are in, which is how a directory
+ * that sends no employments says it. It says nothing of who leads the unit: that is `auth_unit_lead`.
+ */
 export const assignments = pgTable(
   'auth_assignment',
   {
@@ -170,11 +179,28 @@ export const assignments = pgTable(
     unitId: text('unit_id')
       .notNull()
       .references(() => units.id),
-    role: text('role').$type<'manager' | 'employee'>().notNull(),
+  },
+  t => [primaryKey({ columns: [t.personId, t.unitId] })],
+);
+/**
+ * The units a person leads (D149), derived in the transaction that moves them from the `unit-manager:` groups
+ * they are in. Apart from where they belong: someone leads a unit whether or not they are employed on it, and whoever
+ * leads a unit answers for it, whoever its people report to.
+ */
+export const unitLeads = pgTable(
+  'auth_unit_lead',
+  {
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id),
   },
   t => [
     primaryKey({ columns: [t.personId, t.unitId] }),
-    check('auth_assignment_role', sql`${t.role} IN ('manager', 'employee')`),
+    // Who leads a unit is asked by the unit's id.
+    index('auth_unit_lead_unit').on(t.unitId),
   ],
 );
 /**
@@ -1048,6 +1074,7 @@ export const changeSignals: ReadonlyArray<{ table: string; trigger: string; fn: 
     args: ['organisation'],
   },
   { table: 'auth_assignment', trigger: 'auth_assignment_changed', fn: 'clew_shared_changed', args: ['organisation'] },
+  { table: 'auth_unit_lead', trigger: 'auth_unit_lead_changed', fn: 'clew_shared_changed', args: ['organisation'] },
   { table: 'auth_position', trigger: 'auth_position_changed', fn: 'clew_shared_changed', args: ['organisation'] },
   {
     table: 'auth_person_position',

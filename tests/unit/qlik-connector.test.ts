@@ -211,6 +211,58 @@ describe('the qlik connector', () => {
     expect(calm.rows[0]!.watch).toBe('Inom målet');
   });
 
+  test('the statistics are those of the units a manager leads, never of the unit they are only employed on (D149)', async () => {
+    const { registry } = stack();
+    const rows = async (actor: Actor) =>
+      (await registry.run<{ rows: UnitRow[] }>(actor, 'qlik.sickLeaveByUnit', {})).rows.map(r => r.unit);
+    const about = async (actor: Actor) =>
+      (await registry.run<{ rows: Array<{ key: string }> }>(actor, 'qlik.unit', { keys: ['unit-skola', 'unit-annan'] }))
+        .rows;
+    const figure = async (actor: Actor) => (await registry.areas(actor)).find(a => a.id === 'sick-leave')?.figure;
+    expect(await rows(hillevi)).toEqual(['Bergsåkers skola']);
+    // `role` says that a person is a manager and `unitId` where they are employed, and neither says what they lead.
+    // Employed at the school and leading a unit the statistics lack; and a manager because people report to her, who
+    // leads no unit. The school's figures are its own manager's.
+    const employedThere: Actor = {
+      ...hillevi,
+      assignments: [
+        { unitId: 'unit-annan', unitLabel: 'Annan enhet', role: 'manager' },
+        { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'employee' },
+      ],
+    };
+    const reportedTo: Actor = {
+      ...hillevi,
+      assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'employee' }],
+    };
+    for (const actor of [employedThere, reportedTo]) {
+      expect(await rows(actor)).toEqual([]);
+      expect(await about(actor)).toEqual([]);
+      expect((await figure(actor)) ?? null).toBeNull();
+      expect((await registry.run<{ rows: unknown[] }>(actor, 'qlik.sickLeaveTrend', {})).rows).toEqual([]);
+    }
+    // The empty trend is named for the unit she leads, not for the school.
+    expect(await registry.run(employedThere, 'qlik.sickLeaveTrend', {})).toMatchObject({ unit: 'Annan enhet' });
+    // Leading the school from an employment elsewhere, she reads what its manager reads.
+    const leadsTheSchool: Actor = {
+      ...elsewhere,
+      assignments: [
+        { unitId: 'unit-annan', unitLabel: 'Annan enhet', role: 'employee' },
+        { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
+      ],
+    };
+    expect(await rows(leadsTheSchool)).toEqual(['Bergsåkers skola']);
+    expect((await about(leadsTheSchool)).map(r => r.key)).toEqual(['unit-skola']);
+    expect(await figure(leadsTheSchool)).toEqual(await figure(hillevi));
+    // The units she follows up (D117) are answered beside those she leads, as before.
+    const follows: Actor = { ...employedThere, units: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering' }] };
+    expect((await about(follows)).map(r => r.key)).toEqual([]);
+    expect(
+      (
+        await registry.run<{ rows: Array<{ key: string }> }>(follows, 'qlik.unit', { keys: ['unit-it', 'unit-skola'] })
+      ).rows.map(r => r.key),
+    ).toEqual(['unit-it']);
+  });
+
   test('a manager whose unit is not in the statistics gets no rows and no figure', async () => {
     const { registry } = stack();
     expect((await registry.run<{ rows: UnitRow[] }>(elsewhere, 'qlik.sickLeaveByUnit', {})).rows).toEqual([]);

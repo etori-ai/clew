@@ -12,6 +12,7 @@ import {
 } from '../../apps/server/src/modules/people/domain';
 import { organisationUsecases, scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { refusingNul } from '../refusing-nul';
+import { hold } from '../held-units';
 
 /**
  * The organisation tree (D99) on the memory adapter: a `unit:` group carries the unit above it, the server refuses
@@ -257,7 +258,7 @@ describe('the organisation tree over SCIM (D99)', () => {
     // assignment before the rules held (D147 refuses a manager of another organisation where it is written): the manager
     // is still shown their own organisation's people only.
     await employ('anna', 'it', 'karin');
-    store.state.assignments.set(olle.id, [{ unitId: 'it', role: 'employee' }]);
+    hold(store.state, olle.id, [{ unitId: 'it', role: 'employee' }]);
     store.state.users.set(olle.id, {
       ...store.state.users.get(olle.id)!,
       employments: [{ unitId: 'it', managerId: id('karin') }],
@@ -855,8 +856,10 @@ describe('Administration › Organisation (D99, D147)', () => {
       unitLabel: 'Kommunstyrelsekontoret',
       parentId: null,
       managers: [{ id: h.id('karin'), name: 'Karin' }],
-      placed: 2,
-      branch: 4,
+      // Stina. Karin leads the unit and the directory says of no unit that she belongs to it: who leads a unit and who
+      // is of it are counted apart (D149).
+      placed: 1,
+      branch: 3,
       line: 'own',
       // Karin herself: nobody is above her, and no employment of hers names anybody. Stina names her.
       unmanaged: 1,
@@ -879,7 +882,8 @@ describe('Administration › Organisation (D99, D147)', () => {
     expect(by.okand).toMatchObject({
       unitLabel: 'okand',
       parentId: null,
-      placed: 1,
+      // Nils leads it, and nobody belongs to it.
+      placed: 0,
       line: 'own',
       unmanaged: 1,
       pushed: false,
@@ -994,9 +998,11 @@ describe('Administration › Organisation (D99, D147)', () => {
       { id: h.id('åke'), name: 'Åke' },
       { id: h.id('ärla'), name: 'Ärla' },
     ]);
-    // The tree counts the same people on the unit, Bo, Cia, Dan, Eva and Rut, of the seven who are active.
+    // The tree counts the same people on the unit, Bo, Cia, Dan, Eva and Rut. Six active people belong to it: Rut
+    // leads it and is of no unit, and is listed as its manager.
     const view = await organisation.overview(admin);
-    expect(view.units.find(u => u.unitId === 'skola')).toMatchObject({ placed: 7, unmanaged: 5 });
+    expect(view.units.find(u => u.unitId === 'skola')).toMatchObject({ placed: 6, unmanaged: 5 });
+    expect(people.filter(q => q.elsewhere).map(q => q.name)).toEqual(['Rut']);
     // With Ärla and Åke on the other unit, whose employments name nobody.
     expect(view.unmanaged).toBe(7);
   });
@@ -1237,7 +1243,7 @@ describe('Administration › Organisation (D99, D147)', () => {
         { id: 'b', label: 'B', parentId: 'a' },
         { id: 'c', label: 'C', parentId: 'missing' },
       ],
-      [{ personId: 'p', name: 'P', enabled: true, unitId: 'a', role: 'employee' }],
+      [{ personId: 'p', name: 'P', enabled: true, unitId: 'a', role: 'employee', belongs: true }],
     );
     expect(view.units.map(u => [u.unitId, u.parentId, u.branch, u.line])).toEqual([
       ['a', 'b', 1, 'none'],
@@ -1253,9 +1259,9 @@ describe('Administration › Organisation (D99, D147)', () => {
         { id: 'b', label: 'B', parentId: 'top' },
       ],
       [
-        { personId: 'p', name: 'P', enabled: true, unitId: 'a', role: 'manager' },
-        { personId: 'p', name: 'P', enabled: true, unitId: 'b', role: 'employee' },
-        { personId: 'q', name: 'Q', enabled: true, unitId: 'b', role: 'employee' },
+        { personId: 'p', name: 'P', enabled: true, unitId: 'a', role: 'manager', belongs: true },
+        { personId: 'p', name: 'P', enabled: true, unitId: 'b', role: 'employee', belongs: true },
+        { personId: 'q', name: 'Q', enabled: true, unitId: 'b', role: 'employee', belongs: true },
       ],
     );
     expect(view.units.map(u => [u.unitId, u.placed, u.branch])).toEqual([
@@ -1307,14 +1313,14 @@ describe('Administration › Organisation (D99, D147)', () => {
         { id: 'b', label: 'B', parentId: 'top' },
       ],
       [
-        { personId: 'boss', name: 'Boss', enabled: true, unitId: 'top', role: 'manager' },
-        { personId: 'two', name: 'Two', enabled: true, unitId: 'a', role: 'employee' },
-        { personId: 'two', name: 'Two', enabled: true, unitId: 'b', role: 'employee' },
-        { personId: 'led', name: 'Led', enabled: true, unitId: 'a', role: 'employee' },
-        { personId: 'left', name: 'Left', enabled: true, unitId: 'b', role: 'employee' },
-        { personId: 'off', name: 'Off', enabled: false, unitId: 'a', role: 'employee' },
-        { personId: 'gone', name: 'Gone', enabled: false, unitId: 'b', role: 'manager' },
-        { personId: 'new', name: 'New', enabled: true, unitId: null, role: null },
+        { personId: 'boss', name: 'Boss', enabled: true, unitId: 'top', role: 'manager', belongs: true },
+        { personId: 'two', name: 'Two', enabled: true, unitId: 'a', role: 'employee', belongs: true },
+        { personId: 'two', name: 'Two', enabled: true, unitId: 'b', role: 'employee', belongs: true },
+        { personId: 'led', name: 'Led', enabled: true, unitId: 'a', role: 'employee', belongs: true },
+        { personId: 'left', name: 'Left', enabled: true, unitId: 'b', role: 'employee', belongs: true },
+        { personId: 'off', name: 'Off', enabled: false, unitId: 'a', role: 'employee', belongs: true },
+        { personId: 'gone', name: 'Gone', enabled: false, unitId: 'b', role: 'manager', belongs: true },
+        { personId: 'new', name: 'New', enabled: true, unitId: null, role: null, belongs: false },
       ],
       {},
       // Two, Off and New name nobody. Left names only Gone, who is deactivated. Boss names New, who is active and

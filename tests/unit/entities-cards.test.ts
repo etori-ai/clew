@@ -17,6 +17,7 @@ import { SUBJECT_ERASED, subjectCards, subjectErasure } from '../../apps/server/
 import type { ThreadStore } from '../../apps/server/src/threads/model';
 import { memoryPersonKeys } from '../person-keys';
 import { refreshScan } from '../refresh-scan';
+import { hold, unitsHeld } from '../held-units';
 
 /**
  * "Behöver dig" on a person and "Just nu" on the list (D97 items 5 and 6) as the person meets them: a source's scan pushes
@@ -47,7 +48,7 @@ function directory() {
       createdAt: T0,
       updatedAt: T0,
     });
-    s.assignments.set(p.id, [...(s.assignments.get(p.id) ?? []), { unitId, role }]);
+    hold(s, p.id, [...(unitsHeld(s, p.id) ?? []), { unitId, role }]);
     s.grants.set(p.id, { unitId, unitLabel: s.units.get(unitId)!.label, role, capabilities: [] });
   };
   s.units.set('unit-skola', { organisationId: 'poc', label: 'Bergsåkers skola' });

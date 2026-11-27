@@ -114,6 +114,7 @@ bun scripts/provisioner-check.ts "$CLEW" --roots 1 | sed '1d'
   ok   3 of 3 active users have a title.
   ok   Phone numbers on 3 of 3 active users, employments on 3.
   ok   2 of 3 active users on a unit report to a manager their employment names. One reports to nobody, with no manager named, only a deactivated one, or one who names them back: anna.berg.
+  ok   2 managers: 2 lead a unit.
   ok   The units form a tree: 1 root, 3 levels deep.
   warn 1 unit or unit-manager group has no members: unit:112.
 

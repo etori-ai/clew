@@ -61,6 +61,7 @@ import {
 import { KeyFigureTiles } from '../components/people/unit-figures';
 import { PageFrame } from '../components/shell/page-frame';
 import { entityPageSubject } from '../components/conversation/page-conversation';
+import { lageUnit } from '../user-units';
 
 /** The page's heading when the unit cannot be read, in the browser's tab too. */
 const FAILED_TITLE = 'Enheten kunde inte läsas';
@@ -515,8 +516,9 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
       // The unit's key figures from its sources (D117), each source's value large with its state, after Läget.
       const tiles = <KeyFigureTiles answers={answers} />;
       sections = [
-        // Läget is the reader's own unit's: the areas' figures are the session's (D54).
-        ...(id === user.unitId ? [{ key: 'laget', node: <UnitFigures from={here} /> }] : []),
+        // Läget is the reader's own unit's: the areas' figures are the session's (D54), said of the unit they lead
+        // (`lageUnit`, D149).
+        ...(id === lageUnit(user).unitId ? [{ key: 'laget', node: <UnitFigures from={here} /> }] : []),
         ...(answers.some(a => !!rowOf(a)) ? [{ key: 'key-figures', node: tiles }] : []),
         ...(detail.cards.length > 0
           ? [

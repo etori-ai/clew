@@ -20,6 +20,7 @@ import { capabilityRunner } from '../../apps/server/src/connectors/run';
 import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import { InputError } from '../../apps/server/src/context';
 import { memoryPersonKeys } from '../person-keys';
+import { hold } from '../held-units';
 
 /**
  * The assistant's function ports, `run`, `handover`, `people` and `start`, as the server binds them (AM-13 of the
@@ -68,7 +69,7 @@ function directory() {
       createdAt: T,
       updatedAt: T,
     });
-    s.assignments.set(id, [placement]);
+    hold(s, id, [placement]);
     s.grants.set(id, {
       unitId: placement.unitId,
       unitLabel: s.units.get(placement.unitId)!.label,

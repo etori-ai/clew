@@ -37,10 +37,13 @@ userReadsContract('memory', async () => {
           email: userReadAddresses(actors)[a.id] ?? null,
         }),
       );
-      await tx.replaceAssignments(a.id, [{ unitId: a.unitId, role: a.role }]);
+      await tx.replaceUnits(a.id, { belongs: [a.unitId], leads: a.role === 'manager' ? [a.unitId] : [] });
     }
     await tx.insertUser(userRow(colleague.id, USER_READ_ORGANISATION, { name: colleague.name, userName: null }));
-    await tx.replaceAssignments(colleague.id, colleague.placed);
+    await tx.replaceUnits(colleague.id, {
+      belongs: colleague.placed.map(placed => placed.unitId),
+      leads: colleague.placed.filter(placed => placed.role === 'manager').map(placed => placed.unitId),
+    });
     for (const other of others)
       await tx.insertUser(
         userRow(other.id, other.organisationId, { name: other.name, userName: other.userName, enabled: other.enabled }),

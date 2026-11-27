@@ -61,6 +61,7 @@ import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { Registry } from '../registry';
 import { DEVELOPMENT_CATALOGUE, DEVELOPMENT_REQUIREMENTS } from '../../scripts/competence-development';
+import { hold } from '../held-units';
 
 /**
  * The competence module's use cases (D108) on the memory adapter, with a clock, ids and a staff port the test owns:
@@ -2610,7 +2611,7 @@ describe("a manager's reports are those whose employments name them, never someo
         createdAt: T,
         updatedAt: T,
       });
-      s.assignments.set(id, assignmentsOf(placements));
+      hold(s, id, assignmentsOf(placements));
       const first = placements[0]!;
       s.grants.set(id, {
         unitId: first.unitId,
@@ -2681,7 +2682,7 @@ describe("a manager's reports are those whose employments name them, never someo
         createdAt: T,
         updatedAt: T,
       });
-      s.assignments.set(id, assignmentsOf(placements));
+      hold(s, id, assignmentsOf(placements));
       s.grants.set(id, {
         unitId: placements[0]!.unitId,
         unitLabel: s.units.get(placements[0]!.unitId)!.label,

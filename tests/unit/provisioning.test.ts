@@ -13,6 +13,7 @@ import {
 } from '../../apps/server/src/modules/people/domain';
 import { memberKey, memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { provisioningContract, type ProvisioningHarness } from '../provisioning-store-contract';
+import { unitsHeld } from '../held-units';
 
 /** The pure derivation (D68, D85) and the provisioning contract on the memory adapter. */
 describe('deriveAuthority', () => {
@@ -338,7 +339,7 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
       return s.grants.get(id);
     },
     async assignments(id) {
-      return s.assignments.get(id) ?? [];
+      return unitsHeld(s, id) ?? [];
     },
     async unitLabel(id) {
       return s.units.get(id)?.label;

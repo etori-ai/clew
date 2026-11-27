@@ -2,6 +2,11 @@
 
 **Status:** provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet; item 3 amended 2026-11-12 in the fixes of the review of users and the organisation (S8, Q2): blank addresses are left out before one is chosen, and the primary work address is taken before the first; the section on work placements, first written the same day with [the note on municipal employment](../reviews/2026-11-12-municipal-employment-and-work-placements.md), which names nobody who chose it, was settled in the same fixes, whose open decisions the product owner asked the work to take (X4, X5): a work placement is not a placement in the sense of [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md), is not sent today and gives no access or reporting line, and a person who must act at another unit gets a `unit:` membership there; item 2 refined by [D147](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) (2026-11-25, provisional): an employment is a row of its own and may name its manager, which decides who the person reports to and gives no access · **Date:** 2026-11-12 · **Area:** identity, ui
 
+**Amended 2026-11-27 by [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md).** An employment places a
+person: they belong to the unit of each current employment the organisation holds, and act as the unit of the first.
+Item 2 said that an employment only describes work and that a person with an employment on a unit and no membership of
+its group could do nothing there. It still gives no capability and decides nothing of who leads a unit.
+
 **Amended 2026-11-12.** In the fixes of the
 [review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
 which the product owner asked for on 2026-11-12 with every open decision taken in the work. The items and the section

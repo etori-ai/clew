@@ -128,6 +128,7 @@ afterAll(async () => {
   await db.delete(schema.threads).where(inArray(schema.threads.personId, [manager, employee]));
   await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, [manager, employee, ...assigned]));
   await db.delete(schema.assignments).where(inArray(schema.assignments.personId, assigned));
+  await db.delete(schema.unitLeads).where(inArray(schema.unitLeads.personId, assigned));
   await db.delete(schema.units).where(inArray(schema.units.id, [unitA, unitB]));
   await db
     .delete(schema.people)
@@ -334,12 +335,18 @@ describe('the talks module on Postgres through the composition store (D96)', () 
       { id: unitA, organisationId: ORG, label: 'Enhet A' },
       { id: unitB, organisationId: ORG, label: 'Enhet B' },
     ]);
-    // The deactivated manager keeps her assignment and grant: only her being active is gone.
+    // The deactivated manager keeps her assignment and grant: only her being active is gone. D149: each is of
+    // their unit, and the three managers lead theirs besides, which is a table of its own.
     await db.insert(schema.assignments).values([
-      { personId: current, unitId: unitA, role: 'manager' },
-      { personId: gone, unitId: unitA, role: 'manager' },
-      { personId: moved, unitId: unitB, role: 'manager' },
-      { personId: staffer, unitId: unitA, role: 'employee' },
+      { personId: current, unitId: unitA },
+      { personId: gone, unitId: unitA },
+      { personId: moved, unitId: unitB },
+      { personId: staffer, unitId: unitA },
+    ]);
+    await db.insert(schema.unitLeads).values([
+      { personId: current, unitId: unitA },
+      { personId: gone, unitId: unitA },
+      { personId: moved, unitId: unitB },
     ]);
     await db.insert(schema.accessGrants).values([
       { personId: current, unitId: unitA, unitLabel: 'Enhet A', role: 'manager', capabilities: [] },
@@ -362,8 +369,8 @@ describe('the talks module on Postgres through the composition store (D96)', () 
     expect(await talkManages(`nobody-${tag}`, staffer)).toBe(false);
     expect(await talkManages(staffer, staffer)).toBe(false);
     expect(await talkManages(current, current)).toBe(false);
-    // Leading the unit does not make her the employee's manager: who reports to whom is not read from the assignments.
-    await db.insert(schema.assignments).values({ personId: moved, unitId: unitA, role: 'manager' });
+    // Leading the unit does not make her the employee's manager: who reports to whom is not read from who leads it.
+    await db.insert(schema.unitLeads).values({ personId: moved, unitId: unitA });
     expect(await talkManages(moved, staffer)).toBe(false);
     // The directory names her on the employment: she manages the employee at once, and the one before her no longer.
     await db
