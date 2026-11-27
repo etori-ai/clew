@@ -16,6 +16,10 @@ export type FieldMap = Record<
   string
 >;
 export declare const DEFAULT_FIELDS: FieldMap;
+export type AgreementFieldMap = Record<'id' | 'account' | 'amount', string>;
+export declare const DEFAULT_AGREEMENT_FIELDS: AgreementFieldMap;
+export declare const DEFAULT_AGREEMENT_PATH: string;
+export declare function agreementFieldMap(overrides?: Record<string, unknown>): AgreementFieldMap;
 export declare function fieldMap(overrides?: Record<string, unknown>): FieldMap;
 export declare function instantIn(value: unknown, timeZone: string): string | undefined;
 export declare function createPobCases(options?: {
@@ -26,6 +30,8 @@ export declare function createPobCases(options?: {
   customerMatch?: string;
   statusLabels?: Record<string, string>;
   timeZone?: string;
+  agreementFields?: AgreementFieldMap;
+  agreementPath?: string;
   listLimit?: number;
   timeoutMs?: number;
   inFlight?: number;

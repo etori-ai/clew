@@ -39,6 +39,18 @@ export const DEFAULT_FIELDS = {
   userGroups: '',
 };
 const OPTIONAL_FIELDS = ['closed', 'userGroups', 'created'];
+/**
+ * What the cost read (D148) needs of a service agreement, and what each is called in POB. ASSUMED throughout, from one
+ * installation's own reading of its POB and from no documentation: an agreement has an id, and the account its cost
+ * is booked on is a whole accounting string that begins with the unit's code. No field for an amount has been seen, so
+ * `amount` is empty until an installation names it; then the read answers a sum, and until then a count.
+ */
+export const DEFAULT_AGREEMENT_FIELDS = { id: 'Id', account: 'Account.Id', amount: '' };
+/** ASSUMED, on the same grounds: where POB lists its service agreements. */
+export const DEFAULT_AGREEMENT_PATH = '/sla';
+const AGREEMENT_PATH = /^\/[A-Za-z0-9_/-]{1,80}$/;
+/** A unit's code as it may stand in a filter sent to POB. The connector has already held it to its own pattern. */
+const CODE_VALUE = /^[A-Za-z0-9]{1,64}$/;
 const FIELD_NAME = /^[A-Za-z0-9_.]{1,80}$/;
 /** A value that may stand in a filter sent to POB: an account or an id. Anything else is never sent. */
 const FILTER_VALUE = /^[A-Za-z0-9._@:-]{1,128}$/;
@@ -51,6 +63,25 @@ const refId = value => (value && typeof value === 'object' ? scalar(value.Data?.
 const refLabel = value =>
   value && typeof value === 'object' ? text(value.Data?.Description ?? value.Data?.Name) : undefined;
 
+// ASSUMED: a field named with a dot is either a key written so, as the public code's JSON paths have it, or a field
+// of a referenced record; both are read.
+const pick = (data, name) => {
+  if (Object.hasOwn(data, name)) return data[name];
+  let at = data;
+  for (const part of name.split('.')) {
+    at = at && typeof at === 'object' ? (at.Data && !Object.hasOwn(at, part) ? at.Data[part] : at[part]) : undefined;
+    if (at === undefined || at === null) return undefined;
+  }
+  return at;
+};
+// An amount as a number: a JSON number, or digits with a decimal point or comma. Anything else is no amount, which the
+// connector says of the agreement; it is never read as zero.
+const amountOf = value => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== 'string' || !/^-?\d{1,15}([.,]\d{1,6})?$/.test(value.trim())) return undefined;
+  return Number(value.trim().replace(',', '.'));
+};
+
 /** The fields as configured: the defaults with an installation's own names over them. Throws on a name that is none. */
 export function fieldMap(overrides = {}) {
   if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides))
@@ -62,6 +93,24 @@ export function fieldMap(overrides = {}) {
     if (name === '' && OPTIONAL_FIELDS.includes(concept)) fields[concept] = '';
     else if (typeof name !== 'string' || !FIELD_NAME.test(name))
       throw new Error(`POB_FIELDS: "${concept}" must be a field name.`);
+    else fields[concept] = name;
+  }
+  return fields;
+}
+
+/** The agreement fields as configured, over the defaults. Throws on a concept or a name that is none. */
+export function agreementFieldMap(overrides = {}) {
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides))
+    throw new Error('POB_AGREEMENT_FIELDS must be a JSON object.');
+  const fields = { ...DEFAULT_AGREEMENT_FIELDS };
+  for (const [concept, name] of Object.entries(overrides)) {
+    if (!Object.hasOwn(DEFAULT_AGREEMENT_FIELDS, concept))
+      throw new Error(
+        `POB_AGREEMENT_FIELDS: "${concept}" is not one of ${Object.keys(DEFAULT_AGREEMENT_FIELDS).join(', ')}.`,
+      );
+    if (name === '' && concept === 'amount') fields.amount = '';
+    else if (typeof name !== 'string' || !FIELD_NAME.test(name))
+      throw new Error(`POB_AGREEMENT_FIELDS: "${concept}" must be a field name.`);
     else fields[concept] = name;
   }
   return fields;
@@ -107,6 +156,8 @@ export function createPobCases({
   customerMatch,
   statusLabels = {},
   timeZone = 'Europe/Stockholm',
+  agreementFields = DEFAULT_AGREEMENT_FIELDS,
+  agreementPath = DEFAULT_AGREEMENT_PATH,
   listLimit = 500,
   timeoutMs = 3000,
   inFlight = 4,
@@ -125,6 +176,8 @@ export function createPobCases({
     ['POB_CUSTOMER_MATCH', customerMatch],
   ])
     if (typeof value !== 'string' || !FIELD_NAME.test(value)) throw new Error(`${name} must be a field name.`);
+  if (typeof agreementPath !== 'string' || !AGREEMENT_PATH.test(agreementPath))
+    throw new Error('POB_AGREEMENT_PATH must be a path that begins with a slash.');
   const root = base.toString().replace(/\/+$/, '');
 
   // A credential POB refuses is not tried again at once: a wrong password must not become a locked account.
@@ -266,6 +319,32 @@ export function createPobCases({
     async one(id) {
       const payload = await get('/case/' + encodeURIComponent(id));
       return payload ? errand(payload) : null;
+    },
+
+    // ASSUMED: agreements are listed like errands (a JSON array of `{ Data }`), and a filter value that ends in `%`
+    // matches the accounts that begin with what stands before it. A POB that ignores the filter answers every
+    // agreement: each is compared with the code again here and in the connector, and more rows than the limit is an
+    // answer that was cut.
+    async agreements(code) {
+      if (!CODE_VALUE.test(code)) throw new SourceUnavailable('A value that cannot stand in a filter.');
+      const answer = await get(agreementPath, {
+        Filter: `${agreementFields.account}=${code}%`,
+        limit: String(listLimit + 1),
+      });
+      if (!Array.isArray(answer)) throw new SourceUnavailable('POB answered something that is not a list.');
+      const agreements = [];
+      for (const payload of answer) {
+        const data = payload?.Data;
+        const id = data && scalar(data[agreementFields.id]);
+        const account =
+          data && (scalar(pick(data, agreementFields.account)) ?? refId(pick(data, agreementFields.account)));
+        // An agreement without an id or an account cannot be compared with the code, and is not guessed at.
+        if (!id || !account) throw new SourceUnavailable('An agreement that could not be read.');
+        if (!account.startsWith(code)) continue;
+        const amount = agreementFields.amount ? amountOf(pick(data, agreementFields.amount)) : undefined;
+        agreements.push({ id, account, ...(amount !== undefined ? { amount } : {}) });
+      }
+      return { agreements, complete: answer.length <= listLimit };
     },
 
     // ASSUMED: `GET /case/{id}/memo?type=<type>&scope=all` answers `{ Memo: { <type>: { Memo, Extension } } }`.
