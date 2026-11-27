@@ -61,6 +61,7 @@ function stack() {
   person('zara', 'Zara Avstängd');
   s.users.get('zara')!.enabled = false;
   s.groups.set('g-skola', {
+    unitIdentifiers: [],
     id: 'g-skola',
     organisationId: 'poc',
     parentUnitId: null,
@@ -70,6 +71,7 @@ function stack() {
     updatedAt: T,
   });
   s.groups.set('g-it', {
+    unitIdentifiers: [],
     id: 'g-it',
     organisationId: 'poc',
     parentUnitId: null,
@@ -79,6 +81,7 @@ function stack() {
     updatedAt: T,
   });
   s.groups.set('g-ad', {
+    unitIdentifiers: [],
     id: 'g-ad',
     organisationId: 'poc',
     parentUnitId: null,
@@ -88,6 +91,7 @@ function stack() {
     updatedAt: T,
   });
   s.groups.set('g-plain', {
+    unitIdentifiers: [],
     id: 'g-plain',
     organisationId: 'poc',
     parentUnitId: null,

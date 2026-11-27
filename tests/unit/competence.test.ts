@@ -2584,6 +2584,7 @@ describe("a manager's reports are those whose employments name them, never someo
     const unit = (id: string, label: string, parent: string | null) => {
       s.units.set(id, { organisationId: ORG, label });
       s.groups.set('g-' + id, {
+        unitIdentifiers: [],
         id: 'g-' + id,
         organisationId: ORG,
         externalId: 'unit:' + id,
@@ -2654,6 +2655,7 @@ describe("a manager's reports are those whose employments name them, never someo
     ] as const) {
       s.units.set(id, { organisationId: ORG, label });
       s.groups.set('g-' + id, {
+        unitIdentifiers: [],
         id: 'g-' + id,
         organisationId: ORG,
         externalId: 'unit:' + id,

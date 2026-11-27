@@ -37,11 +37,13 @@ import {
   applyGroupPatch,
   applyUserPatch,
   assertAcceptedKey,
+  assertAcceptedIdentifiers,
   assertAcceptedParent,
   auditKeysToErase,
   branchOf,
   bySwedish,
   closesCycle,
+  sameIdentifiers,
   deriveAuthority,
   grantRelations,
   ERASED,
@@ -637,8 +639,11 @@ export function scimUsecases(deps: {
   ) {
     assertAcceptedKey(fields);
     assertAcceptedParent(fields);
+    assertAcceptedIdentifiers(fields);
     // The tree is held only by a write that changes it: a reconciliation replays every unit and moves none.
     const was = unitGroupOf(current.externalId),
+      // D148: what other systems know the unit by. Nobody's grant follows from it, so nobody is derived for it.
+      identified = !sameIdentifiers(current.unitIdentifiers, fields.identifiers),
       moved = current.parentUnitId !== fields.parent,
       leaves = was !== undefined && was !== unitGroupOf(fields.externalId);
     if (moved || leaves) await tx.lockTree(p.organisationId);
@@ -665,7 +670,8 @@ export function scimUsecases(deps: {
     // position and has it in the audit.
     const position = await positionOf(tx, p, fields),
       positionMissing = position?.missing === true;
-    if (!renamed && !moved && !added.length && !removed.length && !positionMissing) return groupView(tx, current, base);
+    if (!renamed && !moved && !identified && !added.length && !removed.length && !positionMissing)
+      return groupView(tx, current, base);
     // Who may hold another grant afterwards. Only a group that gives its members something, under the key it had or
     // the key it gets, moves a grant; any other group moves none, whatever the write did to it. A new key changes what
     // every member gets, and a `unit:` group's new name the label its members and the unit's managers carry, as a
@@ -695,7 +701,7 @@ export function scimUsecases(deps: {
     const touched = [...added, ...removed, ...(relabelled ? fields.members : [])],
       at = await heldAt(tx, touched, derive?.people);
     // Nothing of the group itself changed: the position's first row alone, with its holders derived.
-    if (!renamed && !moved && !added.length && !removed.length) {
+    if (!renamed && !moved && !identified && !added.length && !removed.length) {
       await namePosition(tx, p, fields, position);
       await settle(tx, p, at, [], derive);
       return groupView(tx, current, base);
@@ -704,6 +710,7 @@ export function scimUsecases(deps: {
     // client reads, and `meta.lastModified` once went back to the old time on the next read (RFC 7643 §3.1).
     await tx.updateGroup(current.id, {
       ...(renamed || moved ? { externalId: fields.externalId, label: fields.label, parentUnitId: fields.parent } : {}),
+      ...(identified ? { unitIdentifiers: fields.identifiers } : {}),
       updatedAt: at,
     });
     if (added.length || removed.length) await tx.setGroupMembers(current.id, fields.members);
@@ -717,6 +724,8 @@ export function scimUsecases(deps: {
         ...(renamed ? { renamed: true } : {}),
         // D99: a move in the tree, with the unit above before and after; nobody's grant follows from it.
         ...(moved ? { parent: { before: current.parentUnitId, after: fields.parent } } : {}),
+        // D148: what other systems know the unit by, before and after. They name a unit, never a person.
+        ...(identified ? { identifiers: { before: current.unitIdentifiers, after: fields.identifiers } } : {}),
         added: added.length,
         removed: removed.length,
         members: fields.members.length,
@@ -730,7 +739,14 @@ export function scimUsecases(deps: {
     await dropPosition(tx, p, current.externalId, fields.externalId);
     return groupView(
       tx,
-      { ...current, externalId: fields.externalId, label: fields.label, parentUnitId: fields.parent, updatedAt: at },
+      {
+        ...current,
+        externalId: fields.externalId,
+        label: fields.label,
+        parentUnitId: fields.parent,
+        unitIdentifiers: fields.identifiers,
+        updatedAt: at,
+      },
       base,
     );
   }
@@ -857,6 +873,7 @@ export function scimUsecases(deps: {
         const fields = groupFields(body);
         assertAcceptedKey(fields);
         assertAcceptedParent(fields);
+        assertAcceptedIdentifiers(fields);
         if (fields.parent !== null) await tx.lockTree(p.organisationId);
         await lockUnitsOf(tx, fields.externalId);
         await uniqueGroup(tx, fields);
@@ -875,6 +892,7 @@ export function scimUsecases(deps: {
             externalId: fields.externalId,
             label: fields.label,
             parentUnitId: fields.parent,
+            unitIdentifiers: fields.identifiers,
             createdAt: at,
             updatedAt: at,
           };
@@ -888,6 +906,7 @@ export function scimUsecases(deps: {
             externalId: fields.externalId,
             displayName: fields.label,
             ...(fields.parent !== null ? { parent: fields.parent } : {}),
+            ...(fields.identifiers.length ? { identifiers: fields.identifiers } : {}),
             members: fields.members.length,
             ...namedInAudit('addedPeople', fields.members),
           },
@@ -930,7 +949,13 @@ export function scimUsecases(deps: {
           current = await groupOr404(tx, p, id, true),
           members = (await tx.groupMembers(id)).map(m => m.id);
         const next = applyGroupPatch(
-          { externalId: current.externalId, label: current.label, parent: current.parentUnitId, members },
+          {
+            externalId: current.externalId,
+            label: current.label,
+            parent: current.parentUnitId,
+            identifiers: current.unitIdentifiers,
+            members,
+          },
           operations,
           current.id,
         );
@@ -1593,6 +1618,12 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
         }
         return titles;
       }),
+    /**
+     * What other systems know these units by (D148), for the units of the reader's organisation among those named. It
+     * says nothing of whether the reader may ask about a unit: the caller has settled that (D117) before it asks.
+     */
+    unitIdentifiers: (persona: AuthenticatedContext, unitIds: readonly string[]) =>
+      deps.store.transaction(tx => tx.unitIdentifiers(persona.organisationId, unitIds)),
   };
 }
 export type StaffUsecases = ReturnType<typeof staffUsecases>;

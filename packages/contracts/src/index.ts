@@ -2152,6 +2152,21 @@ export const PersonAccessSchema = object(
   "Who may be asked about (D117). Clew resolves the caller's relation to every person the input names from its own directory before the connector is called: a key in `keys` the caller may not ask about is left out of the call, and a call whose single key names such a person, or holds anything but a string there, is refused as an unknown capability is, so the answer never tells whether the person exists. The relation of each key sent travels in the request body's `about`, which the assertion binds. A capability about a person, a `<id>.commitments` read, a read a row of a section about a person opens with the row's `key` and an execute's effect read name a person whether or not they declare this, and each such input must be a plain string property of the input schema; without `admits` they admit `self` and `managed`.",
 );
 export type PersonAccess = Static<typeof PersonAccessSchema>;
+/**
+ * What another system knows a unit by (D148): the directory's own word for the kind of identifier, and the value, such
+ * as `{ type: 'ansvar', value: '11110000' }` for the code an economy system books the unit's costs on. A unit carries
+ * any number of them, several of one type too. They are pushed with the unit over SCIM, stored as sent and told to a
+ * connector whose capability asks for the type. Clew reads no meaning from one.
+ */
+export const UNIT_IDENTIFIER_TYPE_LENGTH = 64;
+export const UNIT_IDENTIFIER_VALUE_LENGTH = 256;
+/** The most identifiers one unit carries, as the other lists a directory sends for one resource (D114). */
+export const UNIT_IDENTIFIER_LIMIT = 50;
+export const UnitIdentifierSchema = object({
+  type: Type.String({ minLength: 1, maxLength: UNIT_IDENTIFIER_TYPE_LENGTH }),
+  value: Type.String({ minLength: 1, maxLength: UNIT_IDENTIFIER_VALUE_LENGTH }),
+});
+export type UnitIdentifier = Static<typeof UnitIdentifierSchema>;
 /** Who may be asked about through a capability about a unit (D117): the relations a caller may have to the unit. */
 export const UnitAccessSchema = object(
   {
@@ -2161,6 +2176,15 @@ export const UnitAccessSchema = object(
         uniqueItems: true,
         description:
           'The relations a caller may have to a unit this capability is asked about. Omitted means `["manages"]`.',
+      }),
+    ),
+    identifiers: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: UNIT_IDENTIFIER_TYPE_LENGTH }), {
+        minItems: 1,
+        maxItems: 10,
+        uniqueItems: true,
+        description:
+          'The types of unit identifier this capability reads (D148), spelled as the directory sends them, such as `["ansvar"]`. For every unit the call names, Clew sends the identifiers of these types the directory pushed with the unit, in `about.identifiers`, and none of any other type. Omitted means the capability is told none.',
       }),
     ),
   },

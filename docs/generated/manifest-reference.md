@@ -1793,6 +1793,14 @@ Example:
 ]
 ```
 
+#### `capabilities[].unit.identifiers`
+
+The types of unit identifier this capability reads (D148), spelled as the directory sends them, such as `["ansvar"]`. For every unit the call names, Clew sends the identifiers of these types the directory pushed with the unit, in `about.identifiers`, and none of any other type. Omitted means the capability is told none.
+
+- Type: array of string
+- optional
+- Constraints: 1 to 10 items; no duplicates; each 1 to 64 characters
+
 #### `capabilities[].follows`
 
 For a `propose` (D55): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only.

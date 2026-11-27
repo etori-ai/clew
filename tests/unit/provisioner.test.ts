@@ -24,7 +24,7 @@ import {
   type DirectoryPhone,
   type Employment,
 } from '../../scripts/provisioner/directory';
-import { plan, push as reconcile, type PushOptions } from '../../scripts/provisioner/push';
+import { plan, planOrganisation, push as reconcile, type PushOptions } from '../../scripts/provisioner/push';
 
 /**
  * Most tests here push the whole development directory, two hundred and fifty people in over a hundred groups, two or
@@ -502,6 +502,86 @@ describe('the synthetic provisioner', () => {
     });
     expect([...branch.store.state.groups.values()].map(g => g.externalId)).toEqual(['unit:a']);
   });
+  test("a unit's identifiers are pushed with it, a changed list is sent whole, a list that is gone is removed, and a second push is silent (D148)", async () => {
+    const { store, client } = stack();
+    const held = (unitId: string) =>
+      [...store.state.groups.values()].find(g => g.externalId === 'unit:' + unitId)?.unitIdentifiers;
+    const ansvar = (value: string) => ({ type: 'ansvar', value });
+    const unit = (id: string, identifiers?: Array<{ type: string; value: string }>, parent?: string) => ({
+      id,
+      label: id,
+      ...(parent ? { parent } : {}),
+      ...(identifiers ? { identifiers } : {}),
+    });
+    const directory = (...units: ReturnType<typeof unit>[]): Directory => ({
+      complete: true,
+      units,
+      groups: [],
+      people: [],
+    });
+    // The same entry twice is planned once, and a part sent decomposed is planned composed, as Clew stores it.
+    expect(
+      planOrganisation(
+        directory(unit('a', [ansvar('1'), ansvar('1'), { type: 'kostnadssta\u0308lle', value: 'K-1' }])),
+      ).find(g => g.externalId === 'unit:a')?.identifiers,
+    ).toEqual([ansvar('1'), { type: 'kostnadsställe', value: 'K-1' }]);
+    await push(
+      client,
+      directory(unit('a', [ansvar('11110000')]), unit('b', [ansvar('11120000'), ansvar('11120001')], 'a'), unit('c')),
+    );
+    expect(held('a')).toEqual([ansvar('11110000')]);
+    expect(held('b')).toEqual([ansvar('11120000'), ansvar('11120001')]);
+    expect(held('c')).toEqual([]);
+    const audited = store.state.audit.length;
+    // Nothing changed: nothing is written.
+    await push(
+      client,
+      directory(unit('a', [ansvar('11110000')]), unit('b', [ansvar('11120000'), ansvar('11120001')], 'a'), unit('c')),
+    );
+    expect(store.state.audit.length).toBe(audited);
+    // One code changes, one unit loses its codes, one gets its first.
+    await push(
+      client,
+      directory(unit('a', [ansvar('11119999')]), unit('b', undefined, 'a'), unit('c', [{ type: 'qlik', value: 'C' }])),
+    );
+    expect(held('a')).toEqual([ansvar('11119999')]);
+    expect(held('b')).toEqual([]);
+    expect(held('c')).toEqual([{ type: 'qlik', value: 'C' }]);
+    // From the root down, as the units are written.
+    expect(store.state.audit.slice(audited).map(a => [a.details.externalId, a.details.identifiers])).toEqual([
+      ['unit:a', { before: [ansvar('11110000')], after: [ansvar('11119999')] }],
+      ['unit:c', { before: [], after: [{ type: 'qlik', value: 'C' }] }],
+      ['unit:b', { before: [ansvar('11120000'), ansvar('11120001')], after: [] }],
+    ]);
+    // An entry Clew would refuse is the source's to put right, before anything is written.
+    for (const wrong of [
+      { type: 'ansvar', value: '' },
+      { type: ' ansvar', value: '1' },
+      { type: 'ansvar', value: '1\t2' },
+      { type: 'a'.repeat(65), value: '1' },
+    ])
+      expect(() => planOrganisation(directory(unit('a', [wrong])))).toThrow("The unit 'a' has an identifier whose");
+    expect(() =>
+      planOrganisation(
+        directory(
+          unit(
+            'a',
+            Array.from({ length: 51 }, (_, i) => ansvar(String(i))),
+          ),
+        ),
+      ),
+    ).toThrow('at most 50');
+  });
+  test('the development directory gives every unit people work on the code its costs are booked on, a few of them two (D148)', () => {
+    const units = developmentDirectory.units;
+    expect(units.filter(u => !u.identifiers).map(u => u.id)).toEqual(['unit-hemtjanst']);
+    expect(units.flatMap(u => u.identifiers ?? []).every(i => i.type === 'ansvar' && /^\d{8}$/.test(i.value))).toBe(
+      true,
+    );
+    expect(units.filter(u => u.identifiers?.length === 2).length).toBeGreaterThan(1);
+    const all = units.flatMap(u => (u.identifiers ?? []).map(i => i.value));
+    expect(new Set(all).size).toBe(all.length);
+  });
   test('a reorganisation is one push: a unit with units below it under a new id, two units that change places, and a level that is taken away (D99)', async () => {
     const { client, store } = stack(),
       unit = (id: string, parent?: string) => ({ id, label: id, ...(parent ? { parent } : {}) }),
@@ -586,6 +666,7 @@ describe('the synthetic provisioner', () => {
   test('a group with a foreign key is left alone, and a person Clew refuses is reported while everybody else is sent', async () => {
     const { store, client } = stack();
     store.state.groups.set('foreign', {
+      unitIdentifiers: [],
       id: 'foreign',
       organisationId: 'poc',
       parentUnitId: null,
@@ -1882,6 +1963,7 @@ describe('the synthetic provisioner', () => {
         ['unknown', 'capability:admin.everything'],
       ])
         store.state.groups.set(id!, {
+          unitIdentifiers: [],
           id: id!,
           organisationId: 'poc',
           parentUnitId: null,
@@ -1936,6 +2018,7 @@ describe('the synthetic provisioner', () => {
         ['trailing', 'unit:skola ', anna],
       ] as const) {
         store.state.groups.set(id, {
+          unitIdentifiers: [],
           id,
           organisationId: 'poc',
           parentUnitId: null,
@@ -2027,6 +2110,7 @@ describe('the synthetic provisioner', () => {
         ['unknown', 'capability:admin.everything', kim],
       ] as const) {
         store.state.groups.set(id, {
+          unitIdentifiers: [],
           id,
           organisationId: 'poc',
           parentUnitId: null,
@@ -2435,6 +2519,9 @@ describe('the synthetic provisioner', () => {
       '250 of 251 active users on a unit report to a manager their employment names. One reports to nobody, with no manager named, only a deactivated one, or one who names them back: yusuf.lundgren.',
       // The area nobody is placed on has units below it, so it is a heading and not an emptied unit (D99).
       'The units form a tree: 1 root, 6 levels deep.',
+      // D148: every unit people work on carries the code its costs are booked on; the heading nobody is on has none,
+      // which is no warning, since nobody is on it.
+      "Units carry identifiers for other systems: 'ansvar' on 47 of 48.",
       // No line follows about a unit that people are on and nobody leads (D147): that area has nobody on it, and the
       // fritidshem has the rektor of the school above it as a manager of its own.
     ]);
@@ -2490,6 +2577,7 @@ describe('the synthetic provisioner', () => {
       'urn:clew:params:scim:schemas:extension:unit:2.0:Group': { parent: 'unit:unit-led' },
     });
     store.state.groups.set('legacy', {
+      unitIdentifiers: [],
       id: 'legacy',
       organisationId: 'poc',
       parentUnitId: null,
@@ -2511,6 +2599,8 @@ describe('the synthetic provisioner', () => {
       // other one has no manager and leads nothing, which is what a mapping that sends no manager looks like.
       '250 of 252 active users on a unit report to a manager their employment names. 2 report to nobody, with no manager named, only a deactivated one, or one who names them back: yusuf.lundgren, adrift.',
       '1 unit has a unit-manager: group and no unit: group, so the unit is shown by its id instead of a name: unit-nameless.',
+      // D148: nearly every unit with people carries the code its costs are booked on, so the one that does not is named.
+      "1 unit with people carries no 'ansvar' identifier, so a system that reads it answers nothing for it: unit-adrift.",
       '1 unit or unit-manager group has no members: unit:unit-empty.',
       '1 unit has people and nobody who leads it, so nobody can read about the unit or follow it up: unit:unit-adrift.',
       "1 group carries a key that is written wrong, so Clew reads it as a plain group, which gives nobody anything unless an administrator maps it to a capability: ' Unit :old'.",

@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**149 in force**: 99 accepted and 50 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
+**150 in force**: 99 accepted and 51 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -80,7 +80,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D85 · Capabilities are mapped from provisioned groups in Clew; units and manager roles keep D68's keys](D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md) | 2026-11-09 | accepted |  |
 | [D93 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact](D93-the-protected-key-is-refused-at-the-scim-boundary.md) | 2026-11-09 | accepted | [D96](README.md) |
 | [D96 · A key written wrong is refused at the SCIM boundary, not stored as a plain group](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) | 2026-11-10 | accepted |  |
-| [D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) | 2026-11-10 | accepted | [D101](README.md), [D124](README.md), [D147](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) |
+| [D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) | 2026-11-10 | accepted | [D101](README.md), [D124](README.md), [D147](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md), [D148](D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md) |
 | [D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation](D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md) | 2026-11-11 | provisional | [D122](README.md), [D123](README.md) |
 | [D103 · The session that asked stands behind delegated work: an approved write, and a scan while the person is present](D103-the-session-that-asked-stands-behind-delegated-work.md) | 2026-11-10 | provisional |  |
 | [D107 · An administrator issues, replaces and takes back a provisioner's key on the users page](D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md) | 2026-11-11 | provisional |  |
@@ -95,6 +95,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D123 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) | 2026-11-12 | provisional |  |
 | [D135 · A person with several assignments sees the work of all of them, and a source is told every one](D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) | 2026-11-20 | provisional |  |
 | [D147 · An employment is a row of its own and names the person it reports to](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) | 2026-11-25 | provisional |  |
+| [D148 · A unit carries the identifiers other systems know it by](D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md) | 2026-11-27 | provisional |  |
 
 ## Platform
 

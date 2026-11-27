@@ -1,4 +1,4 @@
-import type { Position } from '@clew/contracts';
+import type { Position, UnitIdentifier } from '@clew/contracts';
 import type {
   Assignment,
   DerivedUnit,
@@ -292,7 +292,9 @@ export interface ProvisionTx {
   insertGroup(record: GroupRecord): Promise<void>;
   updateGroup(
     id: string,
-    fields: Partial<Pick<GroupRecord, 'externalId' | 'label' | 'parentUnitId'>> & { updatedAt: string },
+    fields: Partial<Pick<GroupRecord, 'externalId' | 'label' | 'parentUnitId' | 'unitIdentifiers'>> & {
+      updatedAt: string;
+    },
   ): Promise<void>;
   /** Removes the group and its memberships; its group-capability rows stay (D85). */
   deleteGroup(id: string): Promise<void>;
@@ -370,6 +372,12 @@ export interface ProvisionTx {
   childUnits(unitId: string): Promise<Array<{ id: string; label: string }>>;
   /** Nodes of the organisation's tree, optionally narrowed to the named ids, in unit id order. */
   unitTree(organisationId: string, ids?: readonly string[]): Promise<TreeUnit[]>;
+  /**
+   * What other systems know these units by (D148): the identifiers on each unit's `unit:` group in the organisation, as
+   * the directory sent them and in its order, by unit id. A unit that carries none, and an id that names no unit of the
+   * organisation, are absent.
+   */
+  unitIdentifiers(organisationId: string, unitIds: readonly string[]): Promise<Map<string, UnitIdentifier[]>>;
   /**
    * Every person of the organisation with each unit they are assigned to, by person id and then unit id; a person
    * assigned to none is one row with `unitId` and `role` null.

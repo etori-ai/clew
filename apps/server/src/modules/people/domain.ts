@@ -20,6 +20,9 @@ import {
   byUnitId,
   RELATION_GRANTS,
   PROVISIONED_KEY_LENGTH,
+  UNIT_IDENTIFIER_LIMIT,
+  UNIT_IDENTIFIER_TYPE_LENGTH,
+  UNIT_IDENTIFIER_VALUE_LENGTH,
   checkContract,
   isCapability,
   isRelationGrant,
@@ -33,6 +36,7 @@ import {
   type OrganisationUnit,
   type Position,
   type Role,
+  type UnitIdentifier,
   type UserStatus,
 } from '@clew/contracts';
 import {
@@ -450,6 +454,11 @@ export interface GroupRecord {
   label: string;
   /** D99: on a `unit:` group, the unit id of the node above it in the organisation tree; null on a root and on any other group. */
   parentUnitId: string | null;
+  /**
+   * D148: on a `unit:` group, what other systems know the unit by, as the directory sent them and in its order; empty
+   * on any other group.
+   */
+  unitIdentifiers: UnitIdentifier[];
   createdAt: string;
   updatedAt: string;
 }
@@ -467,6 +476,8 @@ export interface GroupFields {
   label: string;
   /** D99: the unit id of the parent, from the unit extension; null when the group carries none. */
   parent: string | null;
+  /** D148: what other systems know the unit by, from the unit extension; empty when the group carries none. */
+  identifiers: UnitIdentifier[];
   members: string[];
 }
 
@@ -592,6 +603,7 @@ const CONTACT_NAMES: Names = { value: true, type: true, primary: true, display: 
     managerId: true,
   },
   MEMBER_NAMES: Names = { value: true, display: true, $ref: true, type: true },
+  IDENTIFIER_NAMES: Names = { type: true, value: true },
   NAME_NAMES: Names = { formatted: true, givenName: true, familyName: true };
 const USER_NAMES: Names = {
   schemas: true,
@@ -983,12 +995,19 @@ export const unitGroupOf = (externalId: string | null | undefined): string | und
 };
 const UNIT_EXTENSION = SCIM.unit.toLowerCase();
 /**
- * What a name aims at in the unit extension (D99), without regard to case as a schema URN is: the extension as a
- * whole (its value is an object with `parent`), its `parent` attribute, or nothing.
+ * What a name aims at in the unit extension (D99, D148), without regard to case as a schema URN is: the extension as
+ * a whole (its value is an object with `parent`, `identifiers` or both), one of the two attributes, or nothing. A path
+ * into the list of identifiers (a filter, a sub-attribute) is `within`: an entry has no id to be picked by, so the list
+ * is sent whole, and such a path is refused where it stands rather than ignored as an attribute Clew does not hold.
  */
-const unitExtensionTarget = (name: string): 'extension' | 'parent' | undefined => {
+const unitExtensionTarget = (name: string): 'extension' | 'parent' | 'identifiers' | 'within' | undefined => {
   const key = name.trim().toLowerCase();
-  return key === UNIT_EXTENSION ? 'extension' : key === UNIT_EXTENSION + ':parent' ? 'parent' : undefined;
+  if (key === UNIT_EXTENSION) return 'extension';
+  if (key === UNIT_EXTENSION + ':parent') return 'parent';
+  if (key === UNIT_EXTENSION + ':identifiers') return 'identifiers';
+  return /^identifiers[.[]/.test(key.slice(UNIT_EXTENSION.length + 1)) && key.startsWith(UNIT_EXTENSION + ':')
+    ? 'within'
+    : undefined;
 };
 /**
  * A `parent` named without the extension's URN. On any other group it is an attribute Clew does not hold. On a unit
@@ -998,6 +1017,64 @@ const unitExtensionTarget = (name: string): 'extension' | 'parent' | undefined =
 const isBareParent = (name: string) => name.trim().toLowerCase() === 'parent';
 const bareParent = () => new ScimError(400, `Use '${SCIM.unit}:parent' for the parent of a unit.`, 'invalidPath');
 const PARENT = SCIM.unit + ':parent';
+const IDENTIFIERS = SCIM.unit + ':identifiers';
+/** D148: `identifiers` named without the extension's URN, refused on a unit group for the reason a bare `parent` is. */
+const isBareIdentifiers = (name: string) => /^identifiers(?:[.[]|$)/.test(name.trim().toLowerCase());
+const bareIdentifiers = () => new ScimError(400, `Use '${IDENTIFIERS}' for the identifiers of a unit.`, 'invalidPath');
+const identifiersWhole = (path: string) =>
+  new ScimError(
+    400,
+    `Path '${path}' is not supported: send the whole list of identifiers to '${IDENTIFIERS}'.`,
+    'invalidPath',
+  );
+/**
+ * One part of an identifier (D148). It is a key another system is asked by, so it is stored exactly or not at all, as a
+ * group's key is (D96): text in composed form (NFC), so a type sent decomposed is the type a manifest spells, without
+ * space at either end and without a control character. Cleaned instead, it would be stored as another key while the
+ * answer said stored.
+ */
+const identifierPart = (value: unknown, name: 'type' | 'value', length: number): string => {
+  const path = `${IDENTIFIERS}.${name}`;
+  if (value === undefined) need(path);
+  const text = asString(typeof value === 'string' ? value.normalize('NFC') : value, path);
+  if (text !== text.trim() || /\p{Cc}/u.test(text) || Array.from(text).length > length)
+    throw new ScimError(
+      400,
+      `Attribute '${path}' needs text of at most ${length} characters, with no space at either end and no control character. The group was not stored.`,
+      'invalidValue',
+    );
+  return text;
+};
+const identifierKey = (row: UnitIdentifier) => JSON.stringify([row.type, row.value]);
+const identifiersWithin = (rows: UnitIdentifier[]): UnitIdentifier[] => {
+  if (rows.length > UNIT_IDENTIFIER_LIMIT)
+    throw new ScimError(
+      400,
+      `Attribute '${IDENTIFIERS}' carries at most ${UNIT_IDENTIFIER_LIMIT} entries. The group was not stored.`,
+      'invalidValue',
+    );
+  return rows;
+};
+/**
+ * D148: the identifiers of a body or of a patch value: a list, or the one entry by itself. `null`, and a `null` entry,
+ * are no identifier; the same entry twice is kept once, in the order the directory sent them.
+ */
+export function unitIdentifierList(value: unknown): UnitIdentifier[] {
+  if (value === undefined || value === null) return [];
+  const rows = (Array.isArray(value) ? value : [value]).flatMap(item => {
+    if (item === null || item === undefined) return [];
+    const row = asObject(plain(item, IDENTIFIER_NAMES, 'dropped'), IDENTIFIERS);
+    return [
+      {
+        type: identifierPart(row.type, 'type', UNIT_IDENTIFIER_TYPE_LENGTH),
+        value: identifierPart(row.value, 'value', UNIT_IDENTIFIER_VALUE_LENGTH),
+      },
+    ];
+  });
+  return identifiersWithin(distinctEntries(rows, identifierKey));
+}
+export const sameIdentifiers = (a: readonly UnitIdentifier[], b: readonly UnitIdentifier[]) =>
+  a.length === b.length && a.every((row, i) => identifierKey(row) === identifierKey(b[i]!));
 /**
  * The parent a client sent, as a unit id. It is the `externalId` of the parent's `unit:` group, written as exactly as
  * a key is (D96), and text Clew can hold as every stored attribute is (`asString`, naming the parent): a NUL in it once
@@ -1016,17 +1093,37 @@ export function parentUnitOf(value: unknown): string | null {
   return id;
 }
 /**
- * The extension's object, whose one attribute is read without regard to case, as every attribute name is. In a body an
- * object without `parent` names no parent. In a patch's `add` or `replace` (`op`) it is an operation without a value
- * (RFC 7644 §3.5.2): read as no parent, it once made a unit a root with a 200. `parent: null` is the way to make a unit
- * a root.
+ * The extension's object, whose attributes are read without regard to case, as every attribute name is. What it
+ * answers is what the object says: `parent` and `identifiers` are each absent when the object leaves them out.
+ *
+ * In a body the object is the whole of it, so the caller reads an absent `parent` as a root and absent `identifiers`
+ * as none. In a patch's `add` or `replace` (`op`) only what the object names is set (RFC 7644 §3.5.2: the
+ * sub-attributes given), and an object that names neither is an operation without a value: read as no parent, it once
+ * made a unit a root with a 200. `parent: null` is the way to make a unit a root, `identifiers: null` the way to take
+ * its identifiers away, and `null` for the object both.
  */
-const parentInExtension = (value: unknown, path: string | undefined, op?: 'add' | 'replace') => {
-  if (value === undefined || value === null) return null;
+const unitExtension = (
+  value: unknown,
+  path: string | undefined,
+  op?: 'add' | 'replace',
+): { parent?: string | null; identifiers?: UnitIdentifier[] | null } => {
+  if (value === undefined || value === null) return { parent: null, identifiers: null };
   const extension = asObject(value, path),
-    name = Object.keys(extension).find(key => key.toLowerCase() === 'parent');
-  if (name === undefined && op) throw noValue(op, path, 'parent');
-  return parentUnitOf(name === undefined ? undefined : extension[name]);
+    named = (attribute: string) => Object.keys(extension).find(key => key.toLowerCase() === attribute),
+    parent = named('parent'),
+    identifiers = named('identifiers');
+  if (parent === undefined && identifiers === undefined && op)
+    throw new ScimError(
+      400,
+      `Operation '${op}' on '${path ?? SCIM.unit}' requires a value for 'parent' or 'identifiers'.`,
+      'invalidValue',
+    );
+  return {
+    ...(parent !== undefined ? { parent: parentUnitOf(extension[parent]) } : {}),
+    ...(identifiers !== undefined
+      ? { identifiers: extension[identifiers] === null ? null : unitIdentifierList(extension[identifiers]) }
+      : {}),
+  };
 };
 /** The ids a `members` value names: a list of objects with a `value`, or of the ids themselves. */
 const memberIds = (value: unknown): string[] =>
@@ -1050,12 +1147,17 @@ const memberIds = (value: unknown): string[] =>
 export function groupFields(body: unknown, current?: Pick<GroupFields, 'externalId'>): GroupFields {
   const input = asResource(body, GROUP_NAMES, 'Group');
   const externalId = optional(input.externalId, 'externalId') ?? (current ? current.externalId : need('externalId'));
-  if (unitGroupOf(externalId) !== undefined && Object.keys(input).some(isBareParent)) throw bareParent();
-  const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name) === 'extension');
+  if (unitGroupOf(externalId) !== undefined) {
+    if (Object.keys(input).some(isBareParent)) throw bareParent();
+    if (Object.keys(input).some(isBareIdentifiers)) throw bareIdentifiers();
+  }
+  const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name) === 'extension'),
+    said = unitExtension(extension?.[1], SCIM.unit);
   return {
     externalId,
     label: asString(input.displayName ?? need('displayName'), 'displayName'),
-    parent: parentInExtension(extension?.[1], SCIM.unit),
+    parent: said.parent ?? null,
+    identifiers: said.identifiers ?? [],
     members: [...new Set(memberIds(input.members))],
   };
 }
@@ -1105,6 +1207,13 @@ export function assertAcceptedParent(fields: GroupFields): void {
       `A parent is carried by a '${UNIT_KEY}' group only; '${fields.externalId ?? fields.label}' is not one (D99).`,
     );
   if (unit === fields.parent) throw refusedKey(`The unit '${unit}' cannot be its own parent (D99).`);
+}
+/** D148: identifiers say what other systems know a unit by, so only a `unit:` group carries them. */
+export function assertAcceptedIdentifiers(fields: GroupFields): void {
+  if (fields.identifiers.length && unitGroupOf(fields.externalId) === undefined)
+    throw refusedKey(
+      `Identifiers are carried by a '${UNIT_KEY}' group only; '${fields.externalId ?? fields.label}' is not one (D148).`,
+    );
 }
 /**
  * Whether placing `unit` under `parent` would close a cycle: true when `unit` is `parent` or stands above it. `above`
@@ -1592,10 +1701,11 @@ export function applyUserPatch(
 }
 /**
  * PATCH on a group: `members` added, removed (by path filter or by value list) or replaced; the name and external id
- * replaced; the external id removed; the unit extension's `parent` set or removed (D99), by its schema-qualified path
- * or as the extension's object in a path-less value. A group whose key stops being a `unit:` key stops being a node,
- * so the parent it had goes with the key; a parent the patch itself names is kept, and refused where it stands.
- * Anything else is not held and is ignored, a read-only attribute as for a user.
+ * replaced; the external id removed; the unit extension's `parent` set or removed (D99) and its `identifiers` set,
+ * added to or removed as a list (D148), each by its schema-qualified path or in the extension's object. A group whose
+ * key stops being a `unit:` key stops being a node, so the parent and the identifiers it had go with the key; what the
+ * patch itself names is kept, and refused where it stands. Anything else is not held and is ignored, a read-only
+ * attribute as for a user.
  */
 export function applyGroupPatch(
   current: GroupFields,
@@ -1605,7 +1715,16 @@ export function applyGroupPatch(
   let members = new Set(current.members),
     next = { ...current },
     placed = false,
-    bare = false;
+    identified = false,
+    bare: 'parent' | 'identifiers' | undefined;
+  /** D148: the list is replaced, or added to as a list; an entry has no id, so there is nothing else to aim at. */
+  const setIdentifiers = (sent: UnitIdentifier[], op: 'add' | 'replace', cleared: boolean) => {
+    next.identifiers =
+      op === 'add' && !cleared
+        ? identifiersWithin(distinctEntries([...next.identifiers, ...sent], identifierKey))
+        : sent;
+    identified = true;
+  };
   /** `add` and `replace` on `members` say who: with `null`, a `replace` would empty the group. */
   const named = (value: unknown, path: string) => {
     if (value === null)
@@ -1620,10 +1739,21 @@ export function applyGroupPatch(
     if (value === undefined) throw noValue(op, path);
     const key = coreKey(path, 'group'),
       extension = unitExtensionTarget(path);
-    if (isBareParent(key)) bare = true;
-    else if (extension) {
-      next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path, op);
+    if (isBareParent(key)) bare ??= 'parent';
+    else if (isBareIdentifiers(key)) bare ??= 'identifiers';
+    else if (extension === 'within') throw identifiersWhole(path);
+    else if (extension === 'parent') {
+      next.parent = parentUnitOf(value);
       placed = true;
+    } else if (extension === 'identifiers') setIdentifiers(unitIdentifierList(value), op, value === null);
+    else if (extension) {
+      const said = unitExtension(value, path, op);
+      if (said.parent !== undefined) {
+        next.parent = said.parent;
+        placed = true;
+      }
+      // `null`, for the list or for the whole extension, takes the identifiers away whatever the operation.
+      if (said.identifiers !== undefined) setIdentifiers(said.identifiers ?? [], op, said.identifiers === null);
     } else if (pathless && (key === GROUP_URN || key === GROUP_URN + ':')) {
       for (const [name, inner] of Object.entries(asObject(value, path))) setAttribute(name, inner, op, true);
     } else if (key === 'members') {
@@ -1672,9 +1802,24 @@ export function applyGroupPatch(
       if (key === 'members') {
         if (operation.value === undefined || operation.value === null) members.clear();
         else for (const member of memberIds(operation.value)) members.delete(member);
-      } else if (isBareParent(key)) bare = true;
-      else if (unitExtensionTarget(path)) next.parent = null;
-      else if (key === 'externalid') next.externalId = null;
+      } else if (isBareParent(key)) bare ??= 'parent';
+      else if (isBareIdentifiers(key)) bare ??= 'identifiers';
+      else if (unitExtensionTarget(path)) {
+        const target = unitExtensionTarget(path);
+        if (target === 'within') throw identifiersWhole(path);
+        // An entry has no id to be removed by: the list is cleared, or sent again as what remains.
+        if (target === 'identifiers' && operation.value !== undefined && operation.value !== null)
+          throw new ScimError(
+            400,
+            `A remove on '${path}' takes no value: it clears the list. To take one identifier away, replace the list with those that remain.`,
+            'invalidValue',
+          );
+        if (target !== 'identifiers') next.parent = null;
+        if (target !== 'parent') {
+          next.identifiers = [];
+          identified = true;
+        }
+      } else if (key === 'externalid') next.externalId = null;
       else if (key === 'displayname') throw required(path);
       else if (isReadOnly(key, 'group')) throw readOnly(path);
       continue;
@@ -1684,8 +1829,11 @@ export function applyGroupPatch(
       for (const [name, value] of Object.entries(asObject(operation.value, undefined)))
         setAttribute(name, value, op, true);
   }
-  if (bare && unitGroupOf(next.externalId) !== undefined) throw bareParent();
-  if (!placed && unitGroupOf(next.externalId) === undefined) next.parent = null;
+  if (bare && unitGroupOf(next.externalId) !== undefined) throw bare === 'parent' ? bareParent() : bareIdentifiers();
+  if (unitGroupOf(next.externalId) === undefined) {
+    if (!placed) next.parent = null;
+    if (!identified) next.identifiers = [];
+  }
   return { ...next, members: [...members] };
 }
 export function userResource(
@@ -1719,13 +1867,21 @@ export function groupResource(
   members: ReadonlyArray<{ id: string; name: string }>,
   base: string,
 ): ScimGroup {
+  const unit = record.parentUnitId || record.unitIdentifiers.length;
   return {
-    schemas: record.parentUnitId ? [SCIM.group, SCIM.unit] : [SCIM.group],
+    schemas: unit ? [SCIM.group, SCIM.unit] : [SCIM.group],
     id: record.id,
     ...(record.externalId ? { externalId: record.externalId } : {}),
     displayName: record.label,
     members: members.map(m => ({ value: m.id, display: m.name, $ref: `${base}/Users/${m.id}` })),
-    ...(record.parentUnitId ? { [SCIM.unit]: { parent: UNIT_KEY + record.parentUnitId } } : {}),
+    ...(unit
+      ? {
+          [SCIM.unit]: {
+            ...(record.parentUnitId ? { parent: UNIT_KEY + record.parentUnitId } : {}),
+            ...(record.unitIdentifiers.length ? { identifiers: record.unitIdentifiers } : {}),
+          },
+        }
+      : {}),
     meta: {
       resourceType: 'Group',
       created: record.createdAt,
@@ -1894,12 +2050,29 @@ export const schemaDocuments = (base: string) => [
     id: SCIM.unit,
     name: 'Unit',
     description:
-      'The place of a unit: group in the organisation tree (D99). Carried by a unit: group only; a tree is pushed from the root down and removed from the leaves up.',
+      'The place of a unit: group in the organisation tree (D99) and what other systems know the unit by (D148). Carried by a unit: group only; a tree is pushed from the root down and removed from the leaves up.',
     attributes: [
       attribute('parent', 'string', {
         caseExact: true,
         description:
           'The externalId of the unit group above this one, unit:<unitId>; absent on a root. It must exist in the same organisation and may not close a cycle.',
+      }),
+      attribute('identifiers', 'complex', {
+        multiValued: true,
+        description:
+          "What other systems know the unit by, such as the code an economy system books its costs on. The list is sent whole: an entry has no id to be changed by. Stored exactly as sent and told to a connected system whose capability asks for the entry's type.",
+        subAttributes: [
+          attribute('type', 'string', {
+            required: true,
+            caseExact: true,
+            description: "The directory's own word for the kind of identifier, such as ansvar. At most 64 characters.",
+          }),
+          attribute('value', 'string', {
+            required: true,
+            caseExact: true,
+            description: 'The identifier as the other system writes it. At most 256 characters.',
+          }),
+        ],
       }),
     ],
     meta: { resourceType: 'Schema', location: `${base}/Schemas/${SCIM.unit}` },

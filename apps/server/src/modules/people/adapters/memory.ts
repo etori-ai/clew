@@ -540,6 +540,17 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
         .filter(unit => !wanted || wanted.has(unit.id))
         .sort((a, b) => a.id.localeCompare(b.id));
     },
+    async unitIdentifiers(organisationId, unitIds) {
+      const wanted = new Set(unitIds);
+      return new Map(
+        [...state.groups.values()].flatMap(g => {
+          const id = g.organisationId === organisationId ? unitGroupOf(g.externalId) : undefined;
+          return id !== undefined && wanted.has(id) && g.unitIdentifiers.length
+            ? [[id, g.unitIdentifiers.map(row => ({ ...row }))] as const]
+            : [];
+        }),
+      );
+    },
     async placements(organisationId) {
       return [...state.users.values()]
         .filter(u => u.organisationId === organisationId)

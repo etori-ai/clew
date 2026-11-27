@@ -446,6 +446,7 @@ describe('what a group write costs and what it leaves in the audit', () => {
     const stored = ['capability:admin.gone', 'protected', 'capability: admin.users', 'unit-manager: a1', 'Unit:a1'];
     for (const externalId of stored) {
       store.state.groups.set(externalId, {
+        unitIdentifiers: [],
         id: externalId,
         organisationId: 'org-a',
         parentUnitId: null,

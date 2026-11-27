@@ -23,6 +23,7 @@ import type {
   CompetenceSearchWindow,
   ConnectorAudience,
   DirectoryPhone,
+  UnitIdentifier,
   InstallationTheme,
   LogoMediaType,
   ConnectorHealth,
@@ -183,7 +184,9 @@ export const assignments = pgTable(
  * `displayName`). Meaning comes from D68's keys in `externalId` or a mapping row; a group without an external id is a
  * plain group. A `unit:` group is a node of the organisation tree (D99): `parentUnitId` is the unit id of the node above
  * it, null on a root and on every group that is not a `unit:` group. It names a unit id, not a row, because the parent
- * is another pushed group; the SCIM use case checks that it exists, under the tree's lock.
+ * is another pushed group; the SCIM use case checks that it exists, under the tree's lock. `unitIdentifiers` is what
+ * other systems know the unit by (D148), as the directory sent them and in its order, empty on every other group: a
+ * unit's own attribute, kept on the row a provisioner writes, so a unit nobody is placed on keeps them too.
  */
 export const groups = pgTable(
   'auth_group',
@@ -193,6 +196,7 @@ export const groups = pgTable(
     externalId: text('external_id'),
     label: text('label').notNull(),
     parentUnitId: text('parent_unit_id'),
+    unitIdentifiers: jsonb('unit_identifiers').$type<UnitIdentifier[]>().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

@@ -66,6 +66,16 @@ The request body maps each key in the input to its relation:
   "about": { "entity": "person", "relations": { "anna": "managed", "hillevi": "self" } } }
 ```
 
+A capability about a unit can also ask what your system knows the unit by ([D148](../decisions/D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md)). Name the types in `unit.identifiers`, spelled as the installation's directory sends them, and `about` carries the identifiers of those types for each unit the call names:
+
+```json
+{ "input": { "keys": ["714", "9540"] },
+  "about": { "entity": "unit", "relations": { "714": "manages", "9540": "below" },
+    "identifiers": { "714": [{ "type": "ansvar", "value": "11110000" }] } } }
+```
+
+One type may have several values, in the directory's order. A unit the directory sent none of your types for is absent from `identifiers`, and the property itself is absent when no unit has any: answer such a unit as one your system holds nothing for, and never guess a key from the unit's id or its name. Clew sends no type you did not declare. The types are the directory's own words, so which one your system reads is configuration of the installation, not a constant in your code.
+
 Trust `about` only from a body the verified assertion is bound to: its `body` claim is the SHA-256 of the exact body bytes (base64url), its `path` claim the route the body was posted to, and on `/clew/capabilities/{name}` its `capability` claim is that name. The [verifier](../../connectors/hello/verification.mjs) checks them all against the request it is handed (`verify(token, key, request)`; the request is required, and `bindingOf(request)` reads a clone, so the handler can still read the body), and refuses an assertion replayed with another body, on another route or capability, as another operation or a second time. Then answer `self` differently from `managed` without a copy of the organisation. A key in the input that `about` does not name is one Clew did not vouch for: answer it as no row. The relations are never in the `callback` grant, and the bearer stays one size however many keys a call names.
 
 The rule is Clew's floor, not your permission. A relation says how the person stands to someone in Clew's directory, not that they may read that someone's records in your system. Narrow every key to what the verified actor may see in your source, and answer a key outside it as no row, never as an error, so a missing row stands for both "none" and "not allowed". The rule lives in [the entities module](../../apps/server/src/modules/entities/relations.ts); [Entities](../architecture/entities.md#who-may-be-asked-about) explains it.

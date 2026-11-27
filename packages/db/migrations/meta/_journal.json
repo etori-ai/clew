@@ -15,6 +15,13 @@
       "when": 1795608221715,
       "tag": "0001_employments_as_rows",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795774260691,
+      "tag": "0002_unit_identifiers",
+      "breakpoints": true
     }
   ]
 }

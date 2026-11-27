@@ -410,7 +410,7 @@ describe('the organisation tree over SCIM (D99)', () => {
     // A patch of something else leaves the place alone; the URN is matched without regard to case.
     expect(await patch([{ op: 'replace', path: 'displayName', value: 'Skolan' }])).toEqual({ parent: 'unit:ksk' });
     expect(await patch([{ op: 'remove', path: SCIM.unit.toUpperCase() + ':parent' }])).toBeUndefined();
-    const fields = { externalId: 'unit:skola', label: 'Skolan', parent: 'ksk', members: [] };
+    const fields = { externalId: 'unit:skola', label: 'Skolan', parent: 'ksk', identifiers: [], members: [] };
     expect(applyGroupPatch(fields, [{ op: 'remove', path: SCIM.unit }]).parent).toBeNull();
     // `null` makes a unit a root, by the parent's path, the extension's and in a path-less value (Q1).
     for (const operation of [
@@ -421,13 +421,13 @@ describe('the organisation tree over SCIM (D99)', () => {
       { op: 'add', value: { [SCIM.unit]: null } },
     ])
       expect(applyGroupPatch(fields, [operation]).parent).toBeNull();
-    // An extension's object that leaves `parent` out says nothing about it, which an add or replace may not: it once
-    // made the unit a root with a 200.
+    // An extension's object that names neither attribute says nothing, which an add or replace may not: it once made
+    // the unit a root with a 200.
     for (const operation of [
       { op: 'replace', value: { [SCIM.unit]: {} } },
       { op: 'add', path: SCIM.unit, value: { other: 'x' } },
     ])
-      expect(() => applyGroupPatch(fields, [operation])).toThrow("requires a value for 'parent'.");
+      expect(() => applyGroupPatch(fields, [operation])).toThrow("requires a value for 'parent' or 'identifiers'.");
     expect(() => applyGroupPatch(fields, [{ op: 'replace', path: SCIM.unit + ':parent', value: 'ksk' }])).toThrow(
       "'unit:<unitId>' (D99)",
     );
@@ -464,6 +464,7 @@ describe('the organisation tree over SCIM (D99)', () => {
     // Stored before the server refused such a key and such a parent: a unit key with a space after the prefix, under
     // 'b', and 'a' under that row. The tree reads the row as no node, so 'a' is a root and nothing stands above it.
     store.state.groups.set('lone', {
+      unitIdentifiers: [],
       id: 'lone',
       organisationId: ORG,
       parentUnitId: 'b',
@@ -590,12 +591,12 @@ describe('the organisation tree over SCIM (D99)', () => {
     expect(SCIM.unit in without).toBe(false);
     expect(without.displayName).toBe('IT');
   });
-  test('discovery names the extension on Group and describes its one attribute', () => {
+  test('discovery names the extension on Group and describes its attributes', () => {
     expect(resourceTypes(BASE).find(r => r.id === 'Group')?.schemaExtensions).toEqual([
       { schema: SCIM.unit, required: false },
     ]);
     const schema = schemaDocuments(BASE).find(s => s.id === SCIM.unit);
-    expect(schema?.attributes.map(a => a.name)).toEqual(['parent']);
+    expect(schema?.attributes.map(a => a.name)).toEqual(['parent', 'identifiers']);
     expect(schema?.meta.location).toBe(`${BASE}/Schemas/${SCIM.unit}`);
   });
 });
@@ -1209,6 +1210,7 @@ describe('Administration › Organisation (D99, D147)', () => {
     const admin = h.persona('karin', ['admin.users']);
     // Stored before the server began refusing it: a unit key with a space after the prefix, under a unit of the tree.
     h.store.state.groups.set('lone', {
+      unitIdentifiers: [],
       id: 'lone',
       organisationId: ORG,
       parentUnitId: 'ksk',

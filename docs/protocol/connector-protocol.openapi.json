@@ -2888,6 +2888,18 @@
                       "minItems": 1,
                       "uniqueItems": true,
                       "description": "The relations a caller may have to a unit this capability is asked about. Omitted means `[\"manages\"]`."
+                    },
+                    "identifiers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "minItems": 1,
+                      "maxItems": 10,
+                      "uniqueItems": true,
+                      "description": "The types of unit identifier this capability reads (D148), spelled as the directory sends them, such as `[\"ansvar\"]`. For every unit the call names, Clew sends the identifiers of these types the directory pushed with the unit, in `about.identifiers`, and none of any other type. Omitted means the capability is told none."
                     }
                   },
                   "additionalProperties": false,
@@ -3464,6 +3476,37 @@
               }
             },
             "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+          },
+          "identifiers": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "maxItems": 50
+              }
+            },
+            "description": "For a capability about a unit that declares `unit.identifiers` (D148): what other systems know each unit by, keyed as `relations` is. Each entry is the directory's own word for the kind (`type`) and the identifier (`value`), of the types the capability declared and of no other, in the directory's order; one type may have several values. A unit the directory sent none of those types for is absent, and so is the property when no unit has any: answer such a unit as one your system holds nothing for, never by guessing from its key or its name."
           }
         },
         "additionalProperties": false,
@@ -3646,6 +3689,37 @@
                   }
                 },
                 "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+              },
+              "identifiers": {
+                "type": "object",
+                "patternProperties": {
+                  "^.*$": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "type",
+                        "value"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "value": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "minItems": 1,
+                    "maxItems": 50
+                  }
+                },
+                "description": "For a capability about a unit that declares `unit.identifiers` (D148): what other systems know each unit by, keyed as `relations` is. Each entry is the directory's own word for the kind (`type`) and the identifier (`value`), of the types the capability declared and of no other, in the directory's order; one type may have several values. A unit the directory sent none of those types for is absent, and so is the property when no unit has any: answer such a unit as one your system holds nothing for, never by guessing from its key or its name."
               }
             },
             "additionalProperties": false,
@@ -4405,6 +4479,37 @@
                   }
                 },
                 "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+              },
+              "identifiers": {
+                "type": "object",
+                "patternProperties": {
+                  "^.*$": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "type",
+                        "value"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "value": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "minItems": 1,
+                    "maxItems": 50
+                  }
+                },
+                "description": "For a capability about a unit that declares `unit.identifiers` (D148): what other systems know each unit by, keyed as `relations` is. Each entry is the directory's own word for the kind (`type`) and the identifier (`value`), of the types the capability declared and of no other, in the directory's order; one type may have several values. A unit the directory sent none of those types for is absent, and so is the property when no unit has any: answer such a unit as one your system holds nothing for, never by guessing from its key or its name."
               }
             },
             "additionalProperties": false,

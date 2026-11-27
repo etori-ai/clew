@@ -41,6 +41,7 @@ function stack() {
   const unit = (id: string, label: string) => {
     s.units.set(id, { organisationId: 'poc', label });
     s.groups.set('group-' + id, {
+      unitIdentifiers: [],
       id: 'group-' + id,
       organisationId: 'poc',
       externalId: 'unit:' + id,

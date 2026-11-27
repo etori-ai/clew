@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { decodeJwt } from 'jose';
-import type { AuthenticatedContext } from '../../packages/contracts/src/index';
+import { checkContract, type AuthenticatedContext } from '../../packages/contracts/src/index';
+import { CallRequestSchema } from '../../packages/connectors/src/protocol';
 import {
   CapabilityError,
   Registry,
@@ -66,6 +67,7 @@ function directory() {
   const unit = (id: string, label: string, parent: string | null, organisationId = ORG) => {
     s.units.set(id, { organisationId, label });
     s.groups.set('g-' + id, {
+      unitIdentifiers: [],
       id: 'g-' + id,
       organisationId,
       externalId: 'unit:' + id,
@@ -223,7 +225,7 @@ function sources(seen: Seen[]) {
     view: list(open),
     run: record(name, rows),
   });
-  const unitRead = (name: string, admits?: Array<'manages' | 'member'>): Capability => ({
+  const unitRead = (name: string, admits?: Array<'manages' | 'member'>, identifiers?: string[]): Capability => ({
     name,
     kind: 'read',
     title: name,
@@ -231,7 +233,9 @@ function sources(seen: Seen[]) {
     model: false,
     scope: {},
     about: { entity: 'unit' },
-    ...(admits ? { unit: { admits } } : {}),
+    ...(admits || identifiers
+      ? { unit: { ...(admits ? { admits } : {}), ...(identifiers ? { identifiers } : {}) } }
+      : {}),
     input: keysInput,
     output: rowsOutput,
     view: list(),
@@ -284,6 +288,9 @@ function sources(seen: Seen[]) {
       { ...personRead('src.flagEffect'), input: personInput(true) },
       unitRead('src.unit'),
       unitRead('src.units', ['manages', 'member']),
+      // D148: a read that asks what the economy system knows each unit by, and one that asks for two types.
+      unitRead('src.costs', ['manages', 'member'], ['ansvar']),
+      unitRead('src.figures', undefined, ['qlik', 'ansvar']),
     ],
   };
   // Clew's own domains: a composite that asks the source as the same person through `clew.call`, a read that takes a
@@ -582,6 +589,17 @@ describe('the rule, resolved from the directory', () => {
       'src.flagEffect': ['person', false, ['person'], ['managed'], false],
       'src.unit': ['unit', true, [], ['manages'], false],
       'src.units': ['unit', true, [], ['manages', 'member'], false],
+      'src.costs': ['unit', true, [], ['manages', 'member'], false],
+      'src.figures': ['unit', true, [], ['manages'], false],
+    });
+    // D148: the identifier types a read about a unit declared, and none for any other capability.
+    expect(
+      Object.fromEntries(
+        [...namedInputs(src!)].flatMap(([name, n]) => (n.identifiers.length ? [[name, n.identifiers]] : [])),
+      ),
+    ).toEqual({
+      'src.costs': ['ansvar'],
+      'src.figures': ['qlik', 'ansvar'],
     });
     expect(named(core!)).toEqual({
       'core.points': ['person', false, ['person'], ['managed'], true],
@@ -680,6 +698,18 @@ describe('the loader holds every input that names someone to a plain string', ()
     expect(manifestProblems(manifest([{ ...person, view: list(), unit: { admits: ['manages'] } }]), 'src')).toEqual([
       expect.stringContaining('unit belongs to a capability about a unit'),
     ]);
+    // D148: a read about a unit may name the identifier types it reads, each spelled as the directory sends it.
+    expect(
+      manifestProblems(manifest([{ ...unit, unit: { identifiers: ['ansvar', 'kostnadsställe'] } }]), 'src'),
+    ).toEqual([]);
+    expect(manifestProblems(manifest([{ ...unit, unit: { identifiers: [' ansvar'] } }]), 'src')).toEqual([
+      expect.stringContaining('must be spelled as the directory sends it'),
+    ]);
+    for (const identifiers of [[], ['ansvar', 'ansvar'], [''], ['a'.repeat(65)], [7]])
+      expect(manifestProblems(manifest([{ ...unit, unit: { identifiers } }]), 'src')).not.toEqual([]);
+    expect(manifestProblems(manifest([{ ...person, view: list(), unit: { identifiers: ['ansvar'] } }]), 'src')).toEqual(
+      [expect.stringContaining('unit belongs to a capability about a unit')],
+    );
     // Clew's id is never sent to a connector: a manifest cannot take a person by id.
     expect(
       manifestProblems(
@@ -807,6 +837,89 @@ describe('/api/cap: a read asked with keys the browser chose', () => {
     expect(w.seen.map(s => s.about)).toEqual([
       { entity: 'unit', relations: { 'unit-ekonomi': 'manages' } },
       { entity: 'unit', relations: { 'unit-ekonomi': 'manages', 'unit-skola': 'member' } },
+    ]);
+  });
+  test('a unit read that declares identifier types is told what the directory sent of those types, for the units it is sent and no other (D148)', async () => {
+    const w = world();
+    const groups = w.people.state.groups;
+    const identify = (unitId: string, unitIdentifiers: Array<{ type: string; value: string }>) =>
+      groups.set('g-' + unitId, { ...groups.get('g-' + unitId)!, unitIdentifiers });
+    identify('unit-ekonomi', [
+      { type: 'ansvar', value: '11110000' },
+      { type: 'qlik', value: 'ORG-7' },
+      { type: 'ansvar', value: '11110001' },
+    ]);
+    identify('unit-skola', [{ type: 'qlik', value: 'ORG-9' }]);
+    // A unit Petra may not ask about, and one of another organisation: nothing of either is read or told.
+    identify('unit-omsorg', [{ type: 'ansvar', value: '99990000' }]);
+    identify('unit-annan', [{ type: 'ansvar', value: '88880000' }]);
+    const keys = ['unit-ekonomi', 'unit-skola', 'unit-omsorg', 'unit-annan'];
+    await w.cap('petra', 'src.costs', { keys });
+    await w.cap('petra', 'src.figures', { keys });
+    await w.cap('petra', 'src.units', { keys });
+    expect(w.seen.map(s => s.about)).toEqual([
+      // Both values of the type, in the directory's order; the school has none of it, so it is absent from the map.
+      {
+        entity: 'unit',
+        relations: { 'unit-ekonomi': 'manages', 'unit-skola': 'member' },
+        identifiers: {
+          'unit-ekonomi': [
+            { type: 'ansvar', value: '11110000' },
+            { type: 'ansvar', value: '11110001' },
+          ],
+        },
+      },
+      {
+        entity: 'unit',
+        relations: { 'unit-ekonomi': 'manages' },
+        identifiers: {
+          'unit-ekonomi': [
+            { type: 'ansvar', value: '11110000' },
+            { type: 'qlik', value: 'ORG-7' },
+            { type: 'ansvar', value: '11110001' },
+          ],
+        },
+      },
+      // A read that declares no type is told none, whatever the units carry.
+      { entity: 'unit', relations: { 'unit-ekonomi': 'manages', 'unit-skola': 'member' } },
+    ]);
+    // The resolver reads nothing it was not asked for, and answers only the types named.
+    const petra = actorOf(w.people.persona('petra'));
+    expect(await w.people.relations.relate(petra, 'unit', keys, ['manages', 'member'])).toEqual([
+      { asked: 'unit-ekonomi', key: 'unit-ekonomi', relation: 'manages' },
+      { asked: 'unit-skola', key: 'unit-skola', relation: 'member' },
+    ]);
+    expect(
+      await w.people.relations.relate(petra, 'unit', keys, ['manages'], { identifiers: ['qlik', 'okänd'] }),
+    ).toEqual([
+      {
+        asked: 'unit-ekonomi',
+        key: 'unit-ekonomi',
+        relation: 'manages',
+        identifiers: [{ type: 'qlik', value: 'ORG-7' }],
+      },
+    ]);
+  });
+  test('a resolver that answers a type the capability never declared is not believed (D148)', async () => {
+    const seen: Seen[] = [];
+    const registry = new Registry({
+      relations: async (_actor, _entity, keys) =>
+        keys.map(key => ({
+          asked: key,
+          key,
+          relation: 'manages' as const,
+          identifiers: [
+            { type: 'ansvar', value: '1' },
+            { type: 'lön', value: '2' },
+          ],
+        })),
+    });
+    for (const c of sources(seen)) registry.register({ uses: ['*'], ...c }).govern(c.id, openGovernance());
+    await registry.run(actorOf(directory().persona('petra')), 'src.costs', { keys: ['unit-ekonomi'] });
+    await registry.run(actorOf(directory().persona('petra')), 'src.unit', { keys: ['unit-ekonomi'] });
+    expect(seen.map(s => s.about?.identifiers)).toEqual([
+      { 'unit-ekonomi': [{ type: 'ansvar', value: '1' }] },
+      undefined,
     ]);
   });
   test('a core capability that takes ids answers a report by id, given the user name where there is one; nothing else is reached by id', async () => {
@@ -1265,9 +1378,27 @@ describe('a remote connector is told the relation, bound to the request', () => 
       },
     ],
   };
+  /** D148: a read about a unit that asks what the economy system knows the unit by. */
+  const costs = {
+    name: 'remote.costs',
+    kind: 'read',
+    title: 'Kostnader',
+    description: 'x',
+    model: false,
+    scope: {},
+    about: { entity: 'unit' },
+    unit: { admits: ['manages', 'member'], identifiers: ['ansvar'] },
+    input: {
+      type: 'object',
+      properties: { keys: { type: 'array', items: { type: 'string' }, maxItems: 200 } },
+      required: ['keys'],
+    },
+    output: rowsOutput,
+    view: list(),
+  };
   const secret = 'remote-transport-key-remote';
   /** The service verifies Clew's assertion with the verifier every connector in the repository carries, bound to the request. */
-  async function remote(vouch?: RelationResolver) {
+  async function remote(vouch?: RelationResolver, extra: unknown[] = []) {
     const authority = await testAuthority();
     const verify = createVerifier({ secret, jwks: testJwks }, 'remote');
     const told: Array<{
@@ -1284,7 +1415,7 @@ describe('a remote connector is told the relation, bound to the request', () => 
         return Response.json({ error: { code: 'denied', message: 'Ogiltigt behörighetsbevis.' } }, { status: 401 });
       const body = (await request.json()) as { input: Record<string, unknown>; about?: unknown };
       told.push({ input: body.input, about: body.about, claims: decodeJwt(token), bearer: token.length });
-      const output = request.url.endsWith('/remote.person')
+      const output = /\/remote\.(person|costs)$/.test(request.url)
         ? { rows: (body.input.keys as string[]).map(key => ({ key, state: 'Bokat' })) }
         : { person: body.input.person ?? null };
       return Response.json({ output });
@@ -1298,7 +1429,7 @@ describe('a remote connector is told the relation, bound to the request', () => 
     const registry = vouch ? new Registry({ relations: vouch }) : w.registry;
     registry
       .register(
-        remoteConnector(parseManifest(manifest, 'remote'), {
+        remoteConnector(parseManifest({ ...manifest, capabilities: [...manifest.capabilities, ...extra] }, 'remote'), {
           url: 'http://remote',
           key: secret,
           assert: (actor, chain, binding) => authority.assert('remote', actor, ['src.notes'], chain, binding),
@@ -1332,6 +1463,29 @@ describe('a remote connector is told the relation, bound to the request', () => 
     );
     expect(call!.claims.about).toBeUndefined();
     expect(decodeJwt(call!.claims.callback as string).about).toBeUndefined();
+  });
+  test("a unit read's body carries the identifiers beside the relations, as the published request says, and the bearer none of them (D148)", async () => {
+    const w = await remote(undefined, [costs]);
+    const groups = w.people.state.groups;
+    groups.set('g-unit-ekonomi', {
+      ...groups.get('g-unit-ekonomi')!,
+      unitIdentifiers: [
+        { type: 'ansvar', value: '11110000' },
+        { type: 'qlik', value: 'ORG-7' },
+      ],
+    });
+    await w.cap('petra', 'remote.costs', { keys: ['unit-ekonomi', 'unit-skola', 'unit-omsorg'] });
+    const [call] = w.told;
+    expect(call!.input).toEqual({ keys: ['unit-ekonomi', 'unit-skola'] });
+    expect(call!.about).toEqual({
+      entity: 'unit',
+      relations: { 'unit-ekonomi': 'manages', 'unit-skola': 'member' },
+      identifiers: { 'unit-ekonomi': [{ type: 'ansvar', value: '11110000' }] },
+    });
+    const body = JSON.parse(await w.requests[0]!.clone().text());
+    expect(checkContract(CallRequestSchema, body)).toBe(true);
+    // Bound by the body's digest like the relations; never signed into the header a second time.
+    expect(JSON.stringify(call!.claims)).not.toContain('11110000');
   });
   test('the assertion cannot be replayed: not as it was sent, with another body or on another capability', async () => {
     const w = await remote();
