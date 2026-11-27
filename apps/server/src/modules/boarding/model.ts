@@ -299,6 +299,11 @@ export interface LeaverChange {
   personId: string;
   organisationId: string;
   at: string;
+  /**
+   * On a deactivation: whom the person reported to when they left, by id, as the people module's reporting line reads
+   * it (D147: active, of the organisation, and nobody who named the person back), read before the change was applied.
+   */
+  managers?: readonly string[];
 }
 /** A line in the server's log (D91): a message in English and counts, never a name or a title. */
 export type BoardingLog = (message: string, ...details: unknown[]) => void;

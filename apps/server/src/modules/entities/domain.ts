@@ -96,8 +96,10 @@ export function unitsBelow(
   const found = new Map<string, DirectoryUnit & { under?: string }>();
   for (const unit of reach.managed)
     for (const person of unit.people) {
-      // Someone who also manages the reader is not their report (`reportsTo`), so what they lead is not below.
-      if (reach.above.includes(person.id)) continue;
+      // Someone who also manages the reader is not their report (`reportsTo`), so what they lead is not below. Neither
+      // is what a deactivated report is still listed as leading: a leaver left in a unit's manager group leads nobody
+      // (D99 item 4), and the reader follows up no unit through them. The row stays on Personal, marked as it is.
+      if (reach.above.includes(person.id) || !person.enabled) continue;
       // The units this report leads: the one they are listed under, where they lead it, and the others (`below`).
       for (const b of [
         ...(person.role === 'manager' ? [{ ...unit, role: 'manager' as const }] : []),

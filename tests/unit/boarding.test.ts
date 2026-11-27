@@ -802,6 +802,22 @@ describe('reading plans', () => {
     expect(store.state.plans.get(id)).toMatchObject({ heldAt: null, heldBy: [] });
     expect(store.audit().at(-1)).toMatchObject({ action: 'boarding.plan_released', subject: 'plan:' + id });
     expect((await boarding.plan(olle, id)).plan.access).toBe('manager');
+    // The people module says whom the leaver reported to, as its reporting line read them before the change (D147):
+    // what it says is who holds the plan, whatever the directory would answer afterwards. Nobody, for a leaver whose
+    // only manager named them back, or whose employments were cleared with the deactivation and name nobody now.
+    for (const managers of [['karin'], []]) {
+      await store.transaction(tx =>
+        boardingLeavers(tx, directory).deactivated({
+          actor: 'provisioner:test',
+          personId: 'bo',
+          organisationId: ORG,
+          at: at(),
+          managers,
+        }),
+      );
+      expect(store.state.plans.get(id)).toMatchObject({ heldBy: managers });
+      expect(store.audit().at(-1)).toMatchObject({ action: 'boarding.plan_held', details: { holders: managers } });
+    }
   });
 
   test('with nothing recorded at the deactivation (the hook is best effort), the manager who started the plan holds it', async () => {

@@ -1495,11 +1495,12 @@ test('a write that finds another manager named than the one it read holds them t
     (await scim.createUser(p, employed(2), BASE)).id,
     (await scim.createUser(p, employed(3), BASE)).id,
   ];
-  // Between the read that says whom to hold and the hold itself, another request names a third person, and commits.
+  // Between the read that says whom to hold and the first hold, which is of the unit the employment names, another
+  // request names a third person, and commits. Once this one holds the unit, no such write can come between.
   let holds = 0;
   const racing = scimUsecases({
     store: watched(store, async (name, moment) => {
-      if (name !== 'lockPeople' || moment !== 'before') return;
+      if (name !== 'lockUnits' || moment !== 'before') return;
       if (holds++ === 0) await scim.patchUser(p, b, names(c), BASE);
     }),
     ...deps,
@@ -1529,4 +1530,26 @@ test('a manager is written while the people who name her are created and deactiv
     await Promise.all(made.map(report => scim.deleteUser(p, report.id)));
     expect(await role(boss)).toBe('employee');
   }
+});
+test('a unit is not removed between the check that it exists and the write of a first employment on it: the removal waits for the write, and takes the person out of the unit with it (D149)', async () => {
+  const { deps, p, store, scim, employed, stored, unit, unitId } = reporting();
+  const group = await unit();
+  // A person is created with an employment on the unit, and stops when the unit has been checked and nothing of the
+  // person is written yet.
+  const slow = pausedBefore(store, 'insertUser');
+  const created = scimUsecases({ store: slow.store, ...deps }).createUser(p, employed(1), BASE);
+  await slow.atCall;
+  // The removal of the unit waits for that write. Read before it, the unit had nobody employed on it, and the person
+  // would have been left as of a unit that is gone, its id free for another organisation to take.
+  const removed = scim.deleteGroup(p, group.id);
+  expect(await stillWaiting(settled(removed), slow.release)).toBe(true);
+  const person = (await created).id;
+  await removed;
+  // The unit is gone. The employment still names it and places nobody: no unit, and so no grant.
+  expect(await stored(person)).toBeUndefined();
+  expect(await database().select().from(schema.assignments).where(eq(schema.assignments.personId, person))).toEqual([]);
+  // The other way round, the employment is refused: the unit was removed before the person was written.
+  const refused = await scim.createUser(p, employed(2), BASE).catch(error => error);
+  expect(refused).toMatchObject({ status: 400, scimType: 'invalidValue' });
+  expect(String(refused.detail)).toContain(unitId);
 });

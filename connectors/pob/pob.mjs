@@ -10,7 +10,7 @@
 //     matched loosely cannot make one person another;
 //   - an answer this file cannot read (not a list, an errand without an id, a status or a time) is an outage.
 // It only ever sends GET.
-import { SourceUnavailable } from './cases.mjs';
+import { COST_CODE, SourceUnavailable } from './cases.mjs';
 
 /**
  * What the connector needs from POB, and what each is called there. The defaults are what the public code uses, where
@@ -49,8 +49,6 @@ export const DEFAULT_AGREEMENT_FIELDS = { id: 'Id', account: 'Account.Id', amoun
 /** ASSUMED, on the same grounds: where POB lists its service agreements. */
 export const DEFAULT_AGREEMENT_PATH = '/sla';
 const AGREEMENT_PATH = /^\/[A-Za-z0-9_/-]{1,80}$/;
-/** A unit's code as it may stand in a filter sent to POB. The connector has already held it to its own pattern. */
-const CODE_VALUE = /^[A-Za-z0-9]{1,64}$/;
 const FIELD_NAME = /^[A-Za-z0-9_.]{1,80}$/;
 /** A value that may stand in a filter sent to POB: an account or an id. Anything else is never sent. */
 const FILTER_VALUE = /^[A-Za-z0-9._@:-]{1,128}$/;
@@ -326,7 +324,10 @@ export function createPobCases({
     // agreement: each is compared with the code again here and in the connector, and more rows than the limit is an
     // answer that was cut.
     async agreements(code) {
-      if (!CODE_VALUE.test(code)) throw new SourceUnavailable('A value that cannot stand in a filter.');
+      // The port's own bound, whatever pattern the installation configured: a shorter code would stand as a prefix of
+      // other units' accounts in the filter, and the comparison below would let every one of them through.
+      if (typeof code !== 'string' || !COST_CODE.test(code))
+        throw new SourceUnavailable('A value that cannot stand in a filter.');
       const answer = await get(agreementPath, {
         Filter: `${agreementFields.account}=${code}%`,
         limit: String(listLimit + 1),

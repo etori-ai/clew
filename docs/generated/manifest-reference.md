@@ -1079,7 +1079,7 @@ true
 
 #### `assignments`
 
-Whether the connector takes the actor's `assignments` (D135): every unit of a person who holds more than one, each with the role they have there. Without it the actor never carries them, and the connector answers for `unitId` and `role` alone.
+Whether the connector takes the actor's `assignments` (D135, D149): the person's units, each with the role they have there, sent when they say more than `unitId` and `role` do. Without it the actor never carries them. Which units a manager leads is the actor's `leads` either way, sent to every connector: a connector answers a manager for those units, and never for `unitId` because `role` is `manager`.
 
 - Type: boolean
 - optional

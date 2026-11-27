@@ -19,10 +19,12 @@ import type {
 export interface UserReads {
   capabilities(personId: string): Promise<string[]>;
   /**
-   * The active people placed on the unit, each with the role they hold there, whatever unit they act in: one read over
-   * the provisioning store for either adapter (`directoryUsecases`).
+   * The active people of the reader's organisation who belong to the unit or lead it, each with the role they hold
+   * there, whatever unit they act in: one read over the provisioning store for either adapter (`directoryUsecases`).
+   * A unit id is asked within the reader's organisation and never alone: a person another organisation holds on a
+   * unit of the same id is nobody's colleague here. Nobody for a reader the directory does not hold.
    */
-  directory(unitId: string): Promise<Array<{ id: string; name: string; role: string }>>;
+  directory(unitId: string, readerId: string): Promise<Array<{ id: string; name: string; role: string }>>;
   /**
    * The person's provisioned user name (D96 item 8: what another system keys a row on); null for an unknown person or
    * one provisioned without one.
@@ -77,6 +79,12 @@ export interface LeaverChange {
   personId: string;
   organisationId: string;
   at: string;
+  /**
+   * On a deactivation: whom the person reported to when they left (D147), by id, as the reporting line reads it: the
+   * active people of the organisation their employments named, without anyone who named them back. Read before the
+   * change is applied, so a write that deactivates a person and clears their employments in one says them still.
+   */
+  managers?: readonly string[];
 }
 /**
  * What a change of a person's `active` means to a domain that keeps data about them (D68: a person is deactivated,
@@ -131,6 +139,8 @@ export interface ProvisionTx {
    * other's change. Callers lock several people in id order, so two transactions never wait on each other.
    */
   lockPerson(id: string): Promise<{ id: string; organisationId: string } | undefined>;
+  /** The organisation a person is of, read without holding them; undefined for nobody. */
+  organisationOf(personId: string): Promise<string | undefined>;
   /**
    * Holds these people for the rest of the transaction, as `lockPerson` holds one, in one pass in id order and a few
    * thousand a statement; an id that names nobody is passed over. A group write holds everyone it touches or derives

@@ -120,9 +120,11 @@ export interface PersonStanding {
 /**
  * What a change of a person's `active` means to boarding (D124 item 7), told by the people module's leavers port in the
  * transaction that changes it (bound in `composition/people.ts`, in a savepoint of its own beside the competence
- * module's, D113). Deactivated: every plan about the person is held from then on by the managers they report to at
- * that moment, read from the directory in the same transaction; activated again: nobody holds them, and the line
- * decides as before. Each plan changed gets an audit row of ids. The call is best effort: when it fails, nothing is
+ * module's, D113). Deactivated: every plan about the person is held from then on by the managers they reported to at
+ * that moment, as the change says them: the people module reads its own reporting line before it applies the change,
+ * so two who named each other hold nothing of each other's, and a write that also cleared the person's employments
+ * still names their manager. A change that does not say is read from the directory in the same transaction.
+ * Activated again: nobody holds them, and the line decides as before. Each plan changed gets an audit row of ids. The call is best effort: when it fails, nothing is
  * recorded, and the manager who started a plan holds it (`holdsAfterLeaving`).
  */
 export function boardingLeavers(
@@ -130,11 +132,11 @@ export function boardingLeavers(
   directory: Pick<BoardingDirectory, 'lineManagers'>,
 ) {
   return {
-    async deactivated({ actor, personId, organisationId, at }: LeaverChange): Promise<void> {
+    async deactivated({ actor, personId, organisationId, at, managers }: LeaverChange): Promise<void> {
       // Every plan, open or closed: a closed plan is read-only, but its typed titles are still read by whoever holds it.
       const plans = (await tx.plansAbout([personId])).filter(p => p.organisationId === organisationId);
       if (!plans.length) return;
-      const holders = [...new Set(await directory.lineManagers(organisationId, personId))].sort();
+      const holders = [...new Set(managers ?? (await directory.lineManagers(organisationId, personId)))].sort();
       for (const plan of [...plans].sort((a, b) => a.id.localeCompare(b.id))) {
         await tx.holdPlan(plan.id, holders, at);
         await tx.audit({

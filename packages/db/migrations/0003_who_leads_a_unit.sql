@@ -14,6 +14,10 @@ CREATE INDEX "auth_unit_lead_unit" ON "auth_unit_lead" USING btree ("unit_id");-
 -- belongs elsewhere.
 INSERT INTO "auth_unit_lead" ("person_id", "unit_id")
 SELECT "person_id", "unit_id" FROM "auth_assignment" WHERE "role" = 'manager';--> statement-breakpoint
+-- The table's change signal is a deferred constraint trigger (D46), and PostgreSQL refuses to alter a table that has
+-- trigger events pending. It is made immediate for the rest of this transaction, so the rows removed here signal at
+-- once and the column can be dropped after them.
+SET CONSTRAINTS "auth_assignment_changed" IMMEDIATE;--> statement-breakpoint
 DELETE FROM "auth_assignment" a
 WHERE a."role" = 'manager'
 	AND NOT EXISTS (
@@ -26,6 +30,10 @@ WHERE a."role" = 'manager'
 	);--> statement-breakpoint
 ALTER TABLE "auth_assignment" DROP COLUMN "role";--> statement-breakpoint
 -- The change signal (D46), hand-written as every such trigger is: who leads a unit is drawn wherever the organisation is.
-CREATE CONSTRAINT TRIGGER auth_unit_lead_changed AFTER INSERT OR DELETE OR UPDATE ON public.auth_unit_lead DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.clew_shared_changed('organisation');
+CREATE CONSTRAINT TRIGGER auth_unit_lead_changed AFTER INSERT OR DELETE OR UPDATE ON public.auth_unit_lead DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.clew_shared_changed('organisation');--> statement-breakpoint
+-- D147: an employment has been a row of its own since 0001. A change of one moves only its person's time of change,
+-- which the person's own signal leaves out, so a new title, or another manager named, signalled nothing and an open
+-- page kept what it had drawn. The table gets the organisation's signal, as the person's list column had it.
+CREATE CONSTRAINT TRIGGER auth_employment_changed AFTER INSERT OR DELETE OR UPDATE ON public.auth_employment DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.clew_shared_changed('organisation');
 -- A grant is as it was. The unit a person acts as is derived the next time they are written, and whether somebody is a
 -- manager because people report to them then or at the next write of anybody whose employment names them.

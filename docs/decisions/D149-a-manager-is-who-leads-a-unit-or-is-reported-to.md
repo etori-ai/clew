@@ -49,9 +49,16 @@ What is stored:
 8. **A unit's group reaches the people employed on the unit.** An employment places a person only on a unit the
    organisation holds, which is that a `unit:` group names it. So a unit group that is created, renamed, given another
    key or removed derives the people employed on the unit as it derives its members: they carry the unit's name, and
-   are of the unit no more when it is removed.
+   are of the unit no more when it is removed. A write of a person that can change where they belong holds the units
+   its employments name, as a write of the unit's group does, so a unit is not removed between the check that it
+   exists and the write of an employment on it.
 
 What reads it:
+
+Who is deactivated gives nobody anything. A deactivated report is nobody's report: they make nobody a manager, admit
+nobody to Personal, and a unit they are still listed as leading is not below their former manager. Whom a leaver
+reported to is told to the domains that hand their records on as the reporting line read it before the write: nobody
+who named the leaver back, and their manager still when the same write clears their employments.
 
 9. **The session.** `role` is whether the person is a manager, and the rail, Personal, the talks round, the dialogue,
    the calendar's team and a manager's competence and introduction scans ask it. They are about the people who report
@@ -95,8 +102,6 @@ and how many lead none and are reported to, and names anyone who leads a unit an
   the role on each unit, where such a person is an employee.
 - A person who leads more than fifty units is more than the protocol's `leads` holds, as with `assignments`. The
   largest number in the directory that was read is twelve.
-- A unit removed in the same moment as an employment on it is written can leave that person as of the removed unit
-  until they are next written. A provisioner sends the employments before it removes the unit.
 - A change of the unit a person acts as ends the work in flight that was started as the old unit, and their sessions,
   as any change of authority does. The first push after this build does that for every manager who is employed on
   another unit than the one they lead.

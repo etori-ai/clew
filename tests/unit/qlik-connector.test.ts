@@ -1,6 +1,6 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { fieldTone, placesOf, type Actor } from '../../packages/connectors/src/index';
+import { actorOf, fieldTone, placesOf, type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { adapterOf, createConnector, manifest as qlikManifest } from '../../connectors/qlik/connector.mjs';
@@ -253,6 +253,19 @@ describe('the qlik connector', () => {
     expect(await rows(leadsTheSchool)).toEqual(['Bergsåkers skola']);
     expect((await about(leadsTheSchool)).map(r => r.key)).toEqual(['unit-skola']);
     expect(await figure(leadsTheSchool)).toEqual(await figure(hillevi));
+    // The figure is one unit's, the unit Clew says Läget of: the one she is employed on when she leads it, else the
+    // first she leads. Leading both, it is the school's when she is employed there. Employed on the unit the
+    // statistics lack, which she leads too, there is no figure: the school's value is never shown under that unit's
+    // heading. The table is still every unit's she leads.
+    const both = leadsTheSchool.assignments!.map(a => ({ ...a, role: 'manager' as const }));
+    expect(await figure({ ...hillevi, assignments: both })).toEqual(await figure(hillevi));
+    expect((await figure(hillevi))?.value).toBeDefined();
+    expect((await figure({ ...leadsTheSchool, assignments: both })) ?? null).toBeNull();
+    expect(await rows({ ...leadsTheSchool, assignments: both })).toEqual(['Bergsåkers skola']);
+    // Following up a unit says nothing of Läget: someone who leads no unit has no figure, whatever they follow up.
+    expect(
+      (await figure({ ...reportedTo, units: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola' }] })) ?? null,
+    ).toBeNull();
     // The units she follows up (D117) are answered beside those she leads, as before.
     const follows: Actor = { ...employedThere, units: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering' }] };
     expect((await about(follows)).map(r => r.key)).toEqual([]);
@@ -339,11 +352,13 @@ describe('the qlik connector', () => {
     };
     const { registry, connectorFetch } = stack({ statistics });
     await expect(registry.run(hillevi, 'qlik.sickLeaveByUnit', {})).rejects.toThrow('Qlik svarar inte just nu.');
-    const body = JSON.stringify({ actor: hillevi, area: 'sick-leave' });
+    // The actor as Clew publishes it: the figure is of a unit the manager leads, which the assertion says.
+    const asked = actorOf(hillevi);
+    const body = JSON.stringify({ actor: asked, area: 'sick-leave' });
     const response = await connectorFetch('http://qlik/clew/figure', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(hillevi, [], { path: '/clew/figure', body })),
+        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(asked, [], { path: '/clew/figure', body })),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },

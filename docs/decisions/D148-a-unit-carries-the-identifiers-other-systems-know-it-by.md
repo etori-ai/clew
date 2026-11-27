@@ -17,17 +17,20 @@ What a unit carries:
    either end and no control character, a type of at most 64 characters and a value of at most 256. An entry that is
    wrong refuses the write with 400 `invalidValue` and names the part, as a key written wrong does
    ([D96](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md)): cleaned instead, it would be stored as another
-   key while the answer said stored. The same entry twice is kept once. The order is the directory's and is kept.
+   key while the answer said stored. A part sent decomposed is refused too and never composed here: it would no
+   longer be the text the other system holds. The same entry twice is kept once. The order is the directory's and is
+   kept.
 3. **The list is sent whole.** An entry has no id to be changed by. A `PUT` replaces the list and one without the
    extension clears it, as it makes the unit a root. In a `PATCH`, `replace` on the attribute's path sets the list, `add`
    appends to it, and `remove` or `null` clears it; the extension's object sets only what it names, so a move leaves the
-   identifiers alone and a new list leaves the unit where it stands. A path into the list, a `remove` with a value and
-   the bare name `identifiers` on a unit group are refused, never accepted and ignored.
+   identifiers alone and a new list leaves the unit where it stands. A path into the list, a `remove` with a value, of
+   the list or of the whole extension, and the bare name `identifiers` on a unit group are refused, never accepted and
+   ignored.
 4. **Only a unit carries them.** On any other group identifiers are refused, as a parent is
    ([D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)), and a group whose
    key stops being a `unit:` key loses the ones it had.
-5. **Nothing follows from one inside Clew.** A change is audited on the group with the list before and after and moves
-   the group's time of change. Nobody's grant, assignment or reporting line is derived from it, and no member's
+5. **Nothing follows from one inside Clew.** A change is audited on the group with the list before and after, the
+   removal of the unit included, and moves the group's time of change. Nobody's grant, assignment or reporting line is derived from it, and no member's
    resource changes.
 
 What a connected system is told:

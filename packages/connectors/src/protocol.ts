@@ -126,9 +126,15 @@ export const ActorSchema = object(
   {
     id: Type.String({ minLength: 1, maxLength: 80 }),
     name: Type.String(),
-    unitId: Type.String(),
+    unitId: Type.String({
+      description:
+        'The unit the person acts as: the one they are employed on (D149). It says where they belong and never that they lead it, whatever `role` says: a manager may be employed on a unit somebody else leads. The units a person leads are `leads`.',
+    }),
     unitLabel: Type.String(),
-    role: RoleSchema,
+    role: Type.Union([Type.Literal('manager'), Type.Literal('employee')], {
+      description:
+        'Whether the person is a manager (D149): they lead a unit, or people report to them. It says nothing of which unit, and a manager may lead none. Read it for what is about being a manager at all; for a unit, read `leads`, and never pair `role` with `unitId`.',
+    }),
     userName: Type.Optional(
       Type.String({
         minLength: 1,
@@ -141,7 +147,7 @@ export const ActorSchema = object(
       Type.Array(object({ unitId: Type.String({ minLength: 1, maxLength: 256 }), unitLabel: Type.String() }), {
         maxItems: 200,
         description:
-          "The units a manager follows up (D117): the ones they manage and those of the managers who report to them (D99), never one they are only placed on (D135). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone.",
+          "The units a manager follows up (D117): the ones they lead and those led by the managers who report to them (D147), never one they are only employed or placed on (D135). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means the units in `leads` and no other: never `unitId` because the person is a manager, and no unit at all where `leads` is empty or absent.",
       }),
     ),
     leads: Type.Optional(
@@ -162,7 +168,7 @@ export const ActorSchema = object(
           minItems: 1,
           maxItems: 50,
           description:
-            "The person's units with the role on each (D135, D149): every unit they belong to or lead, `manager` where they lead it and `employee` where they belong to it without leading it. `unitId` above is among them. Sent only to a connector whose manifest sets `assignments: true`, on every call for a person whose units say more than `unitId` and `role` do; answer for each with its own role. Not `units`, which is whom a manager follows up. Absent means one unit, `unitId`, which the person leads exactly when `leads` names it.",
+            "The person's units with the role on each (D135, D149): every unit they belong to or lead, `manager` where they lead it and `employee` where they belong to it without leading it. `unitId` above is among them. Sent only to a connector whose manifest sets `assignments: true`, on every call for a person whose units say more than `unitId` and `role` do; answer for each with its own role. Not `units`, which is whom a manager follows up. Absent says nothing of what the person leads: a connector that did not ask for the list never gets it, however many units the person has, and one that asked gets none for a person with one unit. Either way the units a person leads are `leads`.",
         },
       ),
     ),
@@ -518,7 +524,7 @@ export const ConnectorManifestSchema = Type.Object(
     assignments: Type.Optional(
       Type.Boolean({
         description:
-          "Whether the connector takes the actor's `assignments` (D135): every unit of a person who holds more than one, each with the role they have there. Without it the actor never carries them, and the connector answers for `unitId` and `role` alone.",
+          "Whether the connector takes the actor's `assignments` (D135, D149): the person's units, each with the role they have there, sent when they say more than `unitId` and `role` do. Without it the actor never carries them. Which units a manager leads is the actor's `leads` either way, sent to every connector: a connector answers a manager for those units, and never for `unitId` because `role` is `manager`.",
       }),
     ),
     delegation: Type.Optional(DelegationSchema),

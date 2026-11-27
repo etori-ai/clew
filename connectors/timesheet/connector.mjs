@@ -44,12 +44,20 @@ export function createConnector({
   const marked = () => state.get('absences', {});
   // The units the person leads (D149), as Clew signs them into the actor of every manager: `leads`. `role` says only
   // that the person is a manager, which someone people report to is without leading a unit, and `unitId` is the unit
-  // they are employed on, which need not be one they lead. The roster, the figure and the unit rule of the writes
-  // cover every unit in `leads`, as the HR fixture's do, and no unit when the list is empty or absent.
+  // they are employed on, which need not be one they lead. The roster and the unit rule of the writes cover every
+  // unit in `leads`, as the HR fixture's do, and no unit when the list is empty or absent.
   const managedUnits = actor =>
     (Array.isArray(actor.leads) ? actor.leads : [])
       .filter(u => u && typeof u.unitId === 'string' && u.unitId)
       .map(u => unitMap[u.unitId] ?? u.unitId);
+  /**
+   * The one unit a figure is about (D54): the unit the person is employed on when they lead it, else the first they
+   * lead. It is the unit Clew says Läget of, so the figure and the heading over it are about the same unit.
+   */
+  const ledUnit = actor => {
+    const units = managedUnits(actor);
+    return units.includes(unitOf(actor)) ? unitOf(actor) : units[0];
+  };
   /** Whether the person is on the staff of a unit the actor manages, as the time system registers it. */
   const inUnit = (actor, person) => managedUnits(actor).some(unit => (staffOf[unit] ?? []).includes(person));
   /** The person's shift on a day in a unit the actor manages; a shift in another unit is not theirs to see. */
@@ -183,17 +191,18 @@ export function createConnector({
     });
   }
 
-  // The figure (D54): today's booked substitutes, and whether a shift marked absent is still without a person.
+  // The figure (D54): today's booked substitutes on the unit, and whether a shift marked absent is still without a
+  // person. One unit's, never a sum over every unit the person leads.
   function figure(actor, area) {
-    const units = managedUnits(actor);
-    if (area !== 'staffing' || !units.length) return null;
+    const unit = ledUnit(actor);
+    if (area !== 'staffing' || !unit) return null;
     const date = today();
-    const mine = shifts().filter(s => s.date === date && units.includes(s.unitId));
+    const mine = shifts().filter(s => s.date === date && s.unitId === unit);
     if (!mine.length) return { label: 'Inga pass i dag.', tone: 'none' };
     const open = Object.values(marked()).filter(a => a.date === date && mine.some(s => s.employee === a.person)).length;
     return {
       label: 'Vikarier i dag',
-      value: String(units.reduce((sum, unit) => sum + (substitutesOf[unit] ?? 0), 0)),
+      value: String(substitutesOf[unit] ?? 0),
       comparison: open ? (open === 1 ? '1 pass obemannat' : `${open} pass obemannade`) : 'alla pass bemannade',
       tone: open ? 'warn' : 'ok',
     };

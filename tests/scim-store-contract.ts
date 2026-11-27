@@ -1148,7 +1148,9 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           await tx.writeGrant(id, { unitId: active.unitId, unitLabel, role: active.role, capabilities: [] });
         }
       });
-      const { directory } = directoryUsecases({ store });
+      const usecases = directoryUsecases({ store }),
+        // Asked by somebody of the organisation, as the capability asks with the reader.
+        directory = (unitId: string) => usecases.directory(unitId, here);
       // By name in Swedish order, Ö after the rest; the deactivated person is left out.
       expect(await directory(u2)).toEqual([
         { id: leads, name: 'Ali Leder', role: 'employee' },
@@ -1162,6 +1164,41 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       ]);
       expect(await directory(u3)).toEqual([{ id: leads, name: 'Ali Leder', role: 'manager' }]);
       expect(await directory(p + '-nowhere')).toEqual([]);
+      // A unit id is asked within the reader's organisation. A person another organisation has on a unit of the same
+      // id is no colleague of theirs, and they are none of that person's; a reader nobody holds has no colleagues.
+      const [elsewhere, stranger] = [p + '-elsewhere', p + '-stranger'];
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(stranger, elsewhere, { name: 'Ada Annan' }));
+        await tx.replaceUnits(stranger, { belongs: [u2], leads: [] });
+        expect(await tx.organisationOf(stranger)).toBe(elsewhere);
+        expect(await tx.organisationOf(p + '-nobody')).toBeUndefined();
+      });
+      expect((await directory(u2)).map(row => row.id)).toEqual([leads, both, here, two]);
+      expect(await usecases.directory(u2, stranger)).toEqual([{ id: stranger, name: 'Ada Annan', role: 'employee' }]);
+      expect(await usecases.directory(u2, p + '-nobody')).toEqual([]);
+    });
+    test('a transaction that fails takes back its own writes and nobody else’s, though another began while it was open', async () => {
+      const { store, prefix: p } = await make();
+      const org = p + '-org',
+        [failed, kept] = [p + '-failed', p + '-kept'];
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => (release = resolve));
+      // The first writes a person, waits, and fails. The second begins meanwhile and writes another.
+      const first = store
+        .transaction(async tx => {
+          await tx.insertUser(userRow(failed, org));
+          await gate;
+          throw new Error('fails after its write');
+        })
+        .catch((error: unknown) => error);
+      const second = store.transaction(tx => tx.insertUser(userRow(kept, org)));
+      release();
+      expect(await first).toBeInstanceOf(Error);
+      await second;
+      await store.transaction(async tx => {
+        expect(await tx.readUser(org, failed)).toBeUndefined();
+        expect((await tx.readUser(org, kept))?.id).toBe(kept);
+      });
     });
     test('a locked person, people held at once and a locked group read as they do unlocked', async () => {
       const { store, prefix: p } = await make();

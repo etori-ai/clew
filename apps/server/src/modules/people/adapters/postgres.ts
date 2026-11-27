@@ -430,6 +430,15 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
       if (belongs.length) await tx.insert(schema.assignments).values(belongs.map(unitId => ({ personId, unitId })));
       if (leads.length) await tx.insert(schema.unitLeads).values(leads.map(unitId => ({ personId, unitId })));
     },
+    async organisationOf(personId) {
+      // A NUL is nobody's id, and PostgreSQL refuses to compare one.
+      if (personId.includes('\u0000')) return undefined;
+      const [row] = await tx
+        .select({ organisationId: schema.people.organisationId })
+        .from(schema.people)
+        .where(eq(schema.people.id, personId));
+      return row?.organisationId;
+    },
     async employedOn(organisationId, unitId) {
       // A NUL names no unit, and PostgreSQL refuses to compare one.
       if (unitId.includes('\u0000')) return [];

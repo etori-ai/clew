@@ -202,11 +202,49 @@ describe('a unit carries what other systems know it by (D148)', () => {
     expect(held[SCIM.unit]?.identifiers).toHaveLength(1);
   });
 
-  test('a type or a value sent decomposed is stored composed, so it is the word a manifest spells', () => {
-    const decomposed = 'kostnadsställe';
-    expect(unitIdentifierList([{ type: decomposed, value: 'Å-1' }])).toEqual([
-      { type: 'kostnadsställe', value: 'Å-1' },
+  test('a type or a value sent decomposed is refused, never composed: Clew would store another text than the one sent (D148)', async () => {
+    // The same word in two forms: composed here, the decomposed one would no longer be the text the other system holds.
+    const composed = 'kostnadsst\u00e4lle',
+      decomposed = 'kostnadssta\u0308lle';
+    expect(decomposed.normalize('NFC')).toBe(composed);
+    expect(unitIdentifierList([{ type: composed, value: '\u00c5-1' }])).toEqual([
+      { type: composed, value: '\u00c5-1' },
     ]);
+    for (const [entry, part] of [
+      [{ type: decomposed, value: 'K-1' }, 'type'],
+      [{ type: 'ansvar', value: 'A\u030a-1' }, 'value'],
+    ] as const) {
+      const { unit, store } = harness();
+      const rows = store.state.audit.length;
+      expect(await refused(unit('gata', { identifiers: [entry] }))).toMatchObject({
+        status: 400,
+        scimType: 'invalidValue',
+        detail: `Attribute '${IDENTIFIERS}.${part}' needs text in composed form (NFC). It was sent decomposed, and composed by Clew it would be stored as another text than the one sent. The group was not stored.`,
+      });
+      expect(store.state.audit.length).toBe(rows);
+    }
+  });
+  test('a remove of the whole extension takes no value, and a unit that is removed says what it was known by (D148)', async () => {
+    const { unit, patch, scim, p, audit } = harness();
+    const made = await unit('gata', { identifiers: [ANSVAR, QLIK] });
+    // A value would be read as "take this one away"; what the operation does is clear everything, so it is refused.
+    for (const value of [{ identifiers: [ANSVAR] }, [ANSVAR], 'ansvar'])
+      expect(await refused(patch(made.id, [{ op: 'remove', path: SCIM.unit, value }]))).toMatchObject({
+        status: 400,
+        scimType: 'invalidValue',
+        detail: `A remove on '${SCIM.unit}' takes no value: it makes the unit a root and clears its identifiers. To take one identifier away, replace '${SCIM.unit}:identifiers' with those that remain.`,
+      });
+    expect((await scim.getGroup(p, made.id, BASE))[SCIM.unit]).toEqual({ identifiers: [ANSVAR, QLIK] });
+    // The removal's audit row carries the list it took away, as every change of it does.
+    await scim.deleteGroup(p, made.id);
+    expect(audit(made.id).at(-1)).toMatchObject({
+      action: 'scim.group.removed',
+      details: { externalId: 'unit:gata', identifiers: { before: [ANSVAR, QLIK], after: [] } },
+    });
+    // A group that carried none says nothing of them.
+    const plain = await unit('park');
+    await scim.deleteGroup(p, plain.id);
+    expect(audit(plain.id).at(-1)?.details).not.toHaveProperty('identifiers');
   });
 
   test('the same entry twice is kept once, two values of one type are two entries, and fifty is the most', async () => {

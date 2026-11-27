@@ -864,9 +864,13 @@ export class Registry implements HoldingsReader {
       }
     // The resolver answers for the relations admitted; anything else it says is not trusted.
     const found = new Map(related.filter(r => named.admits.includes(r.relation)).map(r => [r.asked, r]));
-    const relations: Record<string, Relation> = {};
+    // Both are keyed by what a directory calls a person or a unit, which may be any text: a unit whose id is
+    // `__proto__` is a unit. On an ordinary object that key is the prototype's setter, so the entry would not be the
+    // object's own and would be missing from the body the assertion binds, and its leader refused by the source. A
+    // dictionary without a prototype holds every key as its own, and reads a key it lacks as undefined.
+    const relations: Record<string, Relation> = Object.create(null);
     // D148: what the capability is told of each unit it is sent. The types it declared, whatever the resolver answered.
-    const identifiers: Record<string, UnitIdentifier[]> = {};
+    const identifiers: Record<string, UnitIdentifier[]> = Object.create(null);
     const tell = (r: Related) => {
       relations[r.key] = r.relation;
       const known =

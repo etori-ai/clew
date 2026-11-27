@@ -514,7 +514,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
     for (const unit of staff.units)
       for (const p of unit.people)
         if (p.id !== persona.id && p.enabled !== false && !people.has(p.id)) people.set(p.id, p);
-    return { manages: staff.units.length > 0, people, units: staff.units };
+    // `leads` is apart from the list of reports (D149): a unit that only holds one of the reader's reports is not theirs.
+    return { manages: staff.units.length > 0, people, units: staff.units, leads: staff.leads ?? [] };
   }
   /**
    * Whether the reader holds the relation `registrar` by grant (D121 item 2), from their current access record. It is
@@ -798,7 +799,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
    * to the unit or a unit below it, against the requirements that apply to each of them, and the share targets set on
    * this unit, each measured over this branch once. `reports` are the reader's own reports, whom they know; the rest of
    * the branch is counted only where it is large enough (`coverageOf`), also set against the targets of the same types
-   * on the other units the reader manages (`managed`), each over its own branch, whose figures the reader reads too (a
+   * on the other units the reader leads (`managed`), each over its own branch, whose figures the reader reads too (a
    * unit and the units below it, CO-M1 of the review of 2026-11-23): all of them cut into cells together, never two at
    * a time (`withheldByCells`). Counts only.
    */
@@ -3082,13 +3083,14 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * The table behind a unit's row (D108 items 6 and 8): for a unit the reader manages, how its branch is covered, per
+     * The table behind a unit's row (D108 items 6 and 8): for a unit the reader leads, how its branch is covered, per
      * required type and per share target that applies. Counts over the branch (D99 item 5); names nobody. Anyone else is
-     * refused.
+     * refused, and so is the reader for a unit they do not lead, also one where somebody who reports to them is
+     * employed: the counts are of the unit's people, most of whom are then not theirs (D149).
      */
     async coverage(persona: AuthenticatedContext, unitId: string): Promise<UnitCoverageResult> {
-      const { units, people } = await reports(persona);
-      const unit = units.find(u => u.unitId === unitId);
+      const { leads, people } = await reports(persona);
+      const unit = leads.find(u => u.unitId === unitId);
       if (!unit) throw new ForbiddenError(NOT_YOUR_UNIT);
       const today = swedishDay(now());
       const covered = await deps.store.transaction(tx =>
@@ -3097,7 +3099,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
           persona,
           new Set(people.keys()),
           unitId,
-          units.map(u => u.unitId),
+          leads.map(u => u.unitId),
           today,
         ),
       );
@@ -3105,15 +3107,15 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * What the read about a unit answers (D97, D108 item 8): for each asked unit the reader manages, its branch's
+     * What the read about a unit answers (D97, D108 item 8): for each asked unit the reader leads, its branch's
      * coverage. A unit where nothing is required of anyone and no share target applies has no row; a unit the reader
-     * does not manage has none either, and is never a refusal.
+     * does not lead has none either, one that only holds one of their reports included (D149), and is never a refusal.
      */
     async aboutUnits(persona: AuthenticatedContext, keys: readonly string[]): Promise<UnitCoverageResult[]> {
       const asked = new Set(keys);
       const managed = await reports(persona);
       const units = [
-        ...new Map(managed.units.filter(u => asked.has(u.unitId)).map(u => [u.unitId, u] as const)).values(),
+        ...new Map(managed.leads.filter(u => asked.has(u.unitId)).map(u => [u.unitId, u] as const)).values(),
       ];
       if (!units.length) return [];
       const today = swedishDay(now());
@@ -3126,7 +3128,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
             persona,
             own,
             unit.unitId,
-            managed.units.map(u => u.unitId),
+            managed.leads.map(u => u.unitId),
             today,
           );
           if (covered.under || covered.targets.length)

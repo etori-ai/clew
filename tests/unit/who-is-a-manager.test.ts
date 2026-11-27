@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ledUnits, type AuthenticatedContext } from '@clew/contracts';
+import { ForbiddenError } from '../../apps/server/src/context';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { SCIM, ScimError } from '../../apps/server/src/modules/people/contracts';
 import { deriveAuthority, type Membership } from '../../apps/server/src/modules/people/domain';
@@ -246,6 +247,9 @@ describe('a manager is who leads a unit or is reported to (D149)', () => {
       ['grant.derived', 'karin', { unitId: 'kansli', role: 'employee', capabilities: [], assignments: 1 }],
     ]);
     expect(h.grant('karin')).toEqual({ unitId: 'kansli', unitLabel: 'Kansliet', role: 'employee', capabilities: [] });
+    // Personal is not hers either: the two who still name her are deactivated, and a deactivated person is nobody's
+    // report, so the rows they would make admit nobody.
+    await expect(staffUsecases({ store: h.store }).overview(h.persona('karin'))).rejects.toBeInstanceOf(ForbiddenError);
     // Back again, she is a manager again.
     await h.active('bo', true);
     expect(h.grant('karin')?.role).toBe('manager');
@@ -364,6 +368,14 @@ describe('a manager is who leads a unit or is reported to (D149)', () => {
         u.people.map(q => q.name),
       ]),
     ).toEqual([['Skolan', ['Bo']]]);
+    // Bo leaves. The page is still hers, since she leads the school, and his row is on it, marked as deactivated.
+    await h.active('bo', false);
+    expect(
+      (await staffUsecases({ store: h.store }).overview(h.persona('rut'))).units.map(u => [
+        u.unitLabel,
+        u.people.map(q => [q.name, q.enabled]),
+      ]),
+    ).toEqual([['Skolan', [['Bo', false]]]]);
   });
   test('a write of a person holds the managers it names, starts over when another write named somebody else meanwhile, and gives up with 409', async () => {
     const inner = memoryProvisionStore();
@@ -444,6 +456,42 @@ describe('a manager is who leads a unit or is reported to (D149)', () => {
     expect(h.audited(from).filter(row => row[0] === 'grant.derived')).toEqual([
       ['grant.derived', 'anna', { unitId: 'kansli', role: 'employee', capabilities: [], assignments: 1 }],
     ]);
+  });
+  test('a leaver’s managers are told as the reporting line read them before the write: nobody who named the leaver back, and their manager still when the same write clears their employments (D147)', async () => {
+    const h = harness();
+    await h.unit('kansli', 'Kansliet');
+    await h.person('karin', ['kansli']);
+    await h.person('dan', ['kansli', 'karin']);
+    await h.person('eva', ['kansli', 'dan']);
+    await h.person('anna', ['kansli', 'karin']);
+    const told = () => h.store.state.leavers.at(-1);
+    // Dan and Eva come to name each other: neither was the other's manager, so neither is told as one when Dan leaves.
+    await h.employ('dan', ['kansli', 'eva']);
+    await h.active('dan', false);
+    expect(told()).toMatchObject({ change: 'deactivated', personId: h.id('dan'), managers: [] });
+    // Anna is deactivated by a PUT that sends no employments, which clears them in the same write. Whom she reported
+    // to is read before it, so her manager is told, and the domains that hand her records on have somebody to hand to.
+    await h.scim.replaceUser(
+      h.p,
+      h.id('anna'),
+      {
+        schemas: [SCIM.user],
+        externalId: 'mk-anna',
+        userName: 'anna',
+        displayName: 'Anna',
+        emails: [{ value: 'anna@sundsvall.test', type: 'work' }],
+        active: false,
+      },
+      BASE,
+    );
+    expect(told()).toMatchObject({ change: 'deactivated', personId: h.id('anna'), managers: [h.id('karin')] });
+    // A DELETE says it the same way: Eva named Dan, who has left and is nobody's manager.
+    await h.scim.deleteUser(h.p, h.id('eva'));
+    expect(told()).toMatchObject({ change: 'deactivated', personId: h.id('eva'), managers: [] });
+    // A return names nobody: the line decides again.
+    await h.active('eva', true);
+    expect(told()).toMatchObject({ change: 'reactivated', personId: h.id('eva') });
+    expect(told()).not.toHaveProperty('managers');
   });
   test('a deactivated person’s employment places nobody, and a person who comes back is of their unit again', async () => {
     const h = harness();

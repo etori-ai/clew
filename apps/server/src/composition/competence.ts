@@ -4,6 +4,7 @@ import { schema, type Transaction } from '@clew/db';
 import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postgres';
 import type { ThreadTx } from '../threads/model';
 import { competenceTx } from '../modules/competence/adapters/postgres';
+import { ledOf } from '../modules/competence/domain';
 import { competenceUsecases } from '../modules/competence/usecases';
 import { reportsByUnit } from '../modules/entities/domain';
 import type { Above, CompetenceCardsTx, CompetenceStore, HoldingsPort, Staff } from '../modules/competence/model';
@@ -57,12 +58,17 @@ export function competenceStoreWithCards(
 }
 export const competenceStore = competenceStoreWithCards({ durable: ledger, cancel: cancelDurable }, { clock });
 /**
- * The reader's reports (D99 item 4) as the module's `Staff` port has them: the units they manage, each with exactly the
+ * The reader's reports (D147) as the module's `Staff` port has them: the units of their list, each with exactly the
  * people the `managed` relation names (D117, `reportsByUnit`), read from the people module's directory on every call.
  * Personal's list is wider: it holds a co-manager of the unit and the reader's own manager when they are placed on it,
- * and neither is anyone whose competence the reader may read or write. Someone who manages no unit has no units.
+ * and neither is anyone whose competence the reader may read or write. Someone nobody reports to, who leads no unit,
+ * has no units. `leads` is the units the reader leads (D149), from the same read: a unit is on the list when somebody
+ * employed on it reports to the reader, and its own figures are for whoever leads it.
  */
-const staff: Staff = async persona => ({ units: reportsByUnit(await staffUsecases.reach(persona)) });
+const staff: Staff = async persona => {
+  const reach = await staffUsecases.reach(persona);
+  return { units: reportsByUnit(reach), leads: ledOf(reach.units) };
+};
 /**
  * Whom the reader reports to (D99 item 4, D117's line), as the people module's reach answers it: whoever leads the
  * nearest unit above the reader that somebody leads, active, read on every call. A person's own registration goes to

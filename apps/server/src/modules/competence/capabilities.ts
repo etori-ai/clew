@@ -478,8 +478,9 @@ export function competenceConnector(
     output: CoverageOutputSchema,
     view: coverageView,
     scope: { roles: ['manager'] },
-    // Only a unit the reader manages, counted over its branch (D99 item 5); the use case checks it, as Clew's own
-    // domains do (D117), since a unit named in a plain input is not resolved by the registry.
+    // Only a unit the reader leads, counted over its branch (D99 item 5), and never one that only holds somebody who
+    // reports to them (D149); the use case checks it, as Clew's own domains do (D117), since a unit named in a plain
+    // input is not resolved by the registry.
     run: async (actor, input) => ({ rows: coverageRows(await competence.coverage(await persona(actor), input.unit)) }),
   };
   const aboutUnit: Capability<Keys> = {

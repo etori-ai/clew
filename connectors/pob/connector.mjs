@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
 import { ACCOUNT_PATTERN, createTokenVerifier } from './identity.mjs';
 import {
+  COST_CODE,
   FIXTURE_PROBLEM_MEMO,
   SourceUnavailable,
   createFixtureCases,
@@ -53,11 +54,12 @@ const shortDate = new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'sho
 const DESCRIPTION_LIMIT = 4000;
 const PERSON_TTL = 300_000;
 /**
- * A code a unit's costs are booked on, as it may stand at the start of an account and in a filter sent to POB: letters
- * and digits, at least four of them. An identifier of the right type that is shorter, longer or anything else is not
- * a code here: a one-character prefix would read as nearly every account in the system.
+ * What a code is where the installation has not said (`costs.codePattern`): the port's own bound, `COST_CODE`. An
+ * identifier of the right type that is shorter, longer or anything else is not a code here: a one-character prefix
+ * would read as nearly every account in the system. An installation's own pattern is asked besides the bound and never
+ * in its place.
  */
-export const DEFAULT_COST_CODE = '^[A-Za-z0-9]{4,32}$';
+export const DEFAULT_COST_CODE = COST_CODE.source;
 /** What only needs the person proven, and nothing of theirs in POB: a read about a unit asks for no person's records. */
 const WITHOUT_PERSON = new Set(['pob.unitCosts']);
 const PERSON_LIMIT = 2000;
@@ -106,7 +108,10 @@ export function createConnector({
 } = {}) {
   // The cost read (D148) is on when the installation has said which of the directory's unit identifiers the service
   // desk books costs on. `amountLabel` is set only where it has also said which field of an agreement holds an amount.
-  const costCode = costs ? new RegExp(costs.codePattern ?? DEFAULT_COST_CODE) : undefined;
+  // A code passes the port's bound and the installation's own pattern, both: the pattern narrows what a code is and
+  // cannot widen it, so no configuration makes a short identifier a prefix of other units' accounts.
+  const ownCostCode = costs ? new RegExp(costs.codePattern ?? DEFAULT_COST_CODE) : undefined;
+  const isCostCode = value => typeof value === 'string' && COST_CODE.test(value) && ownCostCode.test(value);
   const manifest = createManifest({
     audience,
     source: sourceLabel,
@@ -489,7 +494,7 @@ export function createConnector({
         const codes = [
           ...new Set(
             (Array.isArray(known) ? known : [])
-              .filter(i => i && i.type === costs.identifier && typeof i.value === 'string' && costCode.test(i.value))
+              .filter(i => i && i.type === costs.identifier && isCostCode(i.value))
               .map(i => i.value),
           ),
         ];

@@ -176,7 +176,7 @@ other, in the request body beside how the person stands to the unit.
 | The person | Their own token, checked as for every read. Their records in POB are not looked up: a person POB does not know still leads their unit |
 | The unit | Clew's word on how the person stands to it, read from the body the assertion binds. Only `manages` is answered. Clew sends no other relation, and the connector does not rest on that |
 | The code | The directory's, from the same body. A unit without an identifier of the configured type is no row. Nothing is worked out from the unit's id or its name |
-| What a code is | Letters and digits, at least four (`POB_COST_CODE_PATTERN` narrows it, `^[0-9]{8}$` for eight digits). Anything else is not sent to POB: a one-character prefix would read as nearly every account |
+| What a code is | Letters and digits, at least four and at most thirty-two. `POB_COST_CODE_PATTERN` narrows that (`^[0-9]{8}$` for eight digits) and cannot widen it: the bound holds in the connector and again in the adapter, and a pattern that takes a shorter code stops the connector at start. Anything else is not sent to POB: a one-character prefix would read as nearly every account |
 | The answer | Every agreement that comes back is compared with the code again, so a filter POB ignored or matched loosely adds nothing |
 
 A unit with several codes is the sum of them, each agreement counted once. An agreement without an amount is counted
@@ -245,7 +245,7 @@ are kept is the operator's; they are personal data.
 | `POB_CREATE` | JSON object: the `caseType`, `category` and `groupId` a reported fault gets |
 | `POB_URGENT_NOTE` | A sentence shown on the fault report for faults that cannot wait, such as a number to call |
 | `POB_COST_IDENTIFIER` | Switches on the cost read: the type of unit identifier, as the directory sends it, that holds the code a unit's costs are booked on. No default |
-| `POB_COST_CODE_PATTERN` | What a code is: a pattern for a whole code of letters and digits. Default `^[A-Za-z0-9]{4,32}$` |
+| `POB_COST_CODE_PATTERN` | What a code is: a pattern for a whole code of letters and digits, within the default `^[A-Za-z0-9]{4,32}$`. It narrows the default and never replaces it; one that takes a code of fewer than four characters is refused at start |
 | `POB_COST_AMOUNT_LABEL` | What the sum is called on the unit's page. Default `Avtalskostnad`. Only where there is an amount to sum |
 | `POB_AGREEMENT_PATH` | With `POB_ADAPTER=api`: where POB lists its service agreements. Default `/sla` |
 | `POB_AGREEMENT_FIELDS` | With `POB_ADAPTER=api`: a JSON object naming an agreement's `id`, `account` and `amount`. Defaults `Id`, `Account.Id` and none: without an `amount` the read answers a count |

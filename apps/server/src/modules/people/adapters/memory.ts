@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   byCode,
   bySwedish,
@@ -99,24 +100,50 @@ export function memoryProvisionStore(
   const snapshot = () => structuredClone(state),
     restore = (s: MemoryProvisionState) => Object.assign(state, s);
   const live = transactionOver(state, options);
+  // One writing transaction at a time, as a row lock makes two writes of one person run one after the other: this
+  // store has no locks, so two that ran into each other would each read what the other had not committed, and one that
+  // failed would take the other's writes back with its own. A transaction begun inside another runs in it, as a second
+  // statement on its connection would.
+  const inside = new AsyncLocalStorage<true>();
+  let tail: Promise<unknown> = Promise.resolve(),
+    // What had committed when the transaction in flight began: what a snapshot reads meanwhile.
+    committed: MemoryProvisionState | undefined;
+  const exclusive = <T>(run: () => Promise<T>): Promise<T> => {
+    if (inside.getStore()) return run();
+    const next = tail.then(() => inside.run(true, run));
+    tail = next.catch(() => undefined);
+    return next;
+  };
   return {
     state,
     async transaction(fn, mode) {
       // A snapshot reads a copy taken when it begins, as Postgres's REPEATABLE READ reads what had committed when its
-      // first statement began, so a change that commits while it is open is not in it. It only reads: nothing it does
-      // is kept (`tests/provisioning-store-contract.ts`).
+      // first statement began, so a change that commits while it is open is not in it, and neither is one a
+      // transaction in flight has not committed. It only reads: nothing it does is kept
+      // (`tests/provisioning-store-contract.ts`).
       if (mode?.snapshot) {
-        const frozen = transactionOver(snapshot(), options);
+        const frozen = transactionOver(
+          committed && !inside.getStore() ? structuredClone(committed) : snapshot(),
+          options,
+        );
         return fn({ ...frozen.tx, leavers: frozen.leaversOf([]) });
       }
-      const before = snapshot(),
-        pending: Array<() => Promise<void>> = [];
-      const result = await fn({ ...live.tx, leavers: live.leaversOf(pending) }).catch(error => {
-        restore(before);
-        throw error;
+      return exclusive(async () => {
+        const nested = committed !== undefined,
+          before = snapshot(),
+          pending: Array<() => Promise<void>> = [];
+        if (!nested) committed = before;
+        try {
+          const result = await fn({ ...live.tx, leavers: live.leaversOf(pending) }).catch(error => {
+            restore(before);
+            throw error;
+          });
+          for (const told of pending) await told();
+          return result;
+        } finally {
+          if (!nested) committed = undefined;
+        }
       });
-      for (const told of pending) await told();
-      return result;
     },
   };
 }
@@ -244,6 +271,9 @@ function transactionOver(state: MemoryProvisionState, options: MemoryProvisionOp
     async replaceUnits(personId, held) {
       state.assignments.set(personId, [...new Set(held.belongs)]);
       state.leads.set(personId, [...new Set(held.leads)]);
+    },
+    async organisationOf(personId) {
+      return state.users.get(personId)?.organisationId;
     },
     async employedOn(organisationId, unitId) {
       return [...state.users.values()]

@@ -173,7 +173,8 @@ export class Units {
           name: ENTITY_UNIT.label,
           id: ENTITY_UNIT.id,
         },
-        relation: 'member',
+        // The reader leads the school, which is what the page says their role is (D149).
+        relation: 'manages',
         ...(this.withBelow ? { below: [{ key: BELOW_UNIT.id, name: BELOW_UNIT.label }] } : {}),
         actions: this.actions,
         sections: this.sources([sickSource, talkUnitSource]),

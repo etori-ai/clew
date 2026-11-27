@@ -143,6 +143,19 @@ export function createConnector({
   };
   /** Every source unit the actor may see, those of the units they lead first. */
   const unitsOf = actor => [...new Set([...followed(actor).keys()].flatMap(sourceUnits))];
+  /**
+   * The source units behind the one Clew unit a figure is about (D54): the unit the person is employed on when they
+   * lead it, else the first they lead. It is the unit Clew says Läget of, so the figure and the heading over it are
+   * about the same unit. Someone who leads no unit has none, whatever units they follow up: those have their own
+   * pages and tables.
+   */
+  const figureUnits = actor => {
+    const led = (Array.isArray(actor.leads) ? actor.leads : [])
+      .filter(u => u && typeof u.unitId === 'string' && u.unitId)
+      .map(u => u.unitId);
+    const unit = led.includes(actor.unitId) ? actor.unitId : led[0];
+    return unit === undefined ? [] : sourceUnits(unit);
+  };
   /** What a unit is called in a row: in open mode the Clew unit's label as Clew sent it, else the source's name. */
   const nameOf = (actor, unit) => (open ? followed(actor).get(unit) || unit : unit);
   // A unit's ref: in open mode Clew's unit id itself, which is already in Clew's addresses; else a hash of its name in
@@ -518,12 +531,15 @@ export function createConnector({
   };
 
   /**
-   * An area's figure (D54) for the first of the person's units with a value to show, opening the table of units.
-   * Without the rule for an area the number is the whole message, so its tone is none.
+   * An area's figure (D54) for one unit, the unit Clew says Läget of (`figureUnits`), opening the table of units: the
+   * first of that unit's own units in the source with a value to show, and no figure where it has none. Never another
+   * unit's value under this one's heading. Without the rule for an area the number is the whole message, so its tone
+   * is none.
    */
   async function figure(actor, area) {
     if (actor.role !== 'manager') return null;
-    const units = unitsOf(actor);
+    const units = figureUnits(actor);
+    if (!units.length) return null;
     if (area === 'sick-leave') {
       const data = await read('read', units);
       const latest = latestFor(data, units);

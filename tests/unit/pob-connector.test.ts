@@ -1547,6 +1547,18 @@ describe('what a unit’s agreements cost (D148)', () => {
     expect(asked).toEqual(['agreements 11000000', 'agreements 11000100']);
   });
 
+  test('a unit whose id is `__proto__` is answered for the one who leads it, as any unit is', async () => {
+    // A computed key, so the fixture holds the unit as an entry of its own and not as the object's prototype.
+    const { read, asked } = costs({
+      ['__proto__']: { relation: 'manages' as const, identifiers: [ansvar('11000000')] },
+      constructor: { relation: 'member' as const, identifiers: [ansvar('11000100')] },
+    });
+    expect(await read(chef, ['__proto__', 'constructor'])).toEqual([
+      { key: '__proto__', agreements: 3, amount: 18540.5 },
+    ]);
+    expect(asked).toEqual(['agreements 11000000']);
+  });
+
   test('a unit without a code, with another type only, with a code that is none, or with no agreements: no question that could name another unit', async () => {
     const { read, asked } = costs({
       'unit-utan': { relation: 'manages' },
@@ -1675,6 +1687,45 @@ describe('what a unit’s agreements cost (D148)', () => {
     expect(await loose.read(chef, ['unit-kort'])).toEqual([{ key: 'unit-kort', agreements: 5 }]);
   });
 
+  test('the installation’s pattern narrows what a code is and never widens it: a short code is asked of no source, by the connector or by the adapter', async () => {
+    // A pattern that takes one character, as a connector built by hand could be handed: the one-character identifier
+    // is a prefix of nearly every account, and would answer the school's leader with every other unit's agreements.
+    const units = {
+      'unit-ett': { relation: 'manages' as const, identifiers: [ansvar('1')] },
+      'unit-tre': { relation: 'manages' as const, identifiers: [ansvar('110')] },
+      'unit-skola': { relation: 'manages' as const, identifiers: [ansvar('11000000')] },
+    };
+    for (const codePattern of ['^[0-9]{1,8}$', '^[0-9]$', '^[A-Za-z0-9]{1,64}$']) {
+      const wide = costs(units, { costs: { identifier: 'ansvar', amountLabel: 'Avtalskostnad', codePattern } });
+      const answered = await wide.read(chef, ['unit-ett', 'unit-tre', 'unit-skola']);
+      // Only a code within the bound is asked for, and only where the pattern takes it too.
+      expect(wide.asked).toEqual(codePattern === '^[0-9]$' ? [] : ['agreements 11000000']);
+      expect(answered).toEqual(
+        codePattern === '^[0-9]$' ? [] : [{ key: 'unit-skola', agreements: 3, amount: 18540.5 }],
+      );
+    }
+    // The sources hold the same bound themselves, so a connector that asked would be refused: the made-up POB and
+    // POB's own API alike, before anything is sent.
+    const fixture = createFixtureCases({ now });
+    const sent: string[] = [];
+    const api = createPobCases({
+      url: 'https://pob.test/pobg6/api',
+      authorization: 'Basic bWFkZS11cA==',
+      userMatch: 'LoginName',
+      customerMatch: 'LoginName',
+      now,
+      fetch: (async (address: string) => {
+        sent.push(address);
+        return Response.json([]);
+      }) as never,
+    });
+    for (const code of ['1', '110', 'a'.repeat(33), '1100 000', '1100%', ''])
+      for (const source of [fixture, api])
+        await expect(source.agreements!(code)).rejects.toBeInstanceOf(SourceUnavailable);
+    expect(sent).toEqual([]);
+    expect((await fixture.agreements!('1100')).agreements).toHaveLength(5);
+  });
+
   test('the configuration switches the read on by naming the identifier, and holds what stands beside it', () => {
     const env = {
       CLEW_CONNECTOR_SECRET: secret,
@@ -1704,6 +1755,16 @@ describe('what a unit’s agreements cost (D148)', () => {
       expect(() => readConfig({ ...env, POB_COST_IDENTIFIER: 'ansvar', POB_COST_CODE_PATTERN: pattern })).toThrow(
         'POB_COST_CODE_PATTERN',
       );
+    // The pattern narrows what a code is: one that takes a code of fewer than four characters is refused at start,
+    // since such a code would stand as a prefix of other units' accounts.
+    for (const pattern of ['^[0-9]$', '^[0-9]{1,8}$', '^[A-Z]{3}$', '^[0-9]{0,8}$', '^[a-z0-9]{2,}$', '^7[0-9]{2}$'])
+      expect(() => readConfig({ ...env, POB_COST_IDENTIFIER: 'ansvar', POB_COST_CODE_PATTERN: pattern })).toThrow(
+        'shorter than four characters',
+      );
+    for (const pattern of ['^[0-9]{4}$', '^[0-9]{4,8}$', '^7[0-9]{7}$', '^[A-Z]{2}[0-9]{6}$'])
+      expect(
+        readConfig({ ...env, POB_COST_IDENTIFIER: 'ansvar', POB_COST_CODE_PATTERN: pattern }).costs?.codePattern,
+      ).toBe(pattern);
     expect(() => readConfig({ ...env, POB_COST_IDENTIFIER: 'ansvar', POB_AGREEMENT_PATH: '/sla' })).toThrow(
       'api adapter only',
     );

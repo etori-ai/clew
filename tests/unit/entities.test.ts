@@ -406,6 +406,16 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
     expect(listedKeys('unit', cards).map(u => u.key)).toEqual(['a', 'b', 'c', 'e']);
     // Someone who also manages Anna is not her report, so what they lead is not below her.
     expect(followedUnits({ ...cards, above: ['bo'] }).map(u => u.unitId)).toEqual(['a', 'e']);
+    // A report who has been deactivated and is still in a unit's manager group leads nobody: the unit is not below
+    // Anna through them, and a source is not told it as one she follows up.
+    const left = {
+      ...cards,
+      managed: cards.managed.map(unit =>
+        unit.unitId === 'e' ? { ...unit, people: unit.people.map(p => ({ ...p, enabled: false })) } : unit,
+      ),
+    };
+    expect(followedUnits(left).map(u => u.unitId)).toEqual(['a', 'c']);
+    expect(listedKeys('unit', left).map(u => u.key)).toEqual(['a', 'b', 'c']);
   });
   /** A reader who leads no unit, with nobody who reports to them and nobody above. */
   const NO_LINE = { units: [], managed: [], above: [] };

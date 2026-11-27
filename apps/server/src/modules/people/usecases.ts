@@ -613,6 +613,20 @@ export function scimUsecases(deps: {
       id => !id.includes('\u0000'),
     );
   /**
+   * The units a write of a person must hold (D149): those its employments name, before and after, when the write can
+   * change where the person belongs, which is that the list changes or that the person comes or goes. An employment
+   * places a person only on a unit the organisation holds, and whether it does is the unit group's fact, which a
+   * write of that group changes under the unit's lock. Held here too, the two run one after the other: a unit cannot
+   * be removed between the check that it exists and the write of an employment on it, which would leave the person
+   * as of a unit that is gone, and its id free for another organisation to take with that person still on it.
+   */
+  const unitsPlacing = (held: Pick<UserFields, 'employments' | 'enabled'>, sent: UserFields) =>
+    held.enabled === sent.enabled && isDeepStrictEqual(held.employments, sent.employments)
+      ? []
+      : [...new Set([...held.employments, ...sent.employments].map(job => job.unitId))].filter(
+          unit => !unit.includes('\u0000'),
+        );
+  /**
    * A write of a person can move somebody else's grant (D149): whoever the person's employments name is a
    * manager while the person is active and names them. So such a write holds the person together with every manager
    * named before and after it, in id order as every writer takes people, before it writes anything, and derives those
@@ -630,11 +644,16 @@ export function scimUsecases(deps: {
     for (let turn = 0; turn < MANAGER_HOLD_TURNS; turn++) {
       const done = await deps.store.transaction(async (tx): Promise<T | typeof again> => {
         const seen = await userOr404(tx, p, id),
-          expected = new Set([...managersIn(seen.employments), ...managersIn(sentOf(seen).employments)]);
+          first = sentOf(seen),
+          expected = new Set([...managersIn(seen.employments), ...managersIn(first.employments)]),
+          units = new Set(unitsPlacing(seen, first));
+        // The units before the people, as a group write takes them.
+        await tx.lockUnits([...units]);
         await tx.lockPeople([id, ...expected]);
         const current = await userOr404(tx, p, id, true),
           sent = sentOf(current);
-        return [...managersIn(current.employments), ...managersIn(sent.employments)].every(m => expected.has(m))
+        return [...managersIn(current.employments), ...managersIn(sent.employments)].every(m => expected.has(m)) &&
+          unitsPlacing(current, sent).every(unit => units.has(unit))
           ? write(tx, current, sent)
           : again;
       });
@@ -692,6 +711,9 @@ export function scimUsecases(deps: {
       // A flip of `active` is what an operator reads the audit for, whatever verb carried it (DELETE writes the same);
       // the verb travels in the details.
       const recorded = flipped ? (fields.enabled ? 'scim.user.reactivated' : 'scim.user.deactivated') : action;
+      // Whom a leaver reported to is read before their row is written: the same write may clear their employments.
+      const line =
+        flipped && !fields.enabled ? await lineOf(tx, current.organisationId, current.id, held.employments) : undefined;
       await tx.updateUser(current.id, { ...written, updatedAt: at });
       await tx.audit({
         actor: actorOf(p),
@@ -711,6 +733,7 @@ export function scimUsecases(deps: {
           personId: current.id,
           organisationId: current.organisationId,
           at,
+          ...(line ? { managers: line } : {}),
         });
     }
     // Always: silent when nothing moved, and it heals a projection written before provisioning existed.
@@ -879,6 +902,9 @@ export function scimUsecases(deps: {
     createUser: (p: Provisioner, body: unknown, base: string): Promise<ScimUser> =>
       deps.store.transaction(async tx => {
         const fields = userFields(body);
+        // D149: the units the new person's employments name are held before they are checked, so none is removed
+        // between the check and the write (`unitsPlacing`).
+        await tx.lockUnits(unitsPlacing({ employments: [], enabled: fields.enabled }, fields));
         await uniqueUser(tx, fields);
         const wrongUnit =
           (await unknownUnits(tx, p, fields.employments)) ?? (await unknownManagers(tx, p, fields.employments));
@@ -909,6 +935,7 @@ export function scimUsecases(deps: {
             personId: record.id,
             organisationId: p.organisationId,
             at,
+            managers: await lineOf(tx, p.organisationId, record.id, record.employments),
           });
         await derivation.deriveWithin(tx, actorOf(p), record.id);
         // Each of them has a report more, and is a manager from now on if they were not.
@@ -955,7 +982,8 @@ export function scimUsecases(deps: {
     deleteUser: (p: Provisioner, id: string) =>
       withManagersHeld(p, id, fieldsOf, async (tx, current) => {
         if (!current.enabled) return;
-        const at = now();
+        const at = now(),
+          line = await lineOf(tx, current.organisationId, id, current.employments);
         await tx.updateUser(id, { enabled: false, updatedAt: at });
         await tx.audit({
           actor: actorOf(p),
@@ -963,7 +991,13 @@ export function scimUsecases(deps: {
           subject: 'person:' + id,
           details: { userName: current.userName, externalId: current.externalId },
         });
-        await tx.leavers.deactivated({ actor: actorOf(p), personId: id, organisationId: current.organisationId, at });
+        await tx.leavers.deactivated({
+          actor: actorOf(p),
+          personId: id,
+          organisationId: current.organisationId,
+          at,
+          managers: line,
+        });
         await derivation.deriveWithin(tx, actorOf(p), id);
         // D149: whoever they named as manager has a report fewer.
         await deriveManagers(tx, p, managersIn(current.employments), []);
@@ -1096,6 +1130,8 @@ export function scimUsecases(deps: {
           details: {
             externalId: current.externalId,
             displayName: current.label,
+            // D148: what other systems knew the unit by goes with it, and is said as every change of the list is.
+            ...(current.unitIdentifiers.length ? { identifiers: { before: current.unitIdentifiers, after: [] } } : {}),
             members: members.length,
             ...namedInAudit('removedPeople', members),
           },
@@ -1582,6 +1618,31 @@ async function managersOf(tx: ProvisionTx, organisationId: string, personId: str
   for (const id of named) if ((await tx.readUser(organisationId, id))?.enabled) active.push(id);
   return active;
 }
+/**
+ * D147: whom a person reports to as the reporting line reads it, for the employments given: the active people of the
+ * organisation they name, never the person themselves and without anyone whose own employments name the person back,
+ * by id. `managersOf` keeps those who name the person back, since it says who stands above a reader; this is whom a
+ * leaver's records pass to, read before the leaver's own row is changed.
+ */
+async function lineOf(
+  tx: ProvisionTx,
+  organisationId: string,
+  personId: string,
+  employments: UserFields['employments'],
+): Promise<string[]> {
+  const named = [...new Set(employments.flatMap(job => (job.managerId ? [job.managerId] : [])))].filter(
+    id => id !== personId && !id.includes('\u0000'),
+  );
+  if (!named.length) return [];
+  const back = new Set(
+    (await tx.managersNamed(organisationId, named))
+      .filter(pair => pair.managerId === personId)
+      .map(pair => pair.personId),
+  );
+  const line: string[] = [];
+  for (const id of named) if (!back.has(id) && (await tx.readUser(organisationId, id))?.enabled) line.push(id);
+  return line.sort();
+}
 export function staffUsecases(deps: { store: ProvisionStore }) {
   /**
    * The reader's reports (D147): the people whose current employments name the reader as manager, under the unit of
@@ -1633,8 +1694,11 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
       deps.store.transaction(async tx => {
         const led = (await tx.assignmentsOf(persona.id)).filter(a => a.role === 'manager'),
           units = await reportsBy(tx, persona, led, await managersOf(tx, persona.organisationId, persona.id));
-        // Someone who leads no unit and whom nobody reports to has no card at all.
-        if (!units.length) throw new ForbiddenError('Sidan Personal är för den som är chef.');
+        // Someone who leads no unit and whom nobody active reports to has no page: a report who has been deactivated
+        // is nobody's report (D149), so the card such a row makes admits nobody. It is drawn, marked as it is, for a
+        // reader the page is for.
+        if (!led.length && !units.some(unit => unit.people.some(person => person.enabled)))
+          throw new ForbiddenError('Sidan Personal är för den som är chef.');
         return { units };
       }),
     /**
@@ -1742,19 +1806,23 @@ export type StaffUsecases = ReturnType<typeof staffUsecases>;
  * D62's `people.directory`, "Vilka användare finns i min enhet?": the people who belong to the unit and whoever leads
  * it, each with the role they hold there, as Administration › Organisation reads a unit (`unitPeople`, one read on
  * either adapter). A person on two units, a manager of two units and an employee who leads another unit are on each of
- * their units, though the grant names one (A4). A deactivated person is nobody's colleague to ask about. By name in
- * Swedish order.
+ * their units, though the grant names one (A4). A deactivated person is nobody's colleague to ask about, and neither
+ * is a person of another organisation than the reader's. By name in Swedish order.
  * The unit is the reader's own: the capability passes the actor's, and its input names none. Nothing is written.
  */
 export function directoryUsecases(deps: { store: ProvisionStore }) {
   return {
-    directory: (unitId: string): Promise<Array<{ id: string; name: string; role: Role }>> =>
-      deps.store.transaction(async tx =>
-        ((await tx.unitPeople([unitId]))[unitId] ?? [])
+    directory: (unitId: string, readerId: string): Promise<Array<{ id: string; name: string; role: Role }>> =>
+      deps.store.transaction(async tx => {
+        // Within the reader's organisation, as every other read of a unit is: a unit id names a unit of one
+        // organisation (D101), and a row another organisation has on the same id is none of the reader's colleagues.
+        const organisationId = await tx.organisationOf(readerId);
+        if (organisationId === undefined) return [];
+        return ((await tx.unitPeople([unitId], organisationId))[unitId] ?? [])
           .filter(person => person.enabled)
           .sort(byName)
-          .map(({ id, name, role }) => ({ id, name, role })),
-      ),
+          .map(({ id, name, role }) => ({ id, name, role }));
+      }),
   };
 }
 

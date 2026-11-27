@@ -1082,14 +1082,21 @@ const identifiersWhole = (path: string) =>
   );
 /**
  * One part of an identifier (D148). It is a key another system is asked by, so it is stored exactly or not at all, as a
- * group's key is (D96): text in composed form (NFC), so a type sent decomposed is the type a manifest spells, without
- * space at either end and without a control character. Cleaned instead, it would be stored as another key while the
- * answer said stored.
+ * group's key is (D96): text in composed form (NFC), without space at either end and without a control character.
+ * Cleaned instead, it would be stored as another key while the answer said stored. That holds for a part sent
+ * decomposed too: composed here, it would no longer be the text the other system holds, and a system that compares
+ * the two exactly would find no match. It is refused, and the source sends it composed.
  */
 const identifierPart = (value: unknown, name: 'type' | 'value', length: number): string => {
   const path = `${IDENTIFIERS}.${name}`;
   if (value === undefined) need(path);
-  const text = asString(typeof value === 'string' ? value.normalize('NFC') : value, path);
+  const text = asString(value, path);
+  if (text !== text.normalize('NFC'))
+    throw new ScimError(
+      400,
+      `Attribute '${path}' needs text in composed form (NFC). It was sent decomposed, and composed by Clew it would be stored as another text than the one sent. The group was not stored.`,
+      'invalidValue',
+    );
   if (text !== text.trim() || /\p{Cc}/u.test(text) || Array.from(text).length > length)
     throw new ScimError(
       400,
@@ -1865,6 +1872,14 @@ export function applyGroupPatch(
           throw new ScimError(
             400,
             `A remove on '${path}' takes no value: it clears the list. To take one identifier away, replace the list with those that remain.`,
+            'invalidValue',
+          );
+        // The whole extension is removed whole or not at all: a value would be read as "take this away", and what the
+        // operation does is make the unit a root and clear every identifier.
+        if (target === 'extension' && operation.value !== undefined && operation.value !== null)
+          throw new ScimError(
+            400,
+            `A remove on '${path}' takes no value: it makes the unit a root and clears its identifiers. To take one identifier away, replace '${path}:identifiers' with those that remain.`,
             'invalidValue',
           );
         if (target !== 'identifiers') next.parent = null;

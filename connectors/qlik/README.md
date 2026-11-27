@@ -44,6 +44,12 @@ The tables can be menu tools (D40). An employee does not see the areas, and the 
 A unit whose headcount is below `QLIK_MIN_GROUP`, or unknown, is shown with a note and without rates. The model
 reads the aggregates in the tables and charts, never the reads about a unit.
 
+**A figure is one unit's.** Each of the three figures is about the unit Clew says Läget of: the unit the manager is
+employed on when they lead it, else the first they lead
+([D149](../../docs/decisions/D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md)). Where that unit has no value
+there is no figure: another unit's value is never shown under its heading. The tables and the reads about a unit
+answer for every unit the manager leads or follows up.
+
 **The tones are the organisation's.** Each figure's tone is `none` until the operator sets its rule (D82 item 7). The
 development stack sets big-boss-board's: sick leave good to 6.0 %, watch to 7.5 %, act above; the economy alert below
 budget in balance; HME over target from 75, watch from 70. Big-boss-board reads sick leave as a rolling twelve-month

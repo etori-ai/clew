@@ -108,7 +108,9 @@ export function userReadsContract(
       );
     }
     expect(await reads.capabilities('missing-' + actors[0].id)).toEqual([]);
-    expect(await reads.directory('missing-' + actors[0].unitId)).toEqual([]);
+    expect(await reads.directory('missing-' + actors[0].unitId, actors[0].id)).toEqual([]);
+    // Asked within the reader's organisation: a reader the directory does not hold has no colleagues on any unit.
+    expect(await reads.directory(actors[0].unitId, 'nobody-' + actors[0].id)).toEqual([]);
   });
   test(label + ": a person's user name, null when they have none or are unknown (D96 item 8)", async () => {
     const { reads, actors } = await prepare();

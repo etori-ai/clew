@@ -561,12 +561,22 @@ describe('the synthetic provisioner', () => {
       groups: [],
       people: [],
     });
-    // The same entry twice is planned once, and a part sent decomposed is planned composed, as Clew stores it.
+    // The same entry twice is planned once.
     expect(
-      planOrganisation(
-        directory(unit('a', [ansvar('1'), ansvar('1'), { type: 'kostnadssta\u0308lle', value: 'K-1' }])),
-      ).find(g => g.externalId === 'unit:a')?.identifiers,
+      planOrganisation(directory(unit('a', [ansvar('1'), ansvar('1'), { type: 'kostnadsställe', value: 'K-1' }]))).find(
+        g => g.externalId === 'unit:a',
+      )?.identifiers,
     ).toEqual([ansvar('1'), { type: 'kostnadsställe', value: 'K-1' }]);
+    // A part sent decomposed, or one that is no text, stops the plan: composed or made into text here, Clew would
+    // store another key than the source holds (D148).
+    for (const wrong of [
+      { type: 'kostnadssta\u0308lle', value: 'K-1' },
+      { type: 'ansvar', value: 'A\u030A-1' },
+      { type: 'ansvar', value: 11110000 as unknown as string },
+    ])
+      expect(() => planOrganisation(directory(unit('a', [wrong])))).toThrow(
+        /is not text, is empty, is not in composed form \(NFC\)/,
+      );
     await push(
       client,
       directory(unit('a', [ansvar('11110000')]), unit('b', [ansvar('11120000'), ansvar('11120001')], 'a'), unit('c')),

@@ -1488,6 +1488,48 @@ describe('a remote connector is told the relation, bound to the request', () => 
     // Bound by the body's digest like the relations; never signed into the header a second time.
     expect(JSON.stringify(call!.claims)).not.toContain('11110000');
   });
+  test('a unit whose id is a name of the language’s own, such as `__proto__`, is told with its relation and its identifiers like any other', async () => {
+    // A directory's unit id is any text. On an ordinary object `__proto__` is the prototype's setter: the relation
+    // would be dropped, the identifiers would become the object's prototype, and neither would be in the body the
+    // assertion binds, so a source would refuse the unit's own leader.
+    const odd = ['__proto__', 'constructor', 'toString', 'hasOwnProperty'];
+    const vouch: RelationResolver = async (_actor, entity, keys, admits) =>
+      entity === 'unit' && admits.includes('manages')
+        ? keys
+            .filter(key => odd.includes(key))
+            .map(key => ({
+              asked: key,
+              key,
+              relation: 'manages' as const,
+              identifiers: [{ type: 'ansvar', value: '1111' + key.length }],
+            }))
+        : [];
+    const w = await remote(vouch, [costs]);
+    expect(await w.cap('petra', 'remote.costs', { keys: [...odd, 'unit-skola'] })).toEqual({
+      rows: odd.map(key => ({ key, state: 'Bokat' })),
+    });
+    const text = await w.requests[0]!.clone().text();
+    const body = JSON.parse(text) as { input: { keys: string[] }; about: Record<string, Record<string, unknown>> };
+    expect(body.input.keys).toEqual(odd);
+    // Each key is the dictionary's own entry in what was sent, and no other key is there.
+    for (const part of ['relations', 'identifiers'] as const)
+      expect(Object.getOwnPropertyNames(body.about[part]!).sort()).toEqual([...odd].sort());
+    for (const key of odd) {
+      expect(Object.getOwnPropertyDescriptor(body.about.relations!, key)?.value).toBe('manages');
+      expect(Object.getOwnPropertyDescriptor(body.about.identifiers!, key)?.value).toEqual([
+        { type: 'ansvar', value: '1111' + key.length },
+      ]);
+    }
+    expect(text).toContain('"__proto__":"manages"');
+    expect(checkContract(CallRequestSchema, body)).toBe(true);
+    // A key nobody vouched for is not sent and has no entry, whatever the language has under that name.
+    const none = await remote(async () => [], [costs]);
+    expect(await none.cap('petra', 'remote.costs', { keys: odd })).toEqual({ rows: [] });
+    expect(none.told.map(call => call.input)).toEqual([{ keys: [] }]);
+    const sent = JSON.parse(await none.requests[0]!.clone().text()) as { about: { relations: object } };
+    expect(Object.getOwnPropertyNames(sent.about.relations)).toEqual([]);
+    expect(sent.about).not.toHaveProperty('identifiers');
+  });
   test('the assertion cannot be replayed: not as it was sent, with another body or on another capability', async () => {
     const w = await remote();
     await w.cap('hillevi', 'remote.person', { keys: ['anna'] });

@@ -85,8 +85,9 @@ Decided on 2026-11-27 and recorded on its own:
 - An employment that names a manager who is erased afterwards keeps the id, as other people's records that name an
   erased person do ([D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)).
   The erased person's own employments are removed with the rest of their profile.
-- The table has no change signal of its own: an employment is written with the person's row, whose time of change
-  moves.
+- The table had no change signal of its own until migration `0003`: an employment is written with the person's row,
+  whose signal leaves out the time of change, so a new title or another manager named signalled nothing. It signals
+  for the organisation now.
 
 **Why.** On 2026-11-25 the organisation tree, the employments and the manager responsibilities of Sundsvall's test
 environment were read and compared, counts and unit names only. Every current employment lay on the lowest level of

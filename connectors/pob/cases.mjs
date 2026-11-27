@@ -14,11 +14,20 @@
 //                                      { customerId, title, description, caseType, category, groupId }
 //   agreements(code)                -> { agreements: SourceAgreement[], complete: boolean }, the service agreements
 //                                      booked on an account that begins with this code, whoever asks: the connector
-//                                      decides who may. Only with the cost read switched on (D148).
+//                                      decides who may. Only with the cost read switched on (D148). A code is
+//                                      `COST_CODE`, and anything else is refused, whatever the installation's own
+//                                      pattern lets through.
 // A Match is { status: 'none' }, { status: 'one', id, groups? } or { status: 'ambiguous' }.
 // A SourceAgreement is { id, account, amount? }: the account its cost is booked on, and what it costs where POB says.
 
 export class SourceUnavailable extends Error {}
+/**
+ * A code a unit's costs are booked on, as it may stand at the start of an account and in a filter sent to POB (D148):
+ * letters and digits, at least four and at most thirty-two. It is the bound of the port and holds in the connector and
+ * in every source: an installation's own pattern (`POB_COST_CODE_PATTERN`) narrows it and never widens it, since a
+ * shorter code is a prefix of other units' accounts and a one-character one of nearly every account in the system.
+ */
+export const COST_CODE = /^[A-Za-z0-9]{4,32}$/;
 
 export const RELATIONS = ['assigned', 'group', 'reported'];
 
@@ -385,6 +394,9 @@ export function createFixtureCases({
       return present(raw);
     },
     async agreements(code) {
+      // As the API adapter does: a value that is no code is never a prefix to list accounts by.
+      if (typeof code !== 'string' || !COST_CODE.test(code))
+        throw new SourceUnavailable('A value that cannot stand in a filter.');
       return {
         agreements: agreements.filter(a => a.account.startsWith(code)).map(a => ({ ...a })),
         complete: true,

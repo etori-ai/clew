@@ -161,15 +161,24 @@ function identifiersOf(unit: DirectoryUnit): DirectoryIdentifier[] {
   const seen = new Set<string>(),
     out: DirectoryIdentifier[] = [];
   for (const sent of unit.identifiers ?? []) {
-    const row = { type: String(sent.type ?? '').normalize('NFC'), value: String(sent.value ?? '').normalize('NFC') };
+    // Sent as the source holds it or not at all: a part that is no text, or text that is not in composed form (NFC),
+    // is not made into one here, since what Clew stored would then be another key than the source's own.
     for (const [part, text, length] of [
-      ['type', row.type, IDENTIFIER_TYPE_LENGTH],
-      ['value', row.value, IDENTIFIER_VALUE_LENGTH],
+      ['type', sent.type as unknown, IDENTIFIER_TYPE_LENGTH],
+      ['value', sent.value as unknown, IDENTIFIER_VALUE_LENGTH],
     ] as const)
-      if (!text || text !== text.trim() || /\p{Cc}/u.test(text) || Array.from(text).length > length)
+      if (
+        typeof text !== 'string' ||
+        !text ||
+        text !== text.normalize('NFC') ||
+        text !== text.trim() ||
+        /\p{Cc}/u.test(text) ||
+        Array.from(text).length > length
+      )
         throw new Error(
-          `The unit '${unit.id}' has an identifier whose ${part} is empty, has space around it, holds a control character or is longer than ${length} characters, which Clew refuses (D148). Nothing was written.`,
+          `The unit '${unit.id}' has an identifier whose ${part} is not text, is empty, is not in composed form (NFC), has space around it, holds a control character or is longer than ${length} characters, which Clew refuses (D148). Nothing was written.`,
         );
+    const row = { type: sent.type, value: sent.value };
     const key = JSON.stringify([row.type, row.value]);
     if (seen.has(key)) continue;
     seen.add(key);

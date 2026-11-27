@@ -1,7 +1,7 @@
 // Reads and checks the connector's configuration. Every error names its variable, so a wrong setting is found when the
 // connector starts and not when a person opens their errands. README.md has the full table.
 import { STATUS_KINDS } from './connector.mjs';
-import { FIXTURE_PROBLEM_MEMO, fixtureCaseTypes, fixtureCreate, fixtureStatusKinds } from './cases.mjs';
+import { COST_CODE, FIXTURE_PROBLEM_MEMO, fixtureCaseTypes, fixtureCreate, fixtureStatusKinds } from './cases.mjs';
 import { DEFAULT_AUDIENCE } from './manifest.mjs';
 import { DEFAULT_AGREEMENT_PATH, agreementFieldMap, fieldMap } from './pob.mjs';
 import { readFileSync } from 'node:fs';
@@ -23,6 +23,22 @@ function address(env, name) {
   } catch {
     throw new Error(`${name} must be an address.`);
   }
+}
+/**
+ * Whether a pattern for a unit's code takes one shorter than the port's bound lets through (`COST_CODE`: four letters
+ * or digits at least). Tried against every code of one, two and three letters or digits, which is all there are, so
+ * the answer is exact for whatever form the pattern has.
+ */
+const CODE_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+function takesShortCode(pattern) {
+  for (const a of CODE_CHARACTERS) {
+    if (pattern.test(a)) return true;
+    for (const b of CODE_CHARACTERS) {
+      if (pattern.test(a + b)) return true;
+      for (const c of CODE_CHARACTERS) if (pattern.test(a + b + c)) return true;
+    }
+  }
+  return false;
 }
 
 export function readConfig(env = process.env) {
@@ -127,11 +143,21 @@ export function readConfig(env = process.env) {
       throw new Error(
         'POB_COST_CODE_PATTERN must be a pattern for a whole code of letters and digits, such as ^[0-9]{8}$.',
       );
+    let own;
     try {
-      new RegExp(codePattern);
+      own = new RegExp(codePattern);
     } catch {
       throw new Error('POB_COST_CODE_PATTERN is not a pattern.');
     }
+    // The pattern narrows what a code is and never widens it: a code is at least four letters or digits whatever it
+    // says, since a shorter one is a prefix of other units' accounts. One that takes a shorter code is a mistake the
+    // installation is told at start, not a read that silently answers nothing. Every code of one to three characters
+    // is tried, which is all there are.
+    if (takesShortCode(own))
+      throw new Error(
+        `POB_COST_CODE_PATTERN takes a code shorter than four characters, which would read as other units' accounts. ` +
+          `A code is ${COST_CODE.source} and the pattern can only narrow that, such as ^[0-9]{8}$.`,
+      );
   }
   const agreementFields =
     costIdentifier && api ? agreementFieldMap(json(env, 'POB_AGREEMENT_FIELDS') ?? {}) : undefined;

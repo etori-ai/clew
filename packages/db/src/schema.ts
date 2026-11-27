@@ -1075,6 +1075,9 @@ export const changeSignals: ReadonlyArray<{ table: string; trigger: string; fn: 
   },
   { table: 'auth_assignment', trigger: 'auth_assignment_changed', fn: 'clew_shared_changed', args: ['organisation'] },
   { table: 'auth_unit_lead', trigger: 'auth_unit_lead_changed', fn: 'clew_shared_changed', args: ['organisation'] },
+  // An employment is written with its person, whose signal leaves out the time of change that moves with it: a new
+  // title or another manager named is a change of the employment's row alone (D147), so the table signals for itself.
+  { table: 'auth_employment', trigger: 'auth_employment_changed', fn: 'clew_shared_changed', args: ['organisation'] },
   { table: 'auth_position', trigger: 'auth_position_changed', fn: 'clew_shared_changed', args: ['organisation'] },
   {
     table: 'auth_person_position',
@@ -1106,7 +1109,6 @@ export const unsignalledTables: Readonly<Record<string, string>> = {
   thread_message: 'written with its thread, whose updated_at moves',
   handover_turn: 'reserves an external question before delivery; a completed answer is drawn through its thread',
   thread_subject: "an index of a thread's rows, written with the thread",
-  auth_employment: "a person's employments, written with the person's own row, whose updated_at moves",
   audit: 'written in the transaction of the change it records, which has its own signal',
   auth_audit: 'a log of sign-ins and provisioning; no page follows it as it grows',
   competence_read_log: 'a log of reads; signalling it would make every read notify its own reader',
