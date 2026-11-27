@@ -44,7 +44,7 @@ import {
 } from '@clew/connectors';
 import { InputError } from '../../context';
 import type { ThreadStore, ThreadTx } from '../model';
-import { threadAccess } from '../access';
+import { ANSWER_CARD, threadAccess, withholding } from '../access';
 
 /**
  * The stream's use cases (D20, D25): one function per user action, the actor first, built over ports. Nothing in here
@@ -116,8 +116,13 @@ export function threadUsecases(deps: ThreadDeps) {
     });
   };
   const presentOne = async (personId: string, thread: Thread) => (await present(personId, [thread]))[0]!;
-  const read = async (persona: Pick<AuthenticatedContext, 'id'>, threadId: string) =>
-    presentOne(persona.id, (await store.readThread(persona.id, threadId))!);
+  // What a change of a thread answers with is the thread as it is read anywhere (D150): a conversation's answers about
+  // somebody the person may no longer be asked about are withheld here too, whatever the request was for.
+  const read = async (persona: AuthenticatedContext, threadId: string) =>
+    presentOne(
+      persona.id,
+      (await withholding(registry, persona, [(await store.readThread(persona.id, threadId))!]))[0]!,
+    );
 
   /**
    * Clear a snooze whose time has passed and say so, in the sweep's transaction. The timer, if any, is ended quietly. A
@@ -549,7 +554,7 @@ export function threadUsecases(deps: ThreadDeps) {
     const message = conversation.messages[index];
     const sources = message?.meta?.sources ?? [];
     if (!message || !sources.length) throw new InputError('Svaret har inga källor att göra ett ärende av.');
-    const topic = 'answer:' + input.messageId;
+    const topic = ANSWER_CARD + input.messageId;
     const existing = await store.openThread(persona.id, topic);
     if (existing) return { threadId: existing.id };
     const question =

@@ -1,4 +1,4 @@
-import type { AuthenticatedContext } from '@clew/contracts';
+import type { AuthenticatedContext, Thread } from '@clew/contracts';
 import { InputError } from '../../context';
 import type { ReminderInput, ThreadStore, TimerIntent } from '../model';
 import { reminderStart, reminderWorkflowId } from '../domain';
@@ -13,9 +13,17 @@ export interface ReminderDeps {
   store: ThreadStore;
   clock: () => Date;
   authorized?: (timer: TimerIntent) => Promise<boolean>;
+  /**
+   * The thread as the person may read it now (D150): a reminder is set on any thread of theirs, a conversation
+   * included, and what the use case answers with is that thread. Composition binds it to the boundary every thread is
+   * read through; without it the thread is answered as stored.
+   */
+  shown?: (persona: AuthenticatedContext, thread: Thread) => Promise<Thread>;
 }
 export function reminderUsecases(deps: ReminderDeps) {
   const { store } = deps;
+  const shown = async (persona: AuthenticatedContext, thread: Thread) =>
+    deps.shown ? deps.shown(persona, thread) : thread;
   /**
    * Commit the reminder, parked card, audit and the workflow start together (D86). A newer generation supersedes
    * every earlier timer; the store cancels the previous generation's wait after the commit, and the fence covers the rest.
@@ -67,7 +75,7 @@ export function reminderUsecases(deps: ReminderDeps) {
     return {
       id: reminderWorkflowId(timer),
       fireAt: fireAt.toISOString(),
-      thread: (await store.readThread(persona.id, threadId))!,
+      thread: await shown(persona, (await store.readThread(persona.id, threadId))!),
     };
   }
   /** Ångra on the toast: end the timer quietly and put the card back where it was. */
@@ -108,7 +116,7 @@ export function reminderUsecases(deps: ReminderDeps) {
         details: { workflowId },
       });
     });
-    return (await store.readThread(persona.id, threadId))!;
+    return shown(persona, (await store.readThread(persona.id, threadId))!);
   }
   /**
    * The timer fired: the card comes back, never a second one (D17). The same return whether the person pressed Inte nu

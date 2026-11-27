@@ -3706,9 +3706,9 @@ export const MessageMetaSchema = object({
       capabilities: Type.Array(Type.String()),
       authorizationVersion: Type.Optional(Type.String()),
       /**
-       * D150: the people and units the reads behind the answer were about. The answer is shown again only while the
-       * reader stands to each of them as one of the relations its read admitted. Absent on an answer no read about
-       * anybody stands behind.
+       * D150: the people and units the answer is about: those its reads named, the people the turn brought in, and
+       * whom the earlier answers and the work items it was written from were about. The answer is shown again only
+       * while the reader stands to each of them as one of the relations kept. Absent on an answer about nobody.
        */
       about: Type.Optional(Type.Array(AboutSubjectSchema, { maxItems: ABOUT_SUBJECTS_MAX })),
       /** D150: the reads behind the answer were about more people than `about` holds, so it is shown to nobody again. */

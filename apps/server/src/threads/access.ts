@@ -34,6 +34,8 @@ export function visibleThread(
   return true;
 }
 
+/** The topic of a card made from an answer (`cardFromAnswer`): its summary is that answer's text. */
+export const ANSWER_CARD = 'answer:';
 /** One subject as it is asked once, however many answers name it: the same person or unit read under the same relations. */
 const subjectKey = (subject: AboutSubject) =>
   [subject.entity, subject.id, [...subject.admits].sort().join(',')].join('\u0000');
@@ -57,9 +59,10 @@ const withheld = (message: ThreadMessage): ThreadMessage => ({
  * the people they read about are still theirs to read about: a report who has another manager now, or has left, changes
  * nothing of the manager's own authority. So each answer keeps whom its reads were about, by Clew's own key and with
  * the relations those reads admitted, and it is sent only while the reader stands to every one of them as one of those
- * relations today, asked of the directory once for all the threads of a read. An answer that fails is withheld alone:
- * the conversation, the question and every other answer stand. An answer about more people than Clew could record is
- * withheld from everyone. A directory that cannot be read fails the read: never "show it".
+ * relations today, asked of the directory once for all the threads of a read. An answer that fails is withheld by
+ * itself: the conversation, its questions and every answer that is not about the person stand. An answer about more
+ * people than Clew could record is withheld from everyone. A directory that cannot be read fails the read: never
+ * "show it".
  */
 export async function withholding<T extends Thread>(
   registry: Pick<Registry, 'stands'>,
@@ -89,7 +92,12 @@ export async function withholding<T extends Thread>(
       changed = true;
       return withheld(message);
     });
-    return changed ? { ...thread, messages } : thread;
+    if (!changed) return thread;
+    // A conversation's summary is its newest answer's text, and a card made from an answer keeps that answer's: where
+    // the answer it repeats is withheld, the summary is too. A work item a source pushed keeps its own.
+    const newest = [...messages].reverse().find(message => message.role === 'assistant');
+    const repeats = thread.kind === 'question' || thread.topic.startsWith(ANSWER_CARD);
+    return { ...thread, messages, ...(repeats && newest?.meta?.withheld ? { summary: '' } : {}) };
   });
 }
 

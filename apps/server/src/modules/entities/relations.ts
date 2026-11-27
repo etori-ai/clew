@@ -124,7 +124,9 @@ export function relationUsecases(deps: RelationDeps) {
         out.push(!!relation && subject.admits.includes(relation));
         continue;
       }
-      const relation = personRelation(reader, reach, { id: subject.id });
+      // By Clew's key a report is one whether or not they have a user name, as `relate` reads one named by id.
+      const relation =
+        subject.id === reader.id ? 'self' : reportById(reach, subject.id) ? 'managed' : ('colleague' as const);
       if (relation !== 'colleague' || !subject.admits.includes('colleague')) {
         out.push(relation !== 'colleague' && subject.admits.includes(relation));
         continue;

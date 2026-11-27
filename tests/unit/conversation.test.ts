@@ -19,6 +19,7 @@ import { localInstant } from '../../packages/calendar/src/dates';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { draft } from '../store-contract';
 import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
+import { withholding } from '../../apps/server/src/threads/access';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
 import { startedCards } from '../../apps/server/src/threads/usecases/started';
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
@@ -97,15 +98,18 @@ const directory: ManagedPerson[] = [
   ['lena', 'Lena Öhman'],
 ].map(([key, name]) => ({ key: key!, userName: key!, name: name!, unit: 'Skönsmons skola' }));
 function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) {
-  // Whom an asker still stands to (D150), as this world's `people` lists them: a manager to the people of the directory.
+  // Whom an asker still stands to (D150), as this world's `people` lists them: a manager to the people of the
+  // directory, until a test says one of them has another manager (`moved`), and anybody to their own unit as a member.
+  const moved = new Set<string>();
   const registry = new Registry({
     stands: async (actor, subjects) =>
-      subjects.map(
-        subject =>
-          subject.entity === 'person' &&
-          actor.role === 'manager' &&
-          subject.admits.includes('managed') &&
-          directory.some(person => person.key === subject.id),
+      subjects.map(subject =>
+        subject.entity === 'unit'
+          ? subject.admits.includes('member') && subject.id === actor.unitId
+          : actor.role === 'manager' &&
+            subject.admits.includes('managed') &&
+            !moved.has(subject.id) &&
+            directory.some(person => person.key === subject.id),
       ),
   });
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
@@ -165,7 +169,12 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
       userName: async (id: string) => (directory.some(d => d.key === id) ? id : null),
     },
   });
-  const reminders = reminderUsecases({ store, clock });
+  // As composition binds it: what a reminder's request answers with is the thread as it is read anywhere (D150).
+  const reminders = reminderUsecases({
+    store,
+    clock,
+    shown: async (p, thread) => (await withholding(registry, p, [thread]))[0]!,
+  });
   // A work item a propose becomes when the assistant is asked for it: the same use case as one the person starts.
   const started = startedCards({
     store,
@@ -248,6 +257,8 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     status,
     logged,
     deps,
+    /** A person who has another manager from now on: nobody stands to them as their manager (D150). */
+    moved,
     // The person's own run and start, apart from the assistant's ports.
     run,
     started,
@@ -2154,6 +2165,99 @@ describe('a question about a person the asker manages (D115)', () => {
   });
 });
 
+/**
+ * D150 beside the reads of a turn: the people the turn itself brought in and the work items its answer was written
+ * from are whom the answer is about too, and an answer that is withheld is withheld wherever its thread is answered.
+ */
+describe('whom an answer is about beside its reads, and where it is withheld (D150)', () => {
+  type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
+  const managed = (id: string) => ({ entity: 'person' as const, id, admits: ['managed' as const] });
+  const WITHHELD = { body: '', meta: { withheld: 'about' as const } };
+  async function rehab(w: ReturnType<typeof world>) {
+    await w.scan(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic.startsWith('hr:rehab:hr:emp:1001:'))!;
+  }
+  const about = (turn: { thread: Thread }) => turn.thread.messages.at(-1)!.meta?.access?.about;
+
+  test('a person the question names, one the model looks up and the one whose page stands open are each kept as one of the asker’s people', async () => {
+    const quiet: ModelGenerate = async () => ({ text: 'Svar.', toolCalls: [] });
+    // Named in the question.
+    const named = await world({ generate: quiet }).assistant.converse(hillevi, {
+      text: 'Vad gäller när Erik har varit borta i två veckor?',
+    });
+    expect(about(named)).toEqual([managed('erik')]);
+    // Looked up by the model: a name without its capital is not read as one, so the question itself names nobody.
+    const looking: ModelGenerate = async ({ tools }) => {
+      const input = { name: 'Per' };
+      const output = await (tools['clew__findPerson'] as Callable).execute(input, {});
+      return { text: 'Svar.', toolCalls: [{ capability: 'clew.findPerson', input, output }] };
+    };
+    const lookedUp = await world({ generate: looking }).assistant.converse(hillevi, {
+      text: 'hur var det med per nu igen?',
+    });
+    expect(about(lookedUp)).toEqual([managed('per')]);
+    // The person whose page stood open.
+    const open = await world({ generate: quiet }).assistant.converse(hillevi, {
+      text: 'Vad ska jag tänka på?',
+      page: { subject: 'person:lena', label: 'Lena Öhman' },
+      thing: { kind: 'person', id: 'lena' },
+    });
+    expect(about(open)).toEqual([managed('lena')]);
+    // An employee has no such people: an answer of theirs that names somebody is about nobody Clew resolved.
+    const none = await world({ generate: quiet }).assistant.converse(hassan, { text: 'Vad gäller för Erik?' });
+    expect(about(none)).toBeUndefined();
+  });
+
+  test('an answer written from a work item about a report is withheld when she has another manager, in the conversation and wherever a request answers with the conversation', async () => {
+    const quiet: ModelGenerate = async () => ({ text: 'Det gäller korta perioder sedan i somras.', toolCalls: [] });
+    const w = world({ generate: quiet });
+    const card = await rehab(w);
+    const chip = { ref: 'thread:' + card.id, kind: 'thread' as const, label: card.title };
+    // The question names nobody and no source is read: the answer is the item's own text, and the item is about Anna.
+    const turn = await w.assistant.converse(hillevi, { text: 'Vad står det här?', chips: [chip] });
+    expect(turn.thread.messages.at(-1)!.meta?.basis).toMatchObject({ items: [card.id] });
+    expect(about(turn)).toEqual([managed('anna')]);
+    const id = turn.conversationId;
+    expect((await w.threads.threadFor(hillevi, id))!.messages.at(-1)!.body).toBe(
+      'Det gäller korta perioder sedan i somras.',
+    );
+
+    w.moved.add('anna');
+    const answer = (thread: Thread) => thread.messages.find(m => m.role === 'assistant');
+    const read = (await w.threads.threadFor(hillevi, id))!;
+    expect(answer(read)).toMatchObject(WITHHELD);
+    expect(read.summary).toBe('');
+    // A change of the conversation answers with it: set aside, reminded of and put back, it is the same thread.
+    const aside = await w.threads.snoozeThread(hillevi, id, {});
+    const reminded = await w.reminders.remind(hillevi, id, 60);
+    const undone = await w.reminders.cancelReminder(hillevi, id, reminded.id);
+    for (const sent of [aside, reminded.thread, undone]) {
+      expect(answer(sent)).toMatchObject(WITHHELD);
+      expect(sent.summary).toBe('');
+      expect(JSON.stringify(sent)).not.toContain('korta perioder');
+    }
+    expect(JSON.stringify(read)).not.toContain('korta perioder');
+  });
+
+  test('a reply in a work item is the conversation’s answer copied into the item, and the copy is withheld with it', async () => {
+    const quiet: ModelGenerate = async () => ({ text: 'Det gäller korta perioder sedan i somras.', toolCalls: [] });
+    const w = world({ generate: quiet });
+    const card = await rehab(w);
+    const replied = await w.assistant.reply(hillevi, card.id, 'Vad står det här?');
+    expect(replied.messages.at(-1)).toMatchObject({
+      role: 'assistant',
+      body: 'Det gäller korta perioder sedan i somras.',
+      meta: { access: { about: [managed('anna')] } },
+    });
+    w.moved.add('anna');
+    const after = (await w.threads.threadFor(hillevi, card.id))!;
+    expect(after.messages.at(-1)).toMatchObject(WITHHELD);
+    // The item is the source's own and keeps what the source wrote on it; only the assistant's answer is taken out.
+    expect(after.summary).toBe(card.summary);
+    expect(after.messages.at(-2)).toMatchObject({ role: 'user', body: 'Vad står det här?' });
+  });
+});
+
 describe('the assistant switch keeps a connector from the model, not only its tools (D122 item 4)', () => {
   type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
   /** A model that reads the invoices when it may and answers with what it was given; everything it is told is kept. */
@@ -2433,7 +2537,7 @@ describe('the assistant starts a work item from a propose, the person sends it',
   type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
   const said = { problem: 'Skärmen är svart sedan i morse.', place: 'Sal 12' };
   /** A service desk as a connector: a propose the model may call, and the execute behind the work item's one button. */
-  function desk(sent: unknown[], options: { refuse?: boolean } = {}): Connector {
+  function desk(sent: unknown[], options: { refuse?: boolean; subjects?: Thread['subjects'] } = {}): Connector {
     const text = { type: 'string', maxLength: 4000 };
     return {
       id: 'desk',
@@ -2463,6 +2567,7 @@ describe('the assistant starts a work item from a propose, the person sends it',
               summary: 'Ett utkast till en felanmälan. Inget är skickat.',
               reason: 'Källans egen anledning',
               items: [],
+              ...(options.subjects ? { subjects: options.subjects } : {}),
               actions: [
                 {
                   id: 'send',
@@ -2521,6 +2626,20 @@ describe('the assistant starts a work item from a propose, the person sends it',
     };
   const deskCards = async (w: ReturnType<typeof world>) =>
     (await w.threads.listThreadsFor(hassan)).filter(t => t.connector === 'desk');
+
+  test('the answer that started a work item is about whom the item is about (D150)', async () => {
+    const w = world({
+      generate: calling(said),
+      extra: [desk([], { subjects: [{ entity: 'unit', key: 'unit-skola' }] })],
+    });
+    const turn = await w.assistant.converse(hassan, { text: 'Min dator startar inte, kan du felanmäla den?' });
+    const [card] = await deskCards(w);
+    expect(card!.subjects).toEqual([{ entity: 'unit', key: 'unit-skola' }]);
+    // The propose is no read, and the answer says what the item is: it is kept under how the asker stands to the unit.
+    expect(turn.thread.messages.at(-1)!.meta?.access?.about).toEqual([
+      { entity: 'unit', id: 'unit-skola', admits: ['member'] },
+    ]);
+  });
 
   test('a propose the model calls becomes a work item, with what the model was told as its draft; nothing is sent', async () => {
     const sent: unknown[] = [];

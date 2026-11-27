@@ -1179,6 +1179,8 @@ export class Registry implements HoldingsReader {
             signal: context.signal,
             ...(context.caller ? { caller: context.caller } : {}),
             ...(context.forModel ? { forModel: true } : {}),
+            // D150: what a composite read in turn is the outer answer's too.
+            ...(context.subjects ? { subjects: context.subjects } : {}),
           },
           true,
         );

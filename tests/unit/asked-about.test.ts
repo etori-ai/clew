@@ -1832,6 +1832,19 @@ describe('whom a call was about, and whether the reader still stands to them (D1
     await w.registry.run(hillevi, 'src.team', { keys: ['anna'] }, { subjects: { forged: true } } as never);
     expect(told).toEqual([]);
   });
+  test('a read made inside another tells too: a composite that names nobody itself is about whom the read it made was about', async () => {
+    const w = world();
+    const hillevi = actorOf(w.people.persona('hillevi'));
+    const told: unknown[] = [];
+    const subjects = (named: readonly unknown[]) => void told.push(...named);
+    // `core.ask` declares nobody: it asks the source about the person through `clew.call`, as the same person.
+    await w.registry.run(hillevi, 'core.ask', { who: 'anna' }, { subjects });
+    expect(told).toEqual([{ entity: 'person', id: 'anna', admits: ['self', 'managed'] }]);
+    told.length = 0;
+    // The relation `registrar` is resolved for a person's own direct read alone (D121), so a nested read never admits it.
+    await w.registry.run(hillevi, 'core.peek', { who: 'erik' }, { subjects });
+    expect(told).toEqual([{ entity: 'person', id: 'erik', admits: ['self', 'managed'] }]);
+  });
   test('the reader stands to a person as self, as their manager or as a colleague, and to a unit they lead or belong to: each asked for the relations the read admitted', async () => {
     const { people } = world();
     const hillevi = actorOf(people.persona('hillevi'));
@@ -1857,12 +1870,14 @@ describe('whom a call was about, and whether the reader still stands to them (D1
         // Nobody the directory holds, and nobody by a user name: the key is Clew's id.
         person('stranger-nobody', 'self', 'managed', 'colleague'),
         person('Erik.S', 'managed'),
+        // A report without a user name is one all the same, as a read that names them by id finds them (`relate`).
+        person('nameless', 'managed'),
         unit('unit-skola', 'manages'),
         unit('unit-ekonomi', 'manages', 'member'),
         unit('unit-fritids', 'below'),
         unit('unit-fritids', 'manages'),
       ]),
-    ).toEqual([true, false, true, false, true, false, false, false, true, false, true, false]);
+    ).toEqual([true, false, true, false, true, false, false, false, true, true, false, true, false]);
     expect(await people.relations.stands(hillevi, [])).toEqual([]);
     // A caller the directory does not hold stands to nobody.
     expect(await people.relations.stands({ ...hillevi, id: 'ghost' }, [person('anna', 'managed')])).toEqual([false]);
