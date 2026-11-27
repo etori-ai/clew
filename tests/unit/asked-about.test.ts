@@ -377,7 +377,7 @@ function sources(seen: Seen[]) {
 function world() {
   const people = directory();
   const seen: Seen[] = [];
-  const registry = new Registry({ relations: people.relations.relate });
+  const registry = new Registry({ relations: people.relations.relate, stands: people.relations.stands });
   for (const c of sources(seen)) registry.register({ uses: ['*'], ...c }).govern(c.id, openGovernance());
   /** Every caller of `runCapability`: the registry's call path as the person (a card, a tool, a job, a route). */
   const cap = (who: string, name: string, input: unknown) => registry.run(actorOf(people.persona(who)), name, input);
@@ -393,7 +393,7 @@ describe('the rule, resolved from the directory', () => {
     const { people } = world();
     const hillevi = actorOf(people.persona('hillevi'));
     const all = ['hillevi', 'ANNA', 'erik.s', 'maria', 'olle', 'petra', 'sven', 'karin', 'bo', 'nameless', 'stranger'];
-    expect(await people.relations.relate(hillevi, 'person', all, ['self', 'managed', 'colleague'])).toEqual([
+    expect(await people.relations.relate(hillevi, 'person', all, ['self', 'managed', 'colleague'])).toMatchObject([
       { asked: 'hillevi', key: 'hillevi', relation: 'self' },
       { asked: 'ANNA', key: 'anna', relation: 'managed' },
       { asked: 'erik.s', key: 'Erik.S', relation: 'managed' },
@@ -425,7 +425,7 @@ describe('the rule, resolved from the directory', () => {
         ['cohead', 'director', 'boss'],
         ['self', 'managed', 'colleague'],
       ),
-    ).toEqual([
+    ).toMatchObject([
       { asked: 'cohead', key: 'cohead', relation: 'colleague' },
       { asked: 'director', key: 'director', relation: 'colleague' },
       { asked: 'boss', key: 'boss', relation: 'colleague' },
@@ -477,9 +477,9 @@ describe('the rule, resolved from the directory', () => {
     ]);
     // The reverse stays: the heads of the school do not manage the Director, they report to him.
     const hillevi = actorOf(people.persona('hillevi'));
-    expect(await people.relations.relate(hillevi, 'person', ['director'], ['self', 'managed', 'colleague'])).toEqual([
-      { asked: 'director', key: 'director', relation: 'colleague' },
-    ]);
+    expect(
+      await people.relations.relate(hillevi, 'person', ['director'], ['self', 'managed', 'colleague']),
+    ).toMatchObject([{ asked: 'director', key: 'director', relation: 'colleague' }]);
     expect(await people.relations.relate(hillevi, 'person', ['director'], ['managed'])).toEqual([]);
   });
   test('a unit is managed or a placement: two relations, and an unknown caller stands to nothing', async () => {
@@ -492,11 +492,11 @@ describe('the rule, resolved from the directory', () => {
         ['unit-ekonomi', 'unit-skola', 'unit-fritids', 'UNIT-EKONOMI'],
         ['manages', 'member'],
       ),
-    ).toEqual([
+    ).toMatchObject([
       { asked: 'unit-ekonomi', key: 'unit-ekonomi', relation: 'manages' },
       { asked: 'unit-skola', key: 'unit-skola', relation: 'member' },
     ]);
-    expect(await people.relations.relate(petra, 'unit', ['unit-ekonomi', 'unit-skola'], ['manages'])).toEqual([
+    expect(await people.relations.relate(petra, 'unit', ['unit-ekonomi', 'unit-skola'], ['manages'])).toMatchObject([
       { asked: 'unit-ekonomi', key: 'unit-ekonomi', relation: 'manages' },
     ]);
     const ghost: Actor = { id: 'ghost', name: 'x', unitId: 'unit-skola', unitLabel: 'x', role: 'manager' };
@@ -515,7 +515,7 @@ describe('the rule, resolved from the directory', () => {
         ['unit-skola', 'unit-fritids', 'unit-top', 'unit-ekonomi'],
         ['manages', 'member', 'below'],
       ),
-    ).toEqual([
+    ).toMatchObject([
       { asked: 'unit-skola', key: 'unit-skola', relation: 'manages' },
       { asked: 'unit-fritids', key: 'unit-fritids', relation: 'below' },
       { asked: 'unit-ekonomi', key: 'unit-ekonomi', relation: 'below' },
@@ -533,18 +533,22 @@ describe('the rule, resolved from the directory', () => {
     expect(await people.relations.relate(hillevi, 'person', ['nameless', 'erik'], admits)).toEqual([]);
     // By id: the report without a user name, answered by the id, and Erik, who has one, answered by it, the key the
     // capability reads (a card of Clew's own names him by id, D122).
-    expect(await people.relations.relate(hillevi, 'person', ['nameless', 'erik'], admits, { ids: true })).toEqual([
-      { asked: 'nameless', key: 'nameless', relation: 'managed' },
-      { asked: 'erik', key: 'Erik.S', relation: 'managed' },
-    ]);
+    expect(await people.relations.relate(hillevi, 'person', ['nameless', 'erik'], admits, { ids: true })).toMatchObject(
+      [
+        { asked: 'nameless', key: 'nameless', relation: 'managed' },
+        { asked: 'erik', key: 'Erik.S', relation: 'managed' },
+      ],
+    );
     // His id and his user name are answered alike, so the registry keeps one of them (`narrow`).
-    expect(await people.relations.relate(hillevi, 'person', ['erik', 'erik.s'], ['managed'], { ids: true })).toEqual([
+    expect(
+      await people.relations.relate(hillevi, 'person', ['erik', 'erik.s'], ['managed'], { ids: true }),
+    ).toMatchObject([
       { asked: 'erik', key: 'Erik.S', relation: 'managed' },
       { asked: 'erik.s', key: 'Erik.S', relation: 'managed' },
     ]);
     // Erik names himself by his id.
     const erik = actorOf(people.persona('erik'));
-    expect(await people.relations.relate(erik, 'person', ['erik'], admits, { ids: true })).toEqual([
+    expect(await people.relations.relate(erik, 'person', ['erik'], admits, { ids: true })).toMatchObject([
       { asked: 'erik', key: 'Erik.S', relation: 'self' },
     ]);
     // ...but only for a read that admits himself: by id he is himself and nothing else, never a colleague or a report.
@@ -886,13 +890,13 @@ describe('/api/cap: a read asked with keys the browser chose', () => {
     ]);
     // The resolver reads nothing it was not asked for, and answers only the types named.
     const petra = actorOf(w.people.persona('petra'));
-    expect(await w.people.relations.relate(petra, 'unit', keys, ['manages', 'member'])).toEqual([
+    expect(await w.people.relations.relate(petra, 'unit', keys, ['manages', 'member'])).toMatchObject([
       { asked: 'unit-ekonomi', key: 'unit-ekonomi', relation: 'manages' },
       { asked: 'unit-skola', key: 'unit-skola', relation: 'member' },
     ]);
     expect(
       await w.people.relations.relate(petra, 'unit', keys, ['manages'], { identifiers: ['qlik', 'okänd'] }),
-    ).toEqual([
+    ).toMatchObject([
       {
         asked: 'unit-ekonomi',
         key: 'unit-ekonomi',
@@ -1802,5 +1806,96 @@ describe('an approved write about a person (executions, D45 and D117)', () => {
     await expect(
       w.uc.approve(w.hillevi, { decisionId: 'd3', operation: 'src.flag', payload: { person: 'anna' } }),
     ).rejects.toThrow('Okänd förmåga.');
+  });
+});
+
+describe('whom a call was about, and whether the reader still stands to them (D150)', () => {
+  test('a call tells whom it was about by Clew’s own key, with what the read admits; nobody it left out, and nothing for a call that names nobody', async () => {
+    const w = world();
+    const hillevi = actorOf(w.people.persona('hillevi'));
+    const told: unknown[] = [];
+    const subjects = (named: readonly unknown[]) => void told.push(...named);
+    // Erik is asked for by his user name in another case, and told by his id: the key Clew keeps, which a renamed or
+    // reused user name does not move. Karin is no report of Hillevi's, so the read was not about her.
+    await w.registry.run(hillevi, 'src.team', { keys: ['ERIK.S', 'anna', 'karin'] }, { subjects });
+    expect(told).toEqual([
+      { entity: 'person', id: 'erik', admits: ['managed'] },
+      { entity: 'person', id: 'anna', admits: ['managed'] },
+    ]);
+    // A unit is told by its id, with the relations a read about a unit admits.
+    told.length = 0;
+    await w.registry.run(hillevi, 'src.units', { keys: ['unit-skola', 'unit-omsorg'] }, { subjects });
+    expect(told).toEqual([{ entity: 'unit', id: 'unit-skola', admits: ['manages', 'member'] }]);
+    // A read whose every key was left out names nobody, and so does a context that carries something else there.
+    told.length = 0;
+    await w.registry.run(hillevi, 'src.team', { keys: ['karin'] }, { subjects });
+    await w.registry.run(hillevi, 'src.team', { keys: ['anna'] }, { subjects: { forged: true } } as never);
+    expect(told).toEqual([]);
+  });
+  test('the reader stands to a person as self, as their manager or as a colleague, and to a unit they lead or belong to: each asked for the relations the read admitted', async () => {
+    const { people } = world();
+    const hillevi = actorOf(people.persona('hillevi'));
+    const person = (id: string, ...admits: Array<'self' | 'managed' | 'colleague'>) => ({
+      entity: 'person' as const,
+      id,
+      admits,
+    });
+    const unit = (id: string, ...admits: Array<'manages' | 'member' | 'below'>) => ({
+      entity: 'unit' as const,
+      id,
+      admits,
+    });
+    expect(
+      await people.relations.stands(hillevi, [
+        person('hillevi', 'self', 'managed'),
+        person('hillevi', 'managed'),
+        person('anna', 'managed'),
+        person('anna', 'self'),
+        // Karin is a colleague: shown where the read admitted one, and only there.
+        person('karin', 'self', 'managed', 'colleague'),
+        person('karin', 'self', 'managed'),
+        // Nobody the directory holds, and nobody by a user name: the key is Clew's id.
+        person('stranger-nobody', 'self', 'managed', 'colleague'),
+        person('Erik.S', 'managed'),
+        unit('unit-skola', 'manages'),
+        unit('unit-ekonomi', 'manages', 'member'),
+        unit('unit-fritids', 'below'),
+        unit('unit-fritids', 'manages'),
+      ]),
+    ).toEqual([true, false, true, false, true, false, false, false, true, false, true, false]);
+    expect(await people.relations.stands(hillevi, [])).toEqual([]);
+    // A caller the directory does not hold stands to nobody.
+    expect(await people.relations.stands({ ...hillevi, id: 'ghost' }, [person('anna', 'managed')])).toEqual([false]);
+  });
+  test('a report who gets another manager, or leaves, is no longer the reader’s to be asked about; a colleague who leaves is nobody’s', async () => {
+    const { people } = world();
+    const hillevi = actorOf(people.persona('hillevi'));
+    const anna = { entity: 'person' as const, id: 'anna', admits: ['self', 'managed'] as Array<'self' | 'managed'> },
+      asColleague = { entity: 'person' as const, id: 'anna', admits: ['colleague'] as Array<'colleague'> };
+    expect(await people.relations.stands(hillevi, [anna, asColleague])).toEqual([true, false]);
+    // Anna's employment names another manager: she is Hillevi's colleague from the next read on.
+    const before = people.state.users.get('anna')!;
+    people.state.users.set('anna', { ...before, employments: [{ unitId: 'unit-skola', managerId: 'cohead' }] });
+    expect(await people.relations.stands(hillevi, [anna, asColleague])).toEqual([false, true]);
+    // Anna leaves: she is nobody's to be asked about, as a manager's report or as a colleague.
+    people.state.users.set('anna', { ...before, enabled: false });
+    expect(await people.relations.stands(hillevi, [anna, asColleague])).toEqual([false, false]);
+    // And back under Hillevi, she is hers again.
+    people.state.users.set('anna', before);
+    expect(await people.relations.stands(hillevi, [anna])).toEqual([true]);
+  });
+  test('a registry without the rule stands to nobody, and a directory that cannot be read is an error, never an answer', async () => {
+    const subject = { entity: 'person' as const, id: 'anna', admits: ['managed'] as Array<'managed'> };
+    const actor = actorOf(directory().persona('hillevi'));
+    expect(await new Registry().stands(actor, [subject])).toEqual([false]);
+    expect(await new Registry().stands(actor, [])).toEqual([]);
+    const down = new Registry({
+      stands: async () => {
+        throw new Error('the directory is away');
+      },
+    });
+    await expect(down.stands(actor, [subject])).rejects.toBeInstanceOf(RelationsUnavailableError);
+    // An answer shorter than what was asked is read as no for the rest.
+    expect(await new Registry({ stands: async () => [true] }).stands(actor, [subject, subject])).toEqual([true, false]);
   });
 });

@@ -97,7 +97,17 @@ const directory: ManagedPerson[] = [
   ['lena', 'Lena Öhman'],
 ].map(([key, name]) => ({ key: key!, userName: key!, name: name!, unit: 'Skönsmons skola' }));
 function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) {
-  const registry = new Registry();
+  // Whom an asker still stands to (D150), as this world's `people` lists them: a manager to the people of the directory.
+  const registry = new Registry({
+    stands: async (actor, subjects) =>
+      subjects.map(
+        subject =>
+          subject.entity === 'person' &&
+          actor.role === 'manager' &&
+          subject.admits.includes('managed') &&
+          directory.some(person => person.key === subject.id),
+      ),
+  });
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
   const fixtures = fixtureConnectors({ only: ['hr', 'finance'], clock: () => new Date(T0) }).connectors;
   for (const m of [...fixtures, ...(options.extra ?? [])]) registry.register(m);

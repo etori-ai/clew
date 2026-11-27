@@ -2139,6 +2139,27 @@ export const UNIT_RELATIONS = ['manages', 'member', 'below'] as const;
 export type UnitRelation = (typeof UNIT_RELATIONS)[number];
 export type Relation = PersonRelation | UnitRelation;
 export const RELATIONS: readonly Relation[] = [...PERSON_RELATIONS, ...UNIT_RELATIONS];
+/**
+ * Whom a call was about, as Clew records it (D150): the person or the unit by Clew's own key (a person's id, D122; a
+ * unit's id) and the relations the capability admitted when the call was made. A saved answer keeps it of everyone
+ * behind it, and is shown again only while the reader still stands to each of them as one of those relations. Never
+ * sent to a connector, which is told the source's key.
+ */
+export const AboutSubjectSchema = Type.Object(
+  {
+    entity: EntityKind,
+    id: Type.String({ minLength: 1, maxLength: 256 }),
+    admits: Type.Array(literals(RELATIONS)),
+  },
+  { additionalProperties: false },
+);
+export interface AboutSubject {
+  entity: EntityKind;
+  id: string;
+  admits: Relation[];
+}
+/** How many people and units a saved answer names at most (D150): past it the answer is kept as about more than Clew can say. */
+export const ABOUT_SUBJECTS_MAX = 500;
 /** What a capability that names a person admits when it does not say (D117): the person themself and their reports. */
 export const STRICT_RELATIONS: readonly PersonRelation[] = ['self', 'managed'];
 /** What a capability about a unit admits when it does not say (D117): a unit the caller manages. */
@@ -3684,8 +3705,22 @@ export const MessageMetaSchema = object({
       connectors: Type.Array(Type.String()),
       capabilities: Type.Array(Type.String()),
       authorizationVersion: Type.Optional(Type.String()),
+      /**
+       * D150: the people and units the reads behind the answer were about. The answer is shown again only while the
+       * reader stands to each of them as one of the relations its read admitted. Absent on an answer no read about
+       * anybody stands behind.
+       */
+      about: Type.Optional(Type.Array(AboutSubjectSchema, { maxItems: ABOUT_SUBJECTS_MAX })),
+      /** D150: the reads behind the answer were about more people than `about` holds, so it is shown to nobody again. */
+      aboutMore: Type.Optional(Type.Literal(true)),
     }),
   ),
+  /**
+   * D150: set on an answer as it is read, never stored. The answer is about a person or a unit the reader may no longer
+   * be asked about, so nothing of it is sent: no text, no rows and no card. The message stands in its place in the
+   * conversation, and the page says why.
+   */
+  withheld: Type.Optional(Type.Literal('about')),
   chips: Type.Optional(Type.Array(ChipSchema)),
   refs: Type.Optional(Type.Array(Type.String())),
   /** On a question: the key the page sent it with (`ConversationInput.turn`), so the same question sent again is not asked again. */

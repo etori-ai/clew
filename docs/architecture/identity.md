@@ -125,7 +125,7 @@ One kind of background read has no person at all: a read the installation makes 
 
 ## Retained data and revocation
 
-Clew rechecks authority before releasing protected results. Persisted source cards/messages retain the authority that produced them; a new unit assignment or renewed grant does not make the old snapshot readable. Legacy snapshots without provenance are hidden, and fresh scans create new authorized projections.
+Clew rechecks authority before releasing protected results. Persisted source cards/messages retain the authority that produced them; a new unit assignment or renewed grant does not make the old snapshot readable. An answer the assistant saved also keeps whom its reads were about, by Clew's own key and with the relations those reads admitted, and is sent again only while the reader still stands to each of them so: an answer about a report who has another manager now is withheld alone, the rest of the conversation stands, and it is shown again if the person returns ([D150](../decisions/D150-a-saved-answer-is-shown-while-the-reader-may-still-be-asked-about-whom-it-is-about.md)). Legacy snapshots without provenance are hidden, and fresh scans create new authorized projections.
 
 Source-only permission changes still need an explicit revocation path into Clew's grant or connector access before persisted scans are enabled. Live source reads must enforce current source permissions too. The browser clears retained state on authorization changes, but data already delivered cannot be recalled.
 

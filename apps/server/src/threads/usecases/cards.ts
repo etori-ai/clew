@@ -55,7 +55,7 @@ export interface ThreadDeps {
   /** Confirmed rows, less successful undos, for the visible cards in this read. */
   doneOnCards(personId: string, ids: readonly string[]): Promise<ReadonlyMap<string, ReadonlySet<string>>>;
   store: ThreadStore;
-  registry: Pick<Registry, 'areas' | 'connector' | 'visible' | 'find' | 'viewFor' | 'allowed'>;
+  registry: Pick<Registry, 'areas' | 'connector' | 'visible' | 'find' | 'viewFor' | 'allowed' | 'stands'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
   run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
   /**

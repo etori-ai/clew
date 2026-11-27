@@ -25,7 +25,15 @@ import type {
   ViewRef,
   WrittenTurn,
 } from '@clew/contracts';
-import { matchesWrittenTurn, OPEN_THING_INPUT_MAX, turnPageHash, turnRequestKey, viewRows } from '@clew/contracts';
+import {
+  ABOUT_SUBJECTS_MAX,
+  matchesWrittenTurn,
+  OPEN_THING_INPUT_MAX,
+  turnPageHash,
+  turnRequestKey,
+  viewRows,
+  type AboutSubject,
+} from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
 import {
   audiencedActorOf,
@@ -200,6 +208,13 @@ interface Turn {
    */
   run: <O = unknown>(name: string, input: unknown, by?: { model: string }) => Promise<O>;
   reads: TurnRead[];
+  /**
+   * Whom the turn was about (D150): every person and unit a read of the turn named that the asker may ask about, as
+   * the registry resolved them, nested reads included, and the people the turn itself brought in (a name the question
+   * wrote, a person the model looked up, the person whose page stood open). Kept with the answer the turn saves, which
+   * is shown again only while the asker stands to each of them as they did.
+   */
+  about: AboutSubject[];
   /** The work item a propose called in this turn became, and what the propose was given (`begin`). */
   started?: { threadId: string; capability: string; input: Record<string, unknown> };
   /**
@@ -300,6 +315,30 @@ interface StandingOpen {
  * conversation is a question thread that keeps its memory; every turn and its audit row commit together. Execute
  * capabilities and the decision endpoint are never reached from here.
  */
+/**
+ * One of the asker's people as a subject of a turn (D150). The turn's own people are found among those the asker
+ * manages and nobody else (D115), so that is the relation the answer about them was made under.
+ */
+const aboutManaged = (person: ManagedPerson): AboutSubject => ({
+  entity: 'person',
+  id: person.key,
+  admits: ['managed'],
+});
+/**
+ * Whom an answer is about as it is saved (D150): each person or unit once for the relations it was read under, and
+ * `aboutMore` where there are more of them than an answer holds, which keeps the answer from being shown to anybody
+ * again: Clew cannot say whom it would have to ask about.
+ */
+export function aboutOf(subjects: readonly AboutSubject[]): { about?: AboutSubject[]; aboutMore?: true } {
+  const once = new Map<string, AboutSubject>();
+  for (const subject of subjects) {
+    const admits = [...new Set(subject.admits)].sort();
+    once.set([subject.entity, subject.id, admits.join(',')].join('\u0000'), { ...subject, admits });
+  }
+  if (!once.size) return {};
+  const about = [...once.values()];
+  return about.length > ABOUT_SUBJECTS_MAX ? { about: about.slice(0, ABOUT_SUBJECTS_MAX), aboutMore: true } : { about };
+}
 export function assistantUsecases(deps: AssistantDeps) {
   const { store, registry, calendar, models, clock, ids } = deps;
   const access = threadAccess(store, registry);
@@ -374,7 +413,12 @@ export function assistantUsecases(deps: AssistantDeps) {
         ...(meta?.view ? [meta.view.capability] : []),
         ...(meta?.basis?.capabilities ?? []),
       ].filter(c => !OWN_TOOLS.has(c));
-      let withheld = reads.some(c => !readOpen(c)) || (meta?.basis?.connectors ?? []).some(c => !registry.forModel(c));
+      // D150: an answer about somebody the asker may no longer be asked about arrives with nothing in it. The model is
+      // told that an answer stood there, as for any answer it may not have.
+      let withheld =
+        meta?.withheld === 'about' ||
+        reads.some(c => !readOpen(c)) ||
+        (meta?.basis?.connectors ?? []).some(c => !registry.forModel(c));
       if (!withheld && people.mentioned.length)
         for (const id of meta?.basis?.items ?? []) {
           const item = await itemOf(id);
@@ -433,7 +477,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     };
     let n = 0;
     let known: ReturnType<typeof registry.tools> | undefined;
-    const reads: TurnRead[] = [];
+    const reads: TurnRead[] = [],
+      about: AboutSubject[] = [];
     const run = async <O = unknown>(name: string, input: unknown, by?: { model: string }): Promise<O> => {
       known ??= registry.tools(audiencedActorOf(persona));
       const info = known.find(t => t.name === name);
@@ -456,7 +501,12 @@ export function assistantUsecases(deps: AssistantDeps) {
         // reads `Registry.tools` offers.
         const output = proposed
           ? ((await begin(name, input, by)) as O)
-          : await deps.run<O>(persona, name, input, { caller: 'assistant', forModel: true });
+          : await deps.run<O>(persona, name, input, {
+              caller: 'assistant',
+              forModel: true,
+              // Told before the source is asked (D150), so what a read answered is never kept without whom it is about.
+              subjects: named => about.push(...named),
+            });
         emit({ type: 'step', step: { ...step, status: 'complete', ms: took() } });
         // A propose that became a work item is not a read: the item has its own audit row.
         if (proposed) return output;
@@ -483,7 +533,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       turn.started = { threadId, capability: name, input: { ...before, ...given } };
       return { started: true, note: STARTED_NOTE };
     };
-    const turn: Turn = { emit, signal: observer.signal, run, reads };
+    const turn: Turn = { emit, signal: observer.signal, run, reads, about };
     return turn;
   }
   /**
@@ -1005,7 +1055,15 @@ export function assistantUsecases(deps: AssistantDeps) {
             prepareCancelTool({ event: meeting, prepared: hear }),
           ]
         : []),
-      ...(lookup ? [personTool(told, now.toISOString(), p => lookedUp.set(p.key, p))] : []),
+      ...(lookup
+        ? [
+            personTool(told, now.toISOString(), p => {
+              lookedUp.set(p.key, p);
+              // D150: the model was told of the person and of the asker's work about them.
+              turn.about.push(aboutManaged(p));
+            }),
+          ]
+        : []),
       ...(model.tools && routable.length
         ? [
             handoverTool(routable, a => {
@@ -1588,6 +1646,12 @@ export function assistantUsecases(deps: AssistantDeps) {
           .map(c => c.id),
         capabilities: registry.capabilitiesFor(persona).map(c => c.capability.name),
         authorizationVersion: persona.authorizationVersion,
+        // D150: whom the answer is about, from the reads of the turn and the people the turn brought in.
+        ...aboutOf([
+          ...turn.about,
+          ...people.named.flatMap(n => (n.found.match === 'one' ? [n.found.person] : n.found.people)).map(aboutManaged),
+          ...(people.open ? [aboutManaged(people.open)] : []),
+        ]),
       },
       ...(produced.view ? { view: produced.view } : {}),
       ...(produced.viewRows ? { viewRows: produced.viewRows } : {}),

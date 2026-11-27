@@ -13,7 +13,7 @@ import {
   searchButton,
   test,
 } from './support';
-import { NOW, competenceConversation, conversation } from './data';
+import { NOW, competenceConversation, conversation, thread } from './data';
 import { competenceTypes } from './competence';
 
 test.use({ viewport: desktop });
@@ -335,6 +335,52 @@ test.describe('the cards in a conversation', () => {
  * writes; the question then goes with the thing. ✕ lets go of the thing and keeps the conversation. Narrower, the thing
  * is one link away in the header.
  */
+test.describe('an answer that is no longer shown (D150)', () => {
+  /**
+   * A conversation as the server sends it once somebody who reported to the reader has another manager: the answer
+   * about her arrives as its place and nothing else, and the question and the answer about somebody else as they were.
+   */
+  const withheldConversation = thread({
+    id: 'undanhallet',
+    title: 'När går Annas brandskydd ut?',
+    kind: 'question',
+    connector: 'clew',
+    area: 'fragor',
+    messages: [
+      { id: 'w1', role: 'user', body: 'När går Annas brandskydd ut?', createdAt: NOW },
+      { id: 'w2', role: 'assistant', body: '', createdAt: NOW, meta: { withheld: 'about' } },
+      { id: 'w3', role: 'user', body: 'Och Eriks?', createdAt: NOW },
+      {
+        id: 'w4',
+        role: 'assistant',
+        body: 'Eriks brandskydd gäller till 3 mars 2027.',
+        createdAt: NOW,
+        meta: { source: 'Kompetens', assistant: 'model', shape: 'svar' },
+      },
+    ],
+  });
+  const LINE = 'Svaret visas inte längre. Det handlar om en person eller en enhet som du inte längre får fråga om.';
+  for (const viewport of [desktop, narrow])
+    test(`the line stands in the answer’s place, the question and the other answer stand, and nothing of the answer is drawn, at ${viewport.width}px`, async ({
+      page,
+      api,
+    }) => {
+      await page.setViewportSize(viewport);
+      api.threads = [...api.threads, withheldConversation];
+      await open(page, '/conversations/undanhallet');
+      const log = page.getByRole('log');
+      await expect(log).toContainText('När går Annas brandskydd ut?');
+      await expect(log.getByText(LINE)).toBeVisible();
+      await expect(log).toContainText('Eriks brandskydd gäller till 3 mars 2027.');
+      // In the order of the conversation: the question, the line in the answer's place, then the next exchange.
+      const text = (await log.innerText()).replace(/\s+/g, ' ');
+      expect(text.indexOf('När går Annas brandskydd ut?')).toBeLessThan(text.indexOf(LINE));
+      expect(text.indexOf(LINE)).toBeLessThan(text.indexOf('Och Eriks?'));
+      await expectNoAxeViolations(page);
+      expect(await reflowProblems(page)).toEqual([]);
+    });
+});
+
 test.describe('a conversation about a thing', () => {
   const TITLE = 'Attestera 3 fakturor, 48 200 kr';
   test('retrying the same words with the same attachment gets a new key when the item is no longer open beside the box', async ({

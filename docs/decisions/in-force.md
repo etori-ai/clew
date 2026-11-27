@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**151 in force**: 99 accepted and 52 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
+**152 in force**: 99 accepted and 53 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 12 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -97,6 +97,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D147 · An employment is a row of its own and names the person it reports to](D147-an-employment-is-a-row-of-its-own-and-names-the-person-it-reports-to.md) | 2026-11-25 | provisional | [D149](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md) |
 | [D148 · A unit carries the identifiers other systems know it by](D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md) | 2026-11-27 | provisional |  |
 | [D149 · A manager is who leads a unit or is reported to](D149-a-manager-is-who-leads-a-unit-or-is-reported-to.md) | 2026-11-27 | provisional |  |
+| [D150 · A saved answer is shown while the reader may still be asked about whom it is about](D150-a-saved-answer-is-shown-while-the-reader-may-still-be-asked-about-whom-it-is-about.md) | 2026-11-27 | provisional |  |
 
 ## Platform
 

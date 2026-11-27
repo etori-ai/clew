@@ -1,4 +1,4 @@
-import type { Actor, Related } from '@clew/connectors';
+import type { AboutSubject, Actor, Related } from '@clew/connectors';
 import { foldSourceKey, type EntityKind, type Relation } from '@clew/contracts';
 import {
   isKey,
@@ -51,7 +51,7 @@ export function relationUsecases(deps: RelationDeps) {
     if (entity === 'unit') {
       const related = keys.flatMap((asked): Related[] => {
         const relation = isKey('unit', asked) ? unitRelation(reach, asked) : undefined;
-        return relation && admits.includes(relation) ? [{ asked, key: asked, relation }] : [];
+        return relation && admits.includes(relation) ? [{ asked, key: asked, relation, id: asked }] : [];
       });
       const types = options.identifiers ?? [];
       if (!types.length || !related.length) return related;
@@ -88,7 +88,7 @@ export function relationUsecases(deps: RelationDeps) {
       const key = person && personKey(person);
       if (person && key && foldSourceKey('person', key) === foldSourceKey('person', asked)) {
         const relation = personRelation(reader, reach, person, registrar);
-        if (admits.includes(relation)) out.push({ asked, key, relation });
+        if (admits.includes(relation)) out.push({ asked, key, relation, id: person.id });
         continue;
       }
       // Clew's own id, where a core capability takes one (D117): the reader or a report, never anyone else.
@@ -99,10 +99,41 @@ export function relationUsecases(deps: RelationDeps) {
         : reportById(reach, asked);
       const relation: Relation = self ? 'self' : 'managed';
       const named = byId && (byId.userName === null ? asked : personKey(byId));
-      if (named && admits.includes(relation)) out.push({ asked, key: named, relation });
+      if (named && byId && admits.includes(relation)) out.push({ asked, key: named, relation, id: byId.id });
     }
     return out;
   }
-  return { relate };
+  /**
+   * Whether the actor stands today to each of these people and units as one of the relations it was read under (D150):
+   * what decides whether a saved answer about them is shown again. Asked by Clew's own key, the person's id (D122), so a
+   * user name that has passed to somebody else means nothing here. `self` and `managed` are read from where the actor
+   * stands, once for them all; a `colleague` is anyone active of the actor's organisation, looked up only where the
+   * read admitted one. A relation held by grant is never among `admits`: the assistant's reads resolve none (D122
+   * item 5). An actor the directory does not hold stands to nobody. A directory that cannot be read throws.
+   */
+  async function stands(actor: Actor, subjects: readonly AboutSubject[]): Promise<boolean[]> {
+    if (!subjects.length) return [];
+    const reader = await deps.reader(actor);
+    if (!reader || reader.id !== actor.id) return subjects.map(() => false);
+    const reach = await deps.directory.reach(reader);
+    const active = new Map<string, boolean>();
+    const out: boolean[] = [];
+    for (const subject of subjects) {
+      if (subject.entity === 'unit') {
+        const relation = isKey('unit', subject.id) ? unitRelation(reach, subject.id) : undefined;
+        out.push(!!relation && subject.admits.includes(relation));
+        continue;
+      }
+      const relation = personRelation(reader, reach, { id: subject.id });
+      if (relation !== 'colleague' || !subject.admits.includes('colleague')) {
+        out.push(relation !== 'colleague' && subject.admits.includes(relation));
+        continue;
+      }
+      if (!active.has(subject.id)) active.set(subject.id, !!(await deps.directory.person(reader, subject.id, false)));
+      out.push(active.get(subject.id)!);
+    }
+    return out;
+  }
+  return { relate, stands };
 }
 export type RelationUsecases = ReturnType<typeof relationUsecases>;

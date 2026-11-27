@@ -1,11 +1,12 @@
 import type { Actor, Registry } from '@clew/connectors';
-import type { AuthenticatedContext, Thread } from '@clew/contracts';
+import type { AboutSubject, AuthenticatedContext, Thread, ThreadMessage } from '@clew/contracts';
 import type { ConversationCursor, ThreadStore } from './model';
 
-type AccessRegistry = Pick<Registry, 'visible' | 'allowed' | 'connector'>;
+type AuthorityRegistry = Pick<Registry, 'visible' | 'allowed' | 'connector'>;
+type AccessRegistry = AuthorityRegistry & Pick<Registry, 'stands'>;
 /** Conservative snapshot policy: historical source content requires its original authority today. */
 export function visibleThread(
-  registry: AccessRegistry,
+  registry: AuthorityRegistry,
   actor: Actor & Partial<Pick<AuthenticatedContext, 'authorizationVersion'>>,
   thread: Thread,
 ) {
@@ -33,15 +34,80 @@ export function visibleThread(
   return true;
 }
 
+/** One subject as it is asked once, however many answers name it: the same person or unit read under the same relations. */
+const subjectKey = (subject: AboutSubject) =>
+  [subject.entity, subject.id, [...subject.admits].sort().join(',')].join('\u0000');
+/**
+ * An answer the reader may not have again (D150), as it is sent: its place in the conversation and nothing of what it
+ * said. No text, no rows, no sources, no card and no record of what it read, so nothing of the person it was about
+ * leaves the server, and nothing later, a model's context included, is built on it.
+ */
+const withheld = (message: ThreadMessage): ThreadMessage => ({
+  id: message.id,
+  role: message.role,
+  body: '',
+  createdAt: message.createdAt,
+  // Whom the conversation is with is its state, and names another system's assistant only: that a question was handed
+  // back to Clew stays said, so the next question is still Clew's to answer.
+  meta: { withheld: 'about', ...(message.meta?.handedBack ? { handedBack: message.meta.handedBack } : {}) },
+});
+/**
+ * Who a saved answer is about decides whether it is shown again (D150). The authorization fingerprint of
+ * `visibleThread` says that the reader is who they were: the same unit, role and capabilities. It does not say that
+ * the people they read about are still theirs to read about: a report who has another manager now, or has left, changes
+ * nothing of the manager's own authority. So each answer keeps whom its reads were about, by Clew's own key and with
+ * the relations those reads admitted, and it is sent only while the reader stands to every one of them as one of those
+ * relations today, asked of the directory once for all the threads of a read. An answer that fails is withheld alone:
+ * the conversation, the question and every other answer stand. An answer about more people than Clew could record is
+ * withheld from everyone. A directory that cannot be read fails the read: never "show it".
+ */
+export async function withholding<T extends Thread>(
+  registry: Pick<Registry, 'stands'>,
+  actor: Actor,
+  threads: readonly T[],
+): Promise<T[]> {
+  const asked = new Map<string, AboutSubject>();
+  let any = false;
+  for (const thread of threads)
+    for (const message of thread.messages) {
+      const access = message.role === 'assistant' ? message.meta?.access : undefined;
+      if (!access?.about?.length && !access?.aboutMore) continue;
+      any = true;
+      for (const subject of access.about ?? []) asked.set(subjectKey(subject), subject as AboutSubject);
+    }
+  if (!any) return [...threads];
+  const subjects = [...asked.values()],
+    answers = await registry.stands(actor, subjects),
+    stands = new Map(subjects.map((subject, index) => [subjectKey(subject), answers[index] === true]));
+  return threads.map(thread => {
+    let changed = false;
+    const messages = thread.messages.map(message => {
+      const access = message.role === 'assistant' ? message.meta?.access : undefined;
+      const shown =
+        !access?.aboutMore && (access?.about ?? []).every(subject => stands.get(subjectKey(subject as AboutSubject)));
+      if (shown) return message;
+      changed = true;
+      return withheld(message);
+    });
+    return changed ? { ...thread, messages } : thread;
+  });
+}
+
 /** Shared read boundary for stream, chips, objects, suggestions, history and model context. */
 export function threadAccess(store: ThreadStore, registry: AccessRegistry) {
   return {
     async list(actor: Actor & Partial<Pick<AuthenticatedContext, 'authorizationVersion'>>, now: string) {
-      return (await store.listThreads(actor.id, now)).filter(thread => visibleThread(registry, actor, thread));
+      return withholding(
+        registry,
+        actor,
+        (await store.listThreads(actor.id, now)).filter(thread => visibleThread(registry, actor, thread)),
+      );
     },
     async read(actor: Actor & Partial<Pick<AuthenticatedContext, 'authorizationVersion'>>, id: string) {
       const thread = await store.readThread(actor.id, id);
-      return thread && visibleThread(registry, actor, thread) ? thread : undefined;
+      return thread && visibleThread(registry, actor, thread)
+        ? (await withholding(registry, actor, [thread]))[0]
+        : undefined;
     },
     /**
      * Alla samtal (WD-L1): up to `limit` of the person's conversations they may see now, the latest activity first,
@@ -61,7 +127,13 @@ export function threadAccess(store: ThreadStore, registry: AccessRegistry) {
           ...(cursor ? { after: cursor } : {}),
           limit: limit - shown.length,
         });
-        shown.push(...page.threads.filter(thread => visibleThread(registry, actor, thread)));
+        shown.push(
+          ...(await withholding(
+            registry,
+            actor,
+            page.threads.filter(thread => visibleThread(registry, actor, thread)),
+          )),
+        );
         cursor = page.next ?? undefined;
         if (!page.next) break;
       }

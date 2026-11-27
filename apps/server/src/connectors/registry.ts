@@ -50,6 +50,7 @@ export const registry = new Registry({
   onRefused: (id, topic, problem) =>
     logger.error({ scope: 'connectors', connector: id, topic, problem }, 'connector draft refused (D35)'),
   relations: relations.relate,
+  stands: relations.stands,
 });
 /** The composite search (D26) lists its sources from the registry at call time, so a connector enabled by an administrator is searched from the next question on. */
 const search = searchUsecases({

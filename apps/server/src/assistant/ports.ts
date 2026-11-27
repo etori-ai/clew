@@ -1,4 +1,5 @@
 import type {
+  AboutSubject,
   AssistantAsk,
   AssistantAskEvent,
   AuditEntryView,
@@ -207,6 +208,7 @@ export interface AssistantDeps {
     | 'recordActions'
     | 'validate'
     | 'forModel'
+    | 'stands'
   >;
   /**
    * Run a read through the registry as the person, on the assistant's behalf: every call the assistant makes says so
@@ -221,7 +223,7 @@ export interface AssistantDeps {
     persona: AuthenticatedContext,
     name: string,
     input: unknown,
-    context: { caller: 'assistant'; forModel?: boolean },
+    context: { caller: 'assistant'; forModel?: boolean; subjects?: (subjects: readonly AboutSubject[]) => void },
   ) => Promise<O>;
   calendar: Pick<CalendarUsecases, 'listWeek' | 'readToday' | 'samtalStatus' | 'ensureProposalThread' | 'replan'>;
   models: ModelResolver;

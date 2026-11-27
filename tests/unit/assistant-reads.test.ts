@@ -36,7 +36,8 @@ import { competenceUsecases } from '../../apps/server/src/modules/competence/use
 import { calendarConnector } from '../../apps/server/src/modules/calendar/connector';
 import { workCapabilities } from '../../apps/server/src/modules/work/capabilities';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
-import { assistantUsecases, type AssistantDeps, type TurnObserver } from '../../apps/server/src/assistant';
+import { aboutOf, assistantUsecases, type AssistantDeps, type TurnObserver } from '../../apps/server/src/assistant';
+import { threadAccess, withholding } from '../../apps/server/src/threads/access';
 import { TOOL_REFUSED, type ModelGenerate } from '../../apps/server/src/assistant/model';
 import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import { CARD_MARKS_MAX, cardRows, namedItems } from '../../apps/server/src/assistant/card';
@@ -193,7 +194,7 @@ const FREE = [
  */
 async function world(script: Script = [], options: { brandskydd?: boolean; work?: Thread[] } = {}) {
   const d = directory();
-  const registry = new Registry({ relations: d.relations.relate });
+  const registry = new Registry({ relations: d.relations.relate, stands: d.relations.stands });
   const store = memoryCompetenceStore({
     persons: [...d.state.users.values()].map(u => ({
       id: u.id,
@@ -1314,5 +1315,104 @@ describe('what stands open on a unit’s or a record’s page (D136)', () => {
     expect(w.threads.dump()).toEqual([]);
     expect(w.model.systems).toEqual([]);
     expect(w.store.readLog()).toEqual([]);
+  });
+});
+
+describe('a saved answer is shown while the asker may still be asked about whom it is about (D150)', () => {
+  /** The conversation as the asker reads it again: through the boundary every read of a thread goes through. */
+  const reread = (w: Awaited<ReturnType<typeof world>>, who: string, id: string) =>
+    threadAccess(w.threads, w.registry).read(w.d.persona(who), id);
+  const WITHHELD = { body: '', meta: { withheld: 'about' as const } };
+  test('an answer about a report is withheld alone when the report gets another manager: the question, the answer about another report and the rest of the conversation stand, a later turn’s model is not handed it, and it is shown again when she is the asker’s report again', async () => {
+    const w = await world([['competence__holdings', { person: 'anna' }]]);
+    const first = await w.ask('hillevi', 'Vad har Anna för kompetenser?');
+    const id = first.turn.thread.id;
+    // The answer keeps whom it is about: Anna, by Clew's own key, for the relations the read admitted and as one of
+    // the asker's people the question named. Nothing of what the read answered is kept with it.
+    expect(first.meta.access?.about).toContainEqual({ entity: 'person', id: 'anna', admits: ['managed'] });
+    expect(new Set(first.meta.access!.about!.map(subject => subject.entity + ':' + subject.id))).toEqual(
+      new Set(['person:anna']),
+    );
+    w.model.turn.script = [['competence__holdings', { person: 'Erik.S' }]];
+    const second = await w.ask('hillevi', 'Och Erik?', id);
+    expect(new Set(second.meta.access!.about!.map(subject => subject.id))).toEqual(new Set(['erik']));
+    const shown = (await reread(w, 'hillevi', id))!;
+    expect(shown.messages.map(m => [m.role, m.body])).toEqual([
+      ['user', 'Vad har Anna för kompetenser?'],
+      ['assistant', 'Svar.'],
+      ['user', 'Och Erik?'],
+      ['assistant', 'Svar.'],
+    ]);
+
+    // Anna's employment names another manager. Hillevi is a manager still, with the same unit, role and capabilities:
+    // her authorization fingerprint has not moved, and Anna is no longer hers to be asked about.
+    const anna = w.d.state.users.get('anna')!;
+    w.d.state.users.set('anna', { ...anna, employments: [{ unitId: 'unit-skola', managerId: 'cohead' }] });
+    const after = (await reread(w, 'hillevi', id))!;
+    expect(after.messages.map(m => [m.role, m.body])).toEqual([
+      ['user', 'Vad har Anna för kompetenser?'],
+      ['assistant', ''],
+      ['user', 'Och Erik?'],
+      ['assistant', 'Svar.'],
+    ]);
+    // The answer about Anna is sent as its place in the conversation and nothing else: no text, no record of the read,
+    // no view to read again and no card.
+    expect(after.messages[1]).toEqual({
+      id: shown.messages[1]!.id,
+      role: 'assistant',
+      createdAt: shown.messages[1]!.createdAt,
+      ...WITHHELD,
+    });
+    expect(after.messages[3]).toEqual(shown.messages[3]!);
+    // It is the same in the list of conversations as in the one read.
+    const listed = (await threadAccess(w.threads, w.registry).conversations(w.d.persona('hillevi'), undefined, 10))
+      .threads[0]!;
+    expect(listed.messages[1]).toMatchObject(WITHHELD);
+
+    // A later turn: the model is told that an answer stood there, never what it said, and hears the one about Erik.
+    w.model.turn.script = [];
+    await w.ask('hillevi', 'Tack.', id);
+    const told = JSON.stringify(w.model.told.at(-1));
+    expect(told).toContain('Ett tidigare svar som inte lämnas till dig');
+    expect(told).toContain('Och Erik?');
+
+    // Anna reports to Hillevi again: the answer is shown as it was saved.
+    w.d.state.users.set('anna', anna);
+    expect((await reread(w, 'hillevi', id))!.messages[1]).toEqual(shown.messages[1]!);
+  });
+  test('an answer about nobody is never asked about, one about more people than an answer holds is shown to nobody again, and a registry without the rule shows no answer about anybody', async () => {
+    const w = await world();
+    const { turn } = await w.ask('hillevi', 'Hur ser det ut?');
+    expect(turn.thread.messages.at(-1)!.meta?.access).not.toHaveProperty('about');
+    // No subject: the directory is not asked at all, so a registry without the rule shows the answer as it is.
+    const bare = new Registry();
+    expect((await withholding(bare, w.d.persona('hillevi'), [turn.thread]))[0]).toBe(turn.thread);
+    const answer = turn.thread.messages.at(-1)!;
+    const about = (extra: object) => ({
+      ...turn.thread,
+      messages: [
+        ...turn.thread.messages.slice(0, -1),
+        { ...answer, meta: { ...answer.meta, access: { ...answer.meta!.access!, ...extra } } },
+      ],
+    });
+    const anna = { entity: 'person' as const, id: 'anna', admits: ['managed' as const] };
+    // With the rule, Anna is Hillevi's report and the answer stands; without it nobody stands to anybody.
+    expect(
+      (await withholding(w.registry, w.d.persona('hillevi'), [about({ about: [anna] })]))[0]!.messages.at(-1),
+    ).toEqual(about({ about: [anna] }).messages.at(-1)!);
+    expect(
+      (await withholding(bare, w.d.persona('hillevi'), [about({ about: [anna] })]))[0]!.messages.at(-1),
+    ).toMatchObject(WITHHELD);
+    // More people than an answer holds: Clew cannot say whom it would have to ask about.
+    expect(
+      (
+        await withholding(w.registry, w.d.persona('hillevi'), [about({ about: [anna], aboutMore: true })])
+      )[0]!.messages.at(-1),
+    ).toMatchObject(WITHHELD);
+    expect(aboutOf(Array.from({ length: 501 }, (_, n) => ({ ...anna, id: 'p' + n })))).toMatchObject({
+      aboutMore: true,
+    });
+    expect(aboutOf([anna, { ...anna }, { ...anna, admits: ['managed', 'managed'] }])).toEqual({ about: [anna] });
+    expect(aboutOf([])).toEqual({});
   });
 });
