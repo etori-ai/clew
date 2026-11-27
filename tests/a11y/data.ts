@@ -63,7 +63,7 @@ export const user: SessionUser = {
   role: 'manager',
 };
 
-const thread = (values: Partial<Thread> & Pick<Thread, 'id' | 'title'>): Thread => ({
+export const thread = (values: Partial<Thread> & Pick<Thread, 'id' | 'title'>): Thread => ({
   kind: 'pushed',
   topic: values.id,
   state: 'open',

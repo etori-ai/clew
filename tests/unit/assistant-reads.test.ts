@@ -36,7 +36,8 @@ import { competenceUsecases } from '../../apps/server/src/modules/competence/use
 import { calendarConnector } from '../../apps/server/src/modules/calendar/connector';
 import { workCapabilities } from '../../apps/server/src/modules/work/capabilities';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
-import { assistantUsecases, type AssistantDeps, type TurnObserver } from '../../apps/server/src/assistant';
+import { aboutOf, assistantUsecases, type AssistantDeps, type TurnObserver } from '../../apps/server/src/assistant';
+import { threadAccess, withholding } from '../../apps/server/src/threads/access';
 import { TOOL_REFUSED, type ModelGenerate } from '../../apps/server/src/assistant/model';
 import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import { CARD_MARKS_MAX, cardRows, namedItems } from '../../apps/server/src/assistant/card';
@@ -193,7 +194,7 @@ const FREE = [
  */
 async function world(script: Script = [], options: { brandskydd?: boolean; work?: Thread[] } = {}) {
   const d = directory();
-  const registry = new Registry({ relations: d.relations.relate });
+  const registry = new Registry({ relations: d.relations.relate, stands: d.relations.stands });
   const store = memoryCompetenceStore({
     persons: [...d.state.users.values()].map(u => ({
       id: u.id,
@@ -1314,5 +1315,234 @@ describe('what stands open on a unit’s or a record’s page (D136)', () => {
     expect(w.threads.dump()).toEqual([]);
     expect(w.model.systems).toEqual([]);
     expect(w.store.readLog()).toEqual([]);
+  });
+});
+
+describe('a saved answer is shown while the asker may still be asked about whom it is about (D150)', () => {
+  /** The conversation as the asker reads it again: through the boundary every read of a thread goes through. */
+  const reread = (w: Awaited<ReturnType<typeof world>>, who: string, id: string) =>
+    threadAccess(w.threads, w.registry).read(w.d.persona(who), id);
+  const WITHHELD = { body: '', meta: { withheld: 'about' as const } };
+  test('an answer about a report is withheld when the report gets another manager, with the answers the model wrote after hearing it: the questions and what was answered before stand, a later turn’s model is handed neither, and they are shown again when she is the asker’s report again', async () => {
+    const w = await world([['competence__holdings', { person: 'Erik.S' }]]);
+    const first = await w.ask('hillevi', 'Vad har Erik för kompetenser?');
+    const id = first.turn.thread.id;
+    // The answer keeps whom it is about: Erik, by Clew's own key, for the relations the read admitted and as one of
+    // the asker's people the question named. Nothing of what the read answered is kept with it.
+    expect(first.meta.access?.about).toContainEqual({ entity: 'person', id: 'erik', admits: ['managed'] });
+    const about = (meta: typeof first.meta) => new Set(meta.access!.about!.map(s => s.entity + ':' + s.id));
+    expect(about(first.meta)).toEqual(new Set(['person:erik']));
+    // The model is handed the answer about Erik when it writes the one about Anna, so that one is about both.
+    w.model.turn.script = [['competence__holdings', { person: 'anna' }]];
+    const second = await w.ask('hillevi', 'Och Anna?', id);
+    expect(about(second.meta)).toEqual(new Set(['person:erik', 'person:anna']));
+    // A follow-up that reads nothing and names nobody is written from the answers before it, and is about whom they
+    // were about.
+    w.model.turn.script = [];
+    const third = await w.ask('hillevi', 'Sammanfatta det i en mening.', id);
+    expect(third.meta.reads).toBeUndefined();
+    expect(about(third.meta)).toEqual(new Set(['person:erik', 'person:anna']));
+    const shown = (await reread(w, 'hillevi', id))!;
+    expect(shown.messages.map(m => [m.role, m.body])).toEqual([
+      ['user', 'Vad har Erik för kompetenser?'],
+      ['assistant', 'Svar.'],
+      ['user', 'Och Anna?'],
+      ['assistant', 'Svar.'],
+      ['user', 'Sammanfatta det i en mening.'],
+      ['assistant', 'Svar.'],
+    ]);
+    expect(shown.summary).toBe('Svar.');
+
+    // Anna's employment names another manager. Hillevi is a manager still, with the same unit, role and capabilities:
+    // her authorization fingerprint has not moved, and Anna is no longer hers to be asked about.
+    const anna = w.d.state.users.get('anna')!;
+    w.d.state.users.set('anna', { ...anna, employments: [{ unitId: 'unit-skola', managerId: 'cohead' }] });
+    const after = (await reread(w, 'hillevi', id))!;
+    expect(after.messages.map(m => [m.role, m.body])).toEqual([
+      ['user', 'Vad har Erik för kompetenser?'],
+      ['assistant', 'Svar.'],
+      ['user', 'Och Anna?'],
+      ['assistant', ''],
+      ['user', 'Sammanfatta det i en mening.'],
+      ['assistant', ''],
+    ]);
+    // The answer about Anna is sent as its place in the conversation and nothing else: no text, no record of the read,
+    // no view to read again and no card. The one about Erik before it stands as it was saved.
+    expect(after.messages[3]).toEqual({
+      id: shown.messages[3]!.id,
+      role: 'assistant',
+      createdAt: shown.messages[3]!.createdAt,
+      ...WITHHELD,
+    });
+    expect(after.messages[1]).toEqual(shown.messages[1]!);
+    // The conversation's summary is its newest answer's text: withheld with it, in the one read and in the list.
+    expect(after.summary).toBe('');
+    const listed = (await threadAccess(w.threads, w.registry).conversations(w.d.persona('hillevi'), undefined, 10))
+      .threads[0]!;
+    expect(listed.messages[3]).toMatchObject(WITHHELD);
+    expect(listed.messages[5]).toMatchObject(WITHHELD);
+    expect(listed.summary).toBe('');
+
+    // A later turn: the model is told that an answer stood there, never what it said, and hears the one about Erik.
+    // What it writes is about Erik and nobody else, and is the conversation's summary from then on.
+    w.model.turn.script = [['competence__holdings', { person: 'Erik.S' }]];
+    const later = await w.ask('hillevi', 'Och Erik igen?', id);
+    const told = JSON.stringify(w.model.told.at(-1));
+    expect(told).toContain('Ett tidigare svar som inte lämnas till dig');
+    expect(told).toContain('Vad har Erik för kompetenser?');
+    expect(about(later.meta)).toEqual(new Set(['person:erik']));
+    expect((await reread(w, 'hillevi', id))!.summary).toBe('Svar.');
+
+    // Anna reports to Hillevi again: the answers are shown as they were saved.
+    w.d.state.users.set('anna', anna);
+    const back = (await reread(w, 'hillevi', id))!;
+    expect(back.messages[3]).toEqual(shown.messages[3]!);
+    expect(back.messages[5]).toEqual(shown.messages[5]!);
+  });
+  test('an answer written from a work item is about whom the item names, each under the relation the asker stands in to them then; one they stand in none to is not kept', async () => {
+    const w = await world();
+    const at = T;
+    await w.threads.transaction(async tx => {
+      await tx.insertThread({
+        id: 't-plan',
+        personId: 'hillevi',
+        sourceAuthorization: 'v1',
+        kind: 'pushed',
+        topic: 'hr:plan:1',
+        title: 'Planera introduktion',
+        state: 'open',
+        week: null,
+        connector: 'hr',
+        area: 'personal',
+        summary: 'Tre personer berörs.',
+        items: [
+          // A report, a colleague in another unit, and a key nobody in the organisation holds.
+          {
+            ref: 'r1',
+            label: 'En',
+            detail: '',
+            selectable: false,
+            selected: false,
+            subject: { entity: 'person', key: 'anna' },
+          },
+          {
+            ref: 'r2',
+            label: 'Två',
+            detail: '',
+            selectable: false,
+            selected: false,
+            subject: { entity: 'person', key: 'karin' },
+          },
+          {
+            ref: 'r3',
+            label: 'Tre',
+            detail: '',
+            selectable: false,
+            selected: false,
+            subject: { entity: 'person', key: 'nobody-here' },
+          },
+        ],
+        // The unit she leads, and one she has nothing to do with.
+        subjects: [
+          { entity: 'unit', key: 'unit-skola' },
+          { entity: 'unit', key: 'unit-ekonomi' },
+        ],
+        actions: [],
+        waitingOn: null,
+        deadline: null,
+        trigger: { reason: 'Kom', source: 'Personalsystemet', at },
+        createdAt: at,
+        updatedAt: at,
+      });
+    });
+    const chip: Chip = { ref: 'thread:t-plan', kind: 'thread', label: 'Planera introduktion' };
+    const { meta, turn } = await w.ask('hillevi', 'Vad står det här?', undefined, [chip]);
+    // No read of a source was made about anybody: the answer was written from the item's own text.
+    expect(meta.reads).toBeUndefined();
+    expect(meta.basis).toMatchObject({ items: ['t-plan'] });
+    expect(meta.access!.about).toEqual([
+      { entity: 'person', id: 'anna', admits: ['managed'] },
+      { entity: 'person', id: 'karin', admits: ['colleague'] },
+      { entity: 'unit', id: 'unit-skola', admits: ['manages'] },
+    ]);
+    // Anna gets another manager: the answer written from the item about her is withheld, as one read about her is.
+    const anna = w.d.state.users.get('anna')!;
+    w.d.state.users.set('anna', { ...anna, employments: [{ unitId: 'unit-skola', managerId: 'cohead' }] });
+    expect((await reread(w, 'hillevi', turn.thread.id))!.messages.at(-1)).toMatchObject(WITHHELD);
+  });
+  test('a card made from an answer repeats the answer in its summary, withheld with it; a work item a source pushed keeps its own summary', async () => {
+    const w = await world();
+    const anna = { entity: 'person' as const, id: 'anna', admits: ['managed' as const] };
+    const card = (topic: string) =>
+      ({
+        id: 't-' + topic,
+        kind: 'pushed',
+        topic,
+        title: 'Följ upp',
+        state: 'open',
+        connector: 'clew',
+        area: 'fragor',
+        summary: 'Anna saknar HLR.',
+        items: [],
+        actions: [],
+        proposals: [],
+        messages: [
+          {
+            id: 'm1',
+            role: 'assistant',
+            body: 'Anna saknar HLR.',
+            createdAt: T,
+            meta: { access: { connectors: [], capabilities: [], authorizationVersion: 'v1', about: [anna] } },
+          },
+        ],
+        createdAt: T,
+        updatedAt: T,
+      }) as unknown as Thread;
+    const hillevi = w.d.persona('hillevi');
+    // While Anna is hers, both are sent as they are.
+    expect((await withholding(w.registry, hillevi, [card('answer:m0')]))[0]!.summary).toBe('Anna saknar HLR.');
+    const before = w.d.state.users.get('anna')!;
+    w.d.state.users.set('anna', { ...before, employments: [{ unitId: 'unit-skola', managerId: 'cohead' }] });
+    const [fromAnswer, pushed] = await withholding(w.registry, hillevi, [card('answer:m0'), card('hr:rehab:1')]);
+    expect(fromAnswer).toMatchObject({ summary: '', messages: [WITHHELD] });
+    expect(pushed).toMatchObject({ summary: 'Anna saknar HLR.', messages: [WITHHELD] });
+  });
+  test('an answer about nobody is never asked about, one about more people than an answer holds is shown to nobody again, and a registry without the rule shows no answer about anybody', async () => {
+    const w = await world();
+    const { turn } = await w.ask('hillevi', 'Hur ser det ut?');
+    expect(turn.thread.messages.at(-1)!.meta?.access).not.toHaveProperty('about');
+    // No subject: the directory is not asked at all, so a registry without the rule shows the answer as it is.
+    const bare = new Registry();
+    expect((await withholding(bare, w.d.persona('hillevi'), [turn.thread]))[0]).toBe(turn.thread);
+    const answer = turn.thread.messages.at(-1)!;
+    const about = (extra: object) => ({
+      ...turn.thread,
+      messages: [
+        ...turn.thread.messages.slice(0, -1),
+        { ...answer, meta: { ...answer.meta, access: { ...answer.meta!.access!, ...extra } } },
+      ],
+    });
+    const anna = { entity: 'person' as const, id: 'anna', admits: ['managed' as const] };
+    // With the rule, Anna is Hillevi's report and the answer stands; without it nobody stands to anybody.
+    expect(
+      (await withholding(w.registry, w.d.persona('hillevi'), [about({ about: [anna] })]))[0]!.messages.at(-1),
+    ).toEqual(about({ about: [anna] }).messages.at(-1)!);
+    expect(
+      (await withholding(bare, w.d.persona('hillevi'), [about({ about: [anna] })]))[0]!.messages.at(-1),
+    ).toMatchObject(WITHHELD);
+    // More people than an answer holds: Clew cannot say whom it would have to ask about.
+    expect(
+      (
+        await withholding(w.registry, w.d.persona('hillevi'), [about({ about: [anna], aboutMore: true })])
+      )[0]!.messages.at(-1),
+    ).toMatchObject(WITHHELD);
+    expect(aboutOf(Array.from({ length: 501 }, (_, n) => ({ ...anna, id: 'p' + n })))).toMatchObject({
+      aboutMore: true,
+    });
+    expect(aboutOf([anna, { ...anna }, { ...anna, admits: ['managed', 'managed'] }])).toEqual({ about: [anna] });
+    expect(aboutOf([])).toEqual({});
+    // An answer written from one that was about more people than it held is about more than it holds too.
+    expect(aboutOf([], true)).toEqual({ aboutMore: true });
+    expect(aboutOf([anna], true)).toEqual({ about: [anna], aboutMore: true });
   });
 });

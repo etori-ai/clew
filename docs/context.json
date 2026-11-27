@@ -1740,6 +1740,15 @@
       "status": "provisional (Max Eriksson, product owner, 2026-11-27, with the four answers under \"Decided\"; accepted once a provisioner has pushed a real directory and the people it makes managers have used Personal and a unit's page)",
       "date": "2026-11-27",
       "area": "identity, integrations"
+    },
+    {
+      "key": "D150-a-saved-answer-is-shown-while-the-reader-may-still-be-asked-about-whom-it-is-about",
+      "number": 150,
+      "path": "docs/decisions/D150-a-saved-answer-is-shown-while-the-reader-may-still-be-asked-about-whom-it-is-about.md",
+      "title": "D150 · A saved answer is shown while the reader may still be asked about whom it is about",
+      "status": "provisional (Max Eriksson, product owner, 2026-11-27: a saved answer about a person is to stop being shown when the person is no longer the reader's to ask about, answer by answer and not by ending the reader's authority; accepted once an installation with real people has had a report change manager with answers about them saved)",
+      "date": "2026-11-27",
+      "area": "identity, assistant"
     }
   ],
   "documents": [
@@ -2704,6 +2713,12 @@
     {
       "path": "docs/decisions/D15-postgres-scheduler-now-temporal-later.md",
       "title": "D15 · Postgres-backed scheduler in v1, Temporal later",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D150-a-saved-answer-is-shown-while-the-reader-may-still-be-asked-about-whom-it-is-about.md",
+      "title": "D150 · A saved answer is shown while the reader may still be asked about whom it is about",
       "category": "decision-history",
       "headings": []
     },
@@ -3841,7 +3856,8 @@
         "The opened person and the unit page",
         "Subjects on cards and their erasure",
         "Actions about a person",
-        "The assistant asked about a person"
+        "The assistant asked about a person",
+        "A saved answer about a person"
       ]
     },
     {

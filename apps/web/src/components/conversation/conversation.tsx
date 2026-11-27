@@ -845,6 +845,13 @@ function readCalls(
 }
 /** Clew's own turn names itself (boards Samtal and SamtalVerktyg); what it read is said by its calls. */
 const CLEW = 'Assistenten';
+/**
+ * In the place of an answer that is no longer sent (D150): it was about a person or a unit the reader may no longer be
+ * asked about, as when somebody who reported to them has another manager now. The server sends nothing of the answer,
+ * so the line is all there is to draw: the question above it and every other answer of the conversation stand.
+ */
+export const WITHHELD_ANSWER =
+  'Svaret visas inte längre. Det handlar om en person eller en enhet som du inte längre får fråga om.';
 /** Under a question in another system's assistant's panel that Clew sent on from the conversation (D128 item 2). */
 const FROM_CONVERSATION = 'Från samtalet med assistenten';
 /** The answer's place while nothing of it is written yet (board SamtalVerktyg). */
@@ -958,6 +965,8 @@ export function AssistantTurn({
       </>
     );
   if (!m) return null;
+  // D150: an answer the server no longer sends is a line in its place, wherever an answer is drawn.
+  if (m.meta?.withheld === 'about') return <ChatSystemMessage>{WITHHELD_ANSWER}</ChatSystemMessage>;
   const pane = room !== 'page';
   const calls = readCalls(m, titleOf, systemOf);
   const card = answerCard(m.meta, latest);

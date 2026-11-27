@@ -25,6 +25,7 @@ import type {
   SearchKind,
   SessionUser,
   UserAssignment,
+  AboutSubject,
   SystemMark,
   PanelViewSpec,
   ThreadAction,
@@ -200,7 +201,13 @@ export interface Related {
   key: string;
   relation: Relation;
   identifiers?: UnitIdentifier[];
+  /**
+   * Clew's own key for the person (D122), their id, where the resolver knows it: what Clew records of whom a call was
+   * about (`AboutSubject`). Never sent to a connector, which is told `key`. A unit's id is its key.
+   */
+  id?: string;
 }
+export type { AboutSubject };
 /**
  * The core rule of who may be asked about (D97 item 8, D117), as the registry asks it: how `actor` stands to each of
  * these keys of `entity`, for the relations in `admits` only. A key the directory does not know, or that names someone
@@ -298,12 +305,26 @@ export interface RunContext {
    * person pointed at is resolved without it, since what of it the model may have is decided where it is told.
    */
   forModel?: boolean;
+  /**
+   * Told whom the call was about once that is resolved (D150): each person or unit the input named that the caller may
+   * ask about, by Clew's own key, with the relations the capability admits. A call that names nobody tells nothing.
+   * Carried into every nested in-process call, so what a composite read in turn is told too; never sent to a remote
+   * connector. The assistant keeps it with the answer it saves. It is told and grants nothing: whom a call may be
+   * about is resolved from the directory, whatever a context carries.
+   */
+  subjects?: (subjects: readonly AboutSubject[]) => void;
 }
 /** Who made a call for the person, when it was not the person themself (D122 item 6). */
 export type RunCaller = 'assistant';
 /** How a composite asks for its sources: `forModel` when what it answers is handed to a model (`Clew.forModel`). */
 export interface SourceOptions {
   forModel?: boolean;
+}
+/** A call as the registry narrowed it (D117): the input the connector gets, what it is told, and whom it was about (D150). */
+interface Narrowed {
+  input: unknown;
+  about?: AboutClaim;
+  subjects?: AboutSubject[];
 }
 /** What `Registry.validate` resolved about whom an input names (D117): opaque, issued and redeemed by one registry. */
 export class Resolution {
@@ -787,6 +808,12 @@ export interface RegistryOptions {
    * rule fails closed.
    */
   relations?: RelationResolver;
+  /**
+   * Whether a reader still stands to the people and units a saved answer is about (D150), as one of the relations its
+   * read admitted. Without it nobody stands to anybody, so a registry built without the rule shows no such answer
+   * again: it fails closed, as `relations` does.
+   */
+  stands?: (actor: Actor, subjects: readonly AboutSubject[]) => Promise<boolean[]>;
 }
 
 export class Registry implements HoldingsReader {
@@ -806,10 +833,7 @@ export class Registry implements HoldingsReader {
   /** The index from a read to the actions about its records (D137), by name, drawn from the declarations at installation. */
   private records = new Map<string, string[]>();
   /** What `validate` resolved, by the opaque handle it gave out (D117): redeemed once by `run`, for the same call only. */
-  private resolutions = new WeakMap<
-    Resolution,
-    { actor: string; name: string; input: string; narrowed: { input: unknown; about?: AboutClaim } }
-  >();
+  private resolutions = new WeakMap<Resolution, { actor: string; name: string; input: string; narrowed: Narrowed }>();
   constructor(private readonly options: RegistryOptions = {}) {}
   /** The inputs of a capability that name a person or a unit, and what it admits (D117); undefined when none does. */
   namedInputs(name: string): NamedInputs | undefined {
@@ -833,7 +857,7 @@ export class Registry implements HoldingsReader {
     name: string,
     input: unknown,
     options: { granted?: boolean } = {},
-  ): Promise<{ input: unknown; about?: AboutClaim }> {
+  ): Promise<Narrowed> {
     const declared = this.named.get(name);
     if (!declared) return { input };
     const named = options.granted
@@ -871,8 +895,12 @@ export class Registry implements HoldingsReader {
     const relations: Record<string, Relation> = Object.create(null);
     // D148: what the capability is told of each unit it is sent. The types it declared, whatever the resolver answered.
     const identifiers: Record<string, UnitIdentifier[]> = Object.create(null);
+    // D150: the same people and units by Clew's own key, for whoever keeps what the call answered.
+    const subjects = new Map<string, AboutSubject>();
     const tell = (r: Related) => {
       relations[r.key] = r.relation;
+      const id = r.id ?? r.key;
+      subjects.set(id, { entity: named.entity, id, admits: [...named.admits] });
       const known =
         named.entity === 'unit' ? (r.identifiers ?? []).filter(i => named.identifiers.includes(i.type)) : [];
       if (known.length) identifiers[r.key] = known.map(i => ({ type: i.type, value: i.value }));
@@ -898,7 +926,24 @@ export class Registry implements HoldingsReader {
     return {
       input: out,
       about: { entity: named.entity, relations, ...(Object.keys(identifiers).length ? { identifiers } : {}) },
+      ...(subjects.size ? { subjects: [...subjects.values()] } : {}),
     };
+  }
+  /**
+   * Whether the actor stands today to each of these people and units as one of the relations a call about them was
+   * made under (D150): what decides whether an answer saved from such a call is shown again. Read from the directory
+   * each time, so a person who has another manager, or has left, counts from the next read on. One answer for each
+   * subject, in their order. A directory that cannot be read throws, as it does for a call: never "nobody".
+   */
+  async stands(actor: Actor, subjects: readonly AboutSubject[]): Promise<boolean[]> {
+    if (!subjects.length) return [];
+    if (!this.options.stands) return subjects.map(() => false);
+    try {
+      const answers = await this.options.stands(actor, subjects);
+      return subjects.map((_, index) => answers[index] === true);
+    } catch (cause) {
+      throw new RelationsUnavailableError(cause);
+    }
   }
   /** What `validate` resolved for exactly this call, once (D117); undefined for anything else, which is resolved again. */
   private redeem(actor: Actor, name: string, input: unknown, resolution: Resolution | undefined) {
@@ -1134,6 +1179,8 @@ export class Registry implements HoldingsReader {
             signal: context.signal,
             ...(context.caller ? { caller: context.caller } : {}),
             ...(context.forModel ? { forModel: true } : {}),
+            // D150: what a composite read in turn is the outer answer's too.
+            ...(context.subjects ? { subjects: context.subjects } : {}),
           },
           true,
         );
@@ -1163,7 +1210,7 @@ export class Registry implements HoldingsReader {
     input: unknown,
     context: RunContext,
     nested: boolean,
-  ): Promise<{ output: O; narrowed: { input: unknown; about?: AboutClaim } }> {
+  ): Promise<{ output: O; narrowed: Narrowed }> {
     await this.refresh();
     if (context.authorize) await context.authorize();
     const found = this.findFor(actor, name);
@@ -1184,6 +1231,9 @@ export class Registry implements HoldingsReader {
     const granted = context.direct === true && context.caller === undefined && found.connector.kind === 'core';
     const narrowed =
       this.redeem(actor, name, input, context.resolution) ?? (await this.narrow(actor, name, input, { granted }));
+    // D150: whoever keeps the answer is told whom it is about before the source is asked, so an answer that arrives is
+    // never kept without them.
+    if (typeof context.subjects === 'function' && narrowed.subjects?.length) context.subjects(narrowed.subjects);
     const { resolution: _resolution, direct: _direct, ...carried } = context;
     const clew = this.clewFor(actor, { ...carried, chain: [...(context.chain ?? []), name] }, found.connector.id);
     const output = await found.capability.run(

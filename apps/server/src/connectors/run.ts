@@ -1,5 +1,5 @@
 import type { AuthenticatedContext } from '@clew/contracts';
-import { audiencedActorOf, CapabilityError, type Registry, type RunCaller } from '@clew/connectors';
+import { audiencedActorOf, CapabilityError, type AboutSubject, type Registry, type RunCaller } from '@clew/connectors';
 import { InputError } from '../context';
 
 /**
@@ -13,6 +13,8 @@ export interface CapabilityRunOptions {
   direct?: boolean;
   caller?: RunCaller;
   forModel?: boolean;
+  /** Told whom the call, and every call nested in it, was about (D150, `RunContext.subjects`). */
+  subjects?: (subjects: readonly AboutSubject[]) => void;
 }
 /**
  * Run a capability through a registry with input validation: the path for REST, cards and tools, as `runCapability` in
@@ -38,6 +40,7 @@ export function capabilityRunner(registry: Pick<Registry, 'find' | 'run'>) {
         ...(options.direct ? { direct: true } : {}),
         ...(options.caller ? { caller: options.caller } : {}),
         ...(options.forModel ? { forModel: true } : {}),
+        ...(options.subjects ? { subjects: options.subjects } : {}),
       });
     } catch (error) {
       if (error instanceof CapabilityError) throw new InputError(error.message, { cause: error });

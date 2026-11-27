@@ -220,7 +220,7 @@ function probe(heard: Heard[]): Connector {
 function world() {
   const d = directory();
   const heard: Heard[] = [];
-  const registry = new Registry({ relations: d.relations.relate });
+  const registry = new Registry({ relations: d.relations.relate, stands: d.relations.stands });
   const source = probe(heard);
   registry.register({ ...source, uses: [] }).govern(source.id, openGovernance());
   const threads = memoryThreadStore();

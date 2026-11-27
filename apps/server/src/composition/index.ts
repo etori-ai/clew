@@ -65,7 +65,7 @@ import { askUsecases } from '../threads/usecases/asks';
 import { createHash } from 'node:crypto';
 import { executions } from './executions';
 import { reviewDocuments } from './documents';
-import { threadAccess, visibleThread } from '../threads/access';
+import { threadAccess, visibleThread, withholding } from '../threads/access';
 import { refresh } from './refresh';
 import { personKeys } from './person-keys';
 import { postgresAttention } from '../threads/adapters/attention-postgres';
@@ -178,6 +178,8 @@ export const attention = {
 export const reminders = reminderUsecases({
   store,
   clock,
+  // D150: the thread a reminder's request answers with, as the person may read it now.
+  shown: async (persona, thread) => (await withholding(registry, persona, [thread]))[0]!,
   authorized: async timer => {
     const persona = await systemContext(timer.personId, 'system:reminder');
     if (!persona || persona.unitId !== timer.unitId || persona.authorizationVersion !== timer.authorizationVersion)
