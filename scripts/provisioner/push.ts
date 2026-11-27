@@ -7,7 +7,14 @@ import {
   reservedScimGroupKey,
 } from '../../packages/contracts/src/scim-group-key';
 import { ScimClientError, type ScimClient } from './client';
-import { fullName, type Directory, type DirectoryPerson, type Employment } from './directory';
+import {
+  fullName,
+  type Directory,
+  type DirectoryIdentifier,
+  type DirectoryPerson,
+  type DirectoryUnit,
+  type Employment,
+} from './directory';
 
 /**
  * The synthetic provisioner (D68 item 7): reads a directory and pushes it to Clew's SCIM server, mapping the source's
@@ -56,6 +63,8 @@ export interface PlannedGroup {
   displayName: string;
   /** D99: on a `unit:` group below another, the `externalId` of the unit group above it. */
   parent?: string;
+  /** D148: on a `unit:` group, what other systems know the unit by, in the source's order; absent when it has none. */
+  identifiers?: DirectoryIdentifier[];
   members: string[];
   /**
    * Why the example does not write this unit or group itself, when the directory has it wrong: its parent is not
@@ -140,6 +149,38 @@ export function planPeople(directory: Directory): PlannedUser[] {
  * unit whose parent the directory does not list, units that are each other's parents, a unit or a group an active
  * person names that the directory does not list, and the managers' group of such a unit.
  */
+/**
+ * D148: a unit's identifiers as Clew stores them: each entry once, in the source's order, in composed form (NFC). Clew
+ * takes one exactly as it is sent, so an entry it would refuse (a part that is empty, has space at either end or holds a
+ * control character, or is too long) is the source's to put right before anything is written, as a position code is.
+ */
+const IDENTIFIER_TYPE_LENGTH = 64,
+  IDENTIFIER_VALUE_LENGTH = 256,
+  IDENTIFIER_LIMIT = 50;
+function identifiersOf(unit: DirectoryUnit): DirectoryIdentifier[] {
+  const seen = new Set<string>(),
+    out: DirectoryIdentifier[] = [];
+  for (const sent of unit.identifiers ?? []) {
+    const row = { type: String(sent.type ?? '').normalize('NFC'), value: String(sent.value ?? '').normalize('NFC') };
+    for (const [part, text, length] of [
+      ['type', row.type, IDENTIFIER_TYPE_LENGTH],
+      ['value', row.value, IDENTIFIER_VALUE_LENGTH],
+    ] as const)
+      if (!text || text !== text.trim() || /\p{Cc}/u.test(text) || Array.from(text).length > length)
+        throw new Error(
+          `The unit '${unit.id}' has an identifier whose ${part} is empty, has space around it, holds a control character or is longer than ${length} characters, which Clew refuses (D148). Nothing was written.`,
+        );
+    const key = JSON.stringify([row.type, row.value]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  if (out.length > IDENTIFIER_LIMIT)
+    throw new Error(
+      `The unit '${unit.id}' has ${out.length} identifiers, and Clew takes at most ${IDENTIFIER_LIMIT} (D148). Nothing was written.`,
+    );
+  return out;
+}
 export function planOrganisation(directory: Directory): PlannedGroup[] {
   once(
     'the unit',
@@ -214,6 +255,8 @@ export function planOrganisation(directory: Directory): PlannedGroup[] {
   for (const unit of directory.units) {
     const node = group(UNIT_KEY + unit.id, unit.label);
     if (unit.parent !== undefined) node.parent = UNIT_KEY + unit.parent;
+    const identifiers = identifiersOf(unit);
+    if (identifiers.length) node.identifiers = identifiers;
     if (fault.has(unit.id)) node.refused = fault.get(unit.id);
   }
   for (const g of directory.groups) group(g.id, g.label);
@@ -352,13 +395,29 @@ interface HeldGroup {
   externalId: string;
   displayName: string;
   parent?: string;
+  /** D148: what Clew holds of the unit's identifiers, in its order; empty when it holds none. */
+  identifiers: DirectoryIdentifier[];
 }
 const heldGroup = (g: any): HeldGroup => ({
   id: g.id,
   externalId: g.externalId,
   displayName: g.displayName,
   parent: g[SCIM_UNIT]?.parent,
+  identifiers: (g[SCIM_UNIT]?.identifiers ?? []).map((i: DirectoryIdentifier) => ({ type: i.type, value: i.value })),
 });
+/** The unit extension of a group that is created: the unit above it, what other systems know it by, or neither. */
+const unitExtension = (group: Pick<PlannedGroup, 'parent' | 'identifiers'>) =>
+  group.parent || group.identifiers?.length
+    ? {
+        schemas: [SCIM_GROUP, SCIM_UNIT],
+        [SCIM_UNIT]: {
+          ...(group.parent ? { parent: group.parent } : {}),
+          ...(group.identifiers?.length ? { identifiers: group.identifiers } : {}),
+        },
+      }
+    : {};
+const sameIdentifiers = (held: readonly DirectoryIdentifier[], planned: readonly DirectoryIdentifier[] = []) =>
+  held.length === planned.length && held.every((h, i) => h.type === planned[i]!.type && h.value === planned[i]!.value);
 const eq = (attribute: string, value: string) =>
   `?filter=${encodeURIComponent(`${attribute} eq "${value.replace(/(["\\])/g, '\\$1')}"`)}`;
 /**
@@ -595,10 +654,7 @@ async function reconcile(
       continue;
     }
     if (!found) {
-      const created = await create(key, {
-        ...(unit.parent ? { schemas: [SCIM_GROUP, SCIM_UNIT], [SCIM_UNIT]: { parent: unit.parent } } : {}),
-        displayName: unit.displayName,
-      });
+      const created = await create(key, { ...unitExtension(unit), displayName: unit.displayName });
       if (created === 'created') continue;
       if (!created) {
         absent.add(key);
@@ -616,10 +672,22 @@ async function reconcile(
           ? { op: 'replace', path: SCIM_UNIT + ':parent', value: unit.parent }
           : { op: 'remove', path: SCIM_UNIT + ':parent' },
       );
+    // D148: the list is sent whole, since an entry has no id to be changed by.
+    if (!sameIdentifiers(found.identifiers, unit.identifiers))
+      operations.push(
+        unit.identifiers?.length
+          ? { op: 'replace', path: SCIM_UNIT + ':identifiers', value: unit.identifiers }
+          : { op: 'remove', path: SCIM_UNIT + ':identifiers' },
+      );
     if (!operations.length) continue;
     try {
       await patch(client, '/Groups/' + found.id, operations);
-      listed.set(key, { ...found, displayName: unit.displayName, parent: unit.parent });
+      listed.set(key, {
+        ...found,
+        displayName: unit.displayName,
+        parent: unit.parent,
+        identifiers: unit.identifiers ?? [],
+      });
     } catch (error) {
       // Refused, it stays as it stands, and the people on it are placed all the same.
       if (!refusal(error)) throw error;
@@ -852,7 +920,7 @@ async function reconcile(
         continue;
       }
       const created = await create(key, {
-        ...(group.parent ? { schemas: [SCIM_GROUP, SCIM_UNIT], [SCIM_UNIT]: { parent: group.parent } } : {}),
+        ...unitExtension(group),
         displayName: group.displayName,
         members: asMembers(members),
       });

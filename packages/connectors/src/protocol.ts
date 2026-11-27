@@ -7,7 +7,9 @@ import {
   PersonAccessSchema,
   PersonRelationSchema,
   UnitAccessSchema,
+  UnitIdentifierSchema,
   UnitRelationSchema,
+  UNIT_IDENTIFIER_LIMIT,
   ASKS_MAX,
   AskSchema,
   EffectOutputSchema,
@@ -177,6 +179,16 @@ export const CallAboutSchema = object(
         description:
           "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row.",
       },
+    ),
+    identifiers: Type.Optional(
+      Type.Record(
+        Type.String({ minLength: 1, maxLength: 512 }),
+        Type.Array(UnitIdentifierSchema, { minItems: 1, maxItems: UNIT_IDENTIFIER_LIMIT }),
+        {
+          description:
+            "For a capability about a unit that declares `unit.identifiers` (D148): what other systems know each unit by, keyed as `relations` is. Each entry is the directory's own word for the kind (`type`) and the identifier (`value`), of the types the capability declared and of no other, in the directory's order; one type may have several values. A unit the directory sent none of those types for is absent, and so is the property when no unit has any: answer such a unit as one your system holds nothing for, never by guessing from its key or its name.",
+        },
+      ),
     ),
   },
   "How the actor stands to the people or units the input names (D117), present when the input names any. Trust it only from a body whose digest the verified assertion's `body` claim holds.",

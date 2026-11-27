@@ -40,7 +40,7 @@ interface GroupRow {
   id: string;
   externalId?: string;
   displayName: string;
-  [UNIT_EXTENSION]?: { parent?: string };
+  [UNIT_EXTENSION]?: { parent?: string; identifiers?: Array<{ type: string; value: string }> };
 }
 const PAGE = 200;
 /**
@@ -267,6 +267,32 @@ export async function checkProvisioning(
       'warn',
       `The tree has ${plural(roots.length, 'root', 'roots')} where ${expected.roots} ${expected.roots === 1 ? 'was' : 'were'} expected. Check the parent links. Roots: ${some(roots.map(id => UNIT_KEY + id)) || 'none'}.`,
     );
+  // D148: what other systems know the units by. Clew reads no meaning from an identifier, so the check only says how
+  // many units carry one of each type, and which units with people carry none of a type the others do: a connected
+  // system that reads the type answers nothing for those.
+  const typed = new Map<string, Set<string>>();
+  for (const g of units)
+    for (const { type } of g[UNIT_EXTENSION]?.identifiers ?? [])
+      typed.set(type, (typed.get(type) ?? new Set()).add(g.id));
+  if (typed.size) {
+    const staffed = units.filter(g => activeIn.get(g.id));
+    say(
+      'ok',
+      `Units carry identifiers for other systems: ${[...typed]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([type, held]) => `'${type}' on ${held.size} of ${units.length}`)
+        .join(', ')}.`,
+    );
+    for (const [type, held] of [...typed].sort(([a], [b]) => a.localeCompare(b))) {
+      const without = staffed.filter(g => !held.has(g.id));
+      // Worth a line only where the type is the rule: most units with people carry it, and a few do not.
+      if (without.length && without.length * 2 < staffed.length)
+        say(
+          'warn',
+          `${plural(without.length, 'unit with people carries', 'units with people carry')} no '${type}' identifier, so a system that reads it answers nothing for ${without.length === 1 ? 'it' : 'them'}: ${some(without.map(g => g.externalId!.slice(UNIT_KEY.length)))}.`,
+        );
+    }
+  }
   // A unit with units below it may be a heading nobody is placed on; one without is a unit somebody should be in. A
   // group whose members have all been deactivated is as empty: it names whom it held, not whom it has.
   const empty = [...units.filter(g => !hasBelow.has(g.externalId!.slice(UNIT_KEY.length))), ...managers].filter(

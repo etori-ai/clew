@@ -79,6 +79,7 @@ export const groupRow = (id: string, organisationId: string, extra: Partial<Grou
   externalId: 'g:' + id,
   label: 'Group ' + id,
   parentUnitId: null,
+  unitIdentifiers: [],
   createdAt: T,
   updatedAt: T,
   ...extra,
@@ -776,6 +777,35 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.updateGroup(p + '-g-' + leaf, { parentUnitId: null, updatedAt: '2026-11-09T07:00:01.000Z' });
         expect((await tx.readGroup(org, p + '-g-' + leaf))?.parentUnitId).toBeNull();
         expect((await tx.childUnits(root)).map(u => u.id)).toEqual([mid]);
+      });
+    });
+    test("a unit's identifiers are kept as written, in their order, and read back by every read of the group (D148)", async () => {
+      const h = await make(),
+        p = h.prefix,
+        org = p + '-org',
+        unit = p + '-gata',
+        id = p + '-g-gata',
+        sent = [
+          { type: 'ansvar', value: '11110000' },
+          { type: 'qlik', value: 'ORG-714' },
+          { type: 'ansvar', value: '11110001' },
+        ];
+      await h.store.transaction(async tx => {
+        await tx.insertGroup(groupRow(id, org, { externalId: 'unit:' + unit, label: 'Gata', unitIdentifiers: sent }));
+        await tx.insertGroup(groupRow(p + '-g-plain', org, { externalId: 'ad:' + p, label: 'Plain' }));
+        expect((await tx.readGroup(org, id))?.unitIdentifiers).toEqual(sent);
+        expect((await tx.findGroup('externalId', 'unit:' + unit))?.unitIdentifiers).toEqual(sent);
+        const listed = await tx.listGroups(org, { startIndex: 1, count: 10 });
+        expect(listed.rows.find(g => g.id === id)?.unitIdentifiers).toEqual(sent);
+        // A group written without any holds an empty list, never null.
+        expect((await tx.readGroup(org, p + '-g-plain'))?.unitIdentifiers).toEqual([]);
+        // A write that names them replaces the list; one that does not leaves it.
+        await tx.updateGroup(id, { unitIdentifiers: [sent[1]!], updatedAt: '2026-11-27T07:00:00.000Z' });
+        expect((await tx.readGroup(org, id))?.unitIdentifiers).toEqual([sent[1]!]);
+        await tx.updateGroup(id, { label: 'Gata och park', updatedAt: '2026-11-27T07:00:01.000Z' });
+        expect((await tx.readGroup(org, id))?.unitIdentifiers).toEqual([sent[1]!]);
+        await tx.updateGroup(id, { unitIdentifiers: [], updatedAt: '2026-11-27T07:00:02.000Z' });
+        expect((await tx.readGroup(org, id))?.unitIdentifiers).toEqual([]);
       });
     });
     test('the people list is searched by word, unit, role, status and capability, in Swedish order and a page at a time (D100)', async () => {

@@ -51,11 +51,22 @@ export interface DirectoryEmployment extends Employment {
   manager?: string;
 }
 export type { Capability };
+/**
+ * D148: what another system knows a unit by, as the source has it: the source's own word for the kind of identifier and
+ * the value, such as the code an economy system books the unit's costs on. Declared here, as the phone number is, so a
+ * copy of this folder type-checks outside Clew.
+ */
+export interface DirectoryIdentifier {
+  type: string;
+  value: string;
+}
 export interface DirectoryUnit {
   id: string;
   label: string;
   /** The unit above this one; absent on a root. */
   parent?: string;
+  /** D148: what other systems know the unit by. Sent whole with the unit; several of one type are several entries. */
+  identifiers?: DirectoryIdentifier[];
 }
 /** A plain directory group, as a directory would hold it: no meaning in Clew by itself. */
 export interface DirectoryGroup {
@@ -790,11 +801,25 @@ function withManagers(people: DirectoryPerson[]): DirectoryPerson[] {
     return employments ? { ...person, employments } : person;
   });
 }
+/**
+ * D148: the code an economy system books a unit's costs on, as a source's master data carries it: eight digits, one
+ * for each unit people work on and none for a unit that is only a heading. Every tenth unit has two, as a few units of
+ * a real organisation do.
+ */
+const responsibilityCodes = (index: number): DirectoryIdentifier[] => {
+  const code = (n: number) => ({ type: 'ansvar', value: String(11000000 + index * 100 + n) });
+  return index % 10 === 9 ? [code(0), code(1)] : [code(0)];
+};
 export const developmentDirectory: Directory = {
   complete: true,
-  units: UNITS.map(unit => {
+  units: UNITS.map((unit, index) => {
     const parent = parentOf(unit);
-    return { id: unit.id, label: unit.label, ...(parent ? { parent } : {}) };
+    return {
+      id: unit.id,
+      label: unit.label,
+      ...(parent ? { parent } : {}),
+      ...(unit.size ? { identifiers: responsibilityCodes(index) } : {}),
+    };
   }),
   groups: GROUPS,
   positions: POSITIONS,

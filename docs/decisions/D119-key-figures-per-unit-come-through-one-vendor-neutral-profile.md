@@ -52,7 +52,9 @@ call the same figure by two names.
 
 **Not established.** Each waits for someone outside the repository, and `docs/maintainers/open-questions.md` lists them:
 
-- **The source.** Which API answers, and how Clew's units map to its units. Until it is known, the Qlik connector's
+- **The source.** Which API answers. How Clew's units map to its units is answered since 2026-11-27 by
+  [D148](D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md): the directory pushes what the source knows
+  each unit by, and a read about a unit that asks for that type is told it. Until the API is known, the Qlik connector's
   fixture is the only answerer; whether `connectors/qlik` is rebuilt to answer the profile or withdrawn with a closing
   note (D105) follows from it.
 - **The history.** If the source answers closed months, the connector keeps nothing. If it answers only the current

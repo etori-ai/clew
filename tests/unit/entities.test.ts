@@ -106,6 +106,7 @@ function directory(extra: { onSkola?: Person[] } = {}) {
   const node = (unitId: string, label: string, parentUnitId: string | null) => {
     s.units.set(unitId, { organisationId: 'poc', label });
     s.groups.set('group-' + unitId, {
+      unitIdentifiers: [],
       id: 'group-' + unitId,
       organisationId: 'poc',
       externalId: 'unit:' + unitId,
@@ -753,6 +754,7 @@ describe('the opened person or unit', () => {
   test('an authorised profile shows the work address, every number and each employment on its named unit', async () => {
     const { people, entities } = standard();
     people.state.groups.set('school', {
+      unitIdentifiers: [],
       id: 'school',
       organisationId: 'poc',
       externalId: 'unit:unit-skola',
@@ -1325,6 +1327,7 @@ describe('the units below the reader (D117)', () => {
     const s = w.people.state;
     const group = (id: string, unitId: string, label: string, parentUnitId: string | null) =>
       s.groups.set(id, {
+        unitIdentifiers: [],
         id,
         organisationId: 'poc',
         externalId: 'unit:' + unitId,

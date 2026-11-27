@@ -43,6 +43,7 @@ function directory() {
   const unit = (id: string, label: string, parent: string | null) => {
     s.units.set(id, { organisationId: ORG, label });
     s.groups.set('g-' + id, {
+      unitIdentifiers: [],
       id: 'g-' + id,
       organisationId: ORG,
       externalId: 'unit:' + id,

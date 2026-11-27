@@ -131,6 +131,7 @@ const groupColumns = {
   externalId: schema.groups.externalId,
   label: schema.groups.label,
   parentUnitId: schema.groups.parentUnitId,
+  unitIdentifiers: schema.groups.unitIdentifiers,
   createdAt: schema.groups.createdAt,
   updatedAt: schema.groups.updatedAt,
 };
@@ -957,6 +958,26 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
         )
         .orderBy(schema.groups.externalId);
       return nodesOf(rows).map(r => ({ id: r.id, label: r.label, parentId: r.parentUnitId }));
+    },
+    async unitIdentifiers(organisationId, unitIds) {
+      // A NUL names no unit, and PostgreSQL refuses to compare one.
+      const ids = [...new Set(unitIds)].filter(id => id && !id.includes('\u0000'));
+      if (!ids.length) return new Map();
+      const rows = await tx
+        .select({ externalId: schema.groups.externalId, unitIdentifiers: schema.groups.unitIdentifiers })
+        .from(schema.groups)
+        .where(
+          and(
+            eq(schema.groups.organisationId, organisationId),
+            inArray(
+              schema.groups.externalId,
+              ids.map(id => UNIT_KEY + id),
+            ),
+          ),
+        );
+      return new Map(
+        nodesOf(rows).flatMap(r => (r.unitIdentifiers.length ? [[r.id, r.unitIdentifiers] as const] : [])),
+      );
     },
     async placements(organisationId) {
       return tx

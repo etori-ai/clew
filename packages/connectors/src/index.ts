@@ -20,6 +20,7 @@ import type {
   Receipt,
   Relation,
   UnitAccess,
+  UnitIdentifier,
   ReceiptRow,
   SearchKind,
   SessionUser,
@@ -164,12 +165,22 @@ export const inScope = (scope: Scope, actor: Actor) =>
 export interface AboutClaim {
   entity: EntityKind;
   relations: Record<string, Relation>;
+  /**
+   * For a capability about a unit that declares `unit.identifiers` (D148): what other systems know each unit by, of
+   * the types it declared and no other, by the unit's key. A unit the directory sent none of those types for is absent,
+   * and so is the whole map when no unit has any.
+   */
+  identifiers?: Record<string, UnitIdentifier[]>;
 }
-/** How the caller stands to one key the input names (D117): `asked` as the input spelled it, `key` as the directory does. */
+/**
+ * How the caller stands to one key the input names (D117): `asked` as the input spelled it, `key` as the directory does.
+ * `identifiers` is what other systems know a unit by (D148), when the capability reads any.
+ */
 export interface Related {
   asked: string;
   key: string;
   relation: Relation;
+  identifiers?: UnitIdentifier[];
 }
 /**
  * The core rule of who may be asked about (D97 item 8, D117), as the registry asks it: how `actor` stands to each of
@@ -184,7 +195,7 @@ export type RelationResolver = (
   entity: EntityKind,
   keys: readonly string[],
   admits: readonly Relation[],
-  options?: { ids?: boolean },
+  options?: { ids?: boolean; identifiers?: readonly string[] },
 ) => Promise<Related[]>;
 /**
  * The directory could not say how the caller stands to someone (D117): a transient failure, never a refusal. A route
@@ -825,13 +836,24 @@ export class Registry implements HoldingsReader {
     let related: Related[] = [];
     if (asked.length && this.options.relations)
       try {
-        related = await this.options.relations(actor, named.entity, asked, named.admits, { ids: named.ids });
+        related = await this.options.relations(actor, named.entity, asked, named.admits, {
+          ids: named.ids,
+          ...(named.identifiers.length ? { identifiers: named.identifiers } : {}),
+        });
       } catch (cause) {
         throw new RelationsUnavailableError(cause);
       }
     // The resolver answers for the relations admitted; anything else it says is not trusted.
     const found = new Map(related.filter(r => named.admits.includes(r.relation)).map(r => [r.asked, r]));
     const relations: Record<string, Relation> = {};
+    // D148: what the capability is told of each unit it is sent. The types it declared, whatever the resolver answered.
+    const identifiers: Record<string, UnitIdentifier[]> = {};
+    const tell = (r: Related) => {
+      relations[r.key] = r.relation;
+      const known =
+        named.entity === 'unit' ? (r.identifiers ?? []).filter(i => named.identifiers.includes(i.type)) : [];
+      if (known.length) identifiers[r.key] = known.map(i => ({ type: i.type, value: i.value }));
+    };
     const out: Record<string, unknown> = { ...given };
     if (named.keys) {
       const seen = new Set<string>();
@@ -840,7 +862,7 @@ export class Registry implements HoldingsReader {
         const folded = r && foldSourceKey(named.entity, r.key);
         if (!r || seen.has(folded!)) return [];
         seen.add(folded!);
-        relations[r.key] = r.relation;
+        tell(r);
         return [r.key];
       });
     }
@@ -848,9 +870,12 @@ export class Registry implements HoldingsReader {
       const r = found.get(given[p] as string);
       if (!r) throw unknownCapability();
       out[p] = r.key;
-      relations[r.key] = r.relation;
+      tell(r);
     }
-    return { input: out, about: { entity: named.entity, relations } };
+    return {
+      input: out,
+      about: { entity: named.entity, relations, ...(Object.keys(identifiers).length ? { identifiers } : {}) },
+    };
   }
   /** What `validate` resolved for exactly this call, once (D117); undefined for anything else, which is resolved again. */
   private redeem(actor: Actor, name: string, input: unknown, resolution: Resolution | undefined) {

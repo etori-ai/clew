@@ -1023,10 +1023,13 @@ describe('an add or replace without a value on a group (Q1)', () => {
         missing.push([{ op, path: attribute }, `Operation '${op}' on '${attribute}' requires a value.`]);
       missing.push([{ op }, `Operation '${op}' without a path requires a value.`]);
       // The extension's object that leaves `parent` out has no value for it, by the extension's path or path-less.
-      missing.push([{ op, path: UNIT, value: {} }, `Operation '${op}' on '${UNIT}' requires a value for 'parent'.`]);
+      missing.push([
+        { op, path: UNIT, value: {} },
+        `Operation '${op}' on '${UNIT}' requires a value for 'parent' or 'identifiers'.`,
+      ]);
       missing.push([
         { op, value: { [UNIT]: { other: 'x' } } },
-        `Operation '${op}' on '${UNIT}' requires a value for 'parent'.`,
+        `Operation '${op}' on '${UNIT}' requires a value for 'parent' or 'identifiers'.`,
       ]);
     }
     for (const [operation, detail] of missing) {

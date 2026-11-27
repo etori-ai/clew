@@ -975,6 +975,7 @@ describe('SCIM groups and derivation', () => {
       ['old-2', 'position:ssk', 'Sjuksköterska'],
     ] as const)
       store.state.groups.set(id, {
+        unitIdentifiers: [],
         id,
         organisationId: 'sundsvall',
         externalId,
@@ -1004,6 +1005,7 @@ describe('SCIM groups and derivation', () => {
       ['old-ssk', 'position:ssk', 'Sjuksköterska', [c]],
     ] as const) {
       store.state.groups.set(id, {
+        unitIdentifiers: [],
         id,
         organisationId: 'sundsvall',
         externalId,
@@ -1070,6 +1072,7 @@ describe('SCIM groups and derivation', () => {
       a = (await scim.createUser(p, anna, BASE)).id;
     const T = '2026-11-01T00:00:00.000Z';
     inner.state.groups.set('old', {
+      unitIdentifiers: [],
       id: 'old',
       organisationId: 'sundsvall',
       externalId: 'position:usk',
@@ -1410,7 +1413,7 @@ describe('SCIM patch and filter rules', () => {
     expect(() => applyUserPatch(fields, [{ op: 'replace', path: 'active', value: 'maybe' }])).toThrow('boolean');
   });
   test('group patches add, remove and replace members in every form the clients use', () => {
-    const g = { externalId: 'unit:a', label: 'A', parent: null, members: ['1', '2'] };
+    const g = { externalId: 'unit:a', label: 'A', parent: null, identifiers: [], members: ['1', '2'] };
     expect(applyGroupPatch(g, [{ op: 'add', path: 'members', value: [{ value: '3' }] }]).members).toEqual([
       '1',
       '2',
@@ -1424,6 +1427,7 @@ describe('SCIM patch and filter rules', () => {
       externalId: 'unit:a',
       label: 'B',
       parent: null,
+      identifiers: [],
       members: ['5'],
     });
     expect(applyGroupPatch(g, [{ op: 'remove', path: 'externalId' }]).externalId).toBeNull();

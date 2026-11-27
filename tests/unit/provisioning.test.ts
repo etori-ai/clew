@@ -173,7 +173,7 @@ describe('deriveAuthority', () => {
   test('a unit key the SCIM boundary refuses gives nothing, also on a group stored before D96 refused it: the boundary and the derivation read a key one way', () => {
     const accepted = (externalId: string) => {
       try {
-        assertAcceptedKey({ externalId, label: 'Stored before D96', parent: null, members: [] });
+        assertAcceptedKey({ identifiers: [], externalId, label: 'Stored before D96', parent: null, members: [] });
         return true;
       } catch {
         return false;
@@ -308,6 +308,7 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
         });
       for (const g of seed.groups)
         s.groups.set(g.externalId, {
+          unitIdentifiers: [],
           id: g.externalId,
           organisationId: g.organisationId ?? 'org',
           parentUnitId: null,

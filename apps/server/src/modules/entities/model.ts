@@ -1,5 +1,12 @@
 import type { AboutAction, AboutRead, Actor } from '@clew/connectors';
-import type { AuthenticatedContext, EntityCard, EntityKind, PersonProfile, Subject } from '@clew/contracts';
+import type {
+  AuthenticatedContext,
+  EntityCard,
+  EntityKind,
+  PersonProfile,
+  Subject,
+  UnitIdentifier,
+} from '@clew/contracts';
 
 /**
  * The ports of the entities module (D25, D97). Nothing here stores anything about a person: the directory, the sources
@@ -50,6 +57,11 @@ export interface Directory {
     id: string,
     includeProfile: boolean,
   ): Promise<(DirectoryPerson & { unit: DirectoryUnit | null; profile?: PersonProfile }) | undefined>;
+  /**
+   * What other systems know these units by (D148), for the units of the reader's organisation among those named; a
+   * unit that carries none is absent. Asked only for units the reader may be told about (D117).
+   */
+  unitIdentifiers(persona: AuthenticatedContext, unitIds: readonly string[]): Promise<Map<string, UnitIdentifier[]>>;
 }
 /**
  * What `people.reports` reads of the directory (composition: the people module's `staffUsecases`): where the reader
@@ -70,7 +82,7 @@ export type Reader = (actor: Actor) => Promise<AuthenticatedContext | undefined>
 export type Holders = (readerId: string, userNames: readonly string[]) => Promise<Map<string, string>>;
 /** The ports of the rule of who may be asked about (`relations.ts`, D117). */
 export interface RelationDeps {
-  directory: Pick<Directory, 'reach' | 'person'>;
+  directory: Pick<Directory, 'reach' | 'person' | 'unitIdentifiers'>;
   reader: Reader;
   holders: Holders;
 }

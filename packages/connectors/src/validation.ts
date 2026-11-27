@@ -26,7 +26,7 @@ interface Descriptor {
       /** Either form (D97, D137): `{ entity, param?, page? }` or `{ record, params }`; flat here so the rules can say which is wrong. */
       about?: { entity?: string; param?: string; page?: unknown; record?: string; params?: Record<string, string> };
       person?: { param?: string; admits?: readonly string[]; ids?: boolean };
-      unit?: { admits?: readonly string[] };
+      unit?: { admits?: readonly string[]; identifiers?: readonly string[] };
       asks?: Ask[];
       effect?: string;
     }
@@ -173,6 +173,10 @@ function aboutProblem(
 function accessProblem(c: Descriptor['capabilities'][number], connector: Descriptor): string | undefined {
   if (c.unit && c.about?.entity !== 'unit')
     return `Capability ${c.name}: unit belongs to a capability about a unit; declare who it may be asked about in person (D117).`;
+  // A type is matched exactly against what the directory pushed, so one written with space around it matches nothing.
+  const padded = c.unit?.identifiers?.find(type => type !== type.trim() || /\p{Cc}/u.test(type));
+  if (padded !== undefined)
+    return `Capability ${c.name}: the unit identifier type ${JSON.stringify(padded)} must be spelled as the directory sends it, with no space at either end and no control character (D148).`;
   const person = c.person;
   if (!person) return undefined;
   if (c.about?.entity === 'unit')
