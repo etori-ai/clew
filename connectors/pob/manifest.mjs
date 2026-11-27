@@ -369,13 +369,85 @@ const createEffectCapability = {
   },
 };
 
+/** The most units Clew asks one read about an entity for (D97). */
+export const KEYS_MAX = 200;
+
+/**
+ * What a unit's agreements in the service desk cost (D148): a read about a unit, placed by Clew as a section on the
+ * unit's page for the person who leads the unit, and for nobody else. Clew sends the unit's id, how the person stands
+ * to it and, in `about.identifiers`, what the directory says the service desk knows the unit by: the identifier type
+ * is the installation's own word (`identifier`), so it is configuration and not a constant. One row per unit that has
+ * such an identifier; a unit without one is no row. Counts and a sum only: never an agreement's text, never a person.
+ * `amountLabel` names the sum where the installation has said which field holds an amount; without one there is no
+ * amount to show, and the row says how many agreements there are.
+ */
+export function unitCostsCapability({ identifier, amountLabel } = {}) {
+  return {
+    name: 'pob.unitCosts',
+    kind: 'read',
+    title: 'IT-kostnader',
+    description:
+      'Antal avtal i IT-supporten som bokförs på en enhet du leder' +
+      (amountLabel ? ', och vad de kostar sammanlagt.' : '.') +
+      ' Bara sammanställningar per enhet, aldrig personer.',
+    model: false,
+    scope: { roles: ['manager'] },
+    about: { entity: 'unit' },
+    // Only a unit the person leads, and only the one identifier type this installation's service desk books costs on.
+    unit: { admits: ['manages'], identifiers: [identifier] },
+    input: {
+      type: 'object',
+      properties: {
+        keys: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: KEYS_MAX },
+      },
+      required: ['keys'],
+      additionalProperties: false,
+    },
+    output: {
+      type: 'object',
+      properties: {
+        rows: {
+          type: 'array',
+          maxItems: KEYS_MAX,
+          items: {
+            type: 'object',
+            properties: {
+              key: string,
+              agreements: { type: 'integer', minimum: 0 },
+              amount: { type: 'number' },
+              note: string,
+            },
+            required: ['key', 'agreements'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['rows'],
+      additionalProperties: false,
+    },
+    view: {
+      kind: 'list',
+      title: amountLabel ? 'amount' : 'agreements',
+      empty: 'IT-supporten har inga avtal för enheten.',
+      fields: [
+        ...(amountLabel
+          ? [{ key: 'amount', label: amountLabel, format: 'number', unit: { one: 'kr', other: 'kr' } }]
+          : []),
+        { key: 'agreements', label: 'Avtal', format: 'number', unit: { one: 'avtal', other: 'avtal' } },
+        { key: 'note', label: 'Anmärkning' },
+      ],
+    },
+  };
+}
+
 /**
  * `audience` is what the person's token is issued for: the identity provider and this connector agree on it, so it is
  * configuration, not a constant. `source` is the system's name as a person reads it; it must differ from every other
  * case system's, since Clew's combined list names the systems that did not answer. `writes` is what the installation
- * has switched on beyond reading: `create` adds the fault report.
+ * has switched on beyond reading: `create` adds the fault report. `costs` switches on the read of what a unit's
+ * agreements cost, and says which of the directory's unit identifiers the service desk books them on (D148).
  */
-export function createManifest({ audience = DEFAULT_AUDIENCE, source = DEFAULT_SOURCE, writes = [] } = {}) {
+export function createManifest({ audience = DEFAULT_AUDIENCE, source = DEFAULT_SOURCE, writes = [], costs } = {}) {
   return {
     protocol: 1,
     id: CONNECTOR,
@@ -390,6 +462,7 @@ export function createManifest({ audience = DEFAULT_AUDIENCE, source = DEFAULT_S
       requestsCapability,
       requestCapability,
       ...(writes.includes('create') ? [reportFaultCapability, createCaseCapability, createEffectCapability] : []),
+      ...(costs ? [unitCostsCapability(costs)] : []),
     ],
     // A request that waits for the person's own answer becomes a card. The scan needs the person's token, so it runs
     // when their session asks for it, never at night (D89 item 5).

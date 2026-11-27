@@ -49,6 +49,10 @@ The example provisioner (`scripts/provisioner/`) sends them: a unit of the `Dire
 on an entry Clew would refuse before anything is written, a changed list is one `replace`, and a second push is silent.
 The check says how many units carry each type and names the units with people that lack a type most of them carry.
 
+The first capability to read one is the POB connector's `pob.unitCosts` ([its README](../../connectors/pob/README.md)):
+what the service agreements booked on a unit cost, for the person who leads the unit. It is switched on by naming the
+identifier type, and its adapter for POB's own API is a draft that has met no POB.
+
 **Known limits.**
 
 - A connected system is told identifiers only on a call that names units: a read or an action about a unit. The acting
@@ -94,5 +98,6 @@ Clew's units map to a source's units is no longer open; which API answers still 
 refused, audited, and nobody derived), `tests/scim-store-contract.ts` on both adapters (kept as written, read by every
 read of the group), `tests/unit/asked-about.test.ts` (a read about a unit is told the declared types for the units it is
 sent and no other, a resolver that answers more is not believed, the body validates against the published request and
-the bearer carries none), `tests/unit/provisioner.test.ts` (pushed, changed, removed, a second push silent, a wrong
+the bearer carries none), `tests/unit/pob-connector.test.ts` (a connector that reads one: only a unit the person leads, only
+a code that is one, every agreement compared again), `tests/unit/provisioner.test.ts` (pushed, changed, removed, a second push silent, a wrong
 entry stops the plan, and the check's line). The migration is `0002_unit_identifiers`.

@@ -158,6 +158,36 @@ The assistant prepares, the person sends. Three capabilities are added to the ma
 It works on the made-up POB only. The API adapter reads and has no `create`: how POB creates an errand has been seen
 in public code alone, and `PUT` there creates on every call.
 
+## What a unit's agreements cost (`POB_COST_IDENTIFIER`)
+
+Switched on by naming the identifier, the connector answers one more read: `pob.unitCosts` "IT-kostnader", a read about
+a unit ([D148](../../docs/decisions/D148-a-unit-carries-the-identifiers-other-systems-know-it-by.md)). Clew places it as a section on the unit's page for the person who leads the unit, and asks nobody
+else's connector session for it. A row is a count of the service agreements booked on the unit and, where an amount
+can be read, their sum. Never an agreement's text, and never a person.
+
+**How a unit becomes a question to POB.** POB does not know Clew's units. The service desk books an agreement on an
+account, a whole accounting string, and the account begins with the code of the unit that pays. The directory holds
+that code and pushes it with the unit as one of the unit's identifiers; `POB_COST_IDENTIFIER` is the directory's word
+for it (`ansvar` in one municipality, something else in the next). Clew sends the identifiers of that type, and no
+other, in the request body beside how the person stands to the unit.
+
+| Step | What stands between a person and another unit's costs |
+|---|---|
+| The person | Their own token, checked as for every read. Their records in POB are not looked up: a person POB does not know still leads their unit |
+| The unit | Clew's word on how the person stands to it, read from the body the assertion binds. Only `manages` is answered. Clew sends no other relation, and the connector does not rest on that |
+| The code | The directory's, from the same body. A unit without an identifier of the configured type is no row. Nothing is worked out from the unit's id or its name |
+| What a code is | Letters and digits, at least four (`POB_COST_CODE_PATTERN` narrows it, `^[0-9]{8}$` for eight digits). Anything else is not sent to POB: a one-character prefix would read as nearly every account |
+| The answer | Every agreement that comes back is compared with the code again, so a filter POB ignored or matched loosely adds nothing |
+
+A unit with several codes is the sum of them, each agreement counted once. An agreement without an amount is counted
+and the row says that it is not in the sum. An answer that was cut would look like a whole sum, so then the system has
+no answer; raise `POB_LIST_LIMIT` for a unit with more agreements than that.
+
+**This is a decision of its own.** Every other read here shows a person their own errands. This one shows a person
+something about a unit, on Clew's word that they lead it: POB has no record of who may see a unit's agreements, and the
+connector's account can read them all. "Leads the unit" is membership of the unit's managers' group in the directory,
+which is the directory's statement of who answers for the unit, not of who people report to (D147).
+
 ## How a status becomes a state
 
 Statuses are an installation's own, so the meaning of each is `POB_STATUS_KINDS`.
@@ -184,7 +214,9 @@ standard output per list and per opened errand or request:
 {"at":"2026-11-16T09:00:04.000Z","connector":"pob","event":"open-request","account":"hassan","case":"48211","outcome":"not-found"}
 ```
 
-`event` is `requests` and `open-request` for what a person reported, `list` and `open` for what a person handles.
+`event` is `requests` and `open-request` for what a person reported, `list` and `open` for what a person handles, and
+`unit-costs` for the cost read, with how many units were asked about (`asked`) and how many were answered (`rows`),
+never which and never a code.
 
 `outcome` is `shown`, `not-found` or `ambiguous`; a scan and a created errand have lines of their own (`event: scan`,
 `event: create`, with the new errand's id). Never a title, a description or a name from POB, and nothing of what a
@@ -212,6 +244,11 @@ are kept is the operator's; they are personal data.
 | `POB_WRITES` | What is switched on beyond reading: empty, or `create` for the fault report. Must be empty with `POB_ADAPTER=api` |
 | `POB_CREATE` | JSON object: the `caseType`, `category` and `groupId` a reported fault gets |
 | `POB_URGENT_NOTE` | A sentence shown on the fault report for faults that cannot wait, such as a number to call |
+| `POB_COST_IDENTIFIER` | Switches on the cost read: the type of unit identifier, as the directory sends it, that holds the code a unit's costs are booked on. No default |
+| `POB_COST_CODE_PATTERN` | What a code is: a pattern for a whole code of letters and digits. Default `^[A-Za-z0-9]{4,32}$` |
+| `POB_COST_AMOUNT_LABEL` | What the sum is called on the unit's page. Default `Avtalskostnad`. Only where there is an amount to sum |
+| `POB_AGREEMENT_PATH` | With `POB_ADAPTER=api`: where POB lists its service agreements. Default `/sla` |
+| `POB_AGREEMENT_FIELDS` | With `POB_ADAPTER=api`: a JSON object naming an agreement's `id`, `account` and `amount`. Defaults `Id`, `Account.Id` and none: without an `amount` the read answers a count |
 
 With `POB_ADAPTER=api`:
 
@@ -272,6 +309,9 @@ shape of POB's answer is not known, so it looks at every key and string in it.
 | A user's and a customer's record are at `/user` and `/customer`, with the account in the configured field | The catalogue for the paths | Nobody is found: empty lists |
 | A memo is at `/case/{id}/memo?type=<type>&scope=all` and answers `{ Memo: { <type>: { Memo, Extension } } }` | Public code for the address; the answer's shape is a guess | An errand opens without its description |
 | `/entity/case` names every field of an errand | The catalogue says it gives field definitions | The start check reports fields as missing that are there |
+| Service agreements are listed at `/sla` like errands, and an agreement's account is in `Account.Id` | One installation's own reading of its POB, 2026-11-27, told and not seen here | No agreement can be read: the system has no answer |
+| An account is an accounting string that begins with the unit's code, and a filter value ending in `%` matches by prefix | The same | Fewer agreements or none; never another unit's, since each is compared with the code again |
+| Which field of an agreement holds an amount, and for which period | Nothing | No sum is shown until `POB_AGREEMENT_FIELDS` names it; what the sum covers is then the installation's to say in `POB_COST_AMOUNT_LABEL` |
 
 What keeps a wrong assumption from becoming someone else's errand:
 
@@ -347,6 +387,10 @@ beyond the table of its assumptions:
   closed; how `GET /case` filters and pages, and whether an answer says that it was cut.
 - Which memo types exist and which is the reporter's own text.
 - The status values and what each means; the stable identity of an errand; whether times carry a zone.
+- For the cost read: where POB lists its service agreements and how the list is filtered and capped; which field holds
+  the account and which an amount, and whether the amount is per month, per year or once; whether every agreement that
+  costs something is such a record at all. In a sample one installation read, about half of the agreements were
+  booked on an account that begins with no unit's code, which is unexplained.
 - Whether the identity provider can exchange a token for this audience, and which claim carries the account.
 
 Not built: a question to POB with more than one condition, suspensions and display names for statuses in the API

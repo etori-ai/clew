@@ -1935,6 +1935,7 @@
         "What a person gets",
         "A card when a request waits on the person",
         "Reporting a fault (`POB_WRITES=create`)",
+        "What a unit's agreements cost (`POB_COST_IDENTIFIER`)",
         "How a status becomes a state",
         "The access log",
         "Configuration",

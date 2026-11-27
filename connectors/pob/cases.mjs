@@ -12,7 +12,11 @@
 //   memo(id, type)                  -> { text, extension } | null, one memo type of one errand
 //   create(fault, operationId)      -> SourceCase, the errand POB made. Only with writes switched on. `fault` is
 //                                      { customerId, title, description, caseType, category, groupId }
+//   agreements(code)                -> { agreements: SourceAgreement[], complete: boolean }, the service agreements
+//                                      booked on an account that begins with this code, whoever asks: the connector
+//                                      decides who may. Only with the cost read switched on (D148).
 // A Match is { status: 'none' }, { status: 'one', id, groups? } or { status: 'ambiguous' }.
+// A SourceAgreement is { id, account, amount? }: the account its cost is booked on, and what it costs where POB says.
 
 export class SourceUnavailable extends Error {}
 
@@ -64,6 +68,23 @@ export function toSourceCase(raw) {
  * The person as the rule reads them: only a record that matched exactly once counts. Two records for one account are
  * treated as none, so a field that is not unique in POB can never hand one person another's errands.
  */
+/**
+ * One service agreement as the connector counts it: an id and the account its cost is booked on, and its amount where
+ * the source gave a number. Anything without an id or an account is dropped rather than guessed at. Nothing of what
+ * the agreement is for is kept: the connector answers a count and a sum.
+ */
+export function toSourceAgreement(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const id = text(raw.id);
+  const account = text(raw.account);
+  if (!id || !idPattern.test(id) || !account) return null;
+  return {
+    id,
+    account,
+    ...(typeof raw.amount === 'number' && Number.isFinite(raw.amount) ? { amount: raw.amount } : {}),
+  };
+}
+
 export function resolved(found) {
   const person = {};
   if (found?.handler?.status === 'one' && text(found.handler.id))
@@ -286,7 +307,25 @@ function fixtureCases(now) {
  * returns any errand by its id, since POB's service account can read them all. Who may see what, and whether a closed
  * errand is listed, is the connector's to decide.
  */
-export function createFixtureCases({ people = fixturePeople, now = () => Date.now() } = {}) {
+/**
+ * The made-up POB's service agreements. An account is a whole accounting string whose first group is the code of the
+ * unit the cost is booked on: the first three are a school's, the fourth another unit's, the fifth has no amount, and
+ * the last is booked on an account that is no unit's.
+ */
+export const fixtureAgreements = [
+  { id: 'sla-1001', account: '11000000.5750.100', amount: 14400 },
+  { id: 'sla-1002', account: '11000000.5750.200', amount: 3250.5 },
+  { id: 'sla-1003', account: '11000000.6211.100', amount: 890 },
+  { id: 'sla-2001', account: '11000100.5750.100', amount: 7200 },
+  { id: 'sla-2002', account: '11000100.6211.100' },
+  { id: 'sla-9001', account: '99999999.5750.100', amount: 120 },
+];
+
+export function createFixtureCases({
+  people = fixturePeople,
+  agreements = fixtureAgreements,
+  now = () => Date.now(),
+} = {}) {
   const match = (records, account) => {
     const found = records.filter(r => r.account.toLowerCase() === String(account).toLowerCase());
     if (found.length === 0) return { status: 'none' };
@@ -344,6 +383,12 @@ export function createFixtureCases({ people = fixturePeople, now = () => Date.no
       created.push(raw);
       if (operationId) byOperation.set(operationId, raw);
       return present(raw);
+    },
+    async agreements(code) {
+      return {
+        agreements: agreements.filter(a => a.account.startsWith(code)).map(a => ({ ...a })),
+        complete: true,
+      };
     },
   };
 }

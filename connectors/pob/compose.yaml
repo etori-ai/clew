@@ -39,5 +39,11 @@ services:
       POB_TIMEZONE: ${POB_TIMEZONE:-}
       POB_LIST_LIMIT: ${POB_LIST_LIMIT:-}
       POB_START_CHECK: ${POB_START_CHECK:-}
+      # The cost read (README.md, "What a unit's agreements cost"): off until the identifier is named.
+      POB_COST_IDENTIFIER: ${POB_COST_IDENTIFIER:-}
+      POB_COST_CODE_PATTERN: ${POB_COST_CODE_PATTERN:-}
+      POB_COST_AMOUNT_LABEL: ${POB_COST_AMOUNT_LABEL:-}
+      POB_AGREEMENT_PATH: ${POB_AGREEMENT_PATH:-}
+      POB_AGREEMENT_FIELDS: ${POB_AGREEMENT_FIELDS:-}
     ports:
       - "127.0.0.1:4055:4055"
